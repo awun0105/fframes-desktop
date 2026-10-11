@@ -424,13 +424,17 @@ fn restore_session_binds_to_provider_and_launch_digest_and_reaches_driver() {
     w.wait("resumed task starts", |s| s.task.is_some());
 
     // 6. The driver connects to acp-agent.py; acp-agent.py records session-load.json!
+    // The file appears before the agent has finished writing it: wait for complete JSON.
+    let read_load_params = || {
+        fs::read_to_string(w.agent.join("session-load.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    };
     w.poll("session-load.json written by acp-agent", || {
-        w.agent.join("session-load.json").exists()
+        read_load_params().is_some()
     });
 
-    let load_params: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(w.agent.join("session-load.json")).unwrap())
-            .unwrap();
+    let load_params = read_load_params().unwrap();
     assert_eq!(
         load_params.get("sessionId").and_then(|v| v.as_str()),
         Some(wire_session_id.as_str())

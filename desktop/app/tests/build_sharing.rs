@@ -37,6 +37,21 @@ fn service(compiler: Arc<FakeCompiler>, limits: BuildLimits) -> BuildService {
     BuildService::new(ProcessTreeManager::new(), compiler, limits)
 }
 
+/// The status once the compile thread has let go of its handle on the build. It settles the
+/// result slot before it returns, so a status read right after `wait` can briefly count one
+/// extra lease that no consumer holds.
+fn status_after_settle(svc: &BuildService, key: &BuildKey, leases: usize) -> BuildState {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let status = svc.status(key);
+        let settled = matches!(&status, BuildState::Ready { leases: held, .. } if *held == leases);
+        if settled || std::time::Instant::now() >= deadline {
+            return status;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 fn who(kind: SubscriberKind, name: &str) -> Subscriber {
     Subscriber::new(kind, name)
 }
@@ -433,7 +448,7 @@ fn live_leases_are_never_evicted_and_a_full_cache_refuses_instead() {
         "the live lease survived eviction"
     );
     assert!(matches!(
-        svc.status(&key_three),
+        status_after_settle(&svc, &key_three, 1),
         BuildState::Ready { leases: 1, .. }
     ));
     drop((one, three));
@@ -1070,7 +1085,7 @@ fn artifact_bytes_count_against_the_budget_after_the_compile_settled() {
     let stats = svc.stats();
     assert_eq!(stats.artifact_bytes, 2 * MIB);
     assert_eq!(stats.cached_bytes, settled.cached_bytes + 2 * MIB);
-    match svc.status(&live_key) {
+    match status_after_settle(&svc, &live_key, 2) {
         BuildState::Ready {
             leases: 2,
             bytes,
@@ -1100,7 +1115,7 @@ fn artifact_bytes_count_against_the_budget_after_the_compile_settled() {
         other => panic!("{other:?}"),
     }
     assert!(matches!(
-        svc.status(&live_key),
+        status_after_settle(&svc, &live_key, 1),
         BuildState::Ready { leases: 1, artifact_bytes, .. } if artifact_bytes == 2 * MIB
     ));
     assert_eq!(svc.stats().evictions, 1, "a leased entry is never evicted");

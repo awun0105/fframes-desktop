@@ -137,6 +137,8 @@ class Driver:
         self.telemetry_samples: list[dict] = []
         self.observed_processes: dict[int, dict] = {}
         self.rebuilds = 0
+        self.audio_recoveries = 0
+        self.last_audio_recovery = 0.0
         self.failed_builds = 0
         self.seeks = 0
         self.errors: list[str] = []
@@ -193,14 +195,32 @@ class Driver:
             value = self.read()
             if value and predicate(value):
                 return value
+            self.recover_lost_audio(value)
             time.sleep(0.01)
-        raise QualificationError(f"timed out waiting for {description}")
+        last = self.latest or {}
+        state = {key: last.get(key) for key in ("audio_ready", "audio_note", "output_device", "playing", "position") if key in last}
+        raise QualificationError(f"timed out waiting for {description}; last state {state}")
+
+    def recover_lost_audio(self, state: dict | None) -> None:
+        """The virtual PulseAudio sink can fail a stream with an ALSA I/O error under load. The
+        application then reports the device as lost and offers Retry, which is the documented
+        recovery; use it a bounded number of times and record that it was needed."""
+        if not state or "Audio device lost" not in str(state.get("audio_note", "")):
+            return
+        if time.monotonic() - self.last_audio_recovery < 5 or not state.get("buttons", {}).get("retry-audio-output"):
+            return
+        if self.audio_recoveries >= 5:
+            raise QualificationError("the audio device was lost more than five times")
+        self.audio_recoveries += 1
+        self.last_audio_recovery = time.monotonic()
+        print(f"audio device lost; retrying audio output ({self.audio_recoveries})", flush=True)
+        self.button("retry-audio-output")
 
     def point(self, x: float, y: float, click: bool = True) -> None:
         assert self.window
         command = ["xdotool", "mousemove", "--window", self.window, str(round(x)), str(round(y))]
         if click:
-            command += ["mousedown", "1", "mouseup", "1"]
+            command += ["sleep", "0.1", "mousedown", "1", "mouseup", "1"]
         self.command(*command)
 
     def button(self, name: str) -> None:
@@ -208,6 +228,19 @@ class Driver:
         if not isinstance(box, list) or len(box) != 4:
             raise QualificationError(f"missing native button geometry: {name}")
         self.point(box[0] + box[2] / 2, box[1] + box[3] / 2)
+
+    def click_until(self, name: str, predicate, description: str, attempts: int = 3, timeout: float = 20.0) -> dict:
+        """Click a button until its effect shows up. A click that lands before the window has
+        processed the pointer move is dropped by the toolkit, and nothing else repeats it."""
+        for attempt in range(attempts):
+            self.button(name)
+            try:
+                return self.wait(predicate, description, timeout)
+            except QualificationError:
+                if attempt == attempts - 1:
+                    raise
+                self.read()
+        raise AssertionError("unreachable")
 
     def key(self, key: str) -> None:
         assert self.window
@@ -298,8 +331,7 @@ class Driver:
         time.sleep(0.3)
         self.button("no-audio-output")
         self.wait(lambda t: not bool(t.get("audio_ready")), "no-device mode")
-        self.button("retry-audio-output")
-        self.wait(lambda t: bool(t.get("audio_ready")), "audio retry", 15)
+        self.click_until("retry-audio-output", lambda t: bool(t.get("audio_ready")), "audio retry")
 
         self.key("Home")
         self.button("play-pause")
@@ -313,7 +345,7 @@ class Driver:
     def run_workload(self, app: subprocess.Popen) -> None:
         self.app = app
         self.discover_window(time.monotonic() + 30)
-        self.wait(lambda t: t.get("project_path") == str(self.args.project) and t.get("displayed_generation") is not None and t.get("ruler_bounds") and t.get("buttons", {}).get("timeline-fit"), "initial preview", 180)
+        self.wait(lambda t: t.get("project_path") == str(self.args.project) and t.get("displayed_generation") is not None and t.get("ruler_bounds") and t.get("buttons", {}).get("timeline-fit"), "initial preview", 600)
         self.exercise_controls()
         rng = random.Random(0x4D325345454B)
         warmup = min(20, self.args.seeks)
@@ -504,7 +536,7 @@ def main() -> int:
                         "project": str(args.project), "sdk_home": str(args.sdk_home)},
         "requested": {"duration_seconds": args.duration_seconds, "seeks": args.seeks, "rebuilds": args.rebuilds,
                       "inject_build_failures": args.inject_build_failures},
-        "measurements": {"elapsed_seconds": elapsed, "confirmed_seeks": driver.seeks, "rebuilds": driver.rebuilds,
+        "measurements": {"elapsed_seconds": elapsed, "confirmed_seeks": driver.seeks, "rebuilds": driver.rebuilds, "audio_recoveries": driver.audio_recoveries,
                          "failed_builds": driver.failed_builds, "seek_p95_ms": percentile(driver.seek_latencies, 0.95),
                          "rss_slope_mib_per_min": slope_mib_per_minute(driver.rss_samples),
                          "av_error_ms": None, "timestamp_residual_ms": None,

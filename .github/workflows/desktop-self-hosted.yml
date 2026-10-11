@@ -39,8 +39,10 @@ jobs:
           components: rustfmt, clippy
       - name: Install Linux native prerequisites
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang libclang-dev cmake pkg-config libssl-dev libfontconfig1-dev libasound2-dev libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libgl1-mesa-dev libxcb1-dev libxcb-shape0-dev libxcb-xfixes0-dev libx11-xcb-dev libzstd-dev nasm
+          # The runner user has no sudo: the packages are installed once, system-wide, by an admin.
+          if ! command -v nasm >/dev/null || ! command -v cmake >/dev/null || ! dpkg -s libclang-dev libssl-dev libasound2-dev >/dev/null 2>&1; then
+            echo "::error::Install the native prerequisites as root first"; exit 1
+          fi
           llvm_lib="$(find /usr/lib -name "libclang.so" 2>/dev/null | head -n1)"
           if [ -n "$llvm_lib" ]; then
             echo "LIBCLANG_PATH=$(dirname "$llvm_lib")" >> "$GITHUB_ENV"
@@ -64,10 +66,60 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: "1.98.1"
-          components: rustfmt, clippy
+      # The runner service does not inherit the interactive profile: it has no ~/.cargo/bin,
+      # FFMPEG_DIR, LIBCLANG_PATH or `python` (spawned by test fixtures) on its environment.
+      # setup-rust-toolchain is deliberately not used here: on this shared machine it reinstalled
+      # rustup with a GNU default host, and the job left ~/.cargo/bin without rustup.exe.
+      - name: Prepare the Windows build environment
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # AppendAllText writes UTF-8 without a BOM, which Windows PowerShell's Out-File would add.
+          function Add-Line([string]$File, [string]$Line) { [IO.File]::AppendAllText($File, "$Line`n") }
+          $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+          if (-not (Test-Path (Join-Path $cargoBin "rustup.exe"))) { throw "rustup is not installed for the runner user ($cargoBin)" }
+          Add-Line $env:GITHUB_PATH $cargoBin
+          # An explicit MSVC triple, so the result never depends on rustup's default host.
+          & (Join-Path $cargoBin "rustup.exe") toolchain install 1.98.1-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy --no-self-update
+          if ($LASTEXITCODE -ne 0) { throw "rustup toolchain install failed" }
+          Add-Line $env:GITHUB_ENV "RUSTUP_TOOLCHAIN=1.98.1-x86_64-pc-windows-msvc"
+
+          # Same pinned FFmpeg build as the release workflow, kept in the runner's tool cache.
+          $distribution = "ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0"
+          $release = "autobuild-2026-10-07-13-07"
+          $expected = "124799F0643A75EB84A64A589F1ABAC8F81732587942F3F34458688036153F0D"
+          $cache = Join-Path $env:RUNNER_TOOL_CACHE "fframes-ffmpeg"
+          $ffmpeg = Join-Path $cache $distribution
+          if (-not (Test-Path (Join-Path $ffmpeg "bin\avcodec-63.dll"))) {
+            New-Item -ItemType Directory -Force -Path $cache | Out-Null
+            $archive = Join-Path $env:RUNNER_TEMP "$distribution.zip"
+            Invoke-WebRequest -UseBasicParsing "https://github.com/BtbN/FFmpeg-Builds/releases/download/$release/$distribution.zip" -OutFile $archive
+            if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw "FFmpeg download checksum mismatch" }
+            # Windows' bsdtar reads ZIPs and copes with long paths, unlike Expand-Archive. Extract
+            # into a staging folder and move it into place, so a failure leaves no partial cache.
+            $staging = Join-Path $cache ".partial"
+            Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $staging | Out-Null
+            & "$env:SystemRoot\System32\tar.exe" -xf $archive -C $staging
+            if ($LASTEXITCODE -ne 0) { Remove-Item -LiteralPath $staging -Recurse -Force; throw "FFmpeg extraction failed" }
+            Remove-Item -LiteralPath $ffmpeg -Recurse -Force -ErrorAction SilentlyContinue
+            Move-Item -LiteralPath (Join-Path $staging $distribution) -Destination $ffmpeg
+            Remove-Item -LiteralPath $staging, $archive -Recurse -Force
+          }
+          Add-Line $env:GITHUB_ENV "FFMPEG_DIR=$ffmpeg"
+          Add-Line $env:GITHUB_PATH (Join-Path $ffmpeg "bin")
+
+          $llvm = Join-Path $env:ProgramFiles "LLVM\bin"
+          if (-not (Test-Path (Join-Path $llvm "libclang.dll"))) { throw "LLVM (libclang) not found at $llvm" }
+          Add-Line $env:GITHUB_ENV "LIBCLANG_PATH=$llvm"
+
+          $python = & py -3 -c "import os, sys; print(os.path.dirname(sys.executable))"
+          if ($LASTEXITCODE -ne 0 -or -not $python) { throw "No Python 3 found through the py launcher" }
+          Add-Line $env:GITHUB_PATH $python
+
+          # checkout cleans ignored files, which would make every run a cold build. A target
+          # directory in the tool cache survives between runs (and keeps paths short).
+          Add-Line $env:GITHUB_ENV "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TOOL_CACHE 'fframes-target')"
       - name: Check formatting
         run: cargo fmt --manifest-path desktop/Cargo.toml --all --check
       - name: Test desktop workspace
@@ -76,3 +128,49 @@ jobs:
         run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio --all-targets -- -D warnings
       - name: Test studio protocol and runtime
         run: cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
+      - name: Packaging tests and qualification ledgers
+        run: |
+          python desktop/scripts/test-packaging.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
+      - name: Build and render annotated worker
+        run: |
+          cargo build --release --manifest-path desktop/fixtures/annotated-video-overlay/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Set-Location desktop/fixtures/annotated-video-overlay
+          cargo run --release -- frame 0 -o "$env:RUNNER_TEMP\worker-frame"
+      - name: Real worker frame, anchor, crash and restart
+        run: cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test worker_roundtrip -- --ignored
+      - name: Assemble and verify native offline SDK
+        run: |
+          Remove-Item -LiteralPath "$env:RUNNER_TEMP\studio-sdk" -Recurse -Force -ErrorAction SilentlyContinue
+          python desktop/scripts/assemble-phase-zero-sdk.py --out "$env:RUNNER_TEMP\studio-sdk"
+      - name: Managed worker, portable relocation, preview and timeline integration
+        run: |
+          $env:SDK_BUNDLE = "$env:RUNNER_TEMP\studio-sdk"
+          foreach ($test in @("managed_worker", "portable_managed_worker")) {
+            cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test $test -- --ignored
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test preview_coordination --test timeline_controls -- --ignored
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:AUDIO_PREVIEW_EVIDENCE = "$env:RUNNER_TEMP\m2-parity.json"
+          cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
+      - name: Package native app and SDK artifact
+        run: |
+          $out = "$env:RUNNER_TEMP\fframes-studio-x86_64-pc-windows-msvc"
+          Remove-Item -LiteralPath $out, "$out.zip" -Recurse -Force -ErrorAction SilentlyContinue
+          python desktop/scripts/package-phase-zero.py --out $out --sdk-bundle "$env:RUNNER_TEMP\studio-sdk"
+      - name: Retain artifact and M2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-x86_64-pc-windows-msvc
+          path: |
+            ${{ runner.temp }}/fframes-studio-x86_64-pc-windows-msvc.zip
+            ${{ runner.temp }}/worker-frame/*.png
+            ${{ runner.temp }}/m2-parity.json
+          if-no-files-found: warn
+          retention-days: 14

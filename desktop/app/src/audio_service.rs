@@ -677,7 +677,8 @@ fn prepare_session(
                         feed += 1;
                     }
                 }
-                Err(_) => {
+                Err(error) => {
+                    eprintln!("audio source read failed: {error}");
                     s.failed.store(true, Ordering::Release);
                     break;
                 }
@@ -719,7 +720,8 @@ fn build_stream<T: SizedSample + FromSample<f32>>(
                     data, channels, &state, &control, epoch, rate, total, now, latency,
                 );
             },
-            move |_| {
+            move |error| {
+                eprintln!("audio output stream error: {error}");
                 error_state.failed.store(true, Ordering::Release);
             },
             None,
