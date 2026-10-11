@@ -202,7 +202,7 @@ class Driver:
         assert self.window
         command = ["xdotool", "mousemove", "--window", self.window, str(round(x)), str(round(y))]
         if click:
-            command += ["mousedown", "1", "mouseup", "1"]
+            command += ["sleep", "0.1", "mousedown", "1", "mouseup", "1"]
         self.command(*command)
 
     def button(self, name: str) -> None:
@@ -210,6 +210,19 @@ class Driver:
         if not isinstance(box, list) or len(box) != 4:
             raise QualificationError(f"missing native button geometry: {name}")
         self.point(box[0] + box[2] / 2, box[1] + box[3] / 2)
+
+    def click_until(self, name: str, predicate, description: str, attempts: int = 3, timeout: float = 20.0) -> dict:
+        """Click a button until its effect shows up. A click that lands before the window has
+        processed the pointer move is dropped by the toolkit, and nothing else repeats it."""
+        for attempt in range(attempts):
+            self.button(name)
+            try:
+                return self.wait(predicate, description, timeout)
+            except QualificationError:
+                if attempt == attempts - 1:
+                    raise
+                self.read()
+        raise AssertionError("unreachable")
 
     def key(self, key: str) -> None:
         assert self.window
@@ -300,8 +313,7 @@ class Driver:
         time.sleep(0.3)
         self.button("no-audio-output")
         self.wait(lambda t: not bool(t.get("audio_ready")), "no-device mode")
-        self.button("retry-audio-output")
-        self.wait(lambda t: bool(t.get("audio_ready")), "audio retry", 60)
+        self.click_until("retry-audio-output", lambda t: bool(t.get("audio_ready")), "audio retry")
 
         self.key("Home")
         self.button("play-pause")
