@@ -114,6 +114,10 @@ jobs:
           $python = & py -3 -c "import os, sys; print(os.path.dirname(sys.executable))"
           if ($LASTEXITCODE -ne 0 -or -not $python) { throw "No Python 3 found through the py launcher" }
           Add-Line $env:GITHUB_PATH $python
+
+          # checkout cleans ignored files, which would make every run a cold build. A target
+          # directory in the tool cache survives between runs (and keeps paths short).
+          Add-Line $env:GITHUB_ENV "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TOOL_CACHE 'fframes-target')"
       - name: Check formatting
         run: cargo fmt --manifest-path desktop/Cargo.toml --all --check
       - name: Test desktop workspace
@@ -122,3 +126,49 @@ jobs:
         run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio --all-targets -- -D warnings
       - name: Test studio protocol and runtime
         run: cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
+      - name: Packaging tests and qualification ledgers
+        run: |
+          python desktop/scripts/test-packaging.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
+      - name: Build and render annotated worker
+        run: |
+          cargo build --release --manifest-path desktop/fixtures/annotated-video-overlay/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Set-Location desktop/fixtures/annotated-video-overlay
+          cargo run --release -- frame 0 -o "$env:RUNNER_TEMP\worker-frame"
+      - name: Real worker frame, anchor, crash and restart
+        run: cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test worker_roundtrip -- --ignored
+      - name: Assemble and verify native offline SDK
+        run: |
+          Remove-Item -LiteralPath "$env:RUNNER_TEMP\studio-sdk" -Recurse -Force -ErrorAction SilentlyContinue
+          python desktop/scripts/assemble-phase-zero-sdk.py --out "$env:RUNNER_TEMP\studio-sdk"
+      - name: Managed worker, portable relocation, preview and timeline integration
+        run: |
+          $env:SDK_BUNDLE = "$env:RUNNER_TEMP\studio-sdk"
+          foreach ($test in @("managed_worker", "portable_managed_worker")) {
+            cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test $test -- --ignored
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test preview_coordination --test timeline_controls -- --ignored
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:AUDIO_PREVIEW_EVIDENCE = "$env:RUNNER_TEMP\m2-parity.json"
+          cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
+      - name: Package native app and SDK artifact
+        run: |
+          $out = "$env:RUNNER_TEMP\fframes-studio-x86_64-pc-windows-msvc"
+          Remove-Item -LiteralPath $out, "$out.zip" -Recurse -Force -ErrorAction SilentlyContinue
+          python desktop/scripts/package-phase-zero.py --out $out --sdk-bundle "$env:RUNNER_TEMP\studio-sdk"
+      - name: Retain artifact and M2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-x86_64-pc-windows-msvc
+          path: |
+            ${{ runner.temp }}/fframes-studio-x86_64-pc-windows-msvc.zip
+            ${{ runner.temp }}/worker-frame/*.png
+            ${{ runner.temp }}/m2-parity.json
+          if-no-files-found: warn
+          retention-days: 14

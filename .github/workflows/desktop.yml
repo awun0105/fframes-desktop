@@ -48,8 +48,6 @@ jobs:
         include:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
           - runner: macos-15
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
@@ -98,31 +96,10 @@ jobs:
           if [ -d "$xcode_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib" ]; then
             echo "LIBCLANG_PATH=$xcode_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib" >> "$GITHUB_ENV"
           fi
-      - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
-      - name: Configure Windows MSVC toolchain precedence
-        if: runner.os == 'Windows'
-        run: |
-          rm -f /usr/bin/link.exe /usr/bin/link
-          which link
       - name: Build pinned native FFmpeg install
-        if: runner.os != 'Windows'
         run: |
           python3 desktop/scripts/build-native-ffmpeg.py --source "$RUNNER_TEMP/ffmpeg-source" --out "$RUNNER_TEMP/ffmpeg-native"
           echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg-native" >> "$GITHUB_ENV"
-      - name: Windows FFmpeg build dependency
-        if: runner.os == 'Windows'
-        run: |
-          distribution=ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0
-          release=autobuild-2026-10-07-13-07
-          expected_sha256=124799f0643a75eb84a64a589f1abac8f81732587942f3f34458688036153f0d
-          curl -fL "https://github.com/BtbN/FFmpeg-Builds/releases/download/$release/$distribution.zip" -o "$RUNNER_TEMP/ffmpeg.zip"
-          echo "$expected_sha256  $RUNNER_TEMP/ffmpeg.zip" | sha256sum --check --status
-          7z x "$RUNNER_TEMP/ffmpeg.zip" -o"$RUNNER_TEMP/ffmpeg"
-          ffmpeg_dir="$(cygpath -w "$RUNNER_TEMP/ffmpeg/$distribution")"
-          echo "FFMPEG_DIR=$ffmpeg_dir" >> "$GITHUB_ENV"
-          echo "$ffmpeg_dir\bin" >> "$GITHUB_PATH"
-          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> "$GITHUB_ENV"
       - name: Focused tests and lint
         run: |
           cargo fmt --manifest-path desktop/Cargo.toml --all --check

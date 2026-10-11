@@ -147,7 +147,8 @@ def package(output, sdk_bundle=None):
         # An explicit --target keeps the flag off build scripts and proc macros and gives the
         # static build its own directory instead of rebuilding the development one.
         build += ["--target", target]
-        environment = {**os.environ, f"CARGO_TARGET_{target.upper().replace('-', '_')}_RUSTFLAGS": WINDOWS_STATIC_CRT}
+        # RUSTFLAGS outranks the per-target variable, so a caller-provided value (CI sets one) is kept and extended.
+        environment = {**os.environ, "RUSTFLAGS": f"{os.environ.get('RUSTFLAGS', '')} {WINDOWS_STATIC_CRT}".strip()}
     run(build, env=environment)
     metadata = json.loads(run(["cargo", "metadata", "--no-deps", "--format-version", "1", "--manifest-path", str(desktop_manifest)], capture_output=True).stdout)
     release = Path(metadata["target_directory"]) / (target if os.name == "nt" else "") / "release"
