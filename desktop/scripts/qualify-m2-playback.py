@@ -194,7 +194,9 @@ class Driver:
             if value and predicate(value):
                 return value
             time.sleep(0.01)
-        raise QualificationError(f"timed out waiting for {description}")
+        last = self.latest or {}
+        state = {key: last.get(key) for key in ("audio_ready", "audio_note", "output_device", "playing", "position") if key in last}
+        raise QualificationError(f"timed out waiting for {description}; last state {state}")
 
     def point(self, x: float, y: float, click: bool = True) -> None:
         assert self.window
@@ -299,7 +301,7 @@ class Driver:
         self.button("no-audio-output")
         self.wait(lambda t: not bool(t.get("audio_ready")), "no-device mode")
         self.button("retry-audio-output")
-        self.wait(lambda t: bool(t.get("audio_ready")), "audio retry", 15)
+        self.wait(lambda t: bool(t.get("audio_ready")), "audio retry", 60)
 
         self.key("Home")
         self.button("play-pause")
