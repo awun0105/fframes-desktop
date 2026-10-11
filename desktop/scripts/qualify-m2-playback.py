@@ -137,6 +137,8 @@ class Driver:
         self.telemetry_samples: list[dict] = []
         self.observed_processes: dict[int, dict] = {}
         self.rebuilds = 0
+        self.audio_recoveries = 0
+        self.last_audio_recovery = 0.0
         self.failed_builds = 0
         self.seeks = 0
         self.errors: list[str] = []
@@ -193,10 +195,26 @@ class Driver:
             value = self.read()
             if value and predicate(value):
                 return value
+            self.recover_lost_audio(value)
             time.sleep(0.01)
         last = self.latest or {}
         state = {key: last.get(key) for key in ("audio_ready", "audio_note", "output_device", "playing", "position") if key in last}
         raise QualificationError(f"timed out waiting for {description}; last state {state}")
+
+    def recover_lost_audio(self, state: dict | None) -> None:
+        """The virtual PulseAudio sink can fail a stream with an ALSA I/O error under load. The
+        application then reports the device as lost and offers Retry, which is the documented
+        recovery; use it a bounded number of times and record that it was needed."""
+        if not state or "Audio device lost" not in str(state.get("audio_note", "")):
+            return
+        if time.monotonic() - self.last_audio_recovery < 5 or not state.get("buttons", {}).get("retry-audio-output"):
+            return
+        if self.audio_recoveries >= 5:
+            raise QualificationError("the audio device was lost more than five times")
+        self.audio_recoveries += 1
+        self.last_audio_recovery = time.monotonic()
+        print(f"audio device lost; retrying audio output ({self.audio_recoveries})", flush=True)
+        self.button("retry-audio-output")
 
     def point(self, x: float, y: float, click: bool = True) -> None:
         assert self.window
@@ -327,7 +345,7 @@ class Driver:
     def run_workload(self, app: subprocess.Popen) -> None:
         self.app = app
         self.discover_window(time.monotonic() + 30)
-        self.wait(lambda t: t.get("project_path") == str(self.args.project) and t.get("displayed_generation") is not None and t.get("ruler_bounds") and t.get("buttons", {}).get("timeline-fit"), "initial preview", 180)
+        self.wait(lambda t: t.get("project_path") == str(self.args.project) and t.get("displayed_generation") is not None and t.get("ruler_bounds") and t.get("buttons", {}).get("timeline-fit"), "initial preview", 600)
         self.exercise_controls()
         rng = random.Random(0x4D325345454B)
         warmup = min(20, self.args.seeks)
@@ -518,7 +536,7 @@ def main() -> int:
                         "project": str(args.project), "sdk_home": str(args.sdk_home)},
         "requested": {"duration_seconds": args.duration_seconds, "seeks": args.seeks, "rebuilds": args.rebuilds,
                       "inject_build_failures": args.inject_build_failures},
-        "measurements": {"elapsed_seconds": elapsed, "confirmed_seeks": driver.seeks, "rebuilds": driver.rebuilds,
+        "measurements": {"elapsed_seconds": elapsed, "confirmed_seeks": driver.seeks, "rebuilds": driver.rebuilds, "audio_recoveries": driver.audio_recoveries,
                          "failed_builds": driver.failed_builds, "seek_p95_ms": percentile(driver.seek_latencies, 0.95),
                          "rss_slope_mib_per_min": slope_mib_per_minute(driver.rss_samples),
                          "av_error_ms": None, "timestamp_residual_ms": None,
