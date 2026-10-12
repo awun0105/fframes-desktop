@@ -35,7 +35,7 @@ static WORKER_GENERATION: AtomicU64 = AtomicU64::new(0);
 /// Allocates identities across GUI launches, restarts and agent candidate workers.
 pub fn allocate_worker_generation() -> u64 {
     WORKER_GENERATION
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
             value.checked_add(1)
         })
         .expect("worker generation exhausted")
