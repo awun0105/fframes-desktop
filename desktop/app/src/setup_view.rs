@@ -130,7 +130,7 @@ impl SetupView {
 
     /// Enters `Failed`, remembering which step was active so it can be marked.
     fn fail(&mut self, error: String) {
-        self.failed_step = failing_step(&self.state);
+        self.failed_step = failed_step_after(&self.state, self.failed_step);
         self.state = SetupState::Failed { error };
     }
 
@@ -473,6 +473,15 @@ pub fn step_statuses(state: &SetupState) -> [StepStatus; 4] {
     }
 }
 
+/// The step to mark when entering `Failed` from `previous`: a second failure keeps the
+/// original step rather than re-deriving it from the already failed state.
+fn failed_step_after(previous: &SetupState, remembered: Option<usize>) -> Option<usize> {
+    match previous {
+        SetupState::Failed { .. } => remembered,
+        _ => failing_step(previous),
+    }
+}
+
 /// The step a failure belongs to when it happens in `previous`: the active step,
 /// else the first one not yet done.
 fn failing_step(previous: &SetupState) -> Option<usize> {
@@ -750,6 +759,21 @@ mod tests {
         for (state, want) in states.iter().zip(expected) {
             assert_eq!(step_statuses(state), want, "{state:?}");
         }
+    }
+
+    #[test]
+    fn a_second_failure_keeps_the_original_step() {
+        let failed = SetupState::Failed {
+            error: String::new(),
+        };
+        let installing = SetupState::Installing {
+            progress_percent: 20,
+            step: String::new(),
+        };
+        let first = failed_step_after(&installing, None);
+        assert_eq!(first, Some(1));
+        assert_eq!(failed_step_after(&failed, first), Some(1));
+        assert_eq!(failed_step_after(&SetupState::Checking, first), Some(0));
     }
 
     #[test]
