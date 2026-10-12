@@ -1,6 +1,7 @@
 pub mod agent_tools;
 pub mod agent_workflow;
 pub mod app;
+pub mod assets;
 pub mod audio_service;
 pub mod build_service;
 pub mod candidate_runner;
@@ -32,6 +33,7 @@ pub mod preview_element;
 pub mod preview_worker_client;
 pub mod thumbnail_cache;
 pub mod timeline_view;
+pub mod ui;
 
 pub mod agent_spike;
 pub mod project_view;

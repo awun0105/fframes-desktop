@@ -13,6 +13,7 @@ Read the documents in this order:
 1. [Research findings](research.md): what Zeron, Cap, ACP and the current fframes implementation establish, with source references and limitations.
 2. [Product and technical architecture](architecture.md): user workflow, process boundaries, project format, selection-to-code retrieval, style presets, preview and recovery.
 3. [Implementation plan](implementation-plan.md): ordered milestones, concrete work items, acceptance criteria, release matrix and unresolved decisions.
+4. [Design system](design-system.md): the UI tokens, component kit and gallery that every Studio screen is built from.
 
 ## Run the implemented foundation
 

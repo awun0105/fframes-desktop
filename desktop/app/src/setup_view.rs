@@ -1,11 +1,9 @@
-use crate::design_system::colors::{
-    ACCENT, BORDER, CANVAS, DANGER_TEXT, MUTED, PANEL, SUCCESS_TEXT, TEXT, WARNING_TEXT,
+use crate::design_system::{self, TextStyle};
+use crate::ui::{
+    Badge, Button, ButtonVariant, Icon, Notice, StatusDot, Tone, card, divider, heading, icon,
+    muted,
 };
-use crate::design_system::{self, ButtonStyle};
-use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, rgb,
-};
+use gpui::{Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div, px};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -74,6 +72,8 @@ pub struct SetupView {
     pub sdk_home: PathBuf,
     pub projects_root: PathBuf,
     pub process_tree: ProcessTreeManager,
+    /// The step that was active when setup failed; only meaningful in `Failed`.
+    failed_step: Option<usize>,
 }
 
 impl SetupView {
@@ -118,13 +118,20 @@ impl SetupView {
             sdk_home,
             projects_root: default_projects_root(),
             process_tree: ProcessTreeManager::new(),
+            failed_step: None,
         };
         if let Err(error) = defaults {
-            view.state = SetupState::Failed { error };
+            view.fail(error);
         } else {
             view.run_preflight(cx);
         }
         view
+    }
+
+    /// Enters `Failed`, remembering which step was active so it can be marked.
+    fn fail(&mut self, error: String) {
+        self.failed_step = failing_step(&self.state);
+        self.state = SetupState::Failed { error };
     }
 
     pub fn run_preflight(&mut self, cx: &mut Context<Self>) {
@@ -138,9 +145,7 @@ impl SetupView {
                     summary: report.format_summary(),
                 };
             } else {
-                self.state = SetupState::Failed {
-                    error: report.format_summary(),
-                };
+                self.fail(report.format_summary());
             }
             cx.notify();
             return;
@@ -204,7 +209,7 @@ impl SetupView {
                         };
                     }
                     Err(err) => {
-                        view.state = SetupState::Failed { error: err };
+                        view.fail(err);
                     }
                 }
                 cx.notify();
@@ -421,275 +426,394 @@ impl SetupView {
         Ok((final_frame, build_time, render_time))
     }
 
+    /// Same ids and labels as before; the handler runs on this view.
     fn action_button(
-        &self,
         id: &'static str,
         label: &'static str,
-        style: ButtonStyle,
-        cx: &mut Context<Self>,
-        action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
-    ) -> gpui::Stateful<gpui::Div> {
-        let action = std::rc::Rc::new(action);
-        let on_click = action.clone();
-        design_system::button(
-            div()
-                .id(id)
-                .relative()
-                .role(gpui::Role::Button)
-                .aria_label(label)
-                .tab_index(0),
-            style,
-            true,
-        )
-        .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
-        .on_key_down(
-            cx.listener(move |this, event: &gpui::KeyDownEvent, window, cx| {
-                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                    action(this, window, cx);
-                    cx.stop_propagation();
-                }
-            }),
-        )
-        .child(label)
+        variant: ButtonVariant,
+        entity: Entity<Self>,
+        action: fn(&mut Self, &mut Context<Self>),
+    ) -> Button {
+        Button::new(id, label)
+            .variant(variant)
+            .on_click(move |_window, cx| {
+                entity.update(cx, action);
+            })
     }
 }
 
-impl Render for SetupView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let content = match &self.state {
-            SetupState::Checking => div()
+/// Progress of one of the four setup steps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepStatus {
+    Pending,
+    Active,
+    Done,
+    Failed,
+}
+
+pub const STEP_NAMES: [&str; 4] = ["Preflight", "Install SDK", "Build template", "Render"];
+
+/// Step statuses for a setup state: Preflight, Install SDK, Build template, Render.
+///
+/// `Failed` carries no record of the stage that failed, so every step stays
+/// pending; the view uses [`step_statuses_after`] with the step it remembered.
+pub fn step_statuses(state: &SetupState) -> [StepStatus; 4] {
+    use StepStatus::{Active, Done, Failed, Pending};
+    match state {
+        SetupState::Checking => [Active, Pending, Pending, Pending],
+        SetupState::PrerequisitesNeeded { .. } => [Failed, Pending, Pending, Pending],
+        SetupState::SdkInstallNeeded { .. } => [Done, Pending, Pending, Pending],
+        SetupState::Installing { .. } => [Done, Active, Pending, Pending],
+        SetupState::SdkReady { .. } => [Done, Done, Pending, Pending],
+        SetupState::CreatingProject { .. } | SetupState::Building { .. } => {
+            [Done, Done, Active, Pending]
+        }
+        SetupState::Rendered { .. } => [Done, Done, Done, Done],
+        SetupState::Failed { .. } => [Pending, Pending, Pending, Pending],
+    }
+}
+
+/// The step a failure belongs to when it happens in `previous`: the active step,
+/// else the first one not yet done.
+fn failing_step(previous: &SetupState) -> Option<usize> {
+    let statuses = step_statuses(previous);
+    statuses
+        .iter()
+        .position(|s| *s == StepStatus::Active)
+        .or_else(|| statuses.iter().position(|s| *s == StepStatus::Pending))
+}
+
+/// [`step_statuses`], with the remembered step marked failed in the `Failed` state:
+/// the steps before it are done, the ones after it pending.
+pub fn step_statuses_after(state: &SetupState, failed_step: Option<usize>) -> [StepStatus; 4] {
+    match (state, failed_step) {
+        (SetupState::Failed { .. }, Some(failed)) => {
+            std::array::from_fn(|i| match i.cmp(&failed) {
+                std::cmp::Ordering::Less => StepStatus::Done,
+                std::cmp::Ordering::Equal => StepStatus::Failed,
+                std::cmp::Ordering::Greater => StepStatus::Pending,
+            })
+        }
+        _ => step_statuses(state),
+    }
+}
+
+fn step_row(name: &'static str, status: StepStatus) -> gpui::Div {
+    let palette = design_system::tokens().palette;
+    let metrics = design_system::tokens().metrics;
+    let marker = match status {
+        StepStatus::Pending => StatusDot::new(Tone::Neutral).into_any_element(),
+        StepStatus::Active => StatusDot::new(Tone::Info).into_any_element(),
+        StepStatus::Done => {
+            icon(Icon::CircleCheck, metrics.icon_md, palette.success).into_any_element()
+        }
+        StepStatus::Failed => {
+            icon(Icon::AlertTriangle, metrics.icon_md, palette.danger).into_any_element()
+        }
+    };
+    let name_color = match status {
+        StepStatus::Pending => palette.text_3,
+        _ => palette.text_1,
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(metrics.space_2))
+        .child(
+            div()
+                .w(px(metrics.icon_md))
                 .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(TEXT))
-                        .child("Checking Host Prerequisites..."),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child("Running read-only preflight probes on compiler, CMake, and graphics libraries..."),
-                ),
+                .justify_center()
+                .child(marker),
+        )
+        .child(
+            design_system::text_style(div(), TextStyle::Label)
+                .text_color(name_color)
+                .child(name),
+        )
+        .children(
+            (status == StepStatus::Active).then(|| Badge::new("In progress").tone(Tone::Info)),
+        )
+}
 
+fn detail_line(text: impl Into<gpui::SharedString>) -> gpui::Div {
+    muted(text)
+}
+
+impl SetupView {
+    /// Status text and extra content for the current state.
+    fn state_detail(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let palette = design_system::tokens().palette;
+        let metrics = design_system::tokens().metrics;
+        let entity = cx.entity();
+        let column = || div().flex().flex_col().gap(px(metrics.space_2));
+        match &self.state {
+            SetupState::Checking => column()
+                .child(detail_line("Checking Host Prerequisites..."))
+                .child(detail_line(
+                    "Running read-only preflight probes on compiler, CMake, and graphics libraries...",
+                )),
             SetupState::PrerequisitesNeeded {
-                missing_packages,
-                summary: _summary,
-            } => {
-                let pkg_cmd = studio_sdk::install_hint(missing_packages);
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(WARNING_TEXT))
-                            .child("System Prerequisites Needed"),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(TEXT))
-                            .child("The following host packages were detected as missing and require user review:"),
-                    )
-                    .child(
-                        div()
-                            .p_2()
-                            .bg(rgb(CANVAS))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(rgb(BORDER))
-                            .text_xs()
-                            .text_color(rgb(ACCENT))
-                            .child(pkg_cmd),
-                    )
-                    .child(
-                        self.action_button(
-                            "btn-recheck",
-                            "Re-run Preflight Check",
-                            ButtonStyle::Primary,
-                            cx,
-                            |this, _, cx| this.run_preflight(cx),
+                missing_packages, ..
+            } => column()
+                .child(detail_line("System Prerequisites Needed"))
+                .child(detail_line(
+                    "The following host packages were detected as missing and require user review:",
+                ))
+                .child(
+                    div()
+                        .p(px(metrics.space_2))
+                        .bg(palette.stage)
+                        .rounded(px(metrics.radius_control))
+                        .border_1()
+                        .border_color(palette.line_strong)
+                        .child(
+                            design_system::text_style(div(), TextStyle::Small)
+                                .text_color(palette.text_1)
+                                .child(studio_sdk::install_hint(missing_packages)),
                         ),
-                    )
-            }
-
+                )
+                .child(div().flex().child(Self::action_button(
+                    "btn-recheck",
+                    "Re-run Preflight Check",
+                    ButtonVariant::Editor,
+                    entity,
+                    |this, cx| this.run_preflight(cx),
+                ))),
+            SetupState::SdkInstallNeeded { manifest_digest } => column()
+                .child(detail_line(
+                    "Host Preflight Passed — SDK Installation Required",
+                ))
+                .child(detail_line(
+                    "Host environment verified. Ready to install app-managed toolchain & FFmpeg dependencies.",
+                ))
+                .child(detail_line(format!("Manifest: {:.16}...", manifest_digest)))
+                .child(div().flex().child(Self::action_button(
+                    "btn-install-sdk",
+                    "Install Managed SDK & Build Template",
+                    ButtonVariant::Primary,
+                    entity,
+                    |this, cx| this.start_install_and_build(cx),
+                ))),
             SetupState::Installing {
                 progress_percent,
                 step,
-            } => div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(TEXT))
-                        .child(format!("Installing SDK... ({progress_percent}%)")),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child(step.clone()),
-                ),
-
-            SetupState::SdkInstallNeeded { manifest_digest } => div()
-                .flex()
-                .flex_col()
-                .gap_3()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(ACCENT))
-                        .child("Host Preflight Passed — SDK Installation Required"),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(TEXT))
-                        .child("Host environment verified. Ready to install app-managed toolchain & FFmpeg dependencies."),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child(format!("Manifest: {:.16}...", manifest_digest)),
-                )
-                .child(
-                    self.action_button(
-                        "btn-install-sdk",
-                        "Install Managed SDK & Build Template",
-                        ButtonStyle::Primary,
-                        cx,
-                        |this, _, cx| this.start_install_and_build(cx),
-                    ),
-                ),
-
+            } => column()
+                .child(detail_line(format!(
+                    "Installing SDK... ({progress_percent}%)"
+                )))
+                .child(detail_line(step.clone())),
             SetupState::SdkReady {
                 active_path,
                 manifest_digest,
-            } => div()
-                .flex()
-                .flex_col()
-                .gap_3()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(SUCCESS_TEXT))
-                        .child("Managed SDK Ready"),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(TEXT))
-                        .child(format!("Active location: {:?}", active_path)),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child(format!("Manifest Digest: {:.16}...", manifest_digest)),
-                )
-                .child(
-                    self.action_button(
-                        "btn-create-proj",
-                        "Build and Render Template Project",
-                        ButtonStyle::Primary,
-                        cx,
-                        |this, _, cx| this.start_install_and_build(cx),
-                    ),
-                ),
-            SetupState::CreatingProject { name } => div()
-                .text_sm()
-                .font_weight(FontWeight::BOLD)
-                .text_color(rgb(TEXT))
-                .child(format!("Generating project '{name}' outside workspace...")),
-
-            SetupState::Building { name } => div()
-                .text_sm()
-                .font_weight(FontWeight::BOLD)
-                .text_color(rgb(TEXT))
-                .child(format!("Building '{name}' with isolated SDK toolchain...")),
-
+            } => column()
+                .child(detail_line("Managed SDK Ready"))
+                .child(detail_line(format!("Active location: {:?}", active_path)))
+                .child(detail_line(format!(
+                    "Manifest Digest: {:.16}...",
+                    manifest_digest
+                )))
+                .child(div().flex().child(Self::action_button(
+                    "btn-create-proj",
+                    "Build and Render Template Project",
+                    ButtonVariant::Primary,
+                    entity,
+                    |this, cx| this.start_install_and_build(cx),
+                ))),
+            SetupState::CreatingProject { name } => column().child(detail_line(format!(
+                "Generating project '{name}' outside workspace..."
+            ))),
+            SetupState::Building { name } => column().child(detail_line(format!(
+                "Building '{name}' with isolated SDK toolchain..."
+            ))),
             SetupState::Rendered {
                 frame_path,
                 build_time,
                 render_time,
-            } => div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(SUCCESS_TEXT))
-                        .child("Project Rendered Successfully!"),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(TEXT))
-                        .child(format!("Build duration: {:?}", build_time)),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(TEXT))
-                        .child(format!("Frame render duration: {:?}", render_time)),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child(format!("Output PNG: {:?}", frame_path)),
-                ),
-
-            SetupState::Failed { error } => div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(DANGER_TEXT))
-                        .child("Setup / Build Failed"),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(TEXT))
-                        .child(error.clone()),
-                )
-                .child(
-                    self.action_button(
+            } => column()
+                .child(detail_line("Project Rendered Successfully!"))
+                .child(detail_line(format!("Build duration: {:?}", build_time)))
+                .child(detail_line(format!(
+                    "Frame render duration: {:?}",
+                    render_time
+                )))
+                .child(detail_line(format!("Output PNG: {:?}", frame_path))),
+            SetupState::Failed { error } => column().child(
+                Notice::new("setup-failed", Tone::Danger, "Setup / Build Failed")
+                    .details(error.clone())
+                    .action(Self::action_button(
                         "btn-retry",
                         "Retry",
-                        ButtonStyle::Destructive,
-                        cx,
-                        |this, _, cx| this.run_preflight(cx),
-                    ),
-                ),
-        };
+                        ButtonVariant::Editor,
+                        entity,
+                        |this, cx| this.run_preflight(cx),
+                    )),
+            ),
+        }
+    }
+}
+
+const CARD_MAX_W: f32 = 560.;
+const CARD_PADDING: f32 = 24.;
+
+impl Render for SetupView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = design_system::tokens().palette;
+        let metrics = design_system::tokens().metrics;
+        let steps = div().flex().flex_col().gap(px(metrics.space_2)).children(
+            STEP_NAMES
+                .iter()
+                .zip(step_statuses_after(&self.state, self.failed_step))
+                .map(|(name, status)| step_row(name, status)),
+        );
 
         div()
             .flex()
-            .flex_col()
-            .p_4()
-            .bg(rgb(PANEL))
-            .rounded_lg()
-            .border_1()
-            .border_color(rgb(BORDER))
-            .child(content)
+            .w_full()
+            .justify_center()
+            .p(px(metrics.space_6))
+            .bg(palette.window)
+            .child(
+                card()
+                    .flex()
+                    .flex_col()
+                    .w_full()
+                    .max_w(px(CARD_MAX_W))
+                    .p(px(CARD_PADDING))
+                    .gap(px(metrics.space_4))
+                    .child(heading("Set up fframes Studio"))
+                    .child(muted(
+                        "Get the managed SDK ready and render a template project.",
+                    ))
+                    .child(steps)
+                    .child(divider())
+                    .child(self.state_detail(cx)),
+            )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn every_state() -> Vec<SetupState> {
+        vec![
+            SetupState::Checking,
+            SetupState::PrerequisitesNeeded {
+                missing_packages: vec![],
+                summary: String::new(),
+            },
+            SetupState::SdkInstallNeeded {
+                manifest_digest: String::new(),
+            },
+            SetupState::Installing {
+                progress_percent: 20,
+                step: String::new(),
+            },
+            SetupState::SdkReady {
+                active_path: PathBuf::new(),
+                manifest_digest: String::new(),
+            },
+            SetupState::CreatingProject {
+                name: String::new(),
+            },
+            SetupState::Building {
+                name: String::new(),
+            },
+            SetupState::Rendered {
+                frame_path: PathBuf::new(),
+                build_time: Duration::ZERO,
+                render_time: Duration::ZERO,
+            },
+            SetupState::Failed {
+                error: String::new(),
+            },
+        ]
+    }
+
+    #[test]
+    fn step_statuses_cover_every_state() {
+        use StepStatus::*;
+        let expected = [
+            [Active, Pending, Pending, Pending],
+            [Failed, Pending, Pending, Pending],
+            [Done, Pending, Pending, Pending],
+            [Done, Active, Pending, Pending],
+            [Done, Done, Pending, Pending],
+            [Done, Done, Active, Pending],
+            [Done, Done, Active, Pending],
+            [Done, Done, Done, Done],
+            [Pending, Pending, Pending, Pending],
+        ];
+        let states = every_state();
+        assert_eq!(states.len(), expected.len());
+        for (state, want) in states.iter().zip(expected) {
+            assert_eq!(step_statuses(state), want, "{state:?}");
+        }
+    }
+
+    #[test]
+    fn a_failure_marks_the_step_that_was_active() {
+        use StepStatus::*;
+        let failed = SetupState::Failed {
+            error: String::new(),
+        };
+        let installing = SetupState::Installing {
+            progress_percent: 20,
+            step: String::new(),
+        };
+        assert_eq!(failing_step(&SetupState::Checking), Some(0));
+        assert_eq!(failing_step(&installing), Some(1));
+        assert_eq!(
+            step_statuses_after(&failed, failing_step(&installing)),
+            [Done, Failed, Pending, Pending]
+        );
+        assert_eq!(
+            step_statuses_after(&failed, Some(0)),
+            [Failed, Pending, Pending, Pending]
+        );
+        assert_eq!(
+            step_statuses_after(&failed, Some(3)),
+            [Done, Done, Done, Failed]
+        );
+    }
+
+    #[test]
+    fn a_failure_without_a_remembered_step_stays_pending() {
+        let failed = SetupState::Failed {
+            error: String::new(),
+        };
+        assert_eq!(step_statuses_after(&failed, None), step_statuses(&failed));
+        // The remembered step is ignored outside the failed state.
+        assert_eq!(
+            step_statuses_after(&SetupState::Checking, Some(2)),
+            step_statuses(&SetupState::Checking)
+        );
+    }
+
+    #[test]
+    fn the_first_unfinished_step_takes_the_blame_without_an_active_one() {
+        let ready = SetupState::SdkReady {
+            active_path: PathBuf::new(),
+            manifest_digest: String::new(),
+        };
+        assert_eq!(failing_step(&ready), Some(2));
+        let rendered = SetupState::Rendered {
+            frame_path: PathBuf::new(),
+            build_time: Duration::ZERO,
+            render_time: Duration::ZERO,
+        };
+        assert_eq!(failing_step(&rendered), None);
+    }
+
+    #[test]
+    fn at_most_one_step_is_active() {
+        for state in every_state() {
+            let active = step_statuses(&state)
+                .iter()
+                .filter(|s| **s == StepStatus::Active)
+                .count();
+            assert!(active <= 1, "{state:?}");
+        }
     }
 }

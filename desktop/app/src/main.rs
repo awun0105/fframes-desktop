@@ -166,49 +166,66 @@ enum Qualification {
 }
 
 fn run_studio(qualification: Option<Qualification>) {
-    gpui_platform::application().run(move |cx: &mut App| {
-        fframes_studio::text_input::bind_keys(cx);
-        let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
-        let window = cx
-            .open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(gpui::TitlebarOptions {
-                        title: Some("fframes Studio".into()),
-                        appears_transparent: false,
-                        traffic_light_position: None,
-                    }),
-                    ..Default::default()
-                },
-                move |window, cx| {
-                    cx.new(|cx| {
-                        let mut shell = fframes_studio::studio_shell::StudioShell::new(window, cx);
-                        match qualification {
-                            Some(Qualification::Playback { project, output }) => {
-                                shell.start_qualification(project, output, cx)
+    gpui_platform::application()
+        .with_assets(fframes_studio::assets::Assets)
+        .run(move |cx: &mut App| {
+            fframes_studio::text_input::bind_keys(cx);
+            fframes_studio::design_system::set_appearance(
+                fframes_studio::design_system::appearance_from_window(cx.window_appearance()),
+            );
+            let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
+            let window = cx
+                .open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(bounds)),
+                        titlebar: Some(gpui::TitlebarOptions {
+                            title: Some("fframes Studio".into()),
+                            appears_transparent: false,
+                            traffic_light_position: None,
+                        }),
+                        ..Default::default()
+                    },
+                    move |window, cx| {
+                        cx.new(|cx| {
+                            let mut shell =
+                                fframes_studio::studio_shell::StudioShell::new(window, cx);
+                            cx.observe_window_appearance(window, |_shell, window, cx| {
+                                fframes_studio::design_system::set_appearance(
+                                    fframes_studio::design_system::appearance_from_window(
+                                        window.appearance(),
+                                    ),
+                                );
+                                cx.notify();
+                            })
+                            .detach();
+                            match qualification {
+                                Some(Qualification::Playback { project, output }) => {
+                                    shell.start_qualification(project, output, cx)
+                                }
+                                Some(Qualification::AgentPanel {
+                                    project,
+                                    output,
+                                    test_ownership,
+                                }) => {
+                                    shell.start_agent_telemetry(project, output, test_ownership, cx)
+                                }
+                                None => (),
                             }
-                            Some(Qualification::AgentPanel {
-                                project,
-                                output,
-                                test_ownership,
-                            }) => shell.start_agent_telemetry(project, output, test_ownership, cx),
-                            None => (),
-                        }
-                        shell
-                    })
-                },
-            )
-            .expect("failed to open Studio");
-        // Closing the last window must not release the shell before its awaited
-        // quit hook can stop audio and drop the final materialization consumers.
-        let shell = window.entity(cx).expect("Studio root entity");
-        cx.on_window_closed(move |cx, _| {
-            let _keep_alive = &shell;
-            cx.quit();
-        })
-        .detach();
-        cx.activate(true);
-    });
+                            shell
+                        })
+                    },
+                )
+                .expect("failed to open Studio");
+            // Closing the last window must not release the shell before its awaited
+            // quit hook can stop audio and drop the final materialization consumers.
+            let shell = window.entity(cx).expect("Studio root entity");
+            cx.on_window_closed(move |cx, _| {
+                let _keep_alive = &shell;
+                cx.quit();
+            })
+            .detach();
+            cx.activate(true);
+        });
 }
 
 fn run_spike_ui(qualification: Option<PresentationQualification>) {

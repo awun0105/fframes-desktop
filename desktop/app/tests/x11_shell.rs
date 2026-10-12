@@ -17,9 +17,9 @@
 //!     cargo test --locked -p fframes-studio --test x11_shell -- --ignored --nocapture
 //! ```
 //!
-//! Requires `Xvfb` and `xdotool`. The window is 1280x800 at the origin, and the click
-//! positions below are that layout's controls; a layout change must update them (the test
-//! then fails loudly, it never passes by accident).
+//! Requires `Xvfb` and `xdotool`. The window is 1280x800 at the origin. Every click target
+//! is the measured bounds the app reports while qualifying (the agent tabs and the Undo
+//! button included), so layout changes never move a click off its control.
 #![cfg(unix)]
 
 use serde_json::Value;
@@ -40,10 +40,6 @@ const WAIT: Duration = Duration::from_secs(240);
 
 /// Both native tests build with the same SDK and cache directories: one at a time.
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-const CHAT_TAB: (u32, u32) = (906, 162);
-const PROJECT_TAB: (u32, u32) = (969, 162);
-const UNDO_BUTTON: (u32, u32) = (1000, 470);
 
 struct Owned(Child);
 
@@ -257,6 +253,18 @@ fn button_centre(value: &Value, name: &str) -> (u32, u32) {
         (at(0) + at(2) / 2.).round() as u32,
         (at(1) + at(3) / 2.).round() as u32,
     )
+}
+
+/// Clicks a button or tab by the bounds the panel measured once they stopped changing.
+fn click_panel_button(screen: &Screen, window: &str, telemetry: &Telemetry, name: &str) {
+    let measured = telemetry.settled(name, |v| v["panel"]["buttons"][name].clone());
+    let (x, y) = button_centre(&measured["panel"], name);
+    // The panel scrolls, so a measured control can sit outside the 1280x800 window.
+    assert!(
+        x < 1280 && y < 800,
+        "the {name} button is outside the window: {measured}"
+    );
+    screen.click(window, (x, y));
 }
 
 fn click_prompt(screen: &Screen, window: &str, telemetry: &Telemetry) {
@@ -491,9 +499,9 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     );
 
     // Undo from the Project tab: validated, published, handed off again.
-    screen.click(&window, PROJECT_TAB);
+    click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
     std::thread::sleep(Duration::from_millis(500));
-    screen.click(&window, UNDO_BUTTON);
+    click_panel_button(&screen, &window, &telemetry, "agent-undo");
     let undone = telemetry.wait("the Undo hand-off", |v| {
         v["panel"]["undo"] == "unavailable"
             && v["panel"]["handoff"] == "Displayed"
@@ -707,7 +715,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     let scene_label = scene["panel"]["submit_scope"].as_str().unwrap().to_owned();
     screen.screenshot("scene-selected-before-submit");
     // Validated changes wait for the user: the review shows before and after evidence.
-    screen.click(&window, PROJECT_TAB);
+    click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
     let policy = telemetry.settled("the review-policy button", |v| {
         v["panel"]["buttons"]["agent-policy"].clone()
     });
@@ -715,7 +723,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     telemetry.wait("manual review to be selected", |v| {
         v["panel"]["review_policy"] == "ManualReview"
     });
-    screen.click(&window, CHAT_TAB);
+    click_panel_button(&screen, &window, &telemetry, "agent-tab-Chat");
 
     click_prompt(&screen, &window, &telemetry);
     screen.xdotool(&[
@@ -793,7 +801,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     // The range task uses the default AutoApply policy. Its terminal task snapshot must
     // already have both evidence images, not merely artifact references that were just
     // released during finalization.
-    screen.click(&window, PROJECT_TAB);
+    click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
     let policy = telemetry.settled("the review-policy button", |v| {
         v["panel"]["buttons"]["agent-policy"].clone()
     });
@@ -801,7 +809,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     telemetry.wait("AutoApply to be selected", |v| {
         v["panel"]["review_policy"] == "AutoApply"
     });
-    screen.click(&window, CHAT_TAB);
+    click_panel_button(&screen, &window, &telemetry, "agent-tab-Chat");
 
     // A frame range from the playhead with the timeline's own bracket keys. The layout
     // moved with the hand-off: measure the ruler again.
@@ -872,7 +880,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     assert!(project.join("notes2.txt").is_file());
 
     // The stale-scope case needs a candidate that waits for an explicit review action.
-    screen.click(&window, PROJECT_TAB);
+    click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
     let policy = telemetry.settled("the review-policy button", |v| {
         v["panel"]["buttons"]["agent-policy"].clone()
     });
@@ -880,7 +888,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     telemetry.wait("ManualReview to be selected", |v| {
         v["panel"]["review_policy"] == "ManualReview"
     });
-    screen.click(&window, CHAT_TAB);
+    click_panel_button(&screen, &window, &telemetry, "agent-tab-Chat");
 
     // Stale queued scope: a held task runs, a scoped brief queues behind it, the displayed
     // preview is rebuilt (a new identity), and the queued scope is marked stale and then
