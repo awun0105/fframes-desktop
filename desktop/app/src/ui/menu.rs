@@ -56,13 +56,19 @@ impl MenuState {
     /// Marks rows as disabled (`true`); missing entries stay enabled. The
     /// highlight moves to the first enabled row when it sits on a disabled one.
     pub fn with_disabled(mut self, disabled: Vec<bool>) -> Self {
+        self.set_disabled(disabled);
+        self
+    }
+
+    /// [`Self::with_disabled`] on an open menu, for availability that changes
+    /// while the menu is showing.
+    pub fn set_disabled(&mut self, disabled: Vec<bool>) {
         self.disabled = (0..self.items.len())
             .map(|i| disabled.get(i).copied().unwrap_or(false))
             .collect();
         if self.is_disabled(self.highlighted) {
             self.highlighted = step_enabled(&self.disabled, self.highlighted, 1).unwrap_or(0);
         }
-        self
     }
 
     pub fn is_disabled(&self, index: usize) -> bool {
@@ -423,6 +429,17 @@ mod tests {
         assert_eq!(menu_key(&at(&flags, 1), Nav::Up), MenuKey::Highlight(3));
         assert_eq!(menu_key(&at(&flags, 3), Nav::Home), MenuKey::Highlight(1));
         assert_eq!(menu_key(&at(&flags, 1), Nav::End), MenuKey::Highlight(3));
+    }
+
+    #[test]
+    fn availability_can_change_while_the_menu_is_open() {
+        let mut menu = state(3, 0);
+        assert_eq!(menu_key(&menu, Nav::Activate), MenuKey::Commit(0));
+        menu.set_disabled(vec![true, false, false]);
+        assert!(menu.is_disabled(0));
+        assert_eq!(menu.highlighted(), 1);
+        menu.set_disabled(vec![]);
+        assert!(!menu.is_disabled(0));
     }
 
     #[test]

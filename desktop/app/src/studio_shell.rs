@@ -3991,8 +3991,16 @@ impl StudioShell {
         }
     }
 
+    /// Re-reads availability so an open menu never shows or runs a stale enable flag.
+    fn sync_overflow(&mut self) {
+        let actions = self.current_overflow_actions();
+        self.overflow_menu
+            .set_disabled(actions.iter().map(|(_, enabled)| !enabled).collect());
+        self.overflow_actions = actions;
+    }
+
     fn run_overflow(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((action, true)) = self.overflow_actions.get(index).copied() else {
+        let Some(action) = enabled_overflow_action(&self.current_overflow_actions(), index) else {
             return;
         };
         self.close_overflow(window, cx);
@@ -4241,8 +4249,22 @@ fn overflow_actions(idle: bool, has_project: bool, has_draft: bool) -> Vec<(Over
     ]
 }
 
+/// The action at `index` when it is currently available.
+fn enabled_overflow_action(
+    actions: &[(OverflowAction, bool)],
+    index: usize,
+) -> Option<OverflowAction> {
+    match actions.get(index) {
+        Some((action, true)) => Some(*action),
+        _ => None,
+    }
+}
+
 impl Render for StudioShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.overflow_open {
+            self.sync_overflow();
+        }
         if self.clear_images {
             self.images.clear(window);
             self.clear_images = false;
@@ -4456,6 +4478,18 @@ mod tests {
         assert_eq!(format_clock(5.5), "0:05.50");
         assert_eq!(format_clock(125.999), "2:05.99");
         assert_eq!(format_clock(-3.), "0:00.00");
+    }
+
+    #[test]
+    fn a_click_on_an_action_that_became_unavailable_is_inert() {
+        use OverflowAction::*;
+        let idle = overflow_actions(true, true, false);
+        assert_eq!(enabled_overflow_action(&idle, 1), Some(Checkpoint));
+        // The shell went busy after the menu opened.
+        let busy = overflow_actions(false, true, false);
+        assert_eq!(enabled_overflow_action(&busy, 1), None);
+        assert_eq!(enabled_overflow_action(&busy, 4), Some(RevealCheckpoint));
+        assert_eq!(enabled_overflow_action(&busy, 9), None);
     }
 
     #[test]
