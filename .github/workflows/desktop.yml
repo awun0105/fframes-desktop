@@ -1,9 +1,9 @@
 name: Desktop CI
 
-# Hosted Ubuntu runs what needs a clean VM with sudo: the SDK, the package and the
-# isolated-account presentation test. Tests and the real-worker integration run on the
-# self-hosted runners (desktop-self-hosted.yml), which never take pull requests because this
-# repository is public; pull requests from forks get the hosted tests instead.
+# The heavy work runs on the self-hosted runners (desktop-self-hosted.yml) for every push. They
+# never take pull requests because this repository is public, so pull requests from other
+# repositories get the hosted tests here. The isolated-account presentation test needs root
+# and a throwaway machine, so it runs here, on hosted Ubuntu, for pushes to main and manual runs.
 
 on:
   pull_request:
@@ -52,7 +52,8 @@ env:
 jobs:
   fork-tests:
     name: Desktop tests for a fork (ubuntu-24.04)
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    # `head.repo.fork` is true for this repository too (it is a fork of fframes), so compare names.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:
@@ -73,7 +74,8 @@ jobs:
 
   package:
     # macOS is paused: the studio-agent-spike process-group tests fail there (GroupSurvivors).
-    name: Desktop package and presentation (ubuntu-24.04)
+    name: Desktop package and isolated presentation (ubuntu-24.04)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:

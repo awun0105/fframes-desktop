@@ -50,12 +50,16 @@ jobs:
           for package in libclang-dev libssl-dev libasound2-dev; do
             dpkg -s "$package" >/dev/null 2>&1 || missing="$missing $package"
           done
+          # The presentation test drives the app on a virtual display.
+          command -v Xvfb >/dev/null || missing="$missing xvfb"
+          command -v xdotool >/dev/null || missing="$missing xdotool"
+          python3 -c "import PIL" 2>/dev/null || missing="$missing python3-pil"
           if [ -n "$missing" ]; then
             echo "::error::Missing native prerequisites. As root, run: apt-get install -y$missing"; exit 1
           fi
           # Only the advisory audio stress uses these.
-          for tool in Xvfb pulseaudio pactl; do
-            command -v "$tool" >/dev/null || echo "::warning::$tool is missing; the advisory M2 audio stress will fail (apt-get install -y xvfb pulseaudio pulseaudio-utils python3-pil)"
+          for tool in pulseaudio pactl; do
+            command -v "$tool" >/dev/null || echo "::warning::$tool is missing; the advisory M2 audio stress will fail (apt-get install -y pulseaudio pulseaudio-utils)"
           done
           llvm_lib="$(find /usr/lib -name "libclang.so" 2>/dev/null | head -n1)"
           if [ -n "$llvm_lib" ]; then
@@ -121,21 +125,46 @@ jobs:
         run: |
           cargo build --locked --manifest-path desktop/Cargo.toml -p fframes-studio --bin fframes-studio
           FFRAMES_SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" python3 desktop/scripts/qualify-m2-playback.py --application "$CARGO_TARGET_DIR/debug/fframes-studio" --project "$STUDIO_M2_FIXTURE" --sdk-home "$STUDIO_M2_HOME" --out "$RUNNER_TEMP/m2-native" --virtual-audio --inject-build-failures
-      # The Linux package is built and tested on hosted Ubuntu (desktop.yml), the only source of
-      # release packages.
-      - name: Retain worker frame and M2 evidence
+      # Test builds are named studio-test-*: the release workflow collects only
+      # fframes-studio-* packages, which come from hosted runners.
+      - name: Package native app and SDK test build
+        run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
+      - name: Native presentation, input and source click
+        # The same check as the hosted isolated-account run, as the runner user: that variant
+        # needs root and a throwaway machine, so it runs on hosted Ubuntu for main.
+        run: python3 desktop/scripts/qualify-linux-native.py --application "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu/bin/fframes-studio" --bundle "$RUNNER_TEMP/studio-sdk" --out "$RUNNER_TEMP/linux-native-evidence"
+      - name: Retain test build and evidence
+        id: test-build
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: self-hosted-linux-evidence
+          name: studio-test-x86_64-unknown-linux-gnu
           path: |
+            ${{ runner.temp }}/studio-test-x86_64-unknown-linux-gnu.zip
             ${{ runner.temp }}/worker-frame/*.png
+            ${{ runner.temp }}/linux-native-evidence/presentation.json
+            ${{ runner.temp }}/linux-native-evidence/native-window.png
+            ${{ runner.temp }}/linux-native-evidence/application.log
             ${{ runner.temp }}/m2-parity.json
             ${{ runner.temp }}/m2-native/*.json
             ${{ runner.temp }}/m2-native/*.png
             ${{ runner.temp }}/m2-native/*.log
           if-no-files-found: warn
           retention-days: 14
+      - name: Show how to download the test build
+        if: always() && steps.test-build.outputs.artifact-url != ''
+        env:
+          ARTIFACT_URL: ${{ steps.test-build.outputs.artifact-url }}
+        run: |
+          {
+            echo "### Linux test build"
+            echo
+            echo "[Download the zip]($ARTIFACT_URL) (kept 14 days), or run:"
+            echo
+            echo '```'
+            echo "gh run download $GITHUB_RUN_ID -R $GITHUB_REPOSITORY -n studio-test-x86_64-unknown-linux-gnu -D studio-test"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Remove the M2 fixture
         if: always()
         run: if [ -n "${STUDIO_M2_TMP:-}" ]; then rm -rf "$STUDIO_M2_TMP"; fi
@@ -242,19 +271,31 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:AUDIO_PREVIEW_EVIDENCE = "$env:RUNNER_TEMP\m2-parity.json"
           cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
-      - name: Package native app and SDK artifact
+      # Test builds are named studio-test-*: the release workflow collects only
+      # fframes-studio-* packages, which come from hosted runners.
+      - name: Package native app and SDK test build
         run: |
-          $out = "$env:RUNNER_TEMP\fframes-studio-x86_64-pc-windows-msvc"
+          $out = "$env:RUNNER_TEMP\studio-test-x86_64-pc-windows-msvc"
           Remove-Item -LiteralPath $out, "$out.zip" -Recurse -Force -ErrorAction SilentlyContinue
           python desktop/scripts/package-phase-zero.py --out $out --sdk-bundle "$env:RUNNER_TEMP\studio-sdk"
-      - name: Retain artifact and M2 evidence
+      - name: Retain test build and M2 evidence
+        id: test-build
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: studio-x86_64-pc-windows-msvc
+          name: studio-test-x86_64-pc-windows-msvc
           path: |
-            ${{ runner.temp }}/fframes-studio-x86_64-pc-windows-msvc.zip
+            ${{ runner.temp }}/studio-test-x86_64-pc-windows-msvc.zip
             ${{ runner.temp }}/worker-frame/*.png
             ${{ runner.temp }}/m2-parity.json
           if-no-files-found: warn
           retention-days: 14
+      - name: Show how to download the test build
+        if: always() && steps.test-build.outputs.artifact-url != ''
+        env:
+          ARTIFACT_URL: ${{ steps.test-build.outputs.artifact-url }}
+        run: |
+          $command = "gh run download $env:GITHUB_RUN_ID -R $env:GITHUB_REPOSITORY -n studio-test-x86_64-pc-windows-msvc -D studio-test"
+          $fence = '```'
+          $summary = "### Windows test build`n`n[Download the zip]($env:ARTIFACT_URL) (kept 14 days), or run:`n`n$fence`n$command`n$fence`n"
+          [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $summary)

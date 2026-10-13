@@ -21,6 +21,11 @@ Linux ~6.5 min (unit tests only).
 - Hosted Ubuntu runs on every PR, but only what needs a clean sudo-capable VM: build (cached),
   SDK, package and the isolated-account presentation test.
 - PRs from forks get hosted fmt/test/clippy; own PRs skip it (self-hosted covers them).
+- Revised the same day: all heavy work runs self-hosted. Self-hosted Linux also packages and
+  runs the presentation check as the runner user; the root-only isolated-account variant runs
+  on hosted Ubuntu for pushes to `main` and manual runs only. Self-hosted test builds are
+  uploaded as `studio-test-<target>` for download, never under the release `fframes-studio-*`
+  name. Setup guide: `docs/desktop/self-hosted-runners.md`.
 
 ## Constraints
 
