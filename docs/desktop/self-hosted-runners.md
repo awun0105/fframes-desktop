@@ -1,18 +1,25 @@
 # Self-hosted runners
 
-The heavy desktop checks run on two self-hosted runners, one Ubuntu and one Windows, in
+The desktop checks run on two self-hosted runners, one Ubuntu and one Windows, in
 [Desktop self-hosted validation](../../.github/workflows/desktop-self-hosted.yml). Both keep
 their build folder between runs, so only changed crates compile.
+
+While the desktop code is being refactored, every push runs only the fast checks. The heavy
+tests run when you start the workflow by hand with **full** ticked; run them before a release:
+
+```sh
+gh workflow run "Desktop self-hosted validation" -R khanhthanhdev/fframes-desktop --ref <branch> -f full=true
+```
 
 ## What runs where
 
 | Check | Where | When |
 | --- | --- | --- |
-| fmt, tests, clippy, packaging tests, ledgers | self-hosted Linux and Windows | every push |
-| Real worker, SDK, managed, portable, preview, timeline, audio parity | self-hosted Linux and Windows | every push |
-| Package (test build) and isolated-account presentation, input and source click | self-hosted Linux | every push |
-| Package (test build) | self-hosted Windows | every push |
-| M2 virtual audio stress (advisory) | self-hosted Linux | every push |
+| fmt, tests, clippy, protocol/runtime tests, packaging tests, ledgers | self-hosted Linux and Windows | every push |
+| SDK and Windows test build | self-hosted Windows | pushes to `main`, full runs |
+| Real worker, SDK, managed, portable, preview, timeline, audio parity | self-hosted Linux and Windows | full runs |
+| Linux test build and isolated-account presentation, input and source click | self-hosted Linux | full runs |
+| M2 virtual audio stress (advisory) | self-hosted Linux | full runs |
 | fmt, tests, clippy for pull requests from other repositories | hosted Ubuntu ([Desktop CI](../../.github/workflows/desktop.yml)) | those pull requests |
 
 The repository is public, so the self-hosted workflow runs only on `push` and **Run workflow**.
@@ -109,11 +116,12 @@ no `Xvfb :94` process is running.
 
 ## Test builds
 
-Every self-hosted run uploads a test build, kept for 14 days:
+Test builds are kept for 14 days:
 
-- `studio-test-x86_64-pc-windows-msvc`: the packaged Windows app with the SDK.
+- `studio-test-x86_64-pc-windows-msvc`: the packaged Windows app with the SDK, from every push to
+  `main` and every full run.
 - `studio-test-x86_64-unknown-linux-gnu`: the packaged Linux app with the SDK, plus the
-  presentation and audio evidence.
+  presentation and audio evidence, from full runs only.
 
 The run's summary page links the zip directly and shows a `gh run download` command for it. To
 download the newest Windows test build from `main`:
@@ -122,6 +130,8 @@ download the newest Windows test build from `main`:
 gh run download "$(gh run list -R khanhthanhdev/fframes-desktop -w "Desktop self-hosted validation" -b main -s success -L 1 --json databaseId -q '.[0].databaseId')" -R khanhthanhdev/fframes-desktop -n studio-test-x86_64-pc-windows-msvc -D studio-test
 ```
 
-Replace `main` with a branch name to get that branch's build. Test builds are named
+A branch has a test build only after a full run on it: replace `main` with the branch name and
+add `-e workflow_dispatch` to pick the newest full run (also for the Linux build on `main`). Test
+builds are named
 `studio-test-*` so a release never picks them up: [Desktop Release](../../.github/workflows/desktop-release.yml)
 collects only `fframes-studio-*` packages, which are built on hosted runners.
