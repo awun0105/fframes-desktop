@@ -33,7 +33,8 @@ Linux ~6.5 min (unit tests only).
 ## Constraints
 
 - Public repo: self-hosted runners stay push-only, never `pull_request`.
-- The isolated-account test needs sudo; the self-hosted Linux runner has none.
+- The isolated-account test needs root; the self-hosted Linux runner user has passwordless sudo
+  (see the second revision above).
 - A package built on the self-hosted VM must not be uploaded under a name the release
   workflow collects (`fframes-studio-*.zip` from any run id).
 - FFmpeg bakes its install prefix into its pkg-config files: cache and restore it at the same
@@ -49,9 +50,8 @@ Linux ~6.5 min (unit tests only).
 3. `desktop-phase-zero.yml`: deleted; its one unique step lives in `desktop.yml` `package`.
 4. `desktop-self-hosted.yml` Linux job: persistent build folder and FFmpeg in the runner's
    tool cache; worker, roundtrip, SDK, managed, portable, preview/timeline, audio parity,
-   advisory M2 stress; prerequisite check names what is missing. It does not package: the
-   Linux package is built once, on hosted Ubuntu. The SDK is assembled on both, because the
-   self-hosted integration tests need it.
+   advisory M2 stress; prerequisite check names what is missing. It also packages the test build
+   and runs the isolated-account presentation check with sudo (see the revisions above).
 5. `test-qualification-m7.py`: the Windows FFmpeg pin check reads the workflows that pin it
    (it currently fails on `main` because two listed workflows never contained the pin).
 6. `docs/desktop/phase-zero-feasibility.md`: workflow references.
@@ -67,3 +67,16 @@ Linux ~6.5 min (unit tests only).
 - Self-hosted Linux may lack FFmpeg build tools, Xvfb or PulseAudio: the prerequisite step
   fails with the exact apt line for an admin; M2 stress stays advisory.
 - Persistent build folder grows on the runner's disk; the job prints free space.
+
+## M2 stress status (2026-10-13)
+
+- Two driver bugs fixed: a seek fraction that rounded onto the ruler's right edge clicked outside
+  its hit area (the run then timed out), and the 100 ms pointer settle sleep was counted inside
+  every seek latency sample.
+- An advisory failure now raises a warning annotation and a step summary line; the log prints a
+  latency summary.
+- On the self-hosted Ubuntu runner the full run (2001 seeks, 50 rebuilds) takes about 17.5 min
+  and fails only the paused seek p95 budget: p50 342 ms, p95 465 ms, max 684 ms against 150 ms
+  (reference run 2026-10-04: p95 96 ms on another machine). The preview pane is now 566x288 at
+  scale 0.4; the reference pane was 718x118-132 at scale 0.16-0.18. Whether the gap is the
+  machine or the app is open; the step stays advisory until the user decides.
