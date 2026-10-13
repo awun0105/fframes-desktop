@@ -732,10 +732,11 @@ fn mac_membership_with(
     scan: &mut dyn FnMut() -> MacProcScan,
     pause: &dyn Fn(),
 ) -> GroupMembership {
-    match probe() {
-        Probe::Gone => return GroupMembership::Empty,
-        Probe::Unknown => return GroupMembership::Present,
-        Probe::Exists => {}
+    // macOS answers `kill(-pgid, 0)` with EPERM, not ESRCH, while every member is an
+    // unreaped zombie (the leader before `wait`), so an inconclusive probe is settled by
+    // the scan; an incomplete scan still counts as present.
+    if probe() == Probe::Gone {
+        return GroupMembership::Empty;
     }
     let mut quiet = 0;
     for _ in 0..4 {
@@ -2908,6 +2909,30 @@ mod tests {
         );
         assert_eq!(membership, GroupMembership::Empty);
         assert_eq!(scans, 2, "one quiet snapshot is not enough to prove empty");
+
+        // The kernel's EPERM for a zombie-only group defers to the scan.
+        let membership = mac_membership_with(
+            500,
+            Some((10, 20)),
+            &mut || Probe::Unknown,
+            &mut || zombie_group.clone(),
+            &|| {},
+        );
+        assert_eq!(membership, GroupMembership::Empty);
+        let incomplete = MacProcScan {
+            entries: Vec::new(),
+            complete: false,
+        };
+        assert_eq!(
+            mac_membership_with(
+                500,
+                Some((10, 20)),
+                &mut || Probe::Unknown,
+                &mut || incomplete.clone(),
+                &|| {},
+            ),
+            GroupMembership::Present
+        );
     }
 
     #[test]
