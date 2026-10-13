@@ -22,13 +22,13 @@ Part of [the studio rewrite roadmap](../261013-0733-studio-rewrite-roadmap/plan.
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
 | 1 | [Feasibility spikes](./phase-01-feasibility-spikes.md) | 6-8d | none | In progress |
-| 2 | [Switch the app to Cap's GPUI fork](./phase-02-cap-gpui-switch.md) | 3-4d | 1 | In progress |
+| 2 | [Switch the app to Cap's GPUI fork](./phase-02-cap-gpui-switch.md) | 3-4d | 1 | Complete |
 | 3 | [Parity gpui tests](./phase-03-parity-gpui-tests.md) | 3-5d | 2 | Pending |
 
 ## Success criteria
 
 - [ ] All five spikes pass, or the user has chosen a fallback before M2 starts; M2 and M5 estimates are updated from spike S4.
-- [ ] The app runs on Cap's GPUI fork on Windows (this VM) and builds and tests on macOS CI.
+- [x] The app runs on Cap's GPUI fork on Windows (this VM) and builds and tests on macOS CI.
 - [ ] `cargo test -p fframes-studio --test parity` covers every parity item and passes on Windows, Linux and macOS CI.
 - [ ] Existing qualification jobs still pass (they are removed in M2 phase 7).
 
