@@ -217,11 +217,19 @@ class Driver:
         self.button("retry-audio-output")
 
     def point(self, x: float, y: float, click: bool = True) -> None:
-        assert self.window
-        command = ["xdotool", "mousemove", "--window", self.window, str(round(x)), str(round(y))]
+        self.move(x, y)
         if click:
-            command += ["sleep", "0.1", "mousedown", "1", "mouseup", "1"]
-        self.command(*command)
+            self.click()
+
+    def move(self, x: float, y: float) -> None:
+        """Move the pointer and give the window time to process it: a click that lands before
+        the toolkit has seen the move is dropped."""
+        assert self.window
+        self.command("xdotool", "mousemove", "--window", self.window, str(round(x)), str(round(y)))
+        time.sleep(0.1)
+
+    def click(self) -> None:
+        self.command("xdotool", "mousedown", "1", "mouseup", "1")
 
     def button(self, name: str) -> None:
         box = self.latest.get("buttons", {}).get(name)
@@ -251,16 +259,20 @@ class Driver:
         if not isinstance(bounds, list) or len(bounds) != 4:
             raise QualificationError("missing timeline ruler geometry")
         before = int(self.latest.get("seek_serial", 0))
-        target_x = bounds[0] + max(0.001, min(0.999, fraction)) * bounds[2]
+        # The ruler's hit area ends before its right edge (left + width), so a fraction
+        # that rounds onto that edge would click outside it and never seek.
+        target_x = min(bounds[0] + bounds[2] - 1, max(bounds[0], round(bounds[0] + max(0.001, min(0.999, fraction)) * bounds[2])))
         geometry = self.latest["thumbnail_metrics"]
         # Allow two pixels for X11's border and integer pointer rounding.
         # Derive the allowed nearest frames
         # independently; still require the exact latest serial and displayed frame.
         def cursor(offset):
-            return min(self.latest["total_frames"], max(0, math.floor((round(target_x) - bounds[0] + offset + geometry["scroll_x"]) / geometry["pixels_per_second"] * self.latest["fps"] + 0.5)))
+            return min(self.latest["total_frames"], max(0, math.floor((target_x - bounds[0] + offset + geometry["scroll_x"]) / geometry["pixels_per_second"] * self.latest["fps"] + 0.5)))
         low, high = cursor(-2), cursor(2)
+        self.move(target_x, bounds[1] + bounds[3] * 0.55)
+        # Seek latency runs from the click, not from the pointer move and its settle time.
         begun = time.monotonic()
-        self.point(target_x, bounds[1] + bounds[3] * 0.55)
+        self.click()
         self.wait(
             lambda t: int(t.get("seek_serial", 0)) > before and low <= t.get("position", -1) <= high and t.get("paint_serial") == t.get("seek_serial") and t.get("paint_frame") == min(t["position"], t["total_frames"] - 1),
             f"matching painted seek frame in [{low}, {high}] after serial {before}",
