@@ -64,14 +64,19 @@ fn spawn(command: &mut Command) -> Owned {
     Owned(command.spawn().expect("spawn"))
 }
 
-/// The description names the interpreter by absolute path (the global PATH is not consulted).
-fn python3() -> String {
-    std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
-        .map(|dir| dir.join("python3"))
-        .find(|candidate| candidate.is_file())
-        .expect("python3 on PATH")
-        .to_string_lossy()
-        .into_owned()
+/// The description names the resolved test interpreter by absolute path (the global PATH
+/// is not consulted).
+fn python() -> String {
+    let python = studio_test_support::python();
+    let absolute = if python.is_absolute() {
+        python.to_path_buf()
+    } else {
+        std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+            .map(|dir| dir.join(python))
+            .find(|candidate| candidate.is_file())
+            .expect("the test interpreter on PATH")
+    };
+    absolute.to_string_lossy().into_owned()
 }
 
 fn tool_available(name: &str) -> bool {
@@ -344,7 +349,7 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
         data.join("fframes-studio/agent-adapter.json"),
         serde_json::json!({
             "provider": "scripted-peer",
-            "executable": python3(),
+            "executable": python(),
             "args": [
                 format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR")),
                 evidence.to_string_lossy()
@@ -633,7 +638,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
         data.join("fframes-studio/agent-adapter.json"),
         serde_json::json!({
             "provider": "scripted-peer",
-            "executable": python3(),
+            "executable": python(),
             "args": [
                 format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR")),
                 evidence.to_string_lossy()

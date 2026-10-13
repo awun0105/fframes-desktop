@@ -653,6 +653,9 @@ pub struct WorkflowSnapshot {
     pub rows: Vec<Arc<Row>>,
     /// Older rows exist in the conversation log (`history_page`).
     pub older_rows: bool,
+    /// Counts the New chat resets of this workflow: rows paged in under another value
+    /// belong to an earlier conversation.
+    pub chat: u64,
     /// The policy the next task will freeze.
     pub review_policy: ReviewPolicy,
     pub undo: UndoView,

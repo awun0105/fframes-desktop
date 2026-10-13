@@ -9,10 +9,12 @@
 //!   in place while the reader's position holds.
 //! * [`controls`] decides which controls exist in which state (pure, unit-tested).
 //! * [`host`] holds the app-local adapter description and the workflow inbox.
+//! * [`provider_setup`] selects providers, detects and installs adapters and turns them on.
 pub mod controls;
 pub mod host;
 #[path = "conversation_panel/provider-profiles.rs"]
 pub mod provider_profiles;
+pub mod provider_setup;
 pub mod qualification;
 pub mod rows;
 
@@ -77,7 +79,7 @@ use crate::{
     text_input::TextInput,
     ui::{
         self, Badge, BoundsProbe, Button, ButtonVariant, Collapsible, FieldRow, Icon, IconButton,
-        IconButtonSize, Notice, Toggle, Tone as UiTone, icon,
+        IconButtonSize, Menu, MenuState, Notice, Select, Toggle, Tone as UiTone, icon,
     },
 };
 use controls::{
@@ -85,7 +87,7 @@ use controls::{
     UndoControl, derive_controls, guidance, route_input_key,
 };
 use gpui::{
-    AnyElement, AppContext, Context, ElementId, Entity, EventEmitter, FollowMode,
+    AnyElement, AppContext, Context, ElementId, Entity, EventEmitter, FocusHandle, FollowMode,
     InteractiveElement, IntoElement, ListAlignment, ListState, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, canvas, div, list, px,
 };
@@ -167,7 +169,38 @@ pub struct Attachment {
     pub policy: OwnershipPolicy,
 }
 
-type PageResult = (u64, Result<Vec<Arc<Row>>, String>);
+/// (attachment serial, chat generation at request time, the page).
+type PageResult = (u64, u64, Result<Vec<Arc<Row>>, String>);
+
+/// The open menu of a select-type agent option: the names it shows and, row for row, the
+/// values they commit. Both are built together, so a click commits the value whose name the
+/// reader saw even when the agent changed its options since.
+struct ConfigMenu {
+    state: MenuState,
+    values: Vec<String>,
+}
+
+impl ConfigMenu {
+    /// A menu listing the values of the select-type option `id`, the current one checked.
+    fn of(config: &[studio_agent_spike::driver::ConfigOption], id: &str) -> Option<Self> {
+        let option = config.iter().find(|o| o.id == id)?;
+        let ConfigKind::Select { current, values } = &option.kind else {
+            return None;
+        };
+        let names = values.iter().map(|v| v.name.clone().into()).collect();
+        Some(Self {
+            state: MenuState::new(names, values.iter().position(|v| &v.value == current)),
+            values: values.iter().map(|v| v.value.clone()).collect(),
+        })
+    }
+
+    fn empty() -> Self {
+        Self {
+            state: MenuState::new(Vec::new(), None),
+            values: Vec::new(),
+        }
+    }
+}
 
 #[derive(Default)]
 struct PageSlot {
@@ -199,6 +232,8 @@ pub struct ConversationPanel {
     policy: OwnershipPolicy,
     saves: SaveTracker,
     mcp_choice: McpChoice,
+    /// Detect agents, Install adapter and the turn-on of a Select or Install click.
+    agent_setup: provider_setup::AgentSetup,
     list: ListState,
     view_rows: Vec<Arc<Row>>,
     view_keys: Vec<RowKey>,
@@ -222,6 +257,14 @@ pub struct ConversationPanel {
     retired_evidence_images: Vec<Arc<gpui::RenderImage>>,
     /// Reasoning rows the reader expanded (presentation state only).
     thoughts_open: std::collections::HashSet<u64>,
+    /// The workflow's chat generation the shown rows belong to.
+    chat: u64,
+    /// One menu per select-type agent option, kept across frames so each trigger
+    /// reports its own bounds.
+    config_menus: HashMap<String, ConfigMenu>,
+    /// The option whose menu is open.
+    open_config: Option<String>,
+    config_focus: FocusHandle,
 }
 
 fn input(placeholder: &str, cx: &mut Context<ConversationPanel>) -> Entity<TextInput> {
@@ -261,6 +304,7 @@ impl ConversationPanel {
             policy: OwnershipPolicy::Validated,
             saves: SaveTracker::default(),
             mcp_choice: McpChoice::Baseline,
+            agent_setup: provider_setup::AgentSetup::default(),
             list,
             view_rows: Vec::new(),
             view_keys: Vec::new(),
@@ -279,6 +323,10 @@ impl ConversationPanel {
             evidence_images: HashMap::new(),
             retired_evidence_images: Vec::new(),
             thoughts_open: std::collections::HashSet::new(),
+            chat: 0,
+            config_menus: HashMap::new(),
+            open_config: None,
+            config_focus: cx.focus_handle(),
         }
     }
 
@@ -323,6 +371,18 @@ impl ConversationPanel {
         self.qualification = provider_profiles::QualificationSnapshot::default();
         self.task_scope = None;
         self.scope_error = None;
+        self.reset_transcript();
+        self.open_config = None;
+        self.notice = None;
+        self.prompt_kind = None;
+        self.saves.cancel();
+        // Stops a running install and drops every in-flight scan, install and turn-on.
+        self.agent_setup.reset();
+        cx.notify();
+    }
+
+    /// Forgets every shown and paged-in row and the state keyed by their ids.
+    fn reset_transcript(&mut self) {
         self.older.clear();
         self.older_exhausted = false;
         self.hidden_newer = 0;
@@ -333,10 +393,7 @@ impl ConversationPanel {
         self.page.loading.store(false, Ordering::Release);
         self.page.done.lock().take();
         self.replies = ReplyTracker::default();
-        self.notice = None;
-        self.prompt_kind = None;
-        self.saves.cancel();
-        cx.notify();
+        self.thoughts_open.clear();
     }
 
     pub fn workflow(&self) -> Option<&Arc<AgentWorkflow>> {
@@ -451,15 +508,19 @@ impl ConversationPanel {
             .as_ref()
             .is_none_or(|current| current.revision != snapshot.revision)
         {
+            if snapshot.chat != self.chat {
+                self.chat = snapshot.chat;
+                self.reset_transcript();
+            }
             self.snapshot = Some(snapshot);
             self.after_snapshot(cx);
             changed = true;
         }
         changed |= self.sync_evidence_images();
         let finished = self.page.done.lock().take();
-        if let Some((page_serial, result)) = finished {
+        if let Some((page_serial, page_chat, result)) = finished {
             self.page.loading.store(false, Ordering::Release);
-            if page_serial == serial {
+            if page_serial == serial && page_chat == self.chat {
                 match result {
                     Ok(page) => {
                         let wanted = rows::PAGE_ROWS;
@@ -598,11 +659,12 @@ impl ConversationPanel {
         }
         let slot = self.page.clone();
         let serial = attached.serial;
+        let chat = self.chat;
         let started = attached.workflow.history_page_with(
             crate::agent_workflow::RowId(before),
             limit,
             move |result| {
-                *slot.done.lock() = Some((serial, result.map_err(|e| e.to_string())));
+                *slot.done.lock() = Some((serial, chat, result.map_err(|e| e.to_string())));
             },
         );
         if let Err(error) = started {
@@ -643,125 +705,6 @@ impl ConversationPanel {
             args: text(&self.setup.args),
             env_names: text(&self.setup.env_names),
         }
-    }
-
-    fn select_provider(&mut self, profile_id: &str, cx: &mut Context<Self>) {
-        if self.attached.is_none() {
-            return;
-        }
-        if self
-            .snapshot
-            .as_ref()
-            .is_some_and(|snapshot| snapshot.switch_pending.is_some())
-        {
-            self.say("Resolve or cancel the pending provider handoff first.", cx);
-            return;
-        }
-        let Some(profile) = self
-            .registry
-            .profiles
-            .iter()
-            .find(|profile| profile.id == profile_id)
-            .cloned()
-        else {
-            self.say("That provider profile is no longer available.", cx);
-            return;
-        };
-        let busy = self.snapshot.as_ref().is_some_and(|snapshot| {
-            snapshot
-                .task
-                .as_ref()
-                .is_some_and(|task| !task.phase.is_terminal())
-                || matches!(snapshot.undo, UndoView::InProgress { .. })
-        });
-        if busy {
-            if let Some(workflow) = self.workflow().cloned() {
-                self.command(workflow.initiate_switch(&profile.id), cx);
-            }
-            return;
-        }
-        if self.registry.selected_profile_id.as_deref() == Some(profile_id) {
-            self.say(format!("{} is already selected.", profile.label), cx);
-            return;
-        }
-
-        let mut registry = self.registry.clone();
-        if let Err(error) = registry.select_profile(profile_id) {
-            self.say(error, cx);
-            return;
-        }
-        let Some(attached) = &self.attached else {
-            return;
-        };
-        let paths = attached.paths.clone();
-        let ticket = match self.saves.begin() {
-            Ok(ticket) => ticket,
-            Err(refusal) => {
-                self.say(refusal, cx);
-                return;
-            }
-        };
-        let adapter = profile.adapter.clone();
-        let policy = self.policy.clone();
-        let resolving = {
-            let (adapter, paths) = (adapter.clone(), paths.clone());
-            cx.background_executor()
-                .spawn(async move { adapter.resolve(&paths, &policy) })
-        };
-        cx.spawn(async move |this, cx| {
-            let resolved = resolving.await;
-            let _ = this.update(cx, |panel, cx| {
-                panel.apply_selected_provider(ticket, registry, adapter, resolved, paths, cx)
-            });
-        })
-        .detach();
-        self.say(format!("Selecting {}…", profile.label), cx);
-    }
-
-    fn apply_selected_provider(
-        &mut self,
-        ticket: u64,
-        registry: provider_profiles::ProviderRegistry,
-        adapter: AdapterFile,
-        resolved: (crate::agent_workflow::AdapterSettings, Resolution),
-        paths: AppPaths,
-        cx: &mut Context<Self>,
-    ) {
-        if !self.saves.is_current(ticket) {
-            return;
-        }
-        let Some(attached) = &self.attached else {
-            self.saves.finish(ticket);
-            return;
-        };
-        if let Err(error) = attached.workflow.set_adapter(Some(resolved.0)) {
-            self.saves.finish(ticket);
-            self.say(error.to_string(), cx);
-            return;
-        }
-        self.registry = registry.clone();
-        self.fill_setup(Some(&adapter), cx);
-        self.mcp_choice = adapter.mcp;
-        self.saved_adapter = Some(adapter);
-        self.containment = Some(resolved.1);
-        self.settings_error = None;
-        let save = cx
-            .background_executor()
-            .spawn(async move { host::save_registry(&paths, &registry) });
-        cx.spawn(async move |this, cx| {
-            let result = save.await;
-            let _ = this.update(cx, |panel, cx| {
-                if panel.saves.finish(ticket) {
-                    panel.notice = Some(match result {
-                        Ok(()) => "Provider selected. It remains experimental until authentic qualification passes.".into(),
-                        Err(error) => format!("Provider selected for this session, but its registry could not be saved: {error}"),
-                    });
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
-        cx.notify();
     }
 
     // ---- commands ------------------------------------------------------------------------------
@@ -848,17 +791,30 @@ impl ConversationPanel {
     /// reading the ledger) and the file write both run on background threads; at most one
     /// save is in flight (a second click is refused until it completes), the running
     /// workflow is only reconfigured while idle, and only the in-flight save's completion
-    /// is reported.
+    /// is reported. The Save button never starts the adapter.
     fn save_adapter(&mut self, cx: &mut Context<Self>) {
+        self.save_adapter_with(None, cx);
+    }
+
+    /// [`Self::save_adapter`]. With `turn_on` (the profile being turned on and the
+    /// description its launch was filled into) the save writes that profile, found by its
+    /// id, and runs one connection test once it is written.
+    fn save_adapter_with(
+        &mut self,
+        turn_on: Option<(String, &AdapterFile)>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(attached) = &self.attached else {
             return;
         };
         let paths = attached.paths.clone();
-        let built = AdapterFile::from_fields(
-            self.saved_adapter.as_ref(),
-            &self.setup_fields(cx),
-            self.mcp_choice,
-        );
+        // What the fields do not show (`auth_method`) comes from the profile being turned
+        // on, never from the adapter configured before it.
+        let base = match &turn_on {
+            Some((_, file)) => Some(*file),
+            None => self.saved_adapter.as_ref(),
+        };
+        let built = AdapterFile::from_fields(base, &self.setup_fields(cx), self.mcp_choice);
         let file = match built {
             Ok(file) => file,
             Err(error) => {
@@ -883,6 +839,17 @@ impl ConversationPanel {
                 return;
             }
         };
+        // The profile a turn-on writes is fixed now: the row state below may be reset while
+        // the save is in flight, the save target may not.
+        let target = turn_on.map(|(profile, _)| profile);
+        self.agent_setup.turn_on = match &target {
+            Some(profile) => provider_setup::TurnOn::Saving {
+                ticket,
+                profile: profile.clone(),
+            },
+            // A plain Save replaces whatever adapter a turn-on configured.
+            None => provider_setup::TurnOn::Idle,
+        };
         let policy = self.policy.clone();
         let resolving = {
             let (file, paths) = (file.clone(), paths.clone());
@@ -892,7 +859,7 @@ impl ConversationPanel {
         cx.spawn(async move |this, cx| {
             let resolved = resolving.await;
             let _ = this.update(cx, |panel, cx| {
-                panel.apply_saved(ticket, file, resolved, paths, cx)
+                panel.apply_saved(ticket, target, file, resolved, paths, cx)
             });
         })
         .detach();
@@ -903,6 +870,7 @@ impl ConversationPanel {
     fn apply_saved(
         &mut self,
         ticket: u64,
+        target: Option<String>,
         file: Option<AdapterFile>,
         resolved: Option<(crate::agent_workflow::AdapterSettings, Resolution)>,
         paths: AppPaths,
@@ -922,15 +890,20 @@ impl ConversationPanel {
         let applied = attached.workflow.set_adapter(settings);
         if self.command(applied, cx).is_none() {
             self.saves.finish(ticket);
+            self.agent_setup.turn_on.finish(ticket, false);
             return;
         }
         self.saved_adapter = file.clone();
         self.containment = resolution;
         self.settings_error = None;
+        // A turn-on saves its profile by id; a plain Save goes through the label-matching
+        // settings path.
+        let (written, profile) = (file.clone(), target.clone());
         let task = cx.background_executor().spawn(async move {
-            match &file {
-                Some(file) => host::save_settings(&paths, file),
-                None => host::clear_settings(&paths),
+            match (&written, &profile) {
+                (Some(file), Some(profile)) => host::save_profile_settings(&paths, profile, file),
+                (Some(file), None) => host::save_settings(&paths, file),
+                (None, _) => host::clear_settings(&paths),
             }
         });
         cx.spawn(async move |this, cx| {
@@ -939,7 +912,22 @@ impl ConversationPanel {
                 if !panel.saves.finish(ticket) {
                     return;
                 }
+                let turn_on = panel.agent_setup.turn_on.finish(ticket, result.is_ok());
+                if result.is_ok()
+                    && let (Some(profile), Some(file)) = (&target, file)
+                {
+                    // The registry on disk now selects this profile with this launch; the
+                    // copy the Providers section shows and later selections start from
+                    // follows it.
+                    if let Err(error) = panel.registry.save_profile_adapter(profile, file) {
+                        panel.say(error, cx);
+                        return;
+                    }
+                }
                 panel.notice = Some(match result {
+                    Ok(()) if turn_on => {
+                        panel.test_turned_on("Adapter settings saved on this computer.", cx)
+                    }
                     Ok(()) => {
                         "Adapter settings saved on this computer. Use Check adapter to verify them."
                             .into()
@@ -1137,68 +1125,6 @@ impl ConversationPanel {
             .p(px(2.))
             .rounded(px(tokens.metrics.radius_control + 2.))
             .bg(tokens.palette.ctl)
-    }
-
-    /// A radio row: the whole row selects the provider; `action_label` is the old button
-    /// label and stays as the accessible name and the trailing badge.
-    #[allow(clippy::too_many_arguments)]
-    fn provider_row(
-        &self,
-        id: impl Into<ElementId>,
-        name: &str,
-        description: String,
-        action_label: &'static str,
-        selected: bool,
-        enabled: bool,
-        cx: &mut Context<Self>,
-        action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
-    ) -> gpui::Stateful<gpui::Div> {
-        let palette = design_system::tokens().palette;
-        let radio = div()
-            .flex_none()
-            .size(px(14.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .border_1()
-            .border_color(if selected {
-                palette.accent
-            } else {
-                palette.line_strong
-            })
-            .children(selected.then(|| div().size(px(8.)).rounded_full().bg(palette.accent)));
-        let row = div()
-            .id(id.into())
-            .role(gpui::Role::RadioButton)
-            .aria_label(action_label)
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .p(px(8.))
-            .rounded(px(design_system::tokens().metrics.radius_control))
-            .bg(if selected {
-                palette.ctl
-            } else {
-                palette.card_2
-            })
-            .child(radio)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(ui::label(name.to_owned()))
-                    .child(Self::line(description)),
-            )
-            .child(Badge::new(action_label).tone(if selected {
-                UiTone::Info
-            } else {
-                UiTone::Neutral
-            }));
-        let row = ui::interact::focusable(row, !enabled);
-        ui::interact::on_activate(row, !enabled, Some(Rc::new(Self::activate(cx, action))))
     }
 
     fn tab_button(
@@ -1869,33 +1795,149 @@ impl ConversationPanel {
                             )));
                     }
                     ConfigKind::Select { current, values } => {
-                        let at = values.iter().position(|v| &v.value == current).unwrap_or(0);
-                        let name = values.get(at).map_or(current.as_str(), |v| v.name.as_str());
-                        let next = values
-                            .get((at + 1) % values.len().max(1))
-                            .map_or(current.clone(), |v| v.value.clone());
-                        let next = OptionValue::Value(next);
-                        bar = bar.child(
-                            self.button(
-                                id,
-                                format!("{}: {name}", option.name),
-                                true,
-                                Tone::Normal,
-                                cx,
-                                move |this, _, cx| {
-                                    if let Some(w) = this.workflow().cloned() {
-                                        let r = w.set_config_option(&option_id, next.clone());
-                                        this.command(r, cx);
-                                    }
-                                },
-                            )
-                            .trailing_icon(Icon::ChevronDown),
-                        );
+                        let name = values
+                            .iter()
+                            .find(|v| &v.value == current)
+                            .map_or(current.as_str(), |v| v.name.as_str());
+                        let menu = self
+                            .config_menus
+                            .entry(option.id.clone())
+                            .or_insert_with(ConfigMenu::empty);
+                        let entity = cx.entity();
+                        bar = bar.child(div().w_full().child(FieldRow::new(
+                            option.name.clone(),
+                            div().min_w(px(160.)).child(
+                                Select::new(id, name.to_owned()).menu(&menu.state).on_open(
+                                    move |window, app| {
+                                        entity.update(app, |this, cx| {
+                                            this.toggle_config_menu(&option_id, window, cx);
+                                        });
+                                    },
+                                ),
+                            ),
+                        )));
                     }
                 }
             }
         }
         Some(bar)
+    }
+
+    fn toggle_config_menu(&mut self, option_id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.open_config.as_deref() == Some(option_id) {
+            self.close_config_menu(window, cx);
+            return;
+        }
+        let Some(snapshot) = &self.snapshot else {
+            return;
+        };
+        let Some(menu) = ConfigMenu::of(&snapshot.options.config, option_id) else {
+            return;
+        };
+        // The trigger reports into the old state's anchor until its next paint.
+        if let Some(old) = self.config_menus.get(option_id) {
+            menu.state.anchor_cell().set(old.state.anchor_cell().get());
+        }
+        self.config_menus.insert(option_id.to_owned(), menu);
+        self.open_config = Some(option_id.to_owned());
+        window.focus(&self.config_focus, cx);
+        cx.notify();
+    }
+
+    fn close_config_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.open_config.take().is_some() {
+            self.focus_prompt(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn focus_prompt(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let handle = self.prompt.read(cx).focus_handle.clone();
+        window.focus(&handle, cx);
+    }
+
+    /// Sets option `option_id` to `value`, the value of the row the reader clicked in the
+    /// menu as it was painted.
+    fn commit_config(
+        &mut self,
+        option_id: &str,
+        value: Option<OptionValue>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.open_config.as_deref() != Some(option_id) {
+            return;
+        }
+        self.open_config = None;
+        if let (Some(value), Some(w)) = (value, self.workflow().cloned()) {
+            let r = w.set_config_option(option_id, value);
+            self.command(r, cx);
+        }
+        self.focus_prompt(window, cx);
+        cx.notify();
+    }
+
+    /// Keeps an open menu in step with the options the agent advertises now: changed
+    /// values rebuild it, a withdrawn option closes it.
+    fn sync_config_menu(&mut self) {
+        let Some(option_id) = self.open_config.clone() else {
+            return;
+        };
+        let fresh = self
+            .snapshot
+            .as_ref()
+            .and_then(|s| ConfigMenu::of(&s.options.config, &option_id));
+        let Some(fresh) = fresh else {
+            self.open_config = None;
+            return;
+        };
+        let Some(menu) = self.config_menus.get_mut(&option_id) else {
+            self.open_config = None;
+            return;
+        };
+        if menu.values != fresh.values
+            || menu.state.items() != fresh.state.items()
+            || menu.state.selected() != fresh.state.selected()
+        {
+            fresh
+                .state
+                .anchor_cell()
+                .set(menu.state.anchor_cell().get());
+            *menu = fresh;
+        }
+    }
+
+    fn render_config_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let option_id = self.open_config.as_ref()?;
+        let menu = self.config_menus.get(option_id)?;
+        let highlight = cx.entity();
+        let select = cx.entity();
+        let dismiss = cx.entity();
+        let key = option_id.clone();
+        let chosen = option_id.clone();
+        // The values of the rows as painted now: a click commits the one it hit.
+        let shown = menu.values.clone();
+        Some(
+            Menu::new("agent-config-menu", &menu.state, &self.config_focus)
+                .on_highlight(move |index, _, cx| {
+                    highlight.update(cx, |this, cx| {
+                        if let Some(menu) = this.config_menus.get_mut(&key) {
+                            menu.state.set_highlighted(index);
+                        }
+                        cx.notify();
+                    });
+                })
+                .on_select(move |index, window, cx| {
+                    let value = shown.get(index).cloned().map(OptionValue::Value);
+                    select.update(cx, |this, cx| {
+                        this.commit_config(&chosen, value, window, cx)
+                    });
+                })
+                .on_dismiss(move |window, cx| {
+                    dismiss.update(cx, |this, cx| this.close_config_menu(window, cx));
+                })
+                .into_any_element(),
+        )
     }
 
     fn chat_tab(
@@ -2483,59 +2525,12 @@ impl ConversationPanel {
             .as_ref()
             .is_some_and(|task| !task.phase.is_terminal())
             || matches!(&snapshot.undo, UndoView::InProgress { .. });
-        let ranking_note = match self.qualification.ranking {
-            provider_profiles::QualificationRankingStatus::Recommended => format!(
-                "The M6 ledger recommends {}. Statuses below are reported by the installed ledger; writer containment is independently checked for the selected launch.",
-                self.qualification.recommended.join(" and ")
-            ),
-            provider_profiles::QualificationRankingStatus::InsufficientEvidence => {
-                "The M6 ledger reports insufficient evidence for a recommendation. Provider statuses below are ledger-reported; writer containment is independently checked for the selected launch.".to_owned()
-            }
-            provider_profiles::QualificationRankingStatus::Invalid => {
-                "The M6 ledger is invalid. No provider recommendation is shown; writer containment remains independently checked for the selected launch.".to_owned()
-            }
-        };
-        let mut providers = Self::section("Providers")
-            .child(Self::line(
-                "Select a configured ACP provider, or start a stopped-writer handoff.",
-            ))
-            .child(Self::line(ranking_note));
-        if let Some(notice) = &self.qualification.notice {
-            providers = providers.child(Self::line(notice.clone()));
-        }
-        for profile in &self.registry.profiles {
-            let selected =
-                self.registry.selected_profile_id.as_deref() == Some(profile.id.as_str());
-            let button_label = if switch_pending {
-                "Handoff pending"
-            } else if selected {
-                "Selected"
-            } else if selection_busy {
-                "Switch & stop"
-            } else {
-                "Use provider"
-            };
-            let enabled =
-                !switch_pending && !self.saves.is_pending() && !(selected && !selection_busy);
-            let profile_id = profile.id.clone();
-            let description = format!(
-                "{} · {} · {}",
-                self.qualification.status_for(&profile.id).label(),
-                profile.id,
-                profile.description,
-            );
-            providers = providers.child(self.provider_row(
-                format!("agent-provider-{}", profile.id),
-                &profile.label,
-                description,
-                button_label,
-                selected,
-                enabled,
-                cx,
-                move |this, _, cx| this.select_provider(&profile_id, cx),
-            ));
-        }
-        column = column.child(providers);
+        column = column.child(self.providers_section(switch_pending, selection_busy, cx));
+        column = column.child(self.detect_section(
+            &snapshot.adapter.readiness,
+            controls.settings_editable,
+            cx,
+        ));
 
         if let Some(choice) = &controls.switch_choice {
             let mut handoff = Self::section("Stopped-writer handoff")
@@ -2987,10 +2982,28 @@ impl Render for ConversationPanel {
             &snapshot.adapter.readiness,
             snapshot.adapter.provider.is_some(),
         );
+        self.sync_config_menu();
         let rail = Self::segment_rail()
             .child(self.tab_button(Tab::Chat, "Chat", cx))
             .child(self.tab_button(Tab::Project, "Project", cx))
             .child(self.tab_button(Tab::Setup, "Setup", cx));
+        let new_chat = self
+            .icon_button(
+                "agent-new-chat",
+                Icon::Plus,
+                "New chat",
+                ButtonVariant::Ghost,
+                cx,
+                |this, _, cx| {
+                    if let Some(w) = this.workflow().cloned() {
+                        let r = w.new_chat();
+                        this.command(r, cx);
+                    }
+                    this.tab = Tab::Chat;
+                    cx.notify();
+                },
+            )
+            .disabled(!controls.new_chat);
         let mut header = div()
             .flex()
             .flex_col()
@@ -3009,7 +3022,14 @@ impl Render for ConversationPanel {
                             .text_color(tokens.palette.text_1)
                             .child("Agent"),
                     )
-                    .child(rail),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(4.))
+                            .child(new_chat)
+                            .child(rail),
+                    ),
             )
             .child(
                 text_style(div(), TextStyle::Small)
@@ -3054,7 +3074,9 @@ impl Render for ConversationPanel {
             Tab::Project => self.project_tab(snapshot, &controls, cx),
             Tab::Setup => self.setup_tab(snapshot, &controls, cx),
         };
-        root.child(body).into_any_element()
+        root.child(body)
+            .children(self.render_config_menu(cx))
+            .into_any_element()
     }
 }
 
@@ -3077,6 +3099,74 @@ mod presentation_tests {
             probed_button(&ElementId::from(("agent-apply", 1usize))),
             None
         );
+    }
+
+    #[test]
+    fn a_config_menu_lists_the_values_and_commits_the_chosen_one() {
+        use studio_agent_spike::driver::{ConfigOption, ConfigValue};
+        let value = |value: &str, name: &str| ConfigValue {
+            value: value.into(),
+            name: name.into(),
+            group: None,
+        };
+        let config = vec![
+            ConfigOption {
+                id: "model".into(),
+                name: "Model".into(),
+                description: None,
+                kind: ConfigKind::Select {
+                    current: "sonnet".into(),
+                    values: vec![value("opus", "Opus"), value("sonnet", "Sonnet")],
+                },
+            },
+            ConfigOption {
+                id: "fast".into(),
+                name: "Fast".into(),
+                description: None,
+                kind: ConfigKind::Boolean { current: false },
+            },
+        ];
+        let menu = ConfigMenu::of(&config, "model").unwrap();
+        let items: Vec<&str> = menu.state.items().iter().map(|s| s.as_ref()).collect();
+        assert_eq!(items, ["Opus", "Sonnet"]);
+        assert_eq!(menu.state.selected(), Some(1));
+        assert_eq!(menu.values, ["opus", "sonnet"]);
+        assert!(ConfigMenu::of(&config, "fast").is_none());
+        assert!(ConfigMenu::of(&config, "gone").is_none());
+    }
+
+    #[test]
+    fn a_config_menu_commits_the_value_it_showed_after_the_options_change() {
+        use studio_agent_spike::driver::{ConfigOption, ConfigValue};
+        let select = |values: &[(&str, &str)]| {
+            vec![ConfigOption {
+                id: "model".into(),
+                name: "Model".into(),
+                description: None,
+                kind: ConfigKind::Select {
+                    current: values[0].0.into(),
+                    values: values
+                        .iter()
+                        .map(|(value, name)| ConfigValue {
+                            value: (*value).into(),
+                            name: (*name).into(),
+                            group: None,
+                        })
+                        .collect(),
+                },
+            }]
+        };
+        let shown =
+            ConfigMenu::of(&select(&[("opus", "Opus"), ("sonnet", "Sonnet")]), "model").unwrap();
+        // The agent reorders its options between the paint and the click.
+        let now =
+            ConfigMenu::of(&select(&[("sonnet", "Sonnet"), ("opus", "Opus")]), "model").unwrap();
+        // Each menu pairs its names with their values row for row, so the row the reader
+        // clicked commits the value they saw.
+        assert_eq!(shown.state.items()[1].as_ref(), "Sonnet");
+        assert_eq!(shown.values[1], "sonnet");
+        assert_eq!(now.state.items()[1].as_ref(), "Opus");
+        assert_eq!(now.values[1], "opus");
     }
 
     #[test]

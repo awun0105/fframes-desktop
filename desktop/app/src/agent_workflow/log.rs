@@ -406,6 +406,64 @@ impl RowStore {
         std::mem::take(&mut self.lost)
     }
 
+    /// Starts an empty conversation: unsaved rows are flushed, the file is moved aside to
+    /// `conversation-<stamp>.jsonl` (returned; `None` when there was no file) and nothing
+    /// stays resident. Ids keep counting up so no id of the old conversation is reused.
+    pub fn start_new(&mut self, stamp: u64) -> Result<Option<PathBuf>, LogError> {
+        self.flush()?;
+        let archived = if self.path.exists() {
+            let stem = self
+                .path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            Some(self.archive_to_unused_name(&stem, stamp)?)
+        } else {
+            None
+        };
+        self.rows.clear();
+        self.bytes = 0;
+        self.has_older = false;
+        self.file_len = 0;
+        self.repair = None;
+        Ok(archived)
+    }
+
+    /// Moves the log to `<stem>-<stamp>[-n].jsonl` without ever replacing an existing
+    /// archive: each name is claimed with an exclusive create first, so the rename only
+    /// ever replaces the empty file this call created.
+    fn archive_to_unused_name(&self, stem: &str, stamp: u64) -> Result<PathBuf, LogError> {
+        const MAX_ARCHIVE_SUFFIX: u32 = 10_000;
+        for n in 0..MAX_ARCHIVE_SUFFIX {
+            let target = match n {
+                0 => self.path.with_file_name(format!("{stem}-{stamp}.jsonl")),
+                n => self
+                    .path
+                    .with_file_name(format!("{stem}-{stamp}-{n}.jsonl")),
+            };
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)
+            {
+                Ok(claim) => drop(claim),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(io_err(e)),
+            }
+            return match fs::rename(&self.path, &target) {
+                Ok(()) => Ok(target),
+                Err(e) => {
+                    let _ = fs::remove_file(&target);
+                    Err(io_err(e))
+                }
+            };
+        }
+        Err(LogError::Io(format!(
+            "no unused archive name for {stem}-{stamp}"
+        )))
+    }
+
     /// The most a single resident row may weigh: larger rows are replaced by a notice.
     fn row_cap(&self) -> usize {
         (self.limits.max_bytes / 4).max(MAX_ROW_TEXT_BYTES + 8 * ROW_OVERHEAD_BYTES)
@@ -686,6 +744,57 @@ mod tests {
         let mut store = open(&dir, limits(100));
         assert_eq!(store.next_id(), RowId(4));
         assert_eq!(store.next_id(), RowId(5));
+    }
+
+    #[test]
+    fn start_new_archives_the_log_and_keeps_ids_counting() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = open(&dir, limits(2));
+        for id in 1..=3 {
+            store.upsert(row(id, "old"));
+        }
+        assert!(store.has_older());
+
+        let archived = store.start_new(42).unwrap().expect("archived file");
+        assert_eq!(
+            archived,
+            log_path(&dir).with_file_name("conversation-42.jsonl")
+        );
+        assert_eq!(lines(&archived).len(), 3);
+        assert!(!log_path(&dir).exists());
+        assert_eq!(store.resident_len(), 0);
+        assert!(!store.has_older());
+        assert_eq!(store.next_id(), RowId(4));
+
+        store.upsert(row(4, "new"));
+        store.flush().unwrap();
+        assert_eq!(lines(&log_path(&dir)).len(), 1);
+        assert!(store.page_before(RowId(4), 10).unwrap().is_empty());
+
+        let again = store.start_new(42).unwrap().expect("archived file");
+        assert_eq!(
+            again,
+            log_path(&dir).with_file_name("conversation-42-1.jsonl")
+        );
+    }
+
+    #[test]
+    fn start_new_never_replaces_an_existing_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = open(&dir, limits(10));
+        store.upsert(row(1, "current"));
+        let taken = log_path(&dir).with_file_name("conversation-7.jsonl");
+        std::fs::create_dir_all(taken.parent().unwrap()).unwrap();
+        std::fs::write(&taken, b"earlier archive\n").unwrap();
+
+        let archived = store.start_new(7).unwrap().expect("archived file");
+        assert_eq!(
+            archived,
+            log_path(&dir).with_file_name("conversation-7-1.jsonl")
+        );
+        assert_eq!(std::fs::read(&taken).unwrap(), b"earlier archive\n");
+        assert_eq!(lines(&archived).len(), 1);
+        assert!(!log_path(&dir).exists());
     }
 
     #[test]

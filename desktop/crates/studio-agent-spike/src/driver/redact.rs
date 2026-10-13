@@ -144,11 +144,15 @@ impl StreamRedactor {
         self.release(cut)
     }
 
-    /// Releases everything that is still held; only for the true end of the stream.
+    /// Releases everything that is still held; for the end of a turn or of the stream.
+    /// Nothing carries over: a trailing trigger (`token=`, `sk-`, ...) cannot reach into
+    /// the next turn and redact its first word.
     pub fn finish(&mut self) -> String {
-        self.suppress_word = false;
         self.pending = self.redactor.replace_secrets(&self.pending);
-        self.release(self.pending.len())
+        let released = self.release(self.pending.len());
+        self.suppress_word = false;
+        self.value_pending = false;
+        released
     }
 
     fn release(&mut self, cut: usize) -> String {
@@ -308,6 +312,28 @@ mod tests {
             !out.contains("abc") && !out.contains("def") && !out.contains("ghi"),
             "{out}"
         );
+    }
+
+    #[test]
+    fn a_turn_ending_in_a_trigger_does_not_redact_the_next_turn() {
+        for (head, held) in [
+            ("set token=", ""),
+            ("my key sk-", ""),
+            ("Authorization: Bearer ", ""),
+            // The value itself started in this turn and is still being held.
+            ("set token=", "abc"),
+        ] {
+            let mut s = stream("unused-secret");
+            let mut first = s.push(head);
+            first.push_str(&s.push(held));
+            first.push_str(&s.finish());
+            if !held.is_empty() {
+                assert!(!first.contains(held), "{head}{held}: {first}");
+            }
+            let mut second = s.push("Hello there friend");
+            second.push_str(&s.finish());
+            assert_eq!(second, "Hello there friend", "after {head:?}{held:?}");
+        }
     }
 
     #[test]

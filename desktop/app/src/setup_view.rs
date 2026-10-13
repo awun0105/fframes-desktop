@@ -13,7 +13,7 @@ use studio_sdk::{
     manifest::CompatibilityManifest, project::ProjectManager,
 };
 
-fn default_sdk_home() -> PathBuf {
+pub fn default_sdk_home() -> PathBuf {
     if let Ok(home) = std::env::var("HOME") {
         PathBuf::from(home).join(".fframes").join("sdk")
     } else if let Ok(profile) = std::env::var("USERPROFILE") {
@@ -21,6 +21,19 @@ fn default_sdk_home() -> PathBuf {
     } else {
         std::env::temp_dir().join("fframes_sdk")
     }
+}
+
+/// What to do when no SDK bundle targets this host.
+pub fn missing_sdk_bundle_message(host: &str) -> String {
+    let assemble = if cfg!(windows) {
+        "desktop/scripts/build-phase-zero-sdk.ps1 -FfmpegRoot <ffmpeg> -Out desktop/target/phase-zero-sdk"
+    } else {
+        "desktop/scripts/build-phase-zero-sdk.sh --ffmpeg-root <ffmpeg> --out desktop/target/phase-zero-sdk"
+    };
+    format!(
+        "No SDK bundle for {host} found. Import an SDK bundle, set FFRAMES_SDK_BUNDLE to an \
+         assembled bundle, or assemble one with `{assemble}`."
+    )
 }
 
 fn default_projects_root() -> PathBuf {
@@ -63,6 +76,8 @@ pub enum SetupState {
     },
     Failed {
         error: String,
+        /// The step that was active when setup failed (index into [`STEP_NAMES`]).
+        step: Option<usize>,
     },
 }
 
@@ -72,36 +87,66 @@ pub struct SetupView {
     pub sdk_home: PathBuf,
     pub projects_root: PathBuf,
     pub process_tree: ProcessTreeManager,
-    /// The step that was active when setup failed; only meaningful in `Failed`.
-    failed_step: Option<usize>,
 }
 
 impl SetupView {
     /// Shared discovery for the spike and product shell; callers run this off the UI thread.
     pub fn defaults() -> Result<(CompatibilityManifest, PathBuf), String> {
-        let packaged_manifest = std::env::var_os("FFRAMES_SDK_BUNDLE")
+        let sdk_home = default_sdk_home();
+        let packaged = std::env::var_os("FFRAMES_SDK_BUNDLE")
             .map(PathBuf::from)
-            .map(|p| p.join("compatibility.json"))
             .or_else(|| {
-                std::env::current_exe().ok().and_then(|p| {
-                    p.parent()?
-                        .parent()
-                        .map(|p| p.join("sdk/compatibility.json"))
-                })
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|p| Some(p.parent()?.parent()?.join("sdk")))
             });
-        let manifest_result = packaged_manifest.filter(|p| p.is_file()).map(|p| {
-            std::fs::read_to_string(p)
+        // Bundles assembled in a repository checkout, relative to the working folder. Only a
+        // development build looks there: a release build never takes its trust root (the
+        // manifest that pins every artifact hash) from wherever it was started.
+        let dev_bundles: Vec<PathBuf> = if cfg!(debug_assertions) {
+            vec![
+                PathBuf::from("target/phase-zero-sdk"),
+                PathBuf::from("desktop/target/phase-zero-sdk"),
+            ]
+        } else {
+            Vec::new()
+        };
+        let manifest = Self::resolve_manifest(packaged.as_deref(), &dev_bundles, &sdk_home)?;
+        Ok((manifest, sdk_home))
+    }
+
+    /// Picks the SDK manifest for this host: a packaged bundle, the built-in manifest when it
+    /// targets this host, an assembled development bundle for this host, then the installed
+    /// SDK's receipt. A host with none of these gets instructions instead of a foreign target.
+    pub fn resolve_manifest(
+        packaged: Option<&std::path::Path>,
+        dev_bundles: &[PathBuf],
+        sdk_home: &std::path::Path,
+    ) -> Result<CompatibilityManifest, String> {
+        let read = |bundle: &std::path::Path| {
+            fs::read_to_string(bundle.join("compatibility.json"))
                 .map_err(|e| e.to_string())
                 .and_then(|json| {
                     CompatibilityManifest::from_json_str(&json).map_err(|e| e.to_string())
                 })
-        });
-        Ok((
-            manifest_result
-                .transpose()?
-                .unwrap_or_else(CompatibilityManifest::default_linux_x64),
-            default_sdk_home(),
-        ))
+        };
+        if let Some(bundle) = packaged.filter(|p| p.join("compatibility.json").is_file()) {
+            return read(bundle);
+        }
+        let host = CompatibilityManifest::host_target();
+        let for_host =
+            |manifest: &CompatibilityManifest| Some(manifest.target_triple.as_str()) == host;
+        let built_in = CompatibilityManifest::default_linux_x64();
+        if for_host(&built_in) {
+            return Ok(built_in);
+        }
+        let active = sdk_home.join("active");
+        dev_bundles
+            .iter()
+            .chain([&active])
+            .filter_map(|bundle| read(bundle).ok())
+            .find(for_host)
+            .ok_or_else(|| missing_sdk_bundle_message(host.unwrap_or("this platform")))
     }
 
     pub fn new(cx: &mut Context<Self>) -> Self {
@@ -118,7 +163,6 @@ impl SetupView {
             sdk_home,
             projects_root: default_projects_root(),
             process_tree: ProcessTreeManager::new(),
-            failed_step: None,
         };
         if let Err(error) = defaults {
             view.fail(error);
@@ -128,10 +172,9 @@ impl SetupView {
         view
     }
 
-    /// Enters `Failed`, remembering which step was active so it can be marked.
+    /// Enters `Failed`, recording which step was active so it can be marked.
     fn fail(&mut self, error: String) {
-        self.failed_step = failed_step_after(&self.state, self.failed_step);
-        self.state = SetupState::Failed { error };
+        self.state = failed_from(&self.state, error);
     }
 
     pub fn run_preflight(&mut self, cx: &mut Context<Self>) {
@@ -455,8 +498,8 @@ pub const STEP_NAMES: [&str; 4] = ["Preflight", "Install SDK", "Build template",
 
 /// Step statuses for a setup state: Preflight, Install SDK, Build template, Render.
 ///
-/// `Failed` carries no record of the stage that failed, so every step stays
-/// pending; the view uses [`step_statuses_after`] with the step it remembered.
+/// In `Failed` the recorded step is marked failed, the steps before it done and the
+/// ones after it pending; without a recorded step every step stays pending.
 pub fn step_statuses(state: &SetupState) -> [StepStatus; 4] {
     use StepStatus::{Active, Done, Failed, Pending};
     match state {
@@ -469,17 +512,24 @@ pub fn step_statuses(state: &SetupState) -> [StepStatus; 4] {
             [Done, Done, Active, Pending]
         }
         SetupState::Rendered { .. } => [Done, Done, Done, Done],
-        SetupState::Failed { .. } => [Pending, Pending, Pending, Pending],
+        SetupState::Failed {
+            step: Some(failed), ..
+        } => std::array::from_fn(|i| match i.cmp(failed) {
+            std::cmp::Ordering::Less => Done,
+            std::cmp::Ordering::Equal => Failed,
+            std::cmp::Ordering::Greater => Pending,
+        }),
+        SetupState::Failed { step: None, .. } => [Pending, Pending, Pending, Pending],
     }
 }
 
-/// The step to mark when entering `Failed` from `previous`: a second failure keeps the
-/// original step rather than re-deriving it from the already failed state.
-fn failed_step_after(previous: &SetupState, remembered: Option<usize>) -> Option<usize> {
-    match previous {
-        SetupState::Failed { .. } => remembered,
-        _ => failing_step(previous),
-    }
+/// The `Failed` state entered from `previous`: a repeat failure keeps the original step.
+fn failed_from(previous: &SetupState, error: String) -> SetupState {
+    let step = match previous {
+        SetupState::Failed { step, .. } => *step,
+        other => failing_step(other),
+    };
+    SetupState::Failed { error, step }
 }
 
 /// The step a failure belongs to when it happens in `previous`: the active step,
@@ -490,21 +540,6 @@ fn failing_step(previous: &SetupState) -> Option<usize> {
         .iter()
         .position(|s| *s == StepStatus::Active)
         .or_else(|| statuses.iter().position(|s| *s == StepStatus::Pending))
-}
-
-/// [`step_statuses`], with the remembered step marked failed in the `Failed` state:
-/// the steps before it are done, the ones after it pending.
-pub fn step_statuses_after(state: &SetupState, failed_step: Option<usize>) -> [StepStatus; 4] {
-    match (state, failed_step) {
-        (SetupState::Failed { .. }, Some(failed)) => {
-            std::array::from_fn(|i| match i.cmp(&failed) {
-                std::cmp::Ordering::Less => StepStatus::Done,
-                std::cmp::Ordering::Equal => StepStatus::Failed,
-                std::cmp::Ordering::Greater => StepStatus::Pending,
-            })
-        }
-        _ => step_statuses(state),
-    }
 }
 
 fn step_row(name: &'static str, status: StepStatus) -> gpui::Div {
@@ -647,7 +682,7 @@ impl SetupView {
                     render_time
                 )))
                 .child(detail_line(format!("Output PNG: {:?}", frame_path))),
-            SetupState::Failed { error } => column().child(
+            SetupState::Failed { error, .. } => column().child(
                 Notice::new("setup-failed", Tone::Danger, "Setup / Build Failed")
                     .details(error.clone())
                     .action(Self::action_button(
@@ -672,7 +707,7 @@ impl Render for SetupView {
         let steps = div().flex().flex_col().gap(px(metrics.space_2)).children(
             STEP_NAMES
                 .iter()
-                .zip(step_statuses_after(&self.state, self.failed_step))
+                .zip(step_statuses(&self.state))
                 .map(|(name, status)| step_row(name, status)),
         );
 
@@ -705,6 +740,52 @@ impl Render for SetupView {
 mod tests {
     use super::*;
 
+    fn write_bundle(dir: &std::path::Path, target: &str) -> CompatibilityManifest {
+        let mut manifest = CompatibilityManifest::default_linux_x64();
+        manifest.target_triple = target.into();
+        manifest.sdk_id = format!("studio-sdk-{target}-test");
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("compatibility.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+        manifest
+    }
+
+    #[test]
+    fn manifest_resolution_never_falls_back_to_a_foreign_target() {
+        let host = CompatibilityManifest::host_target().expect("supported host");
+        let foreign = if host == "x86_64-unknown-linux-gnu" {
+            "x86_64-pc-windows-msvc"
+        } else {
+            "x86_64-unknown-linux-gnu"
+        };
+        let root = tempfile::tempdir().unwrap();
+        let sdk_home = root.path().join("sdk");
+        let dev = root.path().join("dev");
+        write_bundle(&dev, foreign);
+
+        let resolved = SetupView::resolve_manifest(None, std::slice::from_ref(&dev), &sdk_home);
+        if host == "x86_64-unknown-linux-gnu" {
+            assert_eq!(
+                resolved.unwrap(),
+                CompatibilityManifest::default_linux_x64()
+            );
+            return;
+        }
+        let error = resolved.expect_err("a foreign bundle is not this host's manifest");
+        assert!(error.contains(host), "{error}");
+
+        // The installed SDK's receipt is picked up, and an assembled bundle wins over it.
+        let installed = write_bundle(&sdk_home.join("active"), host);
+        let resolved = SetupView::resolve_manifest(None, std::slice::from_ref(&dev), &sdk_home);
+        assert_eq!(resolved.unwrap(), installed);
+        let assembled = write_bundle(&dev, host);
+        let resolved = SetupView::resolve_manifest(None, &[dev], &sdk_home);
+        assert_eq!(resolved.unwrap(), assembled);
+    }
+
     fn every_state() -> Vec<SetupState> {
         vec![
             SetupState::Checking,
@@ -736,6 +817,7 @@ mod tests {
             },
             SetupState::Failed {
                 error: String::new(),
+                step: None,
             },
         ]
     }
@@ -761,26 +843,35 @@ mod tests {
         }
     }
 
+    fn failed_step(state: &SetupState) -> Option<usize> {
+        match state {
+            SetupState::Failed { step, .. } => *step,
+            _ => panic!("not failed: {state:?}"),
+        }
+    }
+
     #[test]
     fn a_second_failure_keeps_the_original_step() {
-        let failed = SetupState::Failed {
-            error: String::new(),
-        };
         let installing = SetupState::Installing {
             progress_percent: 20,
             step: String::new(),
         };
-        let first = failed_step_after(&installing, None);
-        assert_eq!(first, Some(1));
-        assert_eq!(failed_step_after(&failed, first), Some(1));
-        assert_eq!(failed_step_after(&SetupState::Checking, first), Some(0));
+        let first = failed_from(&installing, "first".into());
+        assert_eq!(failed_step(&first), Some(1));
+        let second = failed_from(&first, "second".into());
+        assert_eq!(failed_step(&second), Some(1));
+        assert_eq!(
+            failed_step(&failed_from(&SetupState::Checking, String::new())),
+            Some(0)
+        );
     }
 
     #[test]
     fn a_failure_marks_the_step_that_was_active() {
         use StepStatus::*;
-        let failed = SetupState::Failed {
+        let failed = |step| SetupState::Failed {
             error: String::new(),
+            step,
         };
         let installing = SetupState::Installing {
             progress_percent: 20,
@@ -789,29 +880,17 @@ mod tests {
         assert_eq!(failing_step(&SetupState::Checking), Some(0));
         assert_eq!(failing_step(&installing), Some(1));
         assert_eq!(
-            step_statuses_after(&failed, failing_step(&installing)),
+            step_statuses(&failed_from(&installing, String::new())),
             [Done, Failed, Pending, Pending]
         );
         assert_eq!(
-            step_statuses_after(&failed, Some(0)),
+            step_statuses(&failed(Some(0))),
             [Failed, Pending, Pending, Pending]
         );
+        assert_eq!(step_statuses(&failed(Some(3))), [Done, Done, Done, Failed]);
         assert_eq!(
-            step_statuses_after(&failed, Some(3)),
-            [Done, Done, Done, Failed]
-        );
-    }
-
-    #[test]
-    fn a_failure_without_a_remembered_step_stays_pending() {
-        let failed = SetupState::Failed {
-            error: String::new(),
-        };
-        assert_eq!(step_statuses_after(&failed, None), step_statuses(&failed));
-        // The remembered step is ignored outside the failed state.
-        assert_eq!(
-            step_statuses_after(&SetupState::Checking, Some(2)),
-            step_statuses(&SetupState::Checking)
+            step_statuses(&failed(None)),
+            [Pending, Pending, Pending, Pending]
         );
     }
 

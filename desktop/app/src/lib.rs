@@ -31,6 +31,7 @@ pub mod preset_panel;
 pub mod preview_coordinator;
 pub mod preview_element;
 pub mod preview_worker_client;
+pub mod qualify_writer;
 pub mod thumbnail_cache;
 pub mod timeline_view;
 pub mod ui;

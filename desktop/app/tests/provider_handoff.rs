@@ -192,7 +192,7 @@ fn two_retained_queued_briefs_without_automatic_execution_and_explicit_transfer(
     let mut registry =
         fframes_studio::conversation_panel::provider_profiles::ProviderRegistry::default();
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
-        codex.adapter.executable = "python3".into();
+        codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
     }
     fs::create_dir_all(&w.paths.data).unwrap();
@@ -543,7 +543,7 @@ fn continue_draft_preserves_outgoing_draft_edits_for_incoming_provider() {
     let mut registry =
         fframes_studio::conversation_panel::provider_profiles::ProviderRegistry::default();
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
-        codex.adapter.executable = "python3".into();
+        codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
     }
     fs::create_dir_all(&w.paths.data).unwrap();
@@ -719,7 +719,7 @@ fn restart_from_accepted_discards_uncommitted_draft_edits() {
     let mut registry =
         fframes_studio::conversation_panel::provider_profiles::ProviderRegistry::default();
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
-        codex.adapter.executable = "python3".into();
+        codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
     }
     fs::create_dir_all(&w.paths.data).unwrap();

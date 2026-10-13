@@ -725,7 +725,7 @@ mod tests {
         let script = format!("{}/tests/stalled-worker.py", env!("CARGO_MANIFEST_DIR"));
         worker
             .spawn_worker(
-                std::path::Path::new(if cfg!(windows) { "python" } else { "python3" }),
+                studio_test_support::python(),
                 &[&script],
                 None,
                 ChildEnvironment::default_allowlist(),

@@ -630,6 +630,56 @@ fn a_second_failure_is_terminal_with_the_draft_and_candidate_retained() {
 // ---- Stop in every state ------------------------------------------------------------------------------------------
 
 #[test]
+fn new_chat_is_refused_while_a_task_runs_and_archives_the_transcript_when_idle() {
+    let w = World::new();
+    w.submit(&json!({"text": "starting", "hang": true}));
+    w.wait_phase(TaskPhase::Editing);
+    w.wf().new_chat().unwrap();
+    w.wait("the refusal", |s| {
+        s.rows.iter().any(|r| {
+            matches!(&r.kind, RowKind::Notice { text, .. } if text.contains("before starting a new chat"))
+        })
+    });
+    assert_eq!(w.snap().chat, 0);
+
+    w.wf().stop().unwrap();
+    w.wait_task(None);
+    let before = w.snap();
+    let last_id = before.rows.last().unwrap().id;
+    let history = before.history.len();
+    w.wf().new_chat().unwrap();
+    let s = w.wait("the new chat", |s| s.chat == 1);
+    assert!(s.rows.is_empty(), "{:?}", s.rows);
+    assert!(!s.older_rows);
+    assert!(s.task.is_none());
+    assert!(s.session_restore.is_none());
+    assert_eq!(
+        s.history.len(),
+        history,
+        "undo history is not part of the chat"
+    );
+    let dir = w.paths.project(&s.project);
+    let archived = fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.starts_with("conversation-") && name.ends_with(".jsonl")
+        })
+        .count();
+    assert_eq!(archived, 1);
+
+    w.submit(&good("after"));
+    w.wait_task(None);
+    let s = w.snap();
+    assert!(
+        s.rows.first().unwrap().id > last_id,
+        "row ids keep counting up"
+    );
+    w.assert_clean();
+}
+
+#[test]
 fn stop_during_editing_reaps_the_adapter_and_retains_the_draft() {
     let w = World::new();
     w.submit(&json!({"text": "starting", "write": {"partial.txt": "half"}, "hang": true}));
@@ -2136,6 +2186,59 @@ fn an_undo_worker_that_cannot_start_or_panics_never_leaves_the_undo_in_progress(
         assert_eq!(w.source("src/lib.rs"), original);
         w.assert_clean();
     }
+}
+
+#[test]
+fn a_check_sent_right_after_an_adapter_change_probes_the_new_adapter() {
+    // Select saves the adapter and fires one check at once: the check must see the new
+    // settings, never the previous adapter.
+    let w = World::new();
+    let mut changed = w.adapter_settings();
+    changed.adapter.executable = "definitely-not-an-adapter-xyz".into();
+    w.wf().set_adapter(Some(changed)).unwrap();
+    w.wf().check_adapter().unwrap();
+    let s = w.wait("the probe result", |s| {
+        matches!(s.adapter.readiness, AdapterReadiness::Checked { .. })
+    });
+    let AdapterReadiness::Checked { report, .. } = &s.adapter.readiness else {
+        unreachable!()
+    };
+    assert!(
+        matches!(
+            report.status,
+            studio_agent_spike::AdapterStatus::MissingExecutable { .. }
+        ),
+        "{:?}",
+        report.status
+    );
+}
+
+#[test]
+fn a_check_still_running_when_the_adapter_changes_is_redone_for_the_new_adapter() {
+    // The scripted peer's check is still running when the adapter is replaced: its result
+    // describes the old adapter and must never be shown for the new one.
+    let w = World::new();
+    w.wf().check_adapter().unwrap();
+    w.wait("the check of the scripted peer", |s| {
+        s.adapter.readiness == AdapterReadiness::Checking
+    });
+    let mut changed = w.adapter_settings();
+    changed.adapter.executable = "definitely-not-an-adapter-xyz".into();
+    w.wf().set_adapter(Some(changed)).unwrap();
+    let s = w.wait("the probe result", |s| {
+        matches!(s.adapter.readiness, AdapterReadiness::Checked { .. })
+    });
+    let AdapterReadiness::Checked { report, .. } = &s.adapter.readiness else {
+        unreachable!()
+    };
+    assert!(
+        matches!(
+            report.status,
+            studio_agent_spike::AdapterStatus::MissingExecutable { .. }
+        ),
+        "{:?}",
+        report.status
+    );
 }
 
 #[test]

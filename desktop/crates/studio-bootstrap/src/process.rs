@@ -69,6 +69,15 @@ impl ChildEnvironment {
             "SDKROOT",
             "SSL_CERT_FILE",
             "SSL_CERT_DIR",
+            // Package installs behind a proxy or a TLS-inspecting gateway; tools read
+            // either spelling of the proxy variables.
+            "HTTPS_PROXY",
+            "https_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+            "NO_PROXY",
+            "no_proxy",
+            "NODE_EXTRA_CA_CERTS",
         ];
 
         #[cfg(windows)]
@@ -100,6 +109,12 @@ impl ChildEnvironment {
             "UniversalCRTSdkDir",
             "UCRTVersion",
             "LIBCLANG_PATH",
+            // Package installs behind a proxy or a TLS-inspecting gateway. Names are
+            // case-insensitive here, so one spelling also picks up `https_proxy` and kin.
+            "HTTPS_PROXY",
+            "HTTP_PROXY",
+            "NO_PROXY",
+            "NODE_EXTRA_CA_CERTS",
         ];
 
         for &key in ALLOWED_KEYS {
@@ -192,7 +207,16 @@ impl ChildEnvironment {
 
     /// Return a redacted copy of variables safe for logging/diagnostics.
     pub fn export_redacted(&self) -> BTreeMap<String, String> {
-        let sensitive_fragments = ["TOKEN", "SECRET", "KEY", "PASS", "AUTH", "CREDENTIAL"];
+        // `PROXY`: a proxy URL may carry `user:password@`.
+        let sensitive_fragments = [
+            "TOKEN",
+            "SECRET",
+            "KEY",
+            "PASS",
+            "AUTH",
+            "CREDENTIAL",
+            "PROXY",
+        ];
         self.vars
             .iter()
             .map(|(k, v)| {
@@ -217,6 +241,10 @@ pub struct SpawnOptions {
     pub stdin: Stdio,
     pub stdout: Stdio,
     pub stderr: Stdio,
+    /// Test only: lets a member start a process outside the job, so escape
+    /// detection can be exercised against a real escapee.
+    #[cfg(all(test, windows))]
+    breakaway_ok: bool,
 }
 
 impl SpawnOptions {
@@ -229,6 +257,8 @@ impl SpawnOptions {
             stdin: Stdio::null(),
             stdout: Stdio::piped(),
             stderr: Stdio::piped(),
+            #[cfg(all(test, windows))]
+            breakaway_ok: false,
         }
     }
 
@@ -278,6 +308,19 @@ pub enum GroupMembership {
     Members(Vec<u32>),
     /// Live members exist but could not be enumerated on this platform.
     Present,
+}
+
+/// What one escape scan of a task tree established; see
+/// [`TrackedChild::escaped_descendants`] for what each platform can see.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EscapeScan {
+    /// Nothing outside the task scope was attributed to it. Not a proof of containment:
+    /// only descendants the platform can trace are checked.
+    Clean,
+    /// Descendants found outside the task process group (job object on Windows).
+    Escaped(Vec<u32>),
+    /// The scan, or the member history it relies on, failed: escapes cannot be ruled out.
+    Unverifiable(String),
 }
 
 /// Verified outcome of terminating a task tree. `group_empty` covers the task
@@ -332,13 +375,19 @@ pub struct ScopeObservation {
     pub live_children: usize,
     /// Combined state of the owned trees; clean iff `live_children == 0`.
     pub termination: TerminationReport,
-    /// Descendants that already left their task process group (Linux; only visible
-    /// while the escaping parent is alive, so an empty list never proves containment).
+    /// Descendants that already left their task process group (job object on Windows).
+    /// An empty list never proves containment: see
+    /// [`TrackedChild::escaped_descendants`] for what each platform can see.
     pub escaped: Vec<u32>,
+    /// Why escapes could not be ruled out for some owned tree (first reason seen).
+    pub containment_unverified: Option<String>,
 }
 impl ScopeObservation {
     pub fn is_clean(&self) -> bool {
-        self.live_children == 0 && self.termination.verified() && self.escaped.is_empty()
+        self.live_children == 0
+            && self.termination.verified()
+            && self.escaped.is_empty()
+            && self.containment_unverified.is_none()
     }
 }
 
@@ -778,6 +827,443 @@ fn escaped_in_scan(
     escaped
 }
 
+/// One live process of a Windows snapshot.
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WinProcess {
+    pid: u32,
+    ppid: u32,
+}
+
+/// Whether a candidate process is in the task's job object.
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JobCheck {
+    InJob,
+    Outside {
+        created: u64,
+    },
+    /// Exited since the snapshot (its pid may already name another process): not a
+    /// surviving writer.
+    Gone,
+    /// Alive but not inspectable: never assumed contained.
+    Denied,
+}
+
+/// What an opened candidate handle reported.
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy)]
+struct CandidateInfo {
+    in_job: bool,
+    created: u64,
+    /// Parent pid read from the handle, not from the snapshot.
+    parent: u32,
+}
+
+/// Classifies a candidate opened after the snapshot was taken. A parent other than the
+/// one the snapshot recorded means the snapshot's process exited and its pid was reused
+/// in between: the opened process is someone else's.
+#[cfg(any(windows, test))]
+fn classify_candidate(snapshot_ppid: u32, info: CandidateInfo) -> JobCheck {
+    if info.parent != snapshot_ppid {
+        JobCheck::Gone
+    } else if info.in_job {
+        JobCheck::InJob
+    } else {
+        JobCheck::Outside {
+            created: info.created,
+        }
+    }
+}
+
+/// Processes outside the job whose parent is a recorded job member (or another escapee)
+/// created no later than them. Members are `(pid, creation time)` seen in the job at any
+/// earlier scan, so a child whose parent already exited is still attributed; the creation
+/// order rules out a recycled parent pid. An exited process is not escaped; one that
+/// cannot be inspected is, but its own children are not attributed through it: without
+/// its creation time a recycled pid cannot be ruled out.
+#[cfg(any(windows, test))]
+fn escaped_from_members(
+    snapshot: &[WinProcess],
+    members: &[(u32, u64)],
+    check: &mut impl FnMut(u32) -> JobCheck,
+) -> Vec<u32> {
+    let mut ancestors: Vec<(u32, Option<u64>)> = members
+        .iter()
+        .map(|&(pid, created)| (pid, Some(created)))
+        .collect();
+    let mut escaped = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    loop {
+        let mut found = false;
+        for process in snapshot {
+            if seen.contains(&process.pid) || !ancestors.iter().any(|(pid, _)| *pid == process.ppid)
+            {
+                continue;
+            }
+            let created = match check(process.pid) {
+                JobCheck::Gone | JobCheck::InJob => {
+                    seen.insert(process.pid);
+                    continue;
+                }
+                JobCheck::Denied => None,
+                JobCheck::Outside { created } => Some(created),
+            };
+            let parented = ancestors.iter().any(|(pid, parent_created)| {
+                *pid == process.ppid
+                    && parent_created.is_some_and(|parent| created.is_none_or(|c| parent <= c))
+            });
+            seen.insert(process.pid);
+            if parented {
+                escaped.push(process.pid);
+                ancestors.push((process.pid, created));
+                found = true;
+            }
+        }
+        if !found {
+            return escaped;
+        }
+    }
+}
+
+/// Folds the escapes found by one scan and the member history's gap into one answer.
+/// Found escapes win over a gap: they are the stronger, more useful fact.
+#[cfg(any(windows, test))]
+fn escape_verdict(escaped: Vec<u32>, gap: Option<&str>) -> EscapeScan {
+    match gap {
+        _ if !escaped.is_empty() => EscapeScan::Escaped(escaped),
+        Some(reason) => EscapeScan::Unverifiable(reason.to_owned()),
+        None => EscapeScan::Clean,
+    }
+}
+
+/// A process seen in the task's job. On Windows its open handle (`H`) keeps the pid from
+/// being given to another process, so attributing a child to this pid stays exact after
+/// it exits.
+#[cfg(any(windows, test))]
+struct JobMember<H> {
+    pid: u32,
+    created: u64,
+    _handle: H,
+}
+
+/// Result of opening a pid listed in the job for recording.
+#[cfg(any(windows, test))]
+enum MemberOpen<H> {
+    Opened {
+        created: u64,
+        handle: H,
+    },
+    /// Exited before it could be opened, or its pid now names a process outside the job.
+    Gone,
+    /// Alive in the job but not recordable.
+    Failed(String),
+}
+
+/// Every member seen in the task's job, plus why that record may be missing one. A gap
+/// is permanent: a member that was never recorded can have started an escapee at any
+/// time. A member that exited before it was sampled is not a gap; sampling every
+/// `MEMBER_NOTE_INTERVAL` bounds that window instead.
+#[cfg(any(windows, test))]
+struct MemberHistory<H> {
+    members: Vec<JobMember<H>>,
+    gap: Option<String>,
+}
+
+#[cfg(any(windows, test))]
+impl<H> MemberHistory<H> {
+    fn new() -> Self {
+        Self {
+            members: Vec::new(),
+            gap: None,
+        }
+    }
+
+    /// Adds the job's current members. A pid already recorded is the same process: its
+    /// held handle keeps the pid from being reused.
+    fn record(
+        &mut self,
+        pids: Result<Vec<u32>, String>,
+        open: &mut impl FnMut(u32) -> MemberOpen<H>,
+    ) {
+        let pids = match pids {
+            Ok(pids) => pids,
+            Err(reason) => return self.note_gap(reason),
+        };
+        for pid in pids {
+            if self.members.iter().any(|m| m.pid == pid) {
+                continue;
+            }
+            if self.members.len() >= MAX_JOB_MEMBERS {
+                return self.note_gap(format!(
+                    "more than {MAX_JOB_MEMBERS} processes ran in the task scope"
+                ));
+            }
+            match open(pid) {
+                MemberOpen::Opened { created, handle } => self.members.push(JobMember {
+                    pid,
+                    created,
+                    _handle: handle,
+                }),
+                MemberOpen::Gone => {}
+                MemberOpen::Failed(reason) => {
+                    self.note_gap(format!("job member {pid} could not be recorded: {reason}"))
+                }
+            }
+        }
+    }
+
+    /// Keeps the first reason: it is where the record stopped being complete.
+    fn note_gap(&mut self, reason: String) {
+        self.gap.get_or_insert(reason);
+    }
+
+    /// `(pid, creation time)` of every recorded member.
+    fn ancestry(&self) -> Vec<(u32, u64)> {
+        self.members.iter().map(|m| (m.pid, m.created)).collect()
+    }
+
+    /// Recorded members other than `root`; `None` once the record has a gap.
+    fn observed(&self, root: u32) -> Option<usize> {
+        self.gap
+            .is_none()
+            .then(|| self.members.iter().filter(|m| m.pid != root).count())
+    }
+}
+
+#[cfg(windows)]
+fn process_creation_time(handle: windows_sys::Win32::Foundation::HANDLE) -> Option<u64> {
+    use windows_sys::Win32::Foundation::FILETIME;
+    let zero = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+    // SAFETY: `handle` is a live process handle with query rights.
+    let ok = unsafe {
+        windows_sys::Win32::System::Threading::GetProcessTimes(
+            handle,
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
+    };
+    (ok != 0).then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
+}
+
+/// Parent pid of the process behind `handle`, read from the kernel rather than a snapshot.
+#[cfg(windows)]
+fn process_parent_pid(handle: windows_sys::Win32::Foundation::HANDLE) -> Option<u32> {
+    use windows_sys::Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation};
+    use windows_sys::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
+    // SAFETY: plain-data struct; all-zero is a valid value.
+    let mut info: PROCESS_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: `handle` is a live process handle with query rights; `info` is writable and
+    // exactly the size passed.
+    let status = unsafe {
+        NtQueryInformationProcess(
+            handle,
+            ProcessBasicInformation,
+            (&mut info as *mut PROCESS_BASIC_INFORMATION).cast(),
+            std::mem::size_of::<PROCESS_BASIC_INFORMATION>() as u32,
+            std::ptr::null_mut(),
+        )
+    };
+    // NTSTATUS: negative values are errors.
+    (status >= 0).then_some(info.InheritedFromUniqueProcessId as u32)
+}
+
+/// Whether the process behind `handle` is in `job`; `None` when that cannot be told.
+#[cfg(windows)]
+fn process_in_job(
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    job: windows_sys::Win32::Foundation::HANDLE,
+) -> Option<bool> {
+    let mut in_job = 0;
+    // SAFETY: both handles are live for the duration of the call.
+    let ok =
+        unsafe { windows_sys::Win32::System::JobObjects::IsProcessInJob(handle, job, &mut in_job) };
+    (ok != 0).then_some(in_job != 0)
+}
+
+/// A query handle to `pid`; `Err(gone)` when it cannot be opened. Only
+/// `ERROR_INVALID_PARAMETER` (no such pid) means gone; any other failure is a process
+/// that exists but cannot be inspected.
+#[cfg(windows)]
+fn open_process(pid: u32) -> Result<std::os::windows::io::OwnedHandle, bool> {
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::{ERROR_INVALID_PARAMETER, GetLastError};
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    // SAFETY: plain query open; ownership of the handle moves into `OwnedHandle`.
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        // SAFETY: reads the calling thread's last error.
+        let gone = unsafe { GetLastError() } == ERROR_INVALID_PARAMETER;
+        return Err(gone);
+    }
+    // SAFETY: `handle` is a fresh, valid handle nobody else owns.
+    Ok(unsafe { OwnedHandle::from_raw_handle(handle as _) })
+}
+
+/// Opens `pid` for query and runs `f` on the handle; `Err(gone)` when it cannot be opened.
+#[cfg(windows)]
+fn with_process<T>(
+    pid: u32,
+    f: impl FnOnce(windows_sys::Win32::Foundation::HANDLE) -> T,
+) -> Result<T, bool> {
+    use std::os::windows::io::AsRawHandle;
+    let handle = open_process(pid)?;
+    Ok(f(handle.as_raw_handle() as _))
+}
+
+/// Inspects a snapshot process that names a recorded member (or escapee) as its parent.
+#[cfg(windows)]
+fn probe_candidate(
+    pid: u32,
+    snapshot_ppid: u32,
+    job: windows_sys::Win32::Foundation::HANDLE,
+) -> JobCheck {
+    let info = with_process(pid, |handle| {
+        Some(CandidateInfo {
+            in_job: process_in_job(handle, job)?,
+            created: process_creation_time(handle)?,
+            parent: process_parent_pid(handle)?,
+        })
+    });
+    match info {
+        Ok(Some(info)) => classify_candidate(snapshot_ppid, info),
+        Ok(None) | Err(false) => JobCheck::Denied,
+        Err(true) => JobCheck::Gone,
+    }
+}
+
+/// Opens a pid listed in `job` and keeps its handle for the member history.
+#[cfg(windows)]
+fn open_member(
+    pid: u32,
+    job: windows_sys::Win32::Foundation::HANDLE,
+) -> MemberOpen<std::os::windows::io::OwnedHandle> {
+    use std::os::windows::io::AsRawHandle;
+    let handle = match open_process(pid) {
+        Ok(handle) => handle,
+        Err(true) => return MemberOpen::Gone,
+        Err(false) => return MemberOpen::Failed("it could not be opened".into()),
+    };
+    let raw = handle.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+    match process_in_job(raw, job) {
+        // The member exited after the list was read and its pid was reused.
+        Some(false) => return MemberOpen::Gone,
+        Some(true) => {}
+        None => return MemberOpen::Failed("its job membership could not be read".into()),
+    }
+    match process_creation_time(raw) {
+        Some(created) => MemberOpen::Opened { created, handle },
+        None => MemberOpen::Failed("its creation time could not be read".into()),
+    }
+}
+
+/// Most members remembered per task (each holds one handle).
+#[cfg(any(windows, test))]
+const MAX_JOB_MEMBERS: usize = 4096;
+/// Time between two member recordings: the background sampler's period and the least
+/// gap between two recordings driven by the event stream.
+#[cfg(windows)]
+const MEMBER_NOTE_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Every live process with its parent, from one Toolhelp snapshot.
+#[cfg(windows)]
+fn windows_process_snapshot() -> Option<Vec<WinProcess>> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
+    // SAFETY: snapshot handle is closed below; entries are plain structs.
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut processes = Vec::new();
+        if Process32FirstW(snapshot, &mut entry) != 0 {
+            loop {
+                processes.push(WinProcess {
+                    pid: entry.th32ProcessID,
+                    ppid: entry.th32ParentProcessID,
+                });
+                if Process32NextW(snapshot, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snapshot);
+        Some(processes)
+    }
+}
+
+/// Pids currently assigned to `job`. A list that does not fit is asked for again with a
+/// buffer sized from the reported count; `Err` when it cannot be read in full.
+#[cfg(windows)]
+fn job_member_pids(job: windows_sys::Win32::Foundation::HANDLE) -> Result<Vec<u32>, String> {
+    use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, GetLastError};
+    use windows_sys::Win32::System::JobObjects::{
+        JOBOBJECT_BASIC_PROCESS_ID_LIST, JobObjectBasicProcessIdList, QueryInformationJobObject,
+    };
+    const ATTEMPTS: usize = 4;
+    // The two counts, in pointer-sized words, before the first id.
+    let header = std::mem::offset_of!(JOBOBJECT_BASIC_PROCESS_ID_LIST, ProcessIdList)
+        .div_ceil(std::mem::size_of::<usize>());
+    let mut capacity = 256;
+    for _ in 0..ATTEMPTS {
+        // `usize` words keep the buffer aligned for the struct and its ids.
+        let mut buffer = vec![0usize; header + capacity];
+        let bytes = u32::try_from(std::mem::size_of_val(buffer.as_slice()))
+            .map_err(|_| "the job's process list does not fit a query".to_owned())?;
+        // SAFETY: the buffer is writable, suitably aligned and `bytes` long.
+        let ok = unsafe {
+            QueryInformationJobObject(
+                job,
+                JobObjectBasicProcessIdList,
+                buffer.as_mut_ptr().cast(),
+                bytes,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            // SAFETY: reads the calling thread's last error right after the failed call.
+            let error = unsafe { GetLastError() };
+            if error != ERROR_MORE_DATA {
+                return Err(format!(
+                    "the job's process list could not be read (error {error})"
+                ));
+            }
+        }
+        let raw = buffer.as_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>();
+        // SAFETY: the header lies inside the buffer; it is read through the raw pointer,
+        // whose provenance covers the whole buffer.
+        let (assigned, listed) = unsafe {
+            (
+                (*raw).NumberOfAssignedProcesses as usize,
+                (*raw).NumberOfProcessIdsInList as usize,
+            )
+        };
+        let listed = listed.min(capacity);
+        if ok != 0 && (listed < capacity || assigned <= listed) {
+            // SAFETY: `ProcessIdList` starts inside the buffer. Its address is taken
+            // without a reference to the one-element array, so reading the `listed` ids
+            // written after it stays within the buffer's provenance.
+            let ids = unsafe { std::ptr::addr_of!((*raw).ProcessIdList) }.cast::<usize>();
+            return Ok((0..listed)
+                // SAFETY: `i < listed <= capacity`: every such id is in the buffer.
+                .map(|i| unsafe { ids.add(i).read() } as u32)
+                .collect());
+        }
+        // Too small, or members joined since the count was taken: grow past it.
+        capacity = (assigned + 64).max(capacity * 2);
+    }
+    Err("the job's process list kept outgrowing its buffer".into())
+}
+
 #[cfg(windows)]
 fn job_has_active_processes(job: windows_sys::Win32::Foundation::HANDLE) -> bool {
     // SAFETY: queries a job object handle owned by the tracker.
@@ -796,6 +1282,75 @@ fn job_has_active_processes(job: windows_sys::Win32::Foundation::HANDLE) -> bool
     }
 }
 
+/// The task's job object and its member history, shared with the background sampler.
+#[cfg(windows)]
+struct JobScope {
+    job: windows_sys::Win32::Foundation::HANDLE,
+    history: Mutex<MemberHistory<std::os::windows::io::OwnedHandle>>,
+}
+
+// SAFETY: a job object handle may be used from any thread; it is closed only in `Drop`,
+// once no thread holds the scope any more.
+#[cfg(windows)]
+unsafe impl Send for JobScope {}
+#[cfg(windows)]
+unsafe impl Sync for JobScope {}
+
+#[cfg(windows)]
+impl JobScope {
+    fn record(&self) {
+        let mut history = self.history.lock();
+        let job = self.job;
+        history.record(job_member_pids(job), &mut |pid| open_member(pid, job));
+    }
+}
+
+#[cfg(windows)]
+impl Drop for JobScope {
+    fn drop(&mut self) {
+        if !self.job.is_null() {
+            // SAFETY: the scope owns the job handle and this is its last user.
+            unsafe {
+                windows_sys::Win32::Foundation::CloseHandle(self.job);
+            }
+        }
+    }
+}
+
+/// Stop signal and thread of a running member sampler.
+#[cfg(windows)]
+type MemberSampler = (std::sync::mpsc::Sender<()>, std::thread::JoinHandle<()>);
+
+/// Records the job's members every `MEMBER_NOTE_INTERVAL` until the sender is dropped or
+/// the job has no process left (nothing can join an empty job again), so a long tool call
+/// that emits no agent event is still sampled. A sampler that cannot start is a gap.
+#[cfg(windows)]
+fn start_member_sampler(scope: &Arc<JobScope>) -> Option<MemberSampler> {
+    use std::sync::mpsc::{RecvTimeoutError, channel};
+    let (stop, stopped) = channel::<()>();
+    let sampled = Arc::clone(scope);
+    let spawned = std::thread::Builder::new()
+        .name("job-member-sampler".into())
+        .spawn(move || {
+            while let Err(RecvTimeoutError::Timeout) = stopped.recv_timeout(MEMBER_NOTE_INTERVAL) {
+                sampled.record();
+                if !job_has_active_processes(sampled.job) {
+                    break;
+                }
+            }
+        });
+    match spawned {
+        Ok(thread) => Some((stop, thread)),
+        Err(error) => {
+            scope
+                .history
+                .lock()
+                .note_gap(format!("the job member sampler could not start: {error}"));
+            None
+        }
+    }
+}
+
 pub struct TrackedChild {
     pub command: String,
     pub pid: u32,
@@ -808,8 +1363,16 @@ pub struct TrackedChild {
     #[cfg(target_os = "macos")]
     leader_start: (u64, u64),
     child: Child,
+    /// The job and every process seen in it at a scan: children of members that already
+    /// exited are still attributed to the task.
     #[cfg(windows)]
-    job_handle: windows_sys::Win32::Foundation::HANDLE,
+    scope: Arc<JobScope>,
+    /// Background member recording while the tree may still be alive.
+    #[cfg(windows)]
+    sampler: Option<MemberSampler>,
+    /// When `note_members` last recorded.
+    #[cfg(windows)]
+    members_noted: Mutex<Option<Instant>>,
     /// Set once the group was verified empty and the leader reaped. After this the
     /// group/job id may belong to someone else: it is never probed or signalled again.
     terminal: Option<TerminationReport>,
@@ -970,7 +1533,8 @@ impl TrackedChild {
         #[cfg(windows)]
         {
             self.os_calls += 1;
-            if job_has_active_processes(self.job_handle) {
+            self.scope.record();
+            if job_has_active_processes(self.scope.job) {
                 GroupMembership::Present
             } else {
                 GroupMembership::Empty
@@ -978,22 +1542,127 @@ impl TrackedChild {
         }
     }
 
-    /// Descendants of the direct child that are no longer in the task process group
-    /// (Linux only; empty elsewhere). Detects an escape such as `setsid` only while
-    /// the escaping parent is still alive: a double-forked helper is reparented to init
-    /// and is not observable, so an empty answer never proves containment.
-    pub fn escaped_descendants(&self) -> Vec<u32> {
+    /// Descendants of the direct child that are no longer in the task process group (job
+    /// object on Windows). Fails closed: an answer that cannot be established is
+    /// `Unverifiable`, never `Clean`, and even `Clean` never proves containment.
+    ///
+    /// - Linux: one `/proc` scan; an incomplete scan is `Unverifiable`. An escape such as
+    ///   `setsid` is seen only while the escaping parent is still alive: a double-forked
+    ///   helper is reparented to init.
+    /// - Windows: a process outside the job is attributed through every job member
+    ///   recorded so far (a background sampler records them while the tree lives), so its
+    ///   parent may have exited. A failed snapshot is `Unverifiable`, and so is any scan
+    ///   once the member record has a gap (a member that could not be recorded, a failed
+    ///   job query, or the member cap), unless escapes were found anyway: `Escaped` wins.
+    ///   Work a pre-existing service runs on the task's behalf (COM, Task Scheduler, WMI)
+    ///   is not a descendant and is never seen.
+    /// - Other platforms: escapes are not scanned, so always `Clean`; containment there
+    ///   rests on qualification evidence alone, as before.
+    ///
+    /// A tracker whose tree was verified terminated answers without any OS call: `Clean`,
+    /// or `Unverifiable` when its member record has a gap. Scan before terminating.
+    pub fn escaped_descendants(&self) -> EscapeScan {
         if self.terminal.is_some() {
-            return Vec::new();
+            #[cfg(windows)]
+            if let Some(reason) = self.scope.history.lock().gap.clone() {
+                return EscapeScan::Unverifiable(reason);
+            }
+            return EscapeScan::Clean;
         }
         #[cfg(target_os = "linux")]
         {
-            escaped_in_scan(&scan_proc(), self.pid, self.pgid, self.leader_start)
+            let scan = scan_proc();
+            if !scan.complete {
+                return EscapeScan::Unverifiable(
+                    "the process table could not be read completely".into(),
+                );
+            }
+            let escaped = escaped_in_scan(&scan, self.pid, self.pgid, self.leader_start);
+            if escaped.is_empty() {
+                EscapeScan::Clean
+            } else {
+                EscapeScan::Escaped(escaped)
+            }
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(windows)]
         {
-            Vec::new()
+            self.scope.record();
+            let Some(snapshot) = windows_process_snapshot() else {
+                return EscapeScan::Unverifiable("the process snapshot could not be taken".into());
+            };
+            let (members, gap) = {
+                let history = self.scope.history.lock();
+                (history.ancestry(), history.gap.clone())
+            };
+            let job = self.scope.job;
+            let escaped = escaped_from_members(&snapshot, &members, &mut |pid| {
+                let ppid = snapshot.iter().find(|p| p.pid == pid).map_or(0, |p| p.ppid);
+                probe_candidate(pid, ppid, job)
+            });
+            escape_verdict(escaped, gap.as_deref())
         }
+        // No escape scan exists here. The scan only ever demotes; containment is proven by
+        // qualification evidence, so the absence of a scan is not a failed scan.
+        #[cfg(not(any(target_os = "linux", windows)))]
+        {
+            EscapeScan::Clean
+        }
+    }
+
+    /// Distinct processes besides the direct child seen in the task scope so far, from the
+    /// job's member history (Windows). `None` where membership is not recorded, or when
+    /// the record has a gap (a member could not be recorded, a job query failed, or the
+    /// member cap was reached).
+    pub fn observed_descendants(&self) -> Option<usize> {
+        #[cfg(windows)]
+        {
+            if self.terminal.is_none() {
+                self.scope.record();
+            }
+            self.scope.history.lock().observed(self.pid)
+        }
+        #[cfg(not(windows))]
+        {
+            None
+        }
+    }
+
+    /// Records the scope's current members, at most every 100 ms; cheap enough to call on
+    /// every agent event. A background sampler records them on the same period anyway;
+    /// this adds a recording right at an event. A no-op where membership is not recorded.
+    pub fn note_members(&self) {
+        #[cfg(windows)]
+        {
+            if self.terminal.is_some() {
+                return;
+            }
+            {
+                let mut noted = self.members_noted.lock();
+                if noted.is_some_and(|at| at.elapsed() < MEMBER_NOTE_INTERVAL) {
+                    return;
+                }
+                *noted = Some(Instant::now());
+            }
+            self.scope.record();
+        }
+    }
+
+    /// Stops and joins the background member sampler; the member record stays readable.
+    #[cfg(windows)]
+    fn stop_sampler(&mut self) {
+        if let Some((stop, thread)) = self.sampler.take() {
+            drop(stop);
+            // A panic in the sampler leaves nothing to clean up; the record only stops
+            // growing.
+            let _ = thread.join();
+        }
+    }
+
+    /// Makes the tracker inert: the group/job id may now belong to someone else.
+    fn set_terminal(&mut self, report: TerminationReport) {
+        self.terminal = Some(report);
+        #[cfg(windows)]
+        self.stop_sampler();
     }
 
     #[cfg(unix)]
@@ -1017,7 +1686,7 @@ impl TrackedChild {
         self.os_calls += 1;
         // SAFETY: terminates the job object owned by this tracker.
         unsafe {
-            windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job_handle, 1);
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(self.scope.job, 1);
         }
     }
 
@@ -1061,7 +1730,7 @@ impl TrackedChild {
             },
         };
         if report.verified() {
-            self.terminal = Some(report.clone());
+            self.set_terminal(report.clone());
         }
         report
     }
@@ -1073,7 +1742,7 @@ impl TrackedChild {
             group_empty: true,
             remaining: Vec::new(),
         };
-        self.terminal = Some(report.clone());
+        self.set_terminal(report.clone());
         report
     }
 
@@ -1114,11 +1783,9 @@ impl Drop for TrackedChild {
 #[cfg(windows)]
 impl Drop for TrackedChild {
     fn drop(&mut self) {
-        if !self.job_handle.is_null() {
-            unsafe {
-                windows_sys::Win32::Foundation::CloseHandle(self.job_handle);
-            }
-        }
+        // The sampler holds the job scope: join it first so this tracker drops the last
+        // reference and closing the job (kill on close) happens here.
+        self.stop_sampler();
     }
 }
 
@@ -1209,7 +1876,14 @@ pub fn spawn_tracked(opts: SpawnOptions) -> Result<TrackedChild, ProcessError> {
             }
 
             let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            // A crashing member dies at once instead of handing the crash to Windows Error
+            // Reporting, whose WerFault would start outside the job as an apparent escapee.
+            info.BasicLimitInformation.LimitFlags =
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
+            #[cfg(test)]
+            if opts.breakaway_ok {
+                info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+            }
             let res = SetInformationJobObject(
                 job,
                 JobObjectExtendedLimitInformation,
@@ -1300,11 +1974,20 @@ pub fn spawn_tracked(opts: SpawnOptions) -> Result<TrackedChild, ProcessError> {
                 ));
             }
 
+            let scope = Arc::new(JobScope {
+                job,
+                history: Mutex::new(MemberHistory::new()),
+            });
+            // The leader is the first member; the sampler records the rest while it lives.
+            scope.record();
+            let sampler = start_member_sampler(&scope);
             Ok(TrackedChild {
                 command: cmd_str,
                 pid,
                 child,
-                job_handle: job,
+                scope,
+                sampler,
+                members_noted: Mutex::new(None),
                 terminal: None,
                 os_calls: 0,
             })
@@ -1464,13 +2147,20 @@ impl ProcessTreeManager {
                 remaining: Vec::new(),
             },
             escaped: Vec::new(),
+            containment_unverified: None,
         };
         for child_arc in list {
             let mut child = child_arc.lock();
             if child.is_terminated() {
                 continue;
             }
-            observation.escaped.extend(child.escaped_descendants());
+            match child.escaped_descendants() {
+                EscapeScan::Clean => {}
+                EscapeScan::Escaped(pids) => observation.escaped.extend(pids),
+                EscapeScan::Unverifiable(reason) => {
+                    observation.containment_unverified.get_or_insert(reason);
+                }
+            }
             let exited = matches!(child.child_mut().try_wait(), Ok(Some(_)));
             let membership = child.group_membership();
             if exited && membership == GroupMembership::Empty {
@@ -1570,6 +2260,13 @@ mod tests {
         assert_eq!(redacted.get("NORMAL_VAR"), Some(&"value123".to_string()));
         assert_eq!(redacted.get("API_KEY"), Some(&"[REDACTED]".to_string()));
         assert_eq!(redacted.get("MY_TOKEN"), Some(&"[REDACTED]".to_string()));
+
+        // A proxy URL can carry credentials.
+        env.set("HTTPS_PROXY", "http://user:pass@proxy:8080");
+        assert_eq!(
+            env.export_redacted().get("HTTPS_PROXY"),
+            Some(&"[REDACTED]".to_string())
+        );
     }
 
     #[test]
@@ -1833,7 +2530,13 @@ mod tests {
         // Linux can see the escape while the helper is still a descendant.
         #[cfg(target_os = "linux")]
         assert_eq!(
-            wait_for_escaped_descendant(|| child.escaped_descendants(), helper as u32),
+            wait_for_escaped_descendant(
+                || match child.escaped_descendants() {
+                    EscapeScan::Escaped(pids) => pids,
+                    _ => Vec::new(),
+                },
+                helper as u32
+            ),
             vec![helper as u32]
         );
         let report = child
@@ -2057,7 +2760,7 @@ mod tests {
         child.kill_forcefully().unwrap();
         assert!(!child.is_alive());
         assert_eq!(child.group_membership(), GroupMembership::Empty);
-        assert!(child.escaped_descendants().is_empty());
+        assert_eq!(child.escaped_descendants(), EscapeScan::Clean);
         assert!(child.try_wait().unwrap().is_some());
         assert_eq!(
             child.os_calls(),
@@ -2302,5 +3005,330 @@ mod tests {
         .merged();
         assert!(merged.forced && !merged.verified());
         assert_eq!(merged.remaining, vec![9]);
+    }
+}
+
+#[cfg(test)]
+mod job_escape_tests {
+    use super::*;
+
+    fn p(pid: u32, ppid: u32) -> WinProcess {
+        WinProcess { pid, ppid }
+    }
+
+    #[test]
+    fn a_child_outside_the_job_of_an_exited_member_is_escaped() {
+        // Member 10 (created at 100) already exited; its child 20 survives outside the job.
+        let snapshot = [p(20, 10), p(30, 20), p(40, 1)];
+        let escaped = escaped_from_members(&snapshot, &[(10, 100)], &mut |pid| match pid {
+            20 => JobCheck::Outside { created: 150 },
+            30 => JobCheck::Outside { created: 160 },
+            _ => JobCheck::InJob,
+        });
+        assert_eq!(escaped, [20, 30], "grandchildren of an escapee count too");
+    }
+
+    #[test]
+    fn a_recycled_parent_pid_does_not_attribute_an_older_process() {
+        let snapshot = [p(20, 10)];
+        let escaped = escaped_from_members(&snapshot, &[(10, 500)], &mut |_| JobCheck::Outside {
+            created: 100,
+        });
+        assert!(escaped.is_empty());
+    }
+
+    #[test]
+    fn exited_and_contained_children_are_not_escaped_but_uninspectable_ones_are() {
+        let snapshot = [p(20, 10), p(21, 10), p(22, 10)];
+        let escaped = escaped_from_members(&snapshot, &[(10, 100)], &mut |pid| match pid {
+            20 => JobCheck::Gone,
+            21 => JobCheck::InJob,
+            _ => JobCheck::Denied,
+        });
+        assert_eq!(escaped, [22]);
+    }
+
+    #[test]
+    fn processes_of_unrelated_parents_are_ignored() {
+        let snapshot = [p(20, 99)];
+        let escaped = escaped_from_members(&snapshot, &[(10, 100)], &mut |_| JobCheck::Denied);
+        assert!(escaped.is_empty());
+    }
+
+    #[test]
+    fn a_reused_candidate_pid_is_not_counted_as_an_escape() {
+        // The snapshot saw 20 as a child of member 10; by the time 20 was opened it had
+        // exited and its pid named a newer, unrelated process with another parent.
+        let snapshot = [p(20, 10)];
+        let reused = CandidateInfo {
+            in_job: false,
+            created: 150,
+            parent: 77,
+        };
+        assert_eq!(classify_candidate(10, reused), JobCheck::Gone);
+        let escaped = escaped_from_members(&snapshot, &[(10, 100)], &mut |_| {
+            classify_candidate(10, reused)
+        });
+        assert!(escaped.is_empty());
+
+        let genuine = CandidateInfo {
+            parent: 10,
+            ..reused
+        };
+        assert_eq!(
+            classify_candidate(10, genuine),
+            JobCheck::Outside { created: 150 }
+        );
+        assert_eq!(
+            classify_candidate(
+                10,
+                CandidateInfo {
+                    in_job: true,
+                    ..genuine
+                }
+            ),
+            JobCheck::InJob
+        );
+    }
+
+    #[test]
+    fn an_uninspectable_escapee_does_not_attribute_its_own_children() {
+        // 20 cannot be inspected: it counts as escaped, but without its creation time a
+        // process naming pid 20 as parent may descend from an older holder of that pid.
+        let snapshot = [p(20, 10), p(30, 20)];
+        let escaped = escaped_from_members(&snapshot, &[(10, 100)], &mut |pid| match pid {
+            20 => JobCheck::Denied,
+            _ => JobCheck::Outside { created: 50 },
+        });
+        assert_eq!(escaped, [20]);
+    }
+
+    fn opened(created: u64) -> MemberOpen<()> {
+        MemberOpen::Opened {
+            created,
+            handle: (),
+        }
+    }
+
+    #[test]
+    fn a_failed_member_record_is_unverifiable_never_clean() {
+        let mut history = MemberHistory::<()>::new();
+        history.record(Ok(vec![10, 11]), &mut |pid| opened(u64::from(pid)));
+        assert_eq!(history.ancestry(), [(10, 10), (11, 11)]);
+        assert_eq!(history.observed(10), Some(1));
+        assert_eq!(
+            escape_verdict(Vec::new(), history.gap.as_deref()),
+            EscapeScan::Clean
+        );
+
+        // A member that exited before it was opened is a sampling miss, not a gap.
+        history.record(Ok(vec![12]), &mut |_| MemberOpen::Gone);
+        assert_eq!(history.observed(10), Some(1));
+
+        // A live member that could not be recorded is a permanent gap.
+        history.record(Ok(vec![13]), &mut |_| MemberOpen::Failed("denied".into()));
+        history.record(Ok(vec![14]), &mut |pid| opened(u64::from(pid)));
+        assert_eq!(history.observed(10), None);
+        assert!(matches!(
+            escape_verdict(Vec::new(), history.gap.as_deref()),
+            EscapeScan::Unverifiable(reason) if reason.contains("13")
+        ));
+        // Escapes found anyway are still reported as such.
+        assert_eq!(
+            escape_verdict(vec![40], history.gap.as_deref()),
+            EscapeScan::Escaped(vec![40])
+        );
+
+        let mut unreadable = MemberHistory::<()>::new();
+        unreadable.record(Err("job query failed".into()), &mut |pid| {
+            opened(u64::from(pid))
+        });
+        assert_eq!(unreadable.observed(10), None);
+        assert_eq!(
+            escape_verdict(Vec::new(), unreadable.gap.as_deref()),
+            EscapeScan::Unverifiable("job query failed".into())
+        );
+    }
+
+    #[test]
+    fn reaching_the_member_cap_makes_the_record_incomplete() {
+        let mut history = MemberHistory::<()>::new();
+        let pids: Vec<u32> = (1..=MAX_JOB_MEMBERS as u32).collect();
+        history.record(Ok(pids.clone()), &mut |pid| opened(u64::from(pid)));
+        assert_eq!(history.observed(0), Some(MAX_JOB_MEMBERS));
+        // Members already recorded never count against the cap again.
+        history.record(Ok(pids), &mut |pid| opened(u64::from(pid)));
+        assert_eq!(history.observed(0), Some(MAX_JOB_MEMBERS));
+
+        history.record(Ok(vec![MAX_JOB_MEMBERS as u32 + 1]), &mut |pid| {
+            opened(u64::from(pid))
+        });
+        assert_eq!(history.members.len(), MAX_JOB_MEMBERS);
+        assert_eq!(history.observed(0), None);
+        assert!(matches!(
+            escape_verdict(Vec::new(), history.gap.as_deref()),
+            EscapeScan::Unverifiable(_)
+        ));
+    }
+
+    /// Starts `ping` as a child of `parent` (a job member) outside the job: the job must
+    /// permit breakaway. Returns the process handle and pid.
+    #[cfg(windows)]
+    fn spawn_escapee(parent: u32) -> (windows_sys::Win32::Foundation::HANDLE, u32) {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::*;
+        let mut command: Vec<u16> = std::ffi::OsStr::new("ping -n 30 127.0.0.1")
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        // SAFETY: test-only Win32 setup of one attribute list; every handle is closed.
+        unsafe {
+            let mut parent_handle = OpenProcess(PROCESS_CREATE_PROCESS, 0, parent);
+            assert!(!parent_handle.is_null(), "open the job member");
+            let mut size = 0usize;
+            InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut size);
+            let mut storage = vec![0u8; size];
+            let list: LPPROC_THREAD_ATTRIBUTE_LIST = storage.as_mut_ptr().cast();
+            assert_ne!(InitializeProcThreadAttributeList(list, 1, 0, &mut size), 0);
+            assert_ne!(
+                UpdateProcThreadAttribute(
+                    list,
+                    0,
+                    PROC_THREAD_ATTRIBUTE_PARENT_PROCESS as usize,
+                    (&mut parent_handle as *mut windows_sys::Win32::Foundation::HANDLE).cast(),
+                    std::mem::size_of_val(&parent_handle),
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                ),
+                0
+            );
+            let mut startup: STARTUPINFOEXW = std::mem::zeroed();
+            startup.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+            startup.lpAttributeList = list;
+            let mut info: PROCESS_INFORMATION = std::mem::zeroed();
+            let created = CreateProcessW(
+                std::ptr::null(),
+                command.as_mut_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                EXTENDED_STARTUPINFO_PRESENT | CREATE_BREAKAWAY_FROM_JOB | CREATE_NO_WINDOW,
+                std::ptr::null(),
+                std::ptr::null(),
+                &startup.StartupInfo,
+                &mut info,
+            );
+            DeleteProcThreadAttributeList(list);
+            CloseHandle(parent_handle);
+            assert_ne!(created, 0, "start the escapee");
+            CloseHandle(info.hThread);
+            (info.hProcess, info.dwProcessId)
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_real_process_outside_the_job_is_reported_and_in_job_children_are_not() {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::TerminateProcess;
+
+        // cmd starts ping inside the job: an ordinary child, never an escape.
+        let mut opts = SpawnOptions::new("cmd");
+        opts.args(["/c", "ping -n 30 127.0.0.1 > nul"]);
+        opts.breakaway_ok = true;
+        let mut child = spawn_tracked(opts).expect("spawn cmd");
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(child.group_membership(), GroupMembership::Present);
+        assert_eq!(child.escaped_descendants(), EscapeScan::Clean);
+
+        let (helper, helper_pid) = spawn_escapee(child.pid());
+        // The parent check that rejects a reused pid must actually read the parent: a
+        // failing query would turn the escapee into an uninspectable one and still pass.
+        let helper_parent = process_parent_pid(helper);
+        // The production path, through a limited query handle, must classify it too.
+        let probed = probe_candidate(helper_pid, child.pid(), child.scope.job);
+        let scan = child.escaped_descendants();
+        // SAFETY: the test owns the helper handle.
+        unsafe {
+            TerminateProcess(helper, 1);
+            CloseHandle(helper);
+        }
+        assert_eq!(helper_parent, Some(child.pid()));
+        assert!(matches!(probed, JobCheck::Outside { .. }), "{probed:?}");
+        let EscapeScan::Escaped(escaped) = scan else {
+            panic!("the escapee is not reported: {scan:?}");
+        };
+        // The escapee's own console host is its child, so it is outside the job too.
+        assert_eq!(escaped.first(), Some(&helper_pid), "{escaped:?}");
+        let snapshot = windows_process_snapshot().unwrap();
+        for pid in &escaped[1..] {
+            let parent = snapshot.iter().find(|p| p.pid == *pid).map(|p| p.ppid);
+            assert!(
+                parent.is_none() || escaped.contains(&parent.unwrap()),
+                "{pid} is not under the escapee"
+            );
+        }
+        child.kill_forcefully().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_silent_short_lived_member_is_sampled_without_any_event() {
+        // The first ping lives about a second and exits before anything is asked of the
+        // tracker; only the background sampler can have recorded it.
+        let mut opts = SpawnOptions::new("cmd");
+        opts.args([
+            "/c",
+            "ping -n 2 127.0.0.1 > nul & ping -n 30 127.0.0.1 > nul",
+        ]);
+        let mut child = spawn_tracked(opts).expect("spawn cmd");
+        std::thread::sleep(Duration::from_millis(2500));
+        // Members alive now (the second ping and console hosts) are recorded by the call
+        // below anyway; only a recording during the silent sleep adds the first ping.
+        let live_now = job_member_pids(child.scope.job)
+            .expect("job member list")
+            .into_iter()
+            .filter(|pid| *pid != child.pid())
+            .count();
+        let observed = child
+            .observed_descendants()
+            .expect("a complete member record");
+        assert!(
+            observed > live_now,
+            "{observed} descendants recorded, {live_now} alive now"
+        );
+        assert!(child.sampler.is_some());
+        child.kill_forcefully().unwrap();
+        assert!(child.is_terminated());
+        assert!(child.sampler.is_none(), "termination stops the sampler");
+        assert_eq!(child.escaped_descendants(), EscapeScan::Clean);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_sampler_ends_with_its_tree_and_on_drop() {
+        let mut opts = SpawnOptions::new("cmd");
+        opts.args(["/c", "exit 0"]);
+        let child = spawn_tracked(opts).expect("spawn cmd");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !child.sampler.as_ref().is_some_and(|(_, t)| t.is_finished()) {
+            assert!(
+                Instant::now() < deadline,
+                "the sampler outlived an empty job"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        drop(child);
+
+        let mut opts = SpawnOptions::new("cmd");
+        opts.args(["/c", "ping -n 30 127.0.0.1 > nul"]);
+        let child = spawn_tracked(opts).expect("spawn cmd");
+        let started = Instant::now();
+        drop(child);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "drop joins promptly"
+        );
     }
 }

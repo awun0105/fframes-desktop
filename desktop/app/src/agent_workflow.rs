@@ -367,6 +367,7 @@ impl AgentWorkflow {
             retained_queue: Vec::new(),
             rows: Vec::new(),
             older_rows: false,
+            chat: 0,
             review_policy: ReviewPolicy::default(),
             undo: UndoView::Unavailable {
                 reason: "starting".into(),
@@ -850,6 +851,21 @@ impl AgentWorkflow {
     pub fn dismiss_restoration(&self) -> Result<(), WorkflowError> {
         self.open_check()?;
         self.send(Msg::DismissRestoration)
+    }
+
+    /// Starts an empty conversation while nothing is running: the transcript is archived
+    /// next to the log and the saved session is forgotten. Undo history, the review policy
+    /// and the project are kept. Refused with a warning while a task, an undo, a provider
+    /// switch, queued briefs or an unresolved conflict still belong to the current one.
+    pub fn new_chat(&self) -> Result<(), WorkflowError> {
+        self.open_check()?;
+        self.send(Msg::NewChat)
+    }
+
+    /// The project's process scope (the controller's, shut down when the project closes
+    /// and on quit).
+    pub fn process_scope(&self) -> ProcessTreeManager {
+        self.shared.root_scope.clone()
     }
 
     #[doc(hidden)]

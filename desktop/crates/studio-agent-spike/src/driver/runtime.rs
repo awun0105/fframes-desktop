@@ -16,18 +16,21 @@ use super::{
     events::*,
     redact::{Redactor, StreamRedactor},
     transcript::{Transcript, TranscriptPage},
-    transport::{self, INGRESS_MAX_BYTES, INGRESS_MAX_FRAMES, Ingress, LineSink, LineStream},
+    transport::{
+        self, INGRESS_MAX_BYTES, INGRESS_MAX_FRAMES, Ingress, LineSink, LineStream, fits_wire,
+    },
 };
 use crate::{AgentSupervisor, SupervisorError, discovery::AdapterLaunch};
 use agent_client_protocol::{
-    Agent, Client, ConnectionTo, Dispatch, Error as RpcError, Handled, Lines, Responder,
+    Agent, Client, ConnectionTo, Dispatch, Error as RpcError, Handled, JsonRpcMessage, Lines,
+    RawJsonRpcMessage, Responder,
     schema::{
         ProtocolVersion,
         v1::{
             AuthenticateRequest, CancelNotification, ClientCapabilities, ContentBlock, EnvVariable,
             ImageContent, Implementation, InitializeRequest, InitializeResponse,
             LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest, PromptRequest,
-            PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
+            PromptResponse, RequestId, RequestPermissionOutcome, RequestPermissionRequest,
             RequestPermissionResponse, ResumeSessionRequest, SelectedPermissionOutcome,
             SessionConfigKind, SessionConfigOption, SessionConfigOptionValue,
             SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
@@ -50,13 +53,17 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{
-    ProcessError, ProcessTreeManager, TerminationReport, TrackedChild, WriterOwnership,
+    EscapeScan, ProcessError, ProcessTreeManager, TerminationReport, TrackedChild, WriterOwnership,
 };
 
 const CLIENT_NAME: &str = "fframes-studio";
+/// `agentInfo.name` of the Claude ACP adapter (its npm package name), current and former.
+const CLAUDE_ADAPTER_NAMES: [&str; 2] = [
+    "@agentclientprotocol/claude-agent-acp",
+    "@zed-industries/claude-code-acp",
+];
 const MAX_PROMPT_BYTES: usize = 256 * 1024;
 const MAX_PROMPT_IMAGE_COUNT: usize = 3;
-const MAX_PROMPT_IMAGE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PENDING_PERMISSIONS: usize = 16;
 const FAILURE_DETAIL_BYTES: usize = 2048;
 /// Host commands accepted but not yet executed by the connection task.
@@ -72,7 +79,12 @@ pub struct DriverLimits {
     pub max_transcript_bytes: usize,
     pub max_stderr_bytes: usize,
     pub init_timeout: Duration,
+    /// Idle time allowed during a turn. Only real agent activity restarts it: message and
+    /// thought chunks, tool calls and their updates, plan updates and permission requests.
+    /// Command lists, session info and option pushes do not.
     pub prompt_timeout: Duration,
+    /// Hard cap on one turn from the moment it is sent, however active the adapter is.
+    pub max_turn: Duration,
     /// Graceful drain before the owned tree is force-killed.
     pub shutdown_grace: Duration,
     /// Time an adapter has to answer a cancelled turn before it is killed.
@@ -90,6 +102,7 @@ impl Default for DriverLimits {
             max_stderr_bytes: 1024 * 1024,
             init_timeout: Duration::from_secs(30),
             prompt_timeout: Duration::from_secs(15 * 60),
+            max_turn: Duration::from_secs(2 * 60 * 60),
             shutdown_grace: Duration::from_secs(2),
             cancel_ack_timeout: Duration::from_secs(2),
             request_timeout: Duration::from_secs(30),
@@ -162,9 +175,13 @@ pub struct DriverOutcome {
     pub session: Option<String>,
     /// Verified termination of the owned task process group.
     pub termination: TerminationReport,
-    /// Configured ownership, demoted to `Detached` if an escape was observed.
+    /// Configured ownership, demoted to `Detached` if an escape was observed or
+    /// containment could not be verified.
     pub ownership: WriterOwnership,
     pub escaped_pids: Vec<u32>,
+    /// Why containment of the task's processes could not be verified (an escape scan or
+    /// the verified termination failed), if it could not.
+    pub containment_unverified: Option<String>,
     /// The last finished turn, if any. A latched failure always dominates it: consumers
     /// must refuse capture authority when `failure` is set.
     pub last_prompt: Option<PromptOutcome>,
@@ -265,6 +282,8 @@ struct Core {
     failure: Option<AgentFailure>,
     stopping: bool,
     escaped: Vec<u32>,
+    /// First reason containment could not be verified.
+    containment_unverified: Option<String>,
     outcome: Option<DriverOutcome>,
     permissions: Permissions,
     /// Turn whose `session/cancel` notification still has to be written.
@@ -346,8 +365,16 @@ struct RawConfig {
     values: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Deadline {
+    at: Instant,
+    phase: Phase,
+    /// Hard limit `at` can never be extended past (the turn cap).
+    cap: Option<Instant>,
+}
+
 struct WatchState {
-    phase_deadline: Option<(Instant, Phase)>,
+    phase_deadline: Option<Deadline>,
     requests: HashMap<u64, Instant>,
     next_request: u64,
     kill: bool,
@@ -357,7 +384,16 @@ struct WatchState {
 enum WatchAction {
     Kill,
     Phase(Phase),
+    /// The prompt turn reached `DriverLimits::max_turn`.
+    TurnCap,
     RequestTimedOut,
+}
+
+fn earliest(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 /// Deadline ledger and reaper wake-up shared with the watchdog thread.
@@ -380,12 +416,40 @@ impl Watchdog {
         }
     }
     fn arm(&self, phase: Phase, after: Duration) {
-        self.state.lock().phase_deadline = Some((Instant::now() + after, phase));
+        self.state.lock().phase_deadline = Instant::now().checked_add(after).map(|at| Deadline {
+            at,
+            phase,
+            cap: None,
+        });
+        self.changed.notify_all();
+    }
+    /// Arms the prompt idle deadline under a hard cap of `max_turn` from now.
+    fn arm_turn(&self, idle: Duration, max_turn: Duration) {
+        let now = Instant::now();
+        let cap = now.checked_add(max_turn);
+        self.state.lock().phase_deadline =
+            earliest(now.checked_add(idle), cap).map(|at| Deadline {
+                at,
+                phase: Phase::Prompt,
+                cap,
+            });
         self.changed.notify_all();
     }
     fn disarm(&self) {
         self.state.lock().phase_deadline = None;
         self.changed.notify_all();
+    }
+    /// Pushes an armed `phase` deadline to `after` from now, never past its cap; any
+    /// other deadline is kept.
+    fn extend(&self, phase: Phase, after: Duration) {
+        let mut state = self.state.lock();
+        if let Some(deadline) = &mut state.phase_deadline
+            && deadline.phase == phase
+            && let Some(at) = earliest(Instant::now().checked_add(after), deadline.cap)
+        {
+            deadline.at = at;
+            self.changed.notify_all();
+        }
     }
     fn stop(&self) {
         self.state.lock().stop = true;
@@ -430,20 +494,21 @@ impl Watchdog {
                 .min_by_key(|(_, at)| **at)
                 .map(|(k, at)| (*k, *at));
             let phase = state.phase_deadline;
-            let next = match (phase.map(|(at, _)| at), request.map(|(_, at)| at)) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
-            };
+            let next = earliest(phase.map(|d| d.at), request.map(|(_, at)| at));
             let Some(at) = next else {
                 self.changed.wait(&mut state);
                 continue;
             };
             if Instant::now() >= at {
-                if let Some((phase_at, phase)) = phase
-                    && phase_at <= at
+                if let Some(deadline) = phase
+                    && deadline.at <= at
                 {
                     state.phase_deadline = None;
-                    return Some(WatchAction::Phase(phase));
+                    return Some(if deadline.cap.is_some_and(|cap| deadline.at >= cap) {
+                        WatchAction::TurnCap
+                    } else {
+                        WatchAction::Phase(deadline.phase)
+                    });
                 }
                 if let Some((key, _)) = request {
                     state.requests.remove(&key);
@@ -473,6 +538,8 @@ pub(super) struct Shared {
     declined: AtomicU64,
     watchdog: Watchdog,
     forced_kill: AtomicBool,
+    /// The adapter identified itself as the Claude ACP adapter at initialize.
+    claude_adapter: AtomicBool,
 }
 
 /// Splits `text` into pieces of at most `max` bytes on char boundaries.
@@ -564,6 +631,11 @@ impl Shared {
 
     /// Queues an event; false when it could not be queued (overflow or already closed).
     fn emit(&self, kind: AgentEventKind) -> bool {
+        // Remember short-lived scope members for escape attribution (throttled; skipped
+        // when the tracker is busy, the next event records them).
+        if let Some(child) = self.child.try_lock() {
+            child.note_members();
+        }
         match self.queue.push(kind) {
             PushOutcome::Queued => true,
             PushOutcome::Closed => false,
@@ -630,12 +702,32 @@ impl Shared {
         }
     }
 
+    /// Records the result of one escape scan of the owned tree.
+    fn note_scan(&self, scan: EscapeScan) {
+        match scan {
+            EscapeScan::Clean => {}
+            EscapeScan::Escaped(pids) => self.note_escapes(pids),
+            EscapeScan::Unverifiable(reason) => {
+                self.note_unverified(&format!("escape scan failed: {reason}"));
+            }
+        }
+    }
+
+    /// Keeps the first reason containment could not be verified; ownership is demoted.
+    fn note_unverified(&self, reason: &str) {
+        let reason = self.clean(reason);
+        let mut core = self.core.lock();
+        if core.containment_unverified.is_none() {
+            core.containment_unverified = Some(reason);
+        }
+    }
+
     /// Forced stop of the owned tree. Runs on the reaper thread or in `stop()`, never on
     /// a handle caller's thread. Escapes are recorded first: once the parent dies an
     /// escaped helper is reparented and can no longer be attributed.
     fn kill_now(&self) {
-        let escaped = self.child.lock().escaped_descendants();
-        self.note_escapes(escaped);
+        let scan = self.child.lock().escaped_descendants();
+        self.note_scan(scan);
         self.close_permissions();
         self.forced_kill.store(true, Ordering::SeqCst);
         let _ = self.child.lock().kill_forcefully();
@@ -740,6 +832,8 @@ impl Shared {
             },
         );
         drop(core);
+        // An admitted request for the active turn is agent activity.
+        self.note_turn_activity();
         self.emit(AgentEventKind::PermissionRequested(PermissionPrompt {
             id: PermissionId(id),
             turn,
@@ -852,6 +946,12 @@ impl Shared {
         Ok(())
     }
 
+    /// The adapter is still working on the turn: its prompt deadline starts over.
+    fn note_turn_activity(&self) {
+        self.watchdog
+            .extend(Phase::Prompt, self.limits.prompt_timeout);
+    }
+
     fn on_update(&self, notification: SessionNotification) -> Result<(), RpcError> {
         let (matches, in_turn, restoring, stopping) = {
             let core = self.core.lock();
@@ -867,6 +967,19 @@ impl Shared {
         }
         if stopping {
             return self.late();
+        }
+        // Only real agent work restarts the turn's idle deadline; command lists, session
+        // info, usage and option pushes can arrive forever without the turn progressing.
+        let active = matches!(
+            notification.update,
+            SessionUpdate::AgentMessageChunk(_)
+                | SessionUpdate::AgentThoughtChunk(_)
+                | SessionUpdate::ToolCall(_)
+                | SessionUpdate::ToolCallUpdate(_)
+                | SessionUpdate::Plan(_)
+        );
+        if in_turn && active {
+            self.note_turn_activity();
         }
         match notification.update {
             SessionUpdate::AgentMessageChunk(chunk) => {
@@ -989,21 +1102,19 @@ impl Shared {
         }
     }
 
-    /// Turn/restore boundary: like an event boundary, a secret prefix is still held
-    /// because the next turn could complete it.
-    fn flush_streams_at_boundary(&self, restoring: bool) {
+    /// Turn/restore boundary: a message never continues into the next turn or the replay
+    /// into the first live turn, so a held secret prefix cannot be completed any more and
+    /// is released with its own turn instead of leaking into the next one.
+    fn finish_streams_at_turn_end(&self, restoring: bool) {
         for role in ROLES {
-            let held = self.streams.lock().get(role).flush_at_boundary();
-            self.release_text(role, held, restoring);
+            let rest = self.streams.lock().get(role).finish();
+            self.release_text(role, rest, restoring);
         }
     }
 
     /// True end of every stream: nothing more can ever complete a held prefix.
     fn finish_streams(&self) {
-        for role in ROLES {
-            let rest = self.streams.lock().get(role).finish();
-            self.release_text(role, rest, false);
-        }
+        self.finish_streams_at_turn_end(false);
     }
 
     // ---- options -------------------------------------------------------------------
@@ -1232,14 +1343,22 @@ impl Shared {
     }
 
     fn on_prompt_result(&self, turn_id: u64, result: Result<PromptResponse, RpcError>) {
-        let response = match result {
-            Ok(response) => response,
+        let (response, reported_incomplete) = match result {
+            Ok(response) => (response.stop_reason, false),
+            // The turn is over and the session usable; the adapter only reports that
+            // server-side tools never got a result. Kept distinguishable from a clean end.
+            Err(error)
+                if self.claude_adapter.load(Ordering::SeqCst)
+                    && only_server_tools_unfinished(&error) =>
+            {
+                (StopReason::EndTurn, true)
+            }
             Err(error) => {
                 self.fail(self.rpc_failure(Phase::Prompt, error));
                 return;
             }
         };
-        let stop_reason = match response.stop_reason {
+        let stop_reason = match response {
             StopReason::EndTurn => StopReasonKind::EndTurn,
             StopReason::MaxTokens => StopReasonKind::MaxTokens,
             StopReason::MaxTurnRequests => StopReasonKind::MaxTurnRequests,
@@ -1279,16 +1398,18 @@ impl Shared {
         };
         self.push_permission_closed(&closed);
         // Held-back text belongs to this turn; release it before the completion event.
-        self.flush_streams_at_boundary(false);
+        self.finish_streams_at_turn_end(false);
         self.watchdog.disarm();
-        let escaped = self.child.lock().escaped_descendants();
-        self.note_escapes(escaped);
+        let scan = self.child.lock().escaped_descendants();
+        self.note_scan(scan);
         let outcome = PromptOutcome {
             turn: turn.id,
             stop_reason,
-            authoritative: true,
+            // An error response carries no stop reason of its own.
+            authoritative: !reported_incomplete,
             cancel_requested: turn.cancel_requested,
             unresolved_permissions: closed.len() as u32,
+            reported_incomplete,
         };
         // The completion event goes in first so a waiter that sees the outcome also sees
         // the event. If it cannot be queued a failure is already latched: no success.
@@ -1387,14 +1508,12 @@ impl Shared {
     /// Verified teardown of the owned tree; safe to call repeatedly.
     fn teardown(&self) -> TerminationReport {
         let mut child = self.child.lock();
-        let escaped = child.escaped_descendants();
-        if !escaped.is_empty() {
-            self.note_escapes(escaped);
-        }
+        self.note_scan(child.escaped_descendants());
         let mut report = child
             .terminate_verified(self.limits.shutdown_grace)
             .unwrap_or_else(|error: ProcessError| {
-                let _ = error;
+                // Termination that could not be verified is containment that cannot be.
+                self.note_unverified(&format!("termination could not be verified: {error}"));
                 TerminationReport {
                     forced: true,
                     direct_child_exited: false,
@@ -1415,15 +1534,16 @@ impl Shared {
         termination: TerminationReport,
         exit_code: Option<i32>,
     ) -> DriverOutcome {
-        let (escaped, last_prompt, failure) = {
+        let (escaped, containment_unverified, last_prompt, failure) = {
             let core = self.core.lock();
             (
                 core.escaped.clone(),
+                core.containment_unverified.clone(),
                 core.last_outcome.clone(),
                 core.failure.clone(),
             )
         };
-        let ownership = if escaped.is_empty() {
+        let ownership = if escaped.is_empty() && containment_unverified.is_none() {
             self.ownership.clone()
         } else {
             WriterOwnership::Detached
@@ -1434,6 +1554,7 @@ impl Shared {
             termination,
             ownership,
             escaped_pids: escaped,
+            containment_unverified,
             last_prompt,
             failure,
             late_events_rejected: self.late.load(Ordering::SeqCst),
@@ -1507,6 +1628,50 @@ enum Plan {
     Load(String),
 }
 
+/// Length of the standard base64 encoding of `bytes` bytes (with padding).
+fn base64_len(bytes: usize) -> Option<usize> {
+    bytes.div_ceil(3).checked_mul(4)
+}
+
+/// Counts serialized bytes without buffering them.
+struct ByteCount(usize);
+
+impl std::io::Write for ByteCount {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn json_len(value: &impl serde::Serialize) -> Option<usize> {
+    let mut count = ByteCount(0);
+    serde_json::to_writer(&mut count, value).ok()?;
+    Some(count.0)
+}
+
+/// Bytes of the line (without its newline) the SDK writes for `request`: the JSON-RPC
+/// envelope it builds around the serialized params. The SDK's request ids are always
+/// UUID strings, so a placeholder of the same length gives the exact size. `usize::MAX`
+/// when it cannot be serialized, which never fits.
+fn prompt_line_bytes(request: &PromptRequest) -> usize {
+    const SDK_REQUEST_ID: &str = "00000000-0000-0000-0000-000000000000";
+    let envelope = RawJsonRpcMessage::request(
+        request.method().to_owned(),
+        serde_json::json!({}),
+        RequestId::Str(SDK_REQUEST_ID.to_owned()),
+    )
+    .ok()
+    .and_then(|message| json_len(&message));
+    // The empty `{}` params in the envelope are replaced by the real ones.
+    match (envelope, json_len(request)) {
+        (Some(envelope), Some(params)) => (envelope - 2).saturating_add(params),
+        _ => usize::MAX,
+    }
+}
+
 fn wire_server(server: &McpStdioServer) -> McpServer {
     McpServer::Stdio(
         McpServerStdio::new(server.name.clone(), server.command.clone())
@@ -1519,6 +1684,38 @@ fn wire_server(server: &McpStdioServer) -> McpServer {
                     .collect(),
             ),
     )
+}
+
+/// Whether a prompt error is the Claude adapter reporting a turn that ended with only
+/// server-side tool calls (`srvtoolu_` ids: tools the model API runs itself, such as the
+/// advisor) left without a result. The client could not have supplied one, and the adapter
+/// has already closed those calls as failed. The adapter tags this error with
+/// `data.errorKind = "incomplete_tool_call"` and lists every unfinished id after the
+/// message prefix; any other id, a missing tag or another code is a real failure.
+fn only_server_tools_unfinished(error: &RpcError) -> bool {
+    const MARKER: &str = "Claude ended the turn without returning results for tool calls: ";
+    const SERVER_TOOL: &str = "srvtoolu_";
+    if i32::from(error.code) != i32::from(agent_client_protocol::ErrorCode::InternalError) {
+        return false;
+    }
+    let tagged = error
+        .data
+        .as_ref()
+        .and_then(|data| data.get("errorKind"))
+        .and_then(serde_json::Value::as_str)
+        == Some("incomplete_tool_call");
+    if !tagged {
+        return false;
+    }
+    let Some((_, ids)) = error.message.split_once(MARKER) else {
+        return false;
+    };
+    let mut ids = ids
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|id| !id.is_empty())
+        .peekable();
+    ids.peek().is_some()
+        && ids.all(|id| id.len() > SERVER_TOOL.len() && id.starts_with(SERVER_TOOL))
 }
 
 fn initialized_info(init: &InitializeResponse, mcp_stdio: bool) -> InitializedInfo {
@@ -1589,6 +1786,10 @@ async fn drive(
         ));
     }
     let raw_info = initialized_info(&init, params.mcp_stdio);
+    shared.claude_adapter.store(
+        CLAUDE_ADAPTER_NAMES.contains(&raw_info.agent_name.as_str()),
+        Ordering::SeqCst,
+    );
     // Wire metadata is adapter-controlled text: only a sanitized copy is exported.
     let mut info = raw_info.clone();
     info.agent_name = shared.clean(&raw_info.agent_name);
@@ -1689,7 +1890,7 @@ async fn drive(
         )
     })?;
     let (new_id, modes, config) = reply.map_err(|e| shared.rpc_failure(Phase::Session, e))?;
-    shared.flush_streams_at_boundary(true);
+    shared.finish_streams_at_turn_end(true);
     {
         let mut core = shared.core.lock();
         if let Some(id) = new_id {
@@ -1922,6 +2123,22 @@ fn run_watchdog(shared: Arc<Shared>) {
     while let Some(action) = shared.watchdog.next_action() {
         match action {
             WatchAction::Kill => shared.kill_now(),
+            WatchAction::Phase(Phase::Prompt) => shared.fail(AgentFailure::new(
+                FailureKind::DeadlineExceeded,
+                Phase::Prompt,
+                format!(
+                    "the agent showed no activity for {:?} during the turn (idle timeout)",
+                    shared.limits.prompt_timeout
+                ),
+            )),
+            WatchAction::TurnCap => shared.fail(AgentFailure::new(
+                FailureKind::DeadlineExceeded,
+                Phase::Prompt,
+                format!(
+                    "the turn ran longer than the {:?} turn limit",
+                    shared.limits.max_turn
+                ),
+            )),
             WatchAction::Phase(expired) => shared.fail(AgentFailure::new(
                 FailureKind::DeadlineExceeded,
                 expired,
@@ -2047,6 +2264,7 @@ impl AcpDriver {
                 failure: None,
                 stopping: false,
                 escaped: Vec::new(),
+                containment_unverified: None,
                 outcome: None,
                 permissions: Permissions::default(),
                 cancel_to_send: None,
@@ -2060,6 +2278,7 @@ impl AcpDriver {
             declined: AtomicU64::new(0),
             watchdog: Watchdog::new(),
             forced_kill: AtomicBool::new(false),
+            claude_adapter: AtomicBool::new(false),
             limits,
         });
         shared
@@ -2306,8 +2525,30 @@ impl AcpDriver {
         self.prompt_with_images(text, Vec::new())
     }
 
+    /// Largest total of raw PNG bytes that `count` images can carry next to `text` in one
+    /// prompt, however the bytes are split between the images. The bound is the wire
+    /// message limit (`DriverLimits::max_message_bytes`) after base64 and JSON framing.
+    /// 0 when no image fits, `count` is 0 or above the image limit, or there is no session.
+    pub fn prompt_image_budget(&self, text: &str, count: usize) -> usize {
+        if count == 0 || count > MAX_PROMPT_IMAGE_COUNT {
+            return 0;
+        }
+        let Some(session) = self.shared.core.lock().session.clone() else {
+            return 0;
+        };
+        let mut content = vec![ContentBlock::Text(TextContent::new(text))];
+        content.extend((0..count).map(|_| ContentBlock::Image(ImageContent::new("", "image/png"))));
+        let framing = prompt_line_bytes(&PromptRequest::new(session, content));
+        // Base64 room left on the line; each image rounds up to whole 4-byte groups, so
+        // 4 * ceil(n / 3) <= (4n + 8) / 3 and the total n must satisfy 4n <= 3 * room - 8c.
+        let max_line = self.shared.limits.max_message_bytes.saturating_sub(1);
+        let room = max_line.saturating_sub(framing);
+        room.saturating_mul(3).saturating_sub(8 * count) / 4
+    }
+
     /// Starts a text prompt with bounded PNG evidence. Image content is rejected unless
-    /// the adapter negotiated ACP's image prompt capability.
+    /// the adapter negotiated ACP's image prompt capability, and the whole request must
+    /// fit one wire message (see [`Self::prompt_image_budget`]).
     pub fn prompt_with_images(
         &self,
         text: &str,
@@ -2322,14 +2563,6 @@ impl AcpDriver {
         if images.len() > MAX_PROMPT_IMAGE_COUNT {
             return Err(DriverError::InvalidPrompt("too many prompt images"));
         }
-        let image_bytes = images
-            .iter()
-            .try_fold(0usize, |total, image| total.checked_add(image.data.len()));
-        let Some(image_bytes) = image_bytes.filter(|bytes| *bytes <= MAX_PROMPT_IMAGE_BYTES) else {
-            return Err(DriverError::InvalidPrompt(
-                "prompt images exceed the size limit",
-            ));
-        };
         if images.iter().any(|image| image.data.is_empty()) {
             return Err(DriverError::InvalidPrompt("prompt image is empty"));
         }
@@ -2348,12 +2581,34 @@ impl AcpDriver {
                 "the adapter did not negotiate image prompts",
             ));
         }
+        // The whole request must fit one wire message, or the transport would fail the
+        // driver when it is written. Images are measured encoded before anything is
+        // encoded, then the exact line is measured; a rejection changes no state.
+        let max = self.shared.limits.max_message_bytes;
+        let encoded = images.iter().try_fold(0usize, |total, image| {
+            total.checked_add(base64_len(image.data.len())?)
+        });
+        if !encoded.is_some_and(|bytes| fits_wire(bytes, max)) {
+            return Err(DriverError::InvalidPrompt(
+                "prompt images exceed the message size limit",
+            ));
+        }
         let mut content = Vec::with_capacity(images.len() + 1);
         content.push(ContentBlock::Text(TextContent::new(text)));
         content.extend(images.into_iter().map(|image| {
             ContentBlock::Image(ImageContent::new(STANDARD.encode(image.data), "image/png"))
         }));
-        debug_assert!(image_bytes <= MAX_PROMPT_IMAGE_BYTES);
+        // Without a session the status check below refuses the prompt anyway.
+        let session = self.shared.core.lock().session.clone();
+        if let Some(session) = session {
+            let request = PromptRequest::new(session, content);
+            if !fits_wire(prompt_line_bytes(&request), max) {
+                return Err(DriverError::InvalidPrompt(
+                    "prompt exceeds the message size limit",
+                ));
+            }
+            content = request.prompt;
+        }
         let turn = {
             let mut core = self.shared.core.lock();
             if let Some(failure) = &core.failure {
@@ -2381,9 +2636,10 @@ impl AcpDriver {
             core.phase = Phase::Prompt;
             id
         };
-        self.shared
-            .watchdog
-            .arm(Phase::Prompt, self.shared.limits.prompt_timeout);
+        self.shared.watchdog.arm_turn(
+            self.shared.limits.prompt_timeout,
+            self.shared.limits.max_turn,
+        );
         if let Err(error) = self.send(Command::Prompt { turn, content }) {
             // Never leave a phantom turn that nothing will ever answer.
             let mut core = self.shared.core.lock();
@@ -2411,6 +2667,19 @@ impl AcpDriver {
             let _ = self.send(Command::Wake);
         }
         Ok(())
+    }
+
+    /// Writer-containment qualification only: kills the adapter's own process (not its
+    /// tree) through the handle it was started with, as a provider crash would. The
+    /// driver then observes the closed transport like any crash.
+    pub fn crash_adapter_for_qualification(&self) -> std::io::Result<()> {
+        self.shared.child.lock().child_mut().kill()
+    }
+
+    /// Processes the adapter started in its task scope so far (`None` where the platform
+    /// does not record them or the record is incomplete).
+    pub fn observed_descendants(&self) -> Option<usize> {
+        self.shared.child.lock().observed_descendants()
     }
 
     /// Answers one pending permission request. Duplicate, late or unknown ids fail.
@@ -2575,4 +2844,137 @@ fn spawn_failure(
         other => (FailureKind::SpawnFailed, other.to_string()),
     };
     AgentFailure::new(kind, Phase::Spawn, redactor.redact(&message))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn internal(message: &str) -> RpcError {
+        RpcError::new(
+            i32::from(agent_client_protocol::ErrorCode::InternalError),
+            message,
+        )
+        .data(serde_json::json!({ "errorKind": "incomplete_tool_call" }))
+    }
+
+    #[test]
+    fn turn_activity_extends_only_the_armed_prompt_deadline() {
+        let deadline = |watchdog: &Watchdog| watchdog.state.lock().phase_deadline;
+        let watchdog = Watchdog::new();
+        // Nothing armed: activity arms nothing.
+        watchdog.extend(Phase::Prompt, Duration::from_secs(60));
+        assert_eq!(deadline(&watchdog), None);
+
+        watchdog.arm_turn(Duration::from_millis(10), Duration::from_secs(3600));
+        let first = deadline(&watchdog).unwrap();
+        watchdog.extend(Phase::Prompt, Duration::from_secs(60));
+        let extended = deadline(&watchdog).unwrap();
+        assert_eq!(extended.phase, Phase::Prompt);
+        assert!(extended.at >= first.at + Duration::from_secs(59));
+
+        // Another phase's deadline is never pushed back by turn activity.
+        watchdog.arm(Phase::CancelAck, Duration::from_millis(10));
+        let before = deadline(&watchdog);
+        watchdog.extend(Phase::Prompt, Duration::from_secs(60));
+        assert_eq!(deadline(&watchdog), before);
+    }
+
+    #[test]
+    fn activity_never_extends_a_turn_past_its_cap() {
+        let watchdog = Watchdog::new();
+        watchdog.arm_turn(Duration::from_millis(10), Duration::from_millis(50));
+        let armed = watchdog.state.lock().phase_deadline.unwrap();
+        let cap = armed.cap.unwrap();
+        assert!(armed.at < cap);
+        watchdog.extend(Phase::Prompt, Duration::from_secs(60));
+        assert_eq!(watchdog.state.lock().phase_deadline.unwrap().at, cap);
+        assert!(matches!(watchdog.next_action(), Some(WatchAction::TurnCap)));
+
+        // The idle deadline expiring first is an idle timeout, not the cap.
+        watchdog.arm_turn(Duration::from_millis(10), Duration::from_secs(60));
+        assert!(matches!(
+            watchdog.next_action(),
+            Some(WatchAction::Phase(Phase::Prompt))
+        ));
+        // A cap too large to represent leaves only the idle deadline.
+        watchdog.arm_turn(Duration::from_millis(10), Duration::MAX);
+        assert_eq!(watchdog.state.lock().phase_deadline.unwrap().cap, None);
+    }
+
+    #[test]
+    fn prompt_lines_are_measured_exactly_as_the_sdk_writes_them() {
+        let request = PromptRequest::new(
+            "sess-1",
+            vec![
+                ContentBlock::Text(TextContent::new("quote \" and \u{1} and é")),
+                ContentBlock::Image(ImageContent::new("AAAA", "image/png")),
+            ],
+        );
+        let untyped = request.to_untyped_message().unwrap();
+        let line = serde_json::to_string(
+            &RawJsonRpcMessage::request(
+                untyped.method,
+                untyped.params,
+                RequestId::Str("123e4567-e89b-12d3-a456-426614174000".to_owned()),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(prompt_line_bytes(&request), line.len(), "{line}");
+        assert_eq!(base64_len(0), Some(0));
+        assert_eq!(base64_len(1), Some(4));
+        assert_eq!(base64_len(3), Some(4));
+        assert_eq!(base64_len(4), Some(8));
+        assert_eq!(base64_len(usize::MAX), None);
+    }
+
+    #[test]
+    fn only_unfinished_server_tools_end_the_turn_normally() {
+        let prefix =
+            "Internal error: Claude ended the turn without returning results for tool calls: ";
+        assert!(only_server_tools_unfinished(&internal(&format!(
+            "{prefix}srvtoolu_018rBjyoATEpEkALdkGDKJtB"
+        ))));
+        assert!(only_server_tools_unfinished(&internal(&format!(
+            "{prefix}srvtoolu_a, srvtoolu_b"
+        ))));
+        // Every id counts, wherever the list wraps.
+        assert!(only_server_tools_unfinished(&internal(&format!(
+            "{prefix}srvtoolu_a,\nsrvtoolu_b"
+        ))));
+        assert!(!only_server_tools_unfinished(&internal(&format!(
+            "{prefix}srvtoolu_a\ntoolu_b"
+        ))));
+        // A client tool that never finished is a real failure.
+        assert!(!only_server_tools_unfinished(&internal(&format!(
+            "{prefix}srvtoolu_a, toolu_b"
+        ))));
+        assert!(!only_server_tools_unfinished(&internal(&format!(
+            "{prefix}srvtoolu_"
+        ))));
+        assert!(!only_server_tools_unfinished(&internal(prefix)));
+        assert!(!only_server_tools_unfinished(&internal(
+            "Internal error: boom"
+        )));
+        // The same text without the adapter's structured tag is not this report.
+        let untagged = || {
+            RpcError::new(
+                i32::from(agent_client_protocol::ErrorCode::InternalError),
+                format!("{prefix}srvtoolu_a"),
+            )
+        };
+        assert!(!only_server_tools_unfinished(&untagged()));
+        assert!(!only_server_tools_unfinished(
+            &untagged().data(serde_json::json!({ "errorKind": "no_result" }))
+        ));
+        // Same text under another error code is not this adapter rejection.
+        assert!(!only_server_tools_unfinished(
+            &RpcError::new(
+                i32::from(agent_client_protocol::ErrorCode::InvalidParams),
+                format!("{prefix}srvtoolu_a"),
+            )
+            .data(serde_json::json!({ "errorKind": "incomplete_tool_call" }))
+        ));
+    }
 }

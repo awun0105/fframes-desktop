@@ -23,6 +23,7 @@ tracing = "0.1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
+studio-test-support = { path = "../studio-test-support" }
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true }

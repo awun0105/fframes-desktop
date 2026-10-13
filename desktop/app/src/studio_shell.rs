@@ -119,6 +119,8 @@ struct Backend {
     /// capture/publication on its own job threads.
     controller: Option<Arc<Mutex<Controller>>>,
     compatibility: Option<CompatibilityManifest>,
+    /// Why no manifest resolved for this host; shown while `compatibility` is `None`.
+    compatibility_error: String,
     sdk_home: Option<PathBuf>,
     sdk: String,
     agent_sdk: Option<AgentSdk>,
@@ -134,11 +136,8 @@ impl Backend {
     fn command(&mut self, command: Command) -> Result<(), String> {
         if matches!(command, Command::Initialize) {
             self.paths = Some(AppPaths::system().map_err(|e| e.to_string())?);
-            let (compatibility, sdk_home) = SetupView::defaults()?;
-            self.compatibility = Some(compatibility);
-            self.sdk_home = Some(sdk_home);
             self.catalog = Catalog::load(self.paths.as_ref().expect("just set"));
-            self.check_sdk();
+            self.refresh_compatibility();
             return Ok(());
         }
         let paths = self
@@ -152,7 +151,7 @@ impl Backend {
                 let compatibility = self
                     .compatibility
                     .as_ref()
-                    .ok_or("Compatible SDK manifest unavailable")?;
+                    .ok_or_else(|| self.compatibility_error.clone())?;
                 let name = path
                     .file_name()
                     .and_then(|s| s.to_str())
@@ -328,14 +327,14 @@ impl Backend {
                 if let Err(error) = SetupView::install_sdk(
                     self.compatibility
                         .as_ref()
-                        .ok_or("SDK manifest unavailable")?,
+                        .ok_or_else(|| self.compatibility_error.clone())?,
                     self.sdk_home.as_deref().ok_or("SDK home unavailable")?,
                     &self.processes,
                 ) {
                     self.sdk = "Failed · repair the reported installation error and retry".into();
                     return Err(error);
                 }
-                self.check_sdk();
+                self.refresh_compatibility();
             }
             Command::ImportSdkBundle(bundle) => {
                 if let Err(error) = SetupView::install_sdk_from_bundle(
@@ -346,7 +345,8 @@ impl Backend {
                     self.sdk = "Failed · repair the reported installation error and retry".into();
                     return Err(error);
                 }
-                self.check_sdk();
+                // An imported SDK may be the first manifest this host has.
+                self.refresh_compatibility();
             }
             Command::Restore(path, revision) => self
                 .current()?
@@ -404,29 +404,53 @@ impl Backend {
         self.check_sdk();
         Ok(())
     }
+    /// Resolves the SDK manifest for this host; without one the reason becomes the SDK status.
+    fn refresh_compatibility(&mut self) {
+        match SetupView::defaults() {
+            Ok((compatibility, sdk_home)) => {
+                self.compatibility = Some(compatibility);
+                self.sdk_home = Some(sdk_home);
+            }
+            Err(error) => {
+                self.compatibility = None;
+                self.sdk_home = Some(crate::setup_view::default_sdk_home());
+                self.compatibility_error = error;
+            }
+        }
+        self.check_sdk();
+    }
     fn check_sdk(&mut self) {
         self.agent_sdk = None;
-        let Some(compatibility) = &self.compatibility else {
-            self.sdk = "SDK manifest unavailable".into();
-            return;
-        };
-        let report = Doctor::run_host_preflight(compatibility);
-        if !report.is_ready() {
-            self.sdk = format!("Host prerequisites needed: {}", report.format_summary());
-            return;
-        }
         let sdk = self
             .controller
             .as_ref()
             .and_then(|c| c.lock().sdk_path().map(PathBuf::from))
-            .or_else(|| self.sdk_home.as_ref().map(|h| h.join("active")));
-        self.sdk = match sdk {
-            Some(path) if path.exists() => {
-                let selected = std::fs::read_to_string(path.join("compatibility.json"))
-                    .map_err(|e| e.to_string())
-                    .and_then(|s| {
-                        CompatibilityManifest::from_json_str(&s).map_err(|e| e.to_string())
-                    });
+            .or_else(|| self.sdk_home.as_ref().map(|h| h.join("active")))
+            .filter(|path| path.exists());
+        // Host prerequisites come from the SDK that is actually selected, which may be the
+        // only manifest this host has; the app default stands in while none is installed.
+        let selected = sdk.as_ref().map(|path| {
+            std::fs::read_to_string(path.join("compatibility.json"))
+                .map_err(|e| e.to_string())
+                .and_then(|s| CompatibilityManifest::from_json_str(&s).map_err(|e| e.to_string()))
+        });
+        let preflight = match &selected {
+            Some(Ok(manifest)) => manifest,
+            Some(Err(_)) | None => match &self.compatibility {
+                Some(compatibility) => compatibility,
+                None => {
+                    self.sdk = self.compatibility_error.clone();
+                    return;
+                }
+            },
+        };
+        let report = Doctor::run_host_preflight(preflight);
+        if !report.is_ready() {
+            self.sdk = format!("Host prerequisites needed: {}", report.format_summary());
+            return;
+        }
+        self.sdk = match (sdk, selected) {
+            (Some(path), Some(selected)) => {
                 let selected = match selected {
                     Ok(manifest) => manifest,
                     Err(error) => {
@@ -562,7 +586,6 @@ pub struct StudioShell {
     player_width: f32,
     overflow_open: bool,
     overflow_menu: MenuState,
-    overflow_actions: Vec<(OverflowAction, bool)>,
     overflow_focus: gpui::FocusHandle,
     painted_frame: Option<usize>,
     /// Set while the accepted source is ahead of what the preview shows: a handoff that
@@ -814,6 +837,7 @@ impl StudioShell {
             paths: None,
             controller: None,
             compatibility: None,
+            compatibility_error: "SDK manifest unavailable".into(),
             sdk_home: None,
             sdk: "Checking SDK…".into(),
             agent_sdk: None,
@@ -926,7 +950,6 @@ impl StudioShell {
             player_width: f32::INFINITY,
             overflow_open: false,
             overflow_menu: MenuState::new(Vec::new(), None),
-            overflow_actions: Vec::new(),
             overflow_focus: cx.focus_handle(),
             painted_frame: None,
         };
@@ -3974,10 +3997,8 @@ impl StudioShell {
         // so carry the bounds over to the rebuilt state.
         let bounds = self.overflow_menu.anchor_cell().get();
         let labels = actions.iter().map(|(a, _)| a.label().into()).collect();
-        let disabled = actions.iter().map(|(_, enabled)| !enabled).collect();
-        self.overflow_menu = MenuState::new(labels, None).with_disabled(disabled);
+        self.overflow_menu = MenuState::new(labels, None).with_disabled(disabled_rows(&actions));
         self.overflow_menu.anchor_cell().set(bounds);
-        self.overflow_actions = actions;
         self.overflow_open = true;
         window.focus(&self.overflow_focus, cx);
         cx.notify();
@@ -3991,12 +4012,11 @@ impl StudioShell {
         }
     }
 
-    /// Re-reads availability so an open menu never shows or runs a stale enable flag.
+    /// Marks the open menu's rows from current availability (nothing is cached), so it
+    /// never shows or keyboard-navigates a stale enable flag.
     fn sync_overflow(&mut self) {
-        let actions = self.current_overflow_actions();
-        self.overflow_menu
-            .set_disabled(actions.iter().map(|(_, enabled)| !enabled).collect());
-        self.overflow_actions = actions;
+        let disabled = disabled_rows(&self.current_overflow_actions());
+        self.overflow_menu.set_disabled(disabled);
     }
 
     fn run_overflow(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -4032,7 +4052,7 @@ impl StudioShell {
         Some(
             Menu::new("overflow-menu", &self.overflow_menu, &self.overflow_focus)
                 .row_ids(
-                    self.overflow_actions
+                    self.current_overflow_actions()
                         .iter()
                         .map(|(a, _)| a.id().into())
                         .collect(),
@@ -4247,6 +4267,11 @@ fn overflow_actions(idle: bool, has_project: bool, has_draft: bool) -> Vec<(Over
         (OverflowAction::RevealDraft, has_project && has_draft),
         (OverflowAction::RevealCheckpoint, has_project),
     ]
+}
+
+/// The menu's disabled flags for `actions`, in menu order.
+fn disabled_rows(actions: &[(OverflowAction, bool)]) -> Vec<bool> {
+    actions.iter().map(|(_, enabled)| !enabled).collect()
 }
 
 /// The action at `index` when it is currently available.
@@ -4581,6 +4606,7 @@ mod tests {
             paths: Some(paths),
             controller: Some(Arc::new(Mutex::new(controller))),
             compatibility: None,
+            compatibility_error: "SDK manifest unavailable".into(),
             sdk_home: None,
             sdk: String::new(),
             agent_sdk: None,

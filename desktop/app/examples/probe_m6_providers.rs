@@ -33,6 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let search = ExecutableSearch {
         managed_dirs: vec![managed_adapters_dir.clone()],
         gui_path: None,
+        node: None,
     };
     let options = ProbeOptions::new(scratch_cwd);
     let processes = ProcessTreeManager::new();

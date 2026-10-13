@@ -133,6 +133,7 @@ impl World {
         config.search = ExecutableSearch {
             managed_dirs: vec![],
             gui_path: std::env::var_os("PATH"),
+            node: None,
         };
         config.build = Some(BuildSettings {
             service: service.clone(),
@@ -162,7 +163,7 @@ impl World {
             None => AdapterSettings {
                 provider: "scripted".into(),
                 adapter: AdapterConfig {
-                    executable: "python3".into(),
+                    executable: studio_test_support::python().to_string_lossy().into_owned(),
                     args: vec![agent_script(), agent.to_string_lossy().into_owned()],
                     auth_env_names: vec![],
                 },

@@ -52,7 +52,6 @@ use studio_project::revision::SourceInventory;
 const PUBLISH_INTERVAL: Duration = Duration::from_millis(25);
 const MAX_TOOL_INDEX: usize = 2048;
 const MAX_SCOPE_PROMPT_IMAGES: usize = 3;
-const MAX_SCOPE_PROMPT_IMAGE_BYTES: usize = 4 * 1024 * 1024;
 /// Controller commands that may wait behind a running job.
 const MAX_DEFERRED: usize = 32;
 
@@ -111,12 +110,17 @@ pub(crate) enum Msg {
     ClearRetainedQueue,
     RestoreSession,
     DismissRestoration,
+    NewChat,
     TestHoldToolsGate(Sender<Option<crate::agent_tools::backend::WriterGuard>>),
     Close(Sender<()>),
     // ---- job results ----
     Progress(TaskPhase),
     UndoProgress(String),
-    Probe(DiscoveryReport),
+    /// An adapter check finished; `generation` is the `probe_generation` it ran for.
+    Probe {
+        generation: u64,
+        report: DiscoveryReport,
+    },
     Pipeline(PipelineEnd),
     Promote(PromoteEnd),
     Undone(UndoEnd),
@@ -265,6 +269,9 @@ pub(crate) struct Actor {
     /// An acknowledgement of the committed preview handoff already arrived.
     handoff_acked: bool,
     probing: bool,
+    /// Changes whenever the adapter settings change; a check that ran for an older
+    /// generation is dropped and the check runs again for the current settings.
+    probe_generation: u64,
     dirty: bool,
     last_publish: Instant,
     revision: u64,
@@ -277,6 +284,8 @@ pub(crate) struct Actor {
     next_handoff_context: Option<super::session_store::BoundedHandoffContext>,
     pending_resume_session: Option<PendingResumeSession>,
     retained_queue: VecDeque<Queued>,
+    /// New chat resets so far (`WorkflowSnapshot::chat`).
+    chat: u64,
 }
 #[derive(Debug, Clone)]
 struct PendingResumeSession {
@@ -444,6 +453,7 @@ impl Actor {
             driver_epoch: 0,
             handoff_acked: false,
             probing: false,
+            probe_generation: 0,
             dirty: true,
             last_publish: Instant::now(),
             revision: 0,
@@ -456,6 +466,7 @@ impl Actor {
             next_handoff_context: None,
             pending_resume_session: None,
             retained_queue: VecDeque::new(),
+            chat: 0,
         };
         if let Ok(Some(manifest)) =
             super::session_store::SessionStore::load(&actor.shared.paths, &actor.shared.project)
@@ -867,6 +878,7 @@ impl Actor {
                 })
                 .collect(),
             older_rows: self.store.has_older(),
+            chat: self.chat,
             resources: ResourceView {
                 resident_rows: self.store.resident_len(),
                 resident_bytes: self.store.resident_bytes(),
@@ -917,10 +929,17 @@ impl Actor {
             Some(adapter) => AdapterView {
                 provider: Some(adapter.provider.clone()),
                 executable: Some(adapter.adapter.executable.clone()),
-                readiness: AdapterReadiness::Unchecked,
+                // A check still running belongs to the old settings; when it ends the
+                // check runs again for these (see `Msg::Probe`).
+                readiness: if self.probing {
+                    AdapterReadiness::Checking
+                } else {
+                    AdapterReadiness::Unchecked
+                },
                 writer_ownership: Some(adapter.writer_ownership.label().to_owned()),
             },
         };
+        self.probe_generation += 1;
         if let Some(tools) = self.tools.take() {
             tools.shutdown();
         }
@@ -1132,6 +1151,7 @@ impl Actor {
             Msg::ClearRetainedQueue => self.clear_retained_queue(),
             Msg::RestoreSession => self.restore_session(),
             Msg::DismissRestoration => self.dismiss_restoration(),
+            Msg::NewChat => self.new_chat(),
             Msg::TestHoldToolsGate(tx) => {
                 let guard = self.tools.as_ref().and_then(|t| t.gate().try_acquire());
                 let _ = tx.send(guard);
@@ -1149,13 +1169,19 @@ impl Actor {
                     self.touch();
                 }
             }
-            Msg::Probe(report) => {
+            Msg::Probe { generation, report } => {
                 self.probing = false;
-                self.adapter.readiness = AdapterReadiness::Checked {
-                    report: Box::new(report),
-                    at_unix: now_unix(),
-                };
-                self.touch();
+                if generation == self.probe_generation {
+                    self.adapter.readiness = AdapterReadiness::Checked {
+                        report: Box::new(report),
+                        at_unix: now_unix(),
+                    };
+                    self.touch();
+                } else {
+                    // The settings changed while it ran: the result describes another
+                    // adapter. Check the current one instead.
+                    self.check_adapter();
+                }
             }
             Msg::Pipeline(end) => self.on_pipeline(end),
             Msg::Promote(end) => self.on_promote(end),
@@ -1284,6 +1310,7 @@ impl Actor {
         let timeout = self.shared.probe_timeout;
         let processes = self.shared.root_scope.sub_manager();
         let tx = self.shared.tx.clone();
+        let generation = self.probe_generation;
         let payload = (
             adapter.adapter,
             search,
@@ -1297,7 +1324,7 @@ impl Actor {
             payload,
             move |(config, search, method, scratch, timeout, processes)| {
                 let report = run_probe(config, search, method, scratch, timeout, processes);
-                let _ = tx.send(Msg::Probe(report));
+                let _ = tx.send(Msg::Probe { generation, report });
             },
         );
         if let Err((message, _)) = refused {
@@ -1947,7 +1974,7 @@ impl Actor {
             }
         }
         let (images, image_limitation) = if matches!(&kind, PromptKind::Brief) {
-            self.before_prompt_images(&identity.task)
+            self.before_prompt_images(&identity.task, &prompt)
         } else {
             (Vec::new(), None)
         };
@@ -1980,8 +2007,13 @@ impl Actor {
     }
 
     /// Loads the bounded, task-owned before PNGs only when the negotiated adapter can
-    /// consume ACP image content. Any failure falls back to the text artifact references.
-    fn before_prompt_images(&self, task: &AgentTaskId) -> (Vec<PromptImage>, Option<String>) {
+    /// consume ACP image content and they fit into one prompt next to `prompt` (the
+    /// driver's wire budget). Any failure falls back to the text artifact references.
+    fn before_prompt_images(
+        &self,
+        task: &AgentTaskId,
+        prompt: &str,
+    ) -> (Vec<PromptImage>, Option<String>) {
         let Some(task_view) = self.task.as_ref().filter(|view| &view.id == task) else {
             return (Vec::new(), None);
         };
@@ -2016,16 +2048,22 @@ impl Actor {
                 ),
             );
         }
-        let Some(backend) = self.tools.as_ref().map(ToolRuntime::backend) else {
+        let (Some(backend), Some(driver)) = (
+            self.tools.as_ref().map(ToolRuntime::backend),
+            self.active.as_ref().and_then(|a| a.driver.as_ref()),
+        ) else {
             return (
                 Vec::new(),
                 Some("The app could not load before images; the agent receives text only.".into()),
             );
         };
+        // The text that goes with the images: its evidence section names no limitation.
+        let text = format!("{prompt}{}", present::before_evidence_prompt(before, None));
+        let budget = driver.prompt_image_budget(&text, before.artifacts.len());
         let mut total_bytes = 0usize;
         let mut images = Vec::with_capacity(before.artifacts.len());
         for artifact in &before.artifacts {
-            let remaining = MAX_SCOPE_PROMPT_IMAGE_BYTES.saturating_sub(total_bytes);
+            let remaining = budget.saturating_sub(total_bytes);
             let Ok(bytes) = backend
                 .artifacts()
                 .read_png_for_task(task, &artifact.id, remaining)
@@ -2404,6 +2442,11 @@ impl Actor {
                     "ended with {} permission request(s) unanswered",
                     outcome.unresolved_permissions
                 )
+            } else if outcome.reported_incomplete {
+                "was reported incomplete by the adapter (some tool calls never got a result)"
+                    .to_owned()
+            } else if !outcome.authoritative {
+                "ended without a stop reason from the adapter".to_owned()
             } else {
                 format!("ended with `{}`", outcome.stop_reason.as_str())
             };
@@ -3162,10 +3205,68 @@ impl Actor {
     }
 
     fn dismiss_restoration(&mut self) {
-        let _ = SessionStore::clear(&self.shared.paths, &self.shared.project);
+        if let Err(error) = SessionStore::clear(&self.shared.paths, &self.shared.project) {
+            self.warn(format!(
+                "The saved session could not be dismissed and stays on offer: {error}"
+            ));
+            self.touch();
+            return;
+        }
         self.session_restore = None;
         self.pending_resume_session = None;
         self.notice("Saved session dismissed.");
+        self.touch();
+    }
+
+    /// Why a New chat cannot start now; `None` when the conversation can be reset.
+    fn new_chat_blocker(&self) -> Option<&'static str> {
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|a| a.phase == TaskPhase::AwaitingReview)
+        {
+            Some("Apply or Discard the candidate before starting a new chat.")
+        } else if self.active.is_some() || self.undo.is_some() {
+            Some("Stop the running task or wait for it to finish before starting a new chat.")
+        } else if self.switch_target.is_some() || self.switch_pending.is_some() {
+            Some("Finish or cancel the provider switch before starting a new chat.")
+        } else if !self.queue.is_empty() || !self.retained_queue.is_empty() {
+            Some("Cancel or clear the queued briefs before starting a new chat.")
+        } else if !self.recovery.unresolved_conflicts.is_empty()
+            || self.task.as_ref().is_some_and(|t| t.conflict.is_some())
+        {
+            Some("Resolve the conflict before starting a new chat.")
+        } else {
+            None
+        }
+    }
+
+    fn new_chat(&mut self) {
+        if let Some(reason) = self.new_chat_blocker() {
+            self.warn(reason);
+            self.touch();
+            return;
+        }
+        // The saved session goes first: if it stayed, the archived chat would be offered
+        // again on the next launch.
+        if let Err(error) = SessionStore::clear(&self.shared.paths, &self.shared.project) {
+            self.warn(format!("A new chat could not be started: {error}"));
+            self.touch();
+            return;
+        }
+        self.session_restore = None;
+        self.pending_resume_session = None;
+        if let Err(error) = self.store.start_new(now_unix()) {
+            self.warn(format!("A new chat could not be started: {error}"));
+            self.touch();
+            return;
+        }
+        self.stream = None;
+        self.tool_rows.clear();
+        self.tool_order.clear();
+        self.permission_rows.clear();
+        self.task = None;
+        self.chat += 1;
         self.touch();
     }
 
@@ -4341,7 +4442,7 @@ impl Actor {
                 Msg::Committed { published, kind } => self.on_committed(&published, kind),
                 Msg::JobAborted { kind, message } => self.on_job_aborted(kind, &message),
                 Msg::Evidence { task, kind, view } => self.on_evidence(task, kind, view),
-                Msg::Probe(_) => self.probing = false,
+                Msg::Probe { .. } => self.probing = false,
                 Msg::Close(other) => {
                     let _ = other.send(());
                 }

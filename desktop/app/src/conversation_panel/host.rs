@@ -293,6 +293,14 @@ fn load_qualification_snapshot(
 pub fn load_registry(
     paths: &AppPaths,
 ) -> Result<Option<super::provider_profiles::ProviderRegistry>, String> {
+    let _serialized = SETTINGS_WRITES.lock();
+    load_registry_locked(paths)
+}
+
+/// [`load_registry`] for a caller that holds `SETTINGS_WRITES`.
+fn load_registry_locked(
+    paths: &AppPaths,
+) -> Result<Option<super::provider_profiles::ProviderRegistry>, String> {
     let reg_path = registry_path(paths);
     if reg_path.exists() {
         let text = std::fs::read_to_string(&reg_path)
@@ -312,7 +320,6 @@ pub fn load_registry(
         };
         // Save rollback backup copy before writing new registry, keeping old file intact
         let backup_path = legacy_path.with_extension(format!("json{REGISTRY_BACKUP_SUFFIX}"));
-        let _serialized = SETTINGS_WRITES.lock();
         backup_before_write(&legacy_path, &backup_path)?;
         let registry =
             super::provider_profiles::ProviderRegistry::migrate_from_adapter_file(&legacy);
@@ -332,12 +339,37 @@ pub fn save_registry(
 ) -> Result<(), String> {
     registry.validate()?;
     let _serialized = SETTINGS_WRITES.lock();
+    save_registry_locked(paths, registry)
+}
+
+/// [`save_registry`] for a caller that holds `SETTINGS_WRITES`.
+fn save_registry_locked(
+    paths: &AppPaths,
+    registry: &super::provider_profiles::ProviderRegistry,
+) -> Result<(), String> {
     let reg_path = registry_path(paths);
     if reg_path.exists() {
         let backup_path = reg_path.with_extension(format!("json{REGISTRY_BACKUP_SUFFIX}"));
         backup_before_write(&reg_path, &backup_path)?;
     }
     write_atomic(&reg_path, registry.to_pretty().as_bytes())
+}
+
+/// Saves the launch Detect agents filled in for one profile, found by its id, and selects
+/// that profile. Unlike [`save_settings`] nothing is matched by label, so the profile's
+/// identity and every other profile stay as they are. Creates the registry (migrating a
+/// legacy description first) when there is none yet. Runs off the UI thread.
+pub fn save_profile_settings(
+    paths: &AppPaths,
+    profile_id: &str,
+    file: &AdapterFile,
+) -> Result<(), String> {
+    file.validate()?;
+    let _serialized = SETTINGS_WRITES.lock();
+    let mut registry = load_registry_locked(paths)?.unwrap_or_default();
+    registry.save_profile_adapter(profile_id, file.clone())?;
+    registry.validate()?;
+    save_registry_locked(paths, &registry)
 }
 
 fn backup_before_write(source: &Path, backup: &Path) -> Result<(), String> {
@@ -351,12 +383,15 @@ fn backup_before_write(source: &Path, backup: &Path) -> Result<(), String> {
 
 /// Removes the provider registry and legacy settings.
 pub fn clear_registry(paths: &AppPaths) -> Result<(), String> {
-    let _serialized = SETTINGS_WRITES.lock();
-    let _ = std::fs::remove_file(registry_path(paths));
-    match std::fs::remove_file(settings_path(paths)) {
+    clear_settings(paths)
+}
+
+/// Removes `path`; a file that is already gone is not an error.
+fn remove_if_present(path: &Path, what: &str) -> Result<(), String> {
+    match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("Cannot remove the adapter settings: {e}")),
+        Err(e) => Err(format!("Cannot remove the {what}: {e}")),
     }
 }
 
@@ -434,15 +469,14 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     written
 }
 
-/// Removes the saved description (blank Setup text).
+/// Removes the saved description (blank Setup text): the provider registry and the legacy
+/// settings. A registry that cannot be removed is reported, since it would bring the adapter
+/// back on the next open.
 pub fn clear_settings(paths: &AppPaths) -> Result<(), String> {
     let _serialized = SETTINGS_WRITES.lock();
-    let _ = std::fs::remove_file(registry_path(paths));
-    match std::fs::remove_file(settings_path(paths)) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("Cannot remove the adapter settings: {e}")),
-    }
+    let registry = remove_if_present(&registry_path(paths), "provider registry");
+    let settings = remove_if_present(&settings_path(paths), "adapter settings");
+    registry.and(settings)
 }
 
 // ---- inbox -------------------------------------------------------------------------------------
@@ -538,15 +572,25 @@ pub struct HostParams {
     pub inbox: Arc<HostInbox>,
 }
 
+/// Where task launches look for the adapter. The global PATH is never consulted: an
+/// absolute executable, or a name inside the app-managed adapter directory. Only `node` is
+/// looked up, as an absolute path, for an adapter that is an npm shim or a `.js` entry.
+pub fn adapter_search(paths: &AppPaths) -> ExecutableSearch {
+    let managed = paths.data.join("adapters");
+    ExecutableSearch {
+        node: studio_agent_spike::find_executable(
+            "node",
+            &studio_agent_spike::DetectionEnv::from_process(vec![managed.clone()]),
+        ),
+        managed_dirs: vec![managed],
+        gui_path: None,
+    }
+}
+
 pub fn workflow_config(params: HostParams) -> WorkflowConfig {
     let mut config = WorkflowConfig::new(params.paths.clone());
     config.adapter = params.adapter;
-    // The global PATH is never consulted: an absolute executable, or a name inside the
-    // app-managed adapter directory.
-    config.search = ExecutableSearch {
-        managed_dirs: vec![params.paths.data.join("adapters")],
-        gui_path: None,
-    };
+    config.search = adapter_search(&params.paths);
     config.build = params.build;
     config.tools = Some(ToolSettings {
         runtime_dir: short_runtime_dir(),

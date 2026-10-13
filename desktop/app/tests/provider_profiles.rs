@@ -194,7 +194,7 @@ fn migration_from_custom_adapter_preserves_all_fields_and_selects_it() {
     let registry = host::load_registry(&paths)
         .unwrap()
         .expect("migrated registry");
-    assert_eq!(registry.schema_version, 1);
+    assert_eq!(registry.schema_version, REGISTRY_SCHEMA_VERSION);
     assert_eq!(
         registry.selected_profile_id,
         Some("my-custom-agent".to_string())
@@ -266,6 +266,7 @@ fn validation_rejects_duplicate_ids() {
         id: BUILTIN_CLAUDE_ID.into(),
         label: "Duplicate Claude".into(),
         description: "".into(),
+        cli_executable: String::new(),
         adapter: AdapterFile {
             provider: "Dup".into(),
             executable: "/bin/true".into(),
@@ -366,6 +367,7 @@ fn scratch_probe_records_authentic_prerequisites_for_all_four_providers() {
     let search = ExecutableSearch {
         managed_dirs: vec![temp.path().join("adapters")],
         gui_path: None,
+        node: None,
     };
     let options = ProbeOptions::new(scratch_dir);
     let processes = ProcessTreeManager::new();
@@ -429,9 +431,9 @@ fn qualification_resolution_grants_m6_containment_with_authentic_evidence() {
         "adapter": {"agent_name": "claude-agent-acp", "protocol_version": 1, "launch_identity": digest},
         "cleanup": {"owned_processes_after": 0},
         "measurements": {"scenarios": [
-            {"name": "edit", "escaped_descendants": 0, "group_empty_after": true},
-            {"name": "stop", "escaped_descendants": 0, "group_empty_after": true},
-            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true}
+            {"name": "edit", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+            {"name": "stop", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true, "contained": true}
         ]}
     });
     let (ev_path, ev_hash) = write_evidence_file(&ledger_dir, "ev_claude.json", &evidence_record);
@@ -524,9 +526,9 @@ fn qualification_resolution_strictly_refuses_unqualified_m6_launch_without_m3_fa
         "adapter": {"agent_name": "claude-legacy", "protocol_version": 1, "launch_identity": digest, "fixture_detected": false},
         "cleanup": {"owned_processes_after": 0},
         "measurements": {"scenarios": [
-            {"name": "edit", "escaped_descendants": 0, "group_empty_after": true},
-            {"name": "stop", "escaped_descendants": 0, "group_empty_after": true},
-            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true}
+            {"name": "edit", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+            {"name": "stop", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true, "contained": true}
         ]}
     });
     let (ev_m3_path, ev_m3_hash) = write_evidence_file(&ledger_dir, "ev_m3.json", &m3_evidence);
@@ -641,9 +643,9 @@ fn qualification_resolution_falls_back_to_m3_when_launch_not_in_m6() {
         "adapter": {"agent_name": "legacy-agent", "protocol_version": 1, "launch_identity": digest, "fixture_detected": false},
         "cleanup": {"owned_processes_after": 0},
         "measurements": {"scenarios": [
-            {"name": "edit", "escaped_descendants": 0, "group_empty_after": true},
-            {"name": "stop", "escaped_descendants": 0, "group_empty_after": true},
-            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true}
+            {"name": "edit", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+            {"name": "stop", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true, "contained": true}
         ]}
     });
     let (ev_m3_path, ev_m3_hash) =
@@ -748,9 +750,9 @@ fn qualification_resolution_refuses_when_second_cited_file_is_tampered() {
         "adapter": {"name": "claude-agent-acp", "protocol_version": 1, "launch_identity": digest},
         "cleanup": {"owned_processes_after": 0},
         "measurements": {"scenarios": [
-            {"name": "edit", "escaped_descendants": 0, "group_empty_after": true},
-            {"name": "stop", "escaped_descendants": 0, "group_empty_after": true},
-            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true}
+            {"name": "edit", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+            {"name": "stop", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true, "contained": true}
         ]}
     });
     let (ev_good_path, ev_good_hash) =
@@ -828,4 +830,493 @@ fn qualification_resolution_refuses_when_second_cited_file_is_tampered() {
         WriterOwnership::Unknown,
         "When second cited file is tampered, writer containment must be strictly refused!"
     );
+}
+
+#[test]
+fn version_one_registry_is_upgraded_with_first_party_cli_names() {
+    let mut value = serde_json::to_value(ProviderRegistry::default()).unwrap();
+    value["schema_version"] = json!(1);
+    for profile in value["profiles"].as_array_mut().unwrap() {
+        profile.as_object_mut().unwrap().remove("cli_executable");
+    }
+    let registry = ProviderRegistry::parse(&value.to_string()).unwrap();
+    assert_eq!(registry.schema_version, REGISTRY_SCHEMA_VERSION);
+    let cli = |id: &str| {
+        registry
+            .profiles
+            .iter()
+            .find(|p| p.id == id)
+            .unwrap()
+            .cli_executable
+            .clone()
+    };
+    assert_eq!(cli(BUILTIN_CLAUDE_ID), "claude");
+    assert_eq!(cli(BUILTIN_CODEX_ID), "codex");
+    assert_eq!(cli(BUILTIN_ANTIGRAVITY_ID), "");
+}
+
+#[test]
+fn registry_round_trips_and_derives_detection_specs() {
+    let registry = ProviderRegistry::default();
+    let parsed = ProviderRegistry::parse(&registry.to_pretty()).unwrap();
+    assert_eq!(parsed, registry);
+    let specs = registry.detection_specs();
+    let claude = specs.iter().find(|s| s.id == BUILTIN_CLAUDE_ID).unwrap();
+    assert_eq!(claude.cli_executable, "claude");
+    assert_eq!(claude.adapter_executable, "claude-agent-acp");
+    let native = specs
+        .iter()
+        .find(|s| s.id == BUILTIN_ANTIGRAVITY_ID)
+        .unwrap();
+    assert_eq!(native.cli_executable, native.adapter_executable);
+}
+
+#[test]
+fn detection_result_maps_to_row_state() {
+    use fframes_studio::conversation_panel::provider_profiles::DetectionState;
+    use studio_agent_spike::Detected;
+    let found = |cli: bool, adapter: bool| Detected {
+        id: "x".into(),
+        cli: cli.then(|| "/bin/x".into()),
+        adapter: adapter.then(|| "/bin/x-acp".into()),
+    };
+    assert_eq!(
+        DetectionState::of(&found(true, true)),
+        DetectionState::Ready
+    );
+    assert_eq!(
+        DetectionState::of(&found(false, true)),
+        DetectionState::Ready
+    );
+    assert_eq!(
+        DetectionState::of(&found(true, false)),
+        DetectionState::AdapterMissing
+    );
+    assert_eq!(
+        DetectionState::of(&found(false, false)),
+        DetectionState::NotFound
+    );
+}
+
+#[test]
+fn node_launch_of_a_selected_adapter_survives_the_setup_fields() {
+    // Select puts `node <entry>` into the Setup text fields and Save reads them back.
+    let file = AdapterFile {
+        provider: "Claude".into(),
+        executable: r"C:\Program Files\nodejs\node.exe".into(),
+        args: vec![r"C:\Users\Some One\AppData\Roaming\npm\pkg\lib\index.js".into()],
+        auth_env_names: vec![],
+        auth_method: None,
+        mcp: McpChoice::Baseline,
+    };
+    let rebuilt = AdapterFile::from_fields(None, &file.fields(), McpChoice::Baseline)
+        .unwrap()
+        .unwrap();
+    assert_eq!(rebuilt, file);
+}
+
+#[test]
+fn detect_rows_offer_the_action_their_state_allows() {
+    use fframes_studio::conversation_panel::provider_profiles::{
+        DetectRowAction as A, DetectionState as S, row_action,
+    };
+    let guide = Some("https://example.com/install");
+    for installable in [false, true] {
+        for tools in [false, true] {
+            for g in [None, guide] {
+                assert_eq!(row_action(S::Ready, installable, tools, g), A::TurnOn);
+                let missing = row_action(S::AdapterMissing, installable, tools, g);
+                let expected = match (installable, tools, g) {
+                    (true, true, _) => A::InstallAdapter,
+                    (true, false, _) => A::GetNode,
+                    (false, _, Some(url)) => A::InstallGuide(url),
+                    (false, _, None) => A::None,
+                };
+                assert_eq!(missing, expected, "{installable} {tools} {g:?}");
+                assert_eq!(
+                    row_action(S::NotFound, installable, tools, g),
+                    g.map_or(A::None, A::InstallGuide)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn only_https_install_guides_are_opened() {
+    use fframes_studio::conversation_panel::provider_profiles::{
+        NODE_DOWNLOAD_URL, install_guide_url, is_openable,
+    };
+    for refused in [
+        "http://example.com",
+        "file:///C:/Windows/system32/calc.exe",
+        "ms-settings:privacy",
+        "javascript:alert(1)",
+        "",
+        " https://example.com",
+        "https://",
+        "HTTPS//example.com",
+    ] {
+        assert!(!is_openable(refused), "{refused:?}");
+    }
+    assert!(is_openable("https://example.com/install"));
+    assert!(is_openable(NODE_DOWNLOAD_URL));
+    for id in [BUILTIN_CLAUDE_ID, BUILTIN_CODEX_ID, BUILTIN_PI_ID] {
+        let url = install_guide_url(id).unwrap_or_else(|| panic!("{id} has a guide"));
+        assert!(is_openable(url), "{url}");
+    }
+    assert_eq!(install_guide_url(BUILTIN_ANTIGRAVITY_ID), None);
+    assert_eq!(install_guide_url("my-custom-adapter"), None);
+}
+
+/// An executable file Detect agents accepts: `<name>.exe` on Windows, mode 755 elsewhere.
+fn fake_executable(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join(if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    });
+    std::fs::write(&path, b"x").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    path
+}
+
+/// A detection environment whose only search root is `bin`.
+fn only_path(bin: &std::path::Path) -> studio_agent_spike::DetectionEnv {
+    studio_agent_spike::DetectionEnv {
+        path: Some(std::env::join_paths([bin]).unwrap()),
+        ..Default::default()
+    }
+}
+
+fn node_launch(node: &std::path::Path, entry: &std::path::Path) -> AdapterFile {
+    AdapterFile {
+        provider: "Claude".into(),
+        executable: node.to_string_lossy().into_owned(),
+        args: vec![entry.to_string_lossy().into_owned()],
+        auth_env_names: vec!["ANTHROPIC_API_KEY".into()],
+        auth_method: None,
+        mcp: McpChoice::Baseline,
+    }
+}
+
+#[test]
+fn a_saved_node_launch_never_makes_a_deleted_builtin_adapter_look_ready() {
+    use fframes_studio::conversation_panel::provider_profiles::{DetectionState, scan_agents};
+    let (temp, paths) = setup_paths();
+    let bin = temp.path().join("bin");
+    let node = fake_executable(&bin, "node");
+    let entry = temp.path().join("deleted").join("index.js");
+    let env = only_path(&bin);
+    let adapters = paths.data.join("adapters");
+    let claude_state = |registry: &ProviderRegistry| {
+        let scan = scan_agents(registry, &env, &adapters);
+        let found = scan
+            .found
+            .iter()
+            .find(|found| found.id == BUILTIN_CLAUDE_ID)
+            .unwrap();
+        (scan.state(found), scan.is_ready(BUILTIN_CLAUDE_ID))
+    };
+
+    // Saved by id (the turn-on path) and by label (Save, or a registry written before).
+    host::save_profile_settings(&paths, BUILTIN_CLAUDE_ID, &node_launch(&node, &entry)).unwrap();
+    let by_id = host::load_registry(&paths).unwrap().unwrap();
+    host::save_settings(&paths, &node_launch(&node, &entry)).unwrap();
+    let by_label = host::load_registry(&paths).unwrap().unwrap();
+    for registry in [&by_id, &by_label] {
+        let claude = registry.selected_profile().unwrap();
+        assert_eq!(claude.id, BUILTIN_CLAUDE_ID);
+        assert_eq!(claude.adapter.executable, node.to_string_lossy());
+        assert_eq!(
+            claude_state(registry),
+            (DetectionState::NotFound, false),
+            "only node is installed, so the adapter is not"
+        );
+    }
+
+    // The adapter itself on the search path is what makes the row ready.
+    fake_executable(&bin, "claude-agent-acp");
+    assert_eq!(claude_state(&by_id), (DetectionState::Ready, true));
+}
+
+#[test]
+fn a_turn_on_save_changes_only_that_profile_and_keeps_its_identity() {
+    let (temp, paths) = setup_paths();
+    let mut registry = ProviderRegistry::default();
+    registry.save_custom_adapter(AdapterFile {
+        provider: "Mine".into(),
+        executable: "/opt/mine-acp".into(),
+        args: vec![],
+        auth_env_names: vec![],
+        auth_method: None,
+        mcp: McpChoice::Baseline,
+    });
+    host::save_registry(&paths, &registry).unwrap();
+    let before = host::load_registry(&paths).unwrap().unwrap();
+
+    // A launch whose label names the built-in Claude, saved for the custom profile.
+    let launch = node_launch(&temp.path().join("node"), &temp.path().join("a.js"));
+    host::save_profile_settings(&paths, "mine", &launch).unwrap();
+    let after = host::load_registry(&paths).unwrap().unwrap();
+
+    assert_eq!(after.selected_profile_id.as_deref(), Some("mine"));
+    for (old, new) in before.profiles.iter().zip(&after.profiles) {
+        assert_eq!(
+            (&old.id, &old.label, &old.description, &old.cli_executable),
+            (&new.id, &new.label, &new.description, &new.cli_executable)
+        );
+        if new.id == "mine" {
+            assert_eq!(new.adapter, launch);
+        } else {
+            assert_eq!(old.adapter, new.adapter, "{} is untouched", new.id);
+        }
+    }
+    assert!(host::save_profile_settings(&paths, "gone", &launch).is_err());
+}
+
+#[test]
+fn a_turn_on_save_creates_the_registry_when_none_exists() {
+    let (temp, paths) = setup_paths();
+    let launch = node_launch(&temp.path().join("node"), &temp.path().join("a.js"));
+    host::save_profile_settings(&paths, BUILTIN_CODEX_ID, &launch).unwrap();
+    let registry = host::load_registry(&paths).unwrap().unwrap();
+    let codex = registry.selected_profile().unwrap();
+    assert_eq!(codex.id, BUILTIN_CODEX_ID);
+    assert_eq!(codex.label, "Codex");
+    assert_eq!(codex.adapter, launch);
+    assert_eq!(host::load_settings(&paths).unwrap(), Some(launch));
+}
+
+#[test]
+fn a_custom_node_launch_is_detected_by_its_entry() {
+    use fframes_studio::conversation_panel::provider_profiles::{
+        AdapterIdentity, DetectionState, scan_agents,
+    };
+    let (temp, paths) = setup_paths();
+    let bin = temp.path().join("bin");
+    let node = fake_executable(&bin, "node");
+    let entry = temp.path().join("pkg").join("cli.js");
+    let mut launch = node_launch(&node, &entry);
+    launch.provider = "Mine".into();
+    launch.args = vec![
+        "--no-warnings".into(),
+        launch.args[0].clone(),
+        "--acp".into(),
+    ];
+    let mut registry = ProviderRegistry::default();
+    registry.save_custom_adapter(launch);
+    let mine = registry.selected_profile().unwrap().clone();
+    assert_eq!(
+        mine.adapter_identity(),
+        AdapterIdentity::Entry(Some(entry.clone()))
+    );
+    // Selecting another file never carries the old entry along.
+    assert_eq!(mine.launch_template().args, vec!["--acp"]);
+    assert!(
+        registry
+            .detection_specs()
+            .iter()
+            .all(|spec| spec.id != mine.id),
+        "node is never searched for as the adapter"
+    );
+
+    let state = || {
+        let scan = scan_agents(&registry, &only_path(&bin), &paths.data.join("adapters"));
+        let found = scan.found.iter().find(|f| f.id == mine.id).unwrap();
+        scan.state(found)
+    };
+    assert_eq!(state(), DetectionState::NotFound);
+    std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+    std::fs::write(&entry, "").unwrap();
+    assert_eq!(state(), DetectionState::Ready);
+}
+
+#[test]
+fn builtins_are_detected_by_their_own_adapter_name_whatever_launch_is_saved() {
+    use fframes_studio::conversation_panel::provider_profiles::{AdapterIdentity, builtin_adapter};
+    let mut registry = ProviderRegistry::default();
+    for profile in &mut registry.profiles {
+        profile.adapter.executable = "/usr/bin/node".into();
+        profile.adapter.args = vec!["/x/index.js".into()];
+    }
+    let specs = registry.detection_specs();
+    assert_eq!(specs.len(), registry.profiles.len());
+    for spec in specs {
+        assert_eq!(
+            Some(spec.adapter_executable.as_str()),
+            builtin_adapter(&spec.id)
+        );
+    }
+    for profile in &registry.profiles {
+        assert!(matches!(
+            profile.adapter_identity(),
+            AdapterIdentity::Name(_)
+        ));
+        assert!(profile.launch_template().args.is_empty());
+    }
+}
+
+#[test]
+fn a_detected_adapter_file_maps_to_its_launch_and_names_what_is_missing() {
+    use fframes_studio::conversation_panel::provider_setup::{DetectedLaunch, detected_launch};
+    let temp = TempDir::new().unwrap();
+    let script = temp.path().join("adapter.js");
+    std::fs::write(&script, "").unwrap();
+    let node = temp.path().join("node");
+    assert_eq!(
+        detected_launch(&script, Some(&node)),
+        Ok(DetectedLaunch::Node {
+            node: node.clone(),
+            entry: script.clone()
+        })
+    );
+    let error = detected_launch(&script, None).unwrap_err();
+    assert!(error.contains("node"), "{error}");
+    let native = temp.path().join("adapter.exe");
+    assert_eq!(
+        detected_launch(&native, None),
+        Ok(DetectedLaunch::Direct(native.clone()))
+    );
+    // A launcher that cannot be read is reported, never started as a binary.
+    assert!(detected_launch(&temp.path().join("missing.cmd"), Some(&node)).is_err());
+}
+
+#[test]
+fn a_missing_install_tool_is_named() {
+    use fframes_studio::conversation_panel::provider_profiles::DetectionScan;
+    let scan = |node: bool, npm: bool| DetectionScan {
+        node: node.then(|| "/n/node".into()),
+        npm: npm.then(|| "/n/npm".into()),
+        ..Default::default()
+    };
+    assert_eq!(scan(true, false).missing_tools(), ["npm"]);
+    assert_eq!(scan(false, true).missing_tools(), ["Node.js"]);
+    assert_eq!(scan(false, false).missing_tools(), ["Node.js", "npm"]);
+    assert!(scan(true, false).tools().is_none());
+    assert!(scan(true, true).tools().is_some());
+    assert!(scan(true, true).missing_tools().is_empty());
+}
+
+#[test]
+fn turn_on_shows_readiness_only_on_the_row_it_turned_on() {
+    use fframes_studio::conversation_panel::{
+        provider_profiles::DetectionState as D,
+        provider_setup::{RowStatus as R, TurnOn},
+    };
+    let mut turn_on = TurnOn::default();
+    assert_eq!(turn_on.row_status("a", D::Ready), R::Detected(D::Ready));
+
+    turn_on = TurnOn::Saving {
+        ticket: 1,
+        profile: "a".into(),
+    };
+    assert_eq!(turn_on.row_status("a", D::Ready), R::TurningOn);
+    assert_eq!(turn_on.row_status("b", D::Ready), R::Detected(D::Ready));
+    assert!(!turn_on.finish(2, true), "another save is not this turn-on");
+    assert!(turn_on.finish(1, true));
+    assert_eq!(turn_on.row_status("a", D::Ready), R::Readiness);
+    assert_eq!(
+        turn_on.row_status("b", D::NotFound),
+        R::Detected(D::NotFound)
+    );
+
+    // Turning on B moves the readiness to B's row.
+    turn_on = TurnOn::Saving {
+        ticket: 2,
+        profile: "b".into(),
+    };
+    assert!(turn_on.finish(2, true));
+    assert_eq!(turn_on.row_status("a", D::Ready), R::Detected(D::Ready));
+    assert_eq!(turn_on.row_status("b", D::Ready), R::Readiness);
+
+    // A provider switch or a Save resets it.
+    turn_on.reset();
+    assert_eq!(turn_on, TurnOn::Idle);
+
+    // A failed save shows no readiness and runs no test.
+    turn_on = TurnOn::Saving {
+        ticket: 3,
+        profile: "a".into(),
+    };
+    assert!(!turn_on.finish(3, false));
+    assert_eq!(turn_on, TurnOn::Idle);
+    assert_eq!(turn_on.row_status("a", D::Ready), R::Detected(D::Ready));
+}
+
+#[test]
+fn an_install_cancelled_after_npm_finished_is_not_turned_on() {
+    use fframes_studio::conversation_panel::provider_setup::{
+        InstallFinished, InstallOutcome as O, InstallTracker,
+    };
+    use studio_agent_spike::adapter_install::{InstallError, InstalledAdapter};
+    let installed = || -> Result<InstalledAdapter, InstallError> {
+        Ok(InstalledAdapter {
+            node: "/n/node".into(),
+            entry: "/a/index.js".into(),
+        })
+    };
+
+    let mut tracker = InstallTracker::default();
+    let (ticket, flag) = tracker.begin("claude").unwrap();
+    assert!(tracker.begin("codex").is_none(), "one install at a time");
+    assert_eq!(tracker.installing(), Some("claude"));
+    // npm has finished and its result is on its way when Cancel is pressed.
+    tracker.cancel();
+    assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
+    let finished = tracker.finish(ticket).unwrap();
+    assert_eq!(
+        finished,
+        InstallFinished {
+            profile: "claude".into(),
+            cancelled: true
+        }
+    );
+    assert_eq!(
+        O::of(&installed(), finished.cancelled, true),
+        O::Cancelled { installed: true }
+    );
+    assert_eq!(
+        O::of(&Err(InstallError::Cancelled), true, true),
+        O::Cancelled { installed: false }
+    );
+    assert!(!tracker.is_running());
+
+    // Not cancelled: turned on when settings may change, otherwise left for the user.
+    assert_eq!(O::of(&installed(), false, true), O::TurnOn);
+    assert_eq!(O::of(&installed(), false, false), O::Installed);
+    assert!(matches!(
+        O::of(&Err(InstallError::TimedOut(1)), false, true),
+        O::Failed(_)
+    ));
+}
+
+#[test]
+fn leaving_the_project_stops_the_install_and_drops_its_result() {
+    use fframes_studio::conversation_panel::provider_setup::{InstallTracker, ScanTracker};
+    let mut tracker = InstallTracker::default();
+    let (ticket, flag) = tracker.begin("claude").unwrap();
+    tracker.abandon();
+    assert!(
+        flag.load(std::sync::atomic::Ordering::SeqCst),
+        "npm is stopped"
+    );
+    assert_eq!(tracker.finish(ticket), None, "the late result is dropped");
+    // A new install after re-attaching is not confused with the old one.
+    let (next, _) = tracker.begin("claude").unwrap();
+    assert_eq!(tracker.finish(ticket), None);
+    assert!(tracker.finish(next).is_some());
+
+    let mut scans = ScanTracker::default();
+    let old = scans.begin().unwrap();
+    assert!(scans.begin().is_none(), "one scan at a time");
+    scans.abandon();
+    let new = scans.begin().unwrap();
+    assert!(!scans.finish(old), "an old project's scan is dropped");
+    assert!(scans.finish(new));
 }

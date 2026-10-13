@@ -328,7 +328,8 @@ def spawn_sleeper(escape, pid_file):
     kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if escape:
         kwargs["start_new_session"] = True
-    child = subprocess.Popen(["sleep", "60"], **kwargs)
+    # The interpreter itself sleeps: `sleep` does not exist on Windows.
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], **kwargs)
     write_file(root / pid_file, f"{child.pid}\n", "a")
 
 
@@ -336,8 +337,8 @@ def tool_cards(spec):
     if spec is True:
         spec = 1
     if isinstance(spec, int):
-        return [{"id": f"t{i}", "title": f"Tool {i}"} for i in range(spec)]
-    return [{"id": c.get("id", f"t{i}"), "title": c.get("title", f"Tool {i}")} for i, c in enumerate(spec)]
+        return [{"id": f"t{i}", "title": f"Tool {i}", "kind": "other"} for i in range(spec)]
+    return [{"id": c.get("id", f"t{i}"), "title": c.get("title", f"Tool {i}"), "kind": c.get("kind", "other")} for i, c in enumerate(spec)]
 
 
 def request_permission(spec):
@@ -388,7 +389,7 @@ def run_script(script):
         cards = tool_cards(script["tool"])
         if script.get("tool_interleave"):
             for card in cards:
-                update({"sessionUpdate": "tool_call", "toolCallId": card["id"], "title": card["title"], "kind": "other", "status": "pending"})
+                update({"sessionUpdate": "tool_call", "toolCallId": card["id"], "title": card["title"], "kind": card["kind"], "status": "pending"})
             for _ in range(extra):
                 for card in cards:
                     update({"sessionUpdate": "tool_call_update", "toolCallId": card["id"], "status": "in_progress"})
@@ -396,7 +397,7 @@ def run_script(script):
                 update({"sessionUpdate": "tool_call_update", "toolCallId": card["id"], "status": "completed"})
         else:
             for card in cards:
-                update({"sessionUpdate": "tool_call", "toolCallId": card["id"], "title": card["title"], "kind": "other", "status": "pending"})
+                update({"sessionUpdate": "tool_call", "toolCallId": card["id"], "title": card["title"], "kind": card["kind"], "status": "pending"})
                 for _ in range(extra):
                     update({"sessionUpdate": "tool_call_update", "toolCallId": card["id"], "status": "in_progress"})
                 update({"sessionUpdate": "tool_call_update", "toolCallId": card["id"], "status": "completed"})

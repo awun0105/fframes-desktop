@@ -476,10 +476,7 @@ fn invalid_editor_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        path::Path,
-        time::{Duration, Instant},
-    };
+    use std::time::{Duration, Instant};
     use studio_bootstrap::{ChildEnvironment, ProcessTreeManager};
 
     #[test]
@@ -511,7 +508,7 @@ mod tests {
             transport.set_request_timeout(Duration::from_secs(5));
             transport
                 .spawn_worker(
-                    Path::new(if cfg!(windows) { "python" } else { "python3" }),
+                    studio_test_support::python(),
                     &[&script, "--case", case, "--header", &header],
                     None,
                     ChildEnvironment::default_allowlist(),
