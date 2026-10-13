@@ -4,7 +4,7 @@ Date: 2026-10-13. Host: this Windows Server 2022 VM over RDP, no GPU, Rust 1.98.
 
 ## Result
 
-**Pass on Windows; macOS and Linux CI pending a push.** Cap's patched fork renders on this VM's
+**Pass.** Cap's patched fork renders on this VM's
 software adapter, its custom Windows frame works, `#[gpui::test]` builds and passes without a
 test-platform commit, Cap's theme and button compile with no edits, fframes' button closure
 compiles with no edits, and the whole fframes app needs **three** small source changes.
@@ -14,7 +14,7 @@ compiles with no edits, and the whole fframes app needs **three** small source c
 | Patched mirror exists and is pinned | Done: `khanhthanhdev/zed-cap`, branch `cap-patches`, `c32bfd3962e172b566c9d5514f4fa5cf325e9b06` (Cap's patches at `cb5d0daa`, plus seven upstream fixes) |
 | Window opens here | Done (software adapter); see screenshot |
 | gpui test passes here | Done |
-| gpui test passes on Linux and macOS CI | Pending: jobs added to `.github/workflows/desktop.yml`, not run yet (needs a push and a pull request) |
+| gpui test passes on Linux and macOS CI | Done: `gpui-spike-macos` and `gpui-spike-linux` passed on [PR #5](https://github.com/khanhthanhdev/fframes-desktop/pull/5) at `b960d6e`, no test-platform commit needed |
 | API change list and patch review | This report and [the patch review](./review-261013-2035-cap-gpui-patches.md) |
 
 ## Mirror
@@ -178,5 +178,4 @@ Phase 3's parity run is the check.
 
 ## Open items
 
-- Run both CI jobs (needs pushing `feat/studio-rewrite` and opening a pull request).
-- If the macOS job fails to build `test-support`, add the test-platform mirror commit then.
+- None for S1. The multi-monitor placement check from the patch review is due before any window-position restore ships.

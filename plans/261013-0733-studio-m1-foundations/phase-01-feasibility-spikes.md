@@ -94,7 +94,7 @@ M5a replaces ACP with native protocols for Claude Code and Codex ([Zeron report]
 - [x] S1: mirrors and fork review
 - [x] S1: window and gpui test on this VM
 - [x] S1: button port and API-change list
-- [ ] S1: macOS CI job green (job added; awaiting first run)
+- [x] S1: macOS CI job green
 - [ ] S2: strict, bounded data shape and key rule
 - [ ] S2: wrapper scene, derived keys, `get_scene_info` rule
 - [ ] S2: `SetTiming` as a Hello capability
