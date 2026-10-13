@@ -90,11 +90,11 @@ pass in `desktop/`. The example passes clippy and fmt. The Python suites pass:
 - npm is stopped on quit only if the shell takes the controller lock within 50 ms. Otherwise
   the OS job cleanup stops it. Closing the project always stops it.
 
-## Open decisions
+## Decisions taken after the review (2026-10-13)
 
-- The 2-hour turn cap.
-- The `qualify-writer` timeout: one 1800 s limit for the whole run, where before it was 600 s
-  per scenario.
-- The portrait copy: end card, studio captions, project scene.
-- No adapter lockfile.
-- Keeping the config menu, New chat and the SDK manifest rework on this branch.
+- The 2-hour turn cap stays.
+- `qualify-writer` keeps one overall limit, 1800 s by default.
+- The portrait copy now matches the landscape cut.
+- Adapters install with `npm ci` from a committed lockfile per adapter
+  (`studio-agent-spike/adapters/<profile>/`). An install from another lock is replaced.
+- The config menu, New chat and the SDK manifest rework stay on this branch.
