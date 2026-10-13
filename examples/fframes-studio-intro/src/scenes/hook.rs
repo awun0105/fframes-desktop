@@ -63,8 +63,10 @@ impl Scene for HookScene {
             <g>
                 <image href={bg.href()} x="0" y="0" width="1920" height="1080" />
                 <g transform={format!("translate(0 {lift})")}>
-                    <text x="160" y="366" font-family={MONO} font-weight="500" font-size="22" letter-spacing="2" fill={GREY}>"FFRAMES STUDIO  ·  vinuni-tech-day"</text>
-                    <text x="1760" y="366" text-anchor="end" font-family={MONO} font-weight="500" font-size="28" letter-spacing="2" fill={GREY}>{RELEASE_LABEL}</text>
+                    // what the product is, in one sentence anyone can read
+                    <text x="160" y="250" font-family={MONO} font-weight="600" font-size="24" letter-spacing="4" fill={ACCENT}>"FFRAMES STUDIO"</text>
+                    <text x="160" y="330" font-family={DISPLAY} font-size="62" letter-spacing="-2" fill={BONE}>"Make videos by "<tspan font-family={SERIF} font-style="italic" font-size="76" letter-spacing="0" fill={ACCENT}>"describing"</tspan>" them."</text>
+                    <text x="1760" y="250" text-anchor="end" font-family={MONO} font-weight="500" font-size="24" letter-spacing="4" fill={GREY}>{RELEASE_LABEL}</text>
                     <rect x="140" y="400" width="1640" height="270" rx="18" fill="#0f0e0d" fill-opacity="0.85"
                           stroke={if after > 0.0 { ACCENT } else { "#4a4640" }} stroke-width="2" />
                     <text x="180" y="522" font-family={MONO} font-weight="600" font-size="64" fill={ACCENT}>"›"</text>

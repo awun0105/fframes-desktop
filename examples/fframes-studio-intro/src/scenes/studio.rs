@@ -147,14 +147,18 @@ pub(crate) fn camera_in(keys: &[(f32, f32, f32, f32)], lb: f32) -> (f32, f32, f3
 
 /// (start beat, tag, headline): the step shown above the window.
 const CAPTIONS: &[(f32, &str, &str)] = &[
-    (0.0, "01 / DESCRIBE", "Start with a title and a sentence."),
-    (10.4, "02 / GENERATE", "It writes the code. Then renders."),
-    (17.0, "03 / SELECT", "Click anything on the canvas."),
-    (20.0, "04 / PROMPT", "Say what should change."),
-    (32.0, "05 / RETRIEVE", "The agent finds the exact code."),
-    (44.0, "06 / EDIT", "A real diff in your Rust."),
-    (52.0, "07 / PREVIEW", "Rebuilt, checked, playing."),
-    (60.0, "08 / EXPORT", "Happy? Export an MP4."),
+    (
+        0.0,
+        "STEP 1 / DESCRIBE",
+        "Describe your video in a sentence.",
+    ),
+    (10.4, "STEP 2 / DRAFT", "The AI builds a first draft."),
+    (17.0, "STEP 3 / POINT", "Click anything on the screen."),
+    (20.0, "STEP 4 / ASK", "Say what should change."),
+    (32.0, "STEP 5 / FIND", "The AI finds exactly that part."),
+    (44.0, "STEP 6 / EDIT", "It changes only that part."),
+    (52.0, "STEP 7 / WATCH", "The new version plays right away."),
+    (60.0, "STEP 8 / EXPORT", "Happy? Save it as an MP4 video."),
 ];
 
 fn captions(lb: f32) -> Svgr<'static> {
@@ -172,7 +176,7 @@ fn captions(lb: f32) -> Svgr<'static> {
             let dy = (1.0 - snap(lb - start)) * 40.0 - expo_in(leave) * 30.0;
             Some(fframes::svgr!(
                 <g opacity={o} transform={format!("translate(0 {dy})")}>
-                    <text x="160" y="128" font-family={MONO} font-weight="600" font-size="22" letter-spacing="4" fill={ACCENT}>{*tag}</text>
+                    <text x="160" y="126" font-family={MONO} font-weight="600" font-size="26" letter-spacing="4" fill={ACCENT}>{*tag}</text>
                     <text x="160" y="204" font-family={DISPLAY} font-size="68" letter-spacing="-2" fill={BONE}>{*head}</text>
                 </g>
             ))

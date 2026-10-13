@@ -70,8 +70,11 @@ impl Scene for HookScene {
             <g>
                 <image href={bg.href()} x="0" y="0" width="1080" height="1920" />
                 <g transform={format!("translate(0 {lift})")}>
-                    <text x="80" y="716" font-family={MONO} font-weight="500" font-size="22" letter-spacing="2" fill={GREY}>"FFRAMES STUDIO"</text>
-                    <text x="1000" y="716" text-anchor="end" font-family={MONO} font-weight="500" font-size="22" letter-spacing="2" fill={GREY}>"DESKTOP APP"</text>
+                    // what the product is, in one sentence anyone can read
+                    <text x="80" y="440" font-family={MONO} font-weight="600" font-size="24" letter-spacing="4" fill={ACCENT}>"FFRAMES STUDIO"</text>
+                    <text x="1000" y="440" text-anchor="end" font-family={MONO} font-weight="500" font-size="24" letter-spacing="4" fill={GREY}>"DESKTOP APP"</text>
+                    <text x="76" y="540" font-family={DISPLAY} font-size="74" letter-spacing="-2" fill={BONE}>"Make videos by"</text>
+                    <text x="76" y="650" font-family={SERIF} font-style="italic" font-size="100" fill={ACCENT}>"describing"<tspan font-family={DISPLAY} font-style="normal" font-size="74" letter-spacing="-2" fill={BONE}>" them."</tspan></text>
                     <rect x="60" y="750" width="960" height="320" rx="18" fill="#0f0e0d" fill-opacity="0.85"
                           stroke={if after > 0.0 { ACCENT } else { "#4a4640" }} stroke-width="2" />
                     <text x="96" y="872" font-family={MONO} font-weight="600" font-size="64" fill={ACCENT}>"›"</text>

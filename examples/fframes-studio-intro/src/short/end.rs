@@ -68,9 +68,9 @@ impl Scene for EndScene {
             (
                 "fframes Studio",
                 "macOS  /  Windows  /  Linux",
-                "THE DESKTOP APP",
+                "DESKTOP APP",
             ),
-            ("cargo fframes new my-video", "", "OR THE CLI"),
+            ("cargo fframes new my-video", "", "OR FOR DEVELOPERS"),
         ];
         let cmd_rows: Vec<Svgr> = rows
             .iter()
@@ -86,7 +86,7 @@ impl Scene for EndScene {
                         <rect x="112" y={ry - 14.0} width="16" height="16" fill={ACCENT} />
                         <text x="150" y={ry} font-family={MONO} font-weight="500" font-size="32" fill={BONE}>{*cmd}</text>
                         <text x="150" y={ry + 38.0} font-family={MONO} font-weight="500" font-size="22" fill={GREY}>{extra}</text>
-                        <text x="968" y={ry - 18.0} text-anchor="end" font-family={MONO} font-weight="500" font-size="15" letter-spacing="2" fill={GREY}>{*note}</text>
+                        <text x="968" y={ry - 18.0} text-anchor="end" font-family={MONO} font-weight="600" font-size="18" letter-spacing="2" fill={GREY}>{*note}</text>
                     </g>
                 )
             })

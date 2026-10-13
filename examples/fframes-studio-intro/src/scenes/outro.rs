@@ -97,9 +97,9 @@ fn card<'a>(mut frame: Frame, ctx: &FFramesContext<'a, '_>, lb: f32, qr: bool) -
             (
                 "fframes Studio",
                 "macOS  ·  Windows  ·  Linux",
-                "THE DESKTOP APP",
+                "DESKTOP APP",
             ),
-            ("cargo fframes new my-video", "", "OR THE CLI"),
+            ("cargo fframes new my-video", "", "OR FOR DEVELOPERS"),
         ];
         let cmd_rows: Vec<Svgr> = rows
             .iter()
@@ -120,7 +120,7 @@ fn card<'a>(mut frame: Frame, ctx: &FFramesContext<'a, '_>, lb: f32, qr: bool) -
                         <rect x={rx + 30.0} y={ry - 22.0} width="16" height="16" fill={ACCENT} />
                         <text x={rx + 68.0} y={ry} font-family={MONO} font-weight="500" font-size="26" fill={BONE}>{*cmd}</text>
                         <text x={ex} y={ry} font-family={MONO} font-weight="500" font-size="22" fill={GREY}>{extra}</text>
-                        <text x={nx} y={ry} text-anchor="end" font-family={MONO} font-weight="500" font-size="15" letter-spacing="2" fill={GREY}>{*note}</text>
+                        <text x={nx} y={ry} text-anchor="end" font-family={MONO} font-weight="600" font-size="18" letter-spacing="2" fill={GREY}>{*note}</text>
                     </g>
                 )
             })

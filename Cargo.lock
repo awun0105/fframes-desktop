@@ -1239,6 +1239,7 @@ dependencies = [
  "fframes",
  "fframes_native_player",
  "fframes_skia_renderer",
+ "serde_json",
 ]
 
 [[package]]

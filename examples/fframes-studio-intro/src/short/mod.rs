@@ -72,18 +72,18 @@ const DROP: f32 = 48.0;
 pub struct StudioShortVideo;
 
 const SECTIONS: &[(f32, &str)] = &[
-    (-99.0, "HOOK"),
+    (-99.0, "WELCOME"),
     (0.0, "INSTALL"),
-    (12.0, "NEW VIDEO"),
-    (22.0, "GENERATE"),
-    (30.0, "SELECT"),
-    (32.5, "PROMPT"),
-    (40.5, "RETRIEVE"),
+    (12.0, "DESCRIBE"),
+    (22.0, "DRAFT"),
+    (30.0, "POINT"),
+    (32.5, "ASK"),
+    (40.5, "FIND"),
     (48.0, "EDIT"),
-    (52.0, "PREVIEW"),
+    (52.0, "WATCH"),
     (54.5, "EXPORT"),
-    (58.0, "SPEED"),
-    (64.0, "PARALLEL"),
+    (58.0, "SPEED TEST"),
+    (64.0, "WHY IT'S FAST"),
     (72.0, "GET IT"),
 ];
 
@@ -205,14 +205,12 @@ fn hud(frame: &Frame, b: f32) -> Svgr<'static> {
         .rev()
         .find(|(start, _)| b >= *start)
         .map_or("", |(_, name)| *name);
-    let tick = if b < 0.0 { 0.0 } else { pulse(b, 7.0) };
     let progress = (gsec(frame) / total_seconds() * 948.0).max(0.5);
     fframes::svgr!(
         <g opacity={appear * 0.9} style="mix-blend-mode:difference">
             {corners(36.0, 36.0, 1008.0, 1848.0, 26.0, "#d8d4cc", 2.0)}
-            {label(66.0, 82.0, "FFRAMES STUDIO".to_owned(), "#d8d4cc", 17.0, "start")}
-            {label(1014.0, 82.0, section.to_owned(), "#d8d4cc", 17.0, "end")}
-            <rect x="1000" y="96" width="14" height="14" fill={ACCENT} opacity={0.25 + tick * 0.75} />
+            {label(66.0, 84.0, "FFRAMES STUDIO".to_owned(), "#d8d4cc", 20.0, "start")}
+            {label(1014.0, 84.0, section.to_owned(), "#d8d4cc", 20.0, "end")}
             <rect x="66" y="1882" width="948" height="1" fill="#d8d4cc" opacity="0.25" />
             <rect x="66" y="1881" width={progress} height="3" fill="#d8d4cc" />
         </g>

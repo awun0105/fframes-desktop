@@ -8,6 +8,8 @@
 
 pub mod beat;
 pub mod facts;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod render_cli;
 pub mod scenes;
 pub mod shaders;
 pub mod short;
@@ -34,43 +36,43 @@ pub struct StudioIntroVideo;
 
 /// Section titles for the HUD, by the beat they start on.
 const SECTIONS: &[(f32, &str)] = &[
-    (-99.0, "00 / HOOK"),
-    (0.0, "01 / INSTALL"),
-    (16.0, "02 / WORKSPACE"),
-    (22.0, "03 / SELECT"),
-    (30.0, "04 / PROMPT"),
-    (48.0, "05 / RETRIEVE"),
-    (60.0, "06 / EDIT"),
-    (68.0, "07 / PREVIEW"),
-    (76.0, "08 / EXPORT"),
-    (80.0, "09 / PROJECT"),
-    (96.0, "10 / STUDIO"),
-    (112.0, "11 / HOW IT WORKS"),
-    (144.0, "12 / SPEED"),
-    (176.0, "13 / WHY IT IS FAST"),
-    (208.0, "14 / FFRAMES STUDIO"),
+    (-99.0, "WELCOME"),
+    (0.0, "INSTALL"),
+    (16.0, "WORKSPACE"),
+    (22.0, "POINT"),
+    (30.0, "ASK"),
+    (48.0, "FIND"),
+    (60.0, "EDIT"),
+    (68.0, "WATCH"),
+    (76.0, "EXPORT"),
+    (80.0, "YOUR PROJECT"),
+    (96.0, "FFRAMES STUDIO"),
+    (112.0, "HOW IT WORKS"),
+    (144.0, "SPEED TEST"),
+    (176.0, "WHY IT'S FAST"),
+    (208.0, "GET IT"),
 ];
 
 /// Section titles of the 16:9 cut, which starts with the first run of the app and
 /// ends on the wall of squares that becomes the QR code.
 const SECTIONS_LONG: &[(f32, &str)] = &[
-    (-99.0, "00 / HOOK"),
-    (0.0, "01 / INSTALL"),
-    (16.0, "02 / NEW VIDEO"),
-    (26.4, "03 / GENERATE"),
-    (33.5, "04 / SELECT"),
-    (36.5, "05 / PROMPT"),
-    (48.0, "06 / RETRIEVE"),
-    (60.0, "07 / EDIT"),
-    (68.0, "08 / PREVIEW"),
-    (76.0, "09 / EXPORT"),
-    (80.0, "10 / PROJECT"),
-    (96.0, "11 / STUDIO"),
-    (112.0, "12 / HOW IT WORKS"),
-    (144.0, "13 / SPEED"),
-    (176.0, "14 / WHY IT IS FAST"),
-    (198.0, "15 / EVERY CORE"),
-    (208.0, "16 / FFRAMES STUDIO"),
+    (-99.0, "WELCOME"),
+    (0.0, "INSTALL"),
+    (16.0, "DESCRIBE"),
+    (26.4, "DRAFT"),
+    (33.5, "POINT"),
+    (36.5, "ASK"),
+    (48.0, "FIND"),
+    (60.0, "EDIT"),
+    (68.0, "WATCH"),
+    (76.0, "EXPORT"),
+    (80.0, "YOUR PROJECT"),
+    (96.0, "FFRAMES STUDIO"),
+    (112.0, "HOW IT WORKS"),
+    (144.0, "SPEED TEST"),
+    (176.0, "WHY IT'S FAST"),
+    (198.0, "WHY IT'S FAST"),
+    (208.0, "GET IT"),
 ];
 
 /// Sound effects, placed on the beat minus the file's attack.
@@ -220,31 +222,13 @@ fn hud(frame: &Frame, b: f32) -> Svgr<'static> {
         .rev()
         .find(|(start, _)| b >= *start)
         .map_or("", |(_, name)| *name);
-    let bar = if b < 0.0 {
-        0
-    } else {
-        (b / 4.0).floor() as i32 + 1
-    };
-    let beat_in_bar = if b < 0.0 {
-        0
-    } else {
-        (b.rem_euclid(4.0)).floor() as i32 + 1
-    };
-    let tc = timecode(gsec(frame));
-    let fnum = format!("F {:05}", frame.global_index);
-    let bpm = format!("132 BPM   BAR {bar:03}.{beat_in_bar}");
-    // a tick that flashes on every beat
-    let tick = if b < 0.0 { 0.0 } else { pulse(b, 7.0) };
+    // only what a viewer can use: the chapter and how far along the video is
     let progress = (gsec(frame) / TOTAL_SECONDS * 1788.0).max(0.5);
     fframes::svgr!(
         <g opacity={appear * 0.9} style="mix-blend-mode:difference">
             {corners(36.0, 36.0, 1848.0, 1008.0, 26.0, "#d8d4cc", 2.0)}
-            {label(66.0, 78.0, "FFRAMES STUDIO".to_owned(), "#d8d4cc", 17.0, "start")}
-            {label(1854.0, 78.0, bpm, "#d8d4cc", 17.0, "end")}
-            <rect x="1840" y="92" width="14" height="14" fill={ACCENT} opacity={0.25 + tick * 0.75} />
-            {label(66.0, 1018.0, tc, "#d8d4cc", 17.0, "start")}
-            {label(290.0, 1018.0, fnum, "#77736d", 17.0, "start")}
-            {label(1854.0, 1018.0, section.to_owned(), "#d8d4cc", 17.0, "end")}
+            {label(66.0, 80.0, "FFRAMES STUDIO".to_owned(), "#d8d4cc", 20.0, "start")}
+            {label(1854.0, 1016.0, section.to_owned(), "#d8d4cc", 20.0, "end")}
             <rect x="66" y="1034" width="1788" height="1" fill="#d8d4cc" opacity="0.25" />
             <rect x="66" y="1033" width={progress} height="3" fill="#d8d4cc" />
         </g>
@@ -367,28 +351,13 @@ fn hud_portrait(frame: &Frame, b: f32) -> Svgr<'static> {
         .rev()
         .find(|(start, _)| b >= *start)
         .map_or("", |(_, name)| *name);
-    let bar = if b < 0.0 {
-        0
-    } else {
-        (b / 4.0).floor() as i32 + 1
-    };
-    let beat_in_bar = if b < 0.0 {
-        0
-    } else {
-        (b.rem_euclid(4.0)).floor() as i32 + 1
-    };
-    let tc = timecode(gsec(frame));
-    let bpm = format!("BAR {bar:03}.{beat_in_bar}");
-    let tick = if b < 0.0 { 0.0 } else { pulse(b, 7.0) };
+    // only what a viewer can use: the chapter and how far along the video is
     let progress = (gsec(frame) / TOTAL_SECONDS * 948.0).max(0.5);
     fframes::svgr!(
         <g opacity={appear * 0.9} style="mix-blend-mode:difference">
             {corners(36.0, 36.0, 1008.0, 1848.0, 26.0, "#d8d4cc", 2.0)}
-            {label(66.0, 82.0, "FFRAMES STUDIO".to_owned(), "#d8d4cc", 17.0, "start")}
-            {label(1014.0, 82.0, bpm, "#d8d4cc", 17.0, "end")}
-            <rect x="1000" y="96" width="14" height="14" fill={ACCENT} opacity={0.25 + tick * 0.75} />
-            {label(66.0, 1866.0, tc, "#d8d4cc", 17.0, "start")}
-            {label(1014.0, 1866.0, section.to_owned(), "#d8d4cc", 17.0, "end")}
+            {label(66.0, 82.0, "FFRAMES STUDIO".to_owned(), "#d8d4cc", 20.0, "start")}
+            {label(1014.0, 1866.0, section.to_owned(), "#d8d4cc", 20.0, "end")}
             <rect x="66" y="1882" width="948" height="1" fill="#d8d4cc" opacity="0.25" />
             <rect x="66" y="1881" width={progress} height="3" fill="#d8d4cc" />
         </g>

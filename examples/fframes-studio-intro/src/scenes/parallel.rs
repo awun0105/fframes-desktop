@@ -61,14 +61,15 @@ impl Scene for ParallelScene {
             <g>
                 <image href={bg.href()} x="0" y="0" width="1920" height="1080" />
                 <g opacity={text_o} transform={format!("translate(0 {})", (1.0 - head) * 24.0)}>
-                    <text x="110" y="250" font-family={MONO} font-weight="600" font-size="22" letter-spacing="4" fill={ACCENT}>"WHY IT IS FAST"</text>
+                    <text x="110" y="250" font-family={MONO} font-weight="600" font-size="22" letter-spacing="4" fill={ACCENT}>"WHY IT'S FAST"</text>
                     <text x="110" y="350" font-family={DISPLAY} font-size="84" letter-spacing="-2" fill={BONE}>"Every core."</text>
                     <text x="110" y="440" font-family={DISPLAY} font-size="84" letter-spacing="-2" fill={ACCENT}>"Every frame."</text>
                 </g>
                 <g opacity={count_o}>
                     <text x="110" y="700" font-family={DISPLAY} font-size="150" letter-spacing="-5" fill={BONE}>{count}</text>
-                    <text x="116" y="752" font-family={MONO} font-weight="600" font-size="24" letter-spacing="4" fill={ACCENT}>"FRAMES DONE"</text>
-                    <text x="116" y="800" font-family={MONO} font-weight="500" font-size="20" fill={GREY}>"Each square is a frame, all rendering at once."</text>
+                    <text x="116" y="752" font-family={MONO} font-weight="600" font-size="24" letter-spacing="4" fill={ACCENT}>"FRAMES FINISHED"</text>
+                    <text x="116" y="806" font-family={MONO} font-weight="500" font-size="26" fill="#cfcac1">"Each square is one frame."</text>
+                    <text x="116" y="846" font-family={MONO} font-weight="500" font-size="26" fill="#cfcac1">"They are all drawn at once."</text>
                 </g>
                 <g opacity={tile_o} transform={format!("translate({cx} {cy}) scale({tile_s}) translate(-{cx} -{cy})")}>
                     {wall}
