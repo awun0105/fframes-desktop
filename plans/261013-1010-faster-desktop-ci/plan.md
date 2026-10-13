@@ -29,6 +29,12 @@ Linux ~6.5 min (unit tests only).
 - Revised again: the runner user has passwordless sudo, and the user accepted root-for-pushers
   on that machine, so the isolated-account test runs on self-hosted Linux for every push and
   hosted Ubuntu runs only the tests for pull requests from other repositories.
+- Revised for the refactor month (2026-10-13, after the merge): every push runs only the fast
+  checks (fmt, tests, clippy, protocol/runtime, packaging tests and ledgers) on both runners;
+  the integration tests, SDK, Linux packaging, isolated-account presentation and M2 stress run
+  only from Run workflow with `full` ticked; the Windows SDK and test build also run for pushes
+  to `main`. Expected: about 5 min Linux and 2 min Windows per push, about 11-12 min Windows on
+  `main`. Run the full set before a release.
 
 ## Constraints
 

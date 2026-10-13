@@ -14,6 +14,15 @@ on:
       - "Cargo.lock"
       - ".github/workflows/desktop-self-hosted.yml"
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Also run the integration tests, SDK, packaging, presentation and M2 stress"
+        type: boolean
+        default: false
+
+# Heavy tests run only with Run workflow -> full while the desktop code is being refactored;
+# every push runs the fast checks (fmt, tests, clippy, protocol/runtime, packaging tests).
+# Run the full set before a release.
 
 permissions:
   contents: read
@@ -41,7 +50,7 @@ jobs:
           cache: false
       - name: Check Linux native prerequisites
         run: |
-          # The runner user has no sudo: the packages are installed once, system-wide, by an admin.
+          # The packages are installed once, system-wide, by an admin.
           missing=""
           # The FFmpeg build needs nasm, make, git, pkg-config and gcc (each tool is also its package name).
           for tool in nasm cmake make git pkg-config gcc python3; do
@@ -102,21 +111,28 @@ jobs:
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
       - name: Build and render annotated worker
+        if: inputs.full
         run: |
           cargo build --release --manifest-path desktop/fixtures/annotated-video-overlay/Cargo.toml
           cd desktop/fixtures/annotated-video-overlay
           cargo run --release -- frame 0 -o "$RUNNER_TEMP/worker-frame"
       - name: Real worker frame, anchor, crash and restart
+        if: inputs.full
         run: cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test worker_roundtrip -- --ignored
       - name: Assemble and verify native offline SDK
+        if: inputs.full
         run: python3 desktop/scripts/assemble-phase-zero-sdk.py --out "$RUNNER_TEMP/studio-sdk"
       - name: Install SDK and launch managed worker
+        if: inputs.full
         run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test managed_worker -- --ignored
       - name: Portable project and SDK relocation with real worker
+        if: inputs.full
         run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test portable_managed_worker -- --ignored
       - name: Revision-safe preview and compiled timeline integration
+        if: inputs.full
         run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test preview_coordination --test timeline_controls -- --ignored
       - name: Real SDK CPU pixels and audio mix parity
+        if: inputs.full
         run: |
           fixture="$(mktemp -d /tmp/studio-m2-XXXXXX)"
           echo "STUDIO_M2_TMP=$fixture" >> "$GITHUB_ENV"
@@ -127,6 +143,7 @@ jobs:
           SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" AUDIO_PREVIEW_EVIDENCE="$RUNNER_TEMP/m2-parity.json" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
       - name: Linux M2 native virtual-output stress and cleanup
         id: m2-stress
+        if: inputs.full
         # Advisory until it has passed on a runner with a stable virtual audio device.
         continue-on-error: true
         run: |
@@ -141,14 +158,16 @@ jobs:
       # Test builds are named studio-test-*: the release workflow collects only
       # fframes-studio-* packages, which come from hosted runners.
       - name: Package native app and SDK test build
+        if: inputs.full
         run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
       - name: Isolated-account offline native presentation, input and source click
+        if: inputs.full
         # Root sets up the account and network namespaces; the app runs as `nobody`. The
         # evidence it leaves is owned by `nobody` and removed with sudo below.
         run: sudo -E /usr/bin/python3 desktop/scripts/qualify-linux-native.py --application "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu/bin/fframes-studio" --bundle "$RUNNER_TEMP/studio-sdk" --out "$RUNNER_TEMP/linux-native-evidence" --isolated-user
       - name: Retain test build and evidence
         id: test-build
-        if: always()
+        if: always() && inputs.full
         uses: actions/upload-artifact@v4
         with:
           name: studio-test-x86_64-unknown-linux-gnu
@@ -191,6 +210,8 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 90
     env:
+      # A downloadable Windows build for every push to main, and for full runs.
+      TEST_BUILD: ${{ inputs.full || github.ref == 'refs/heads/main' }}
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
@@ -266,18 +287,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
       - name: Build and render annotated worker
+        if: inputs.full
         run: |
           cargo build --release --manifest-path desktop/fixtures/annotated-video-overlay/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Set-Location desktop/fixtures/annotated-video-overlay
           cargo run --release -- frame 0 -o "$env:RUNNER_TEMP\worker-frame"
       - name: Real worker frame, anchor, crash and restart
+        if: inputs.full
         run: cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test worker_roundtrip -- --ignored
       - name: Assemble and verify native offline SDK
+        if: env.TEST_BUILD == 'true'
         run: |
           Remove-Item -LiteralPath "$env:RUNNER_TEMP\studio-sdk" -Recurse -Force -ErrorAction SilentlyContinue
           python desktop/scripts/assemble-phase-zero-sdk.py --out "$env:RUNNER_TEMP\studio-sdk"
       - name: Managed worker, portable relocation, preview and timeline integration
+        if: inputs.full
         run: |
           $env:SDK_BUNDLE = "$env:RUNNER_TEMP\studio-sdk"
           foreach ($test in @("managed_worker", "portable_managed_worker")) {
@@ -291,13 +316,14 @@ jobs:
       # Test builds are named studio-test-*: the release workflow collects only
       # fframes-studio-* packages, which come from hosted runners.
       - name: Package native app and SDK test build
+        if: env.TEST_BUILD == 'true'
         run: |
           $out = "$env:RUNNER_TEMP\studio-test-x86_64-pc-windows-msvc"
           Remove-Item -LiteralPath $out, "$out.zip" -Recurse -Force -ErrorAction SilentlyContinue
           python desktop/scripts/package-phase-zero.py --out $out --sdk-bundle "$env:RUNNER_TEMP\studio-sdk"
       - name: Retain test build and M2 evidence
         id: test-build
-        if: always()
+        if: always() && env.TEST_BUILD == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: studio-test-x86_64-pc-windows-msvc

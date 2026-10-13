@@ -574,6 +574,21 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            // A sibling test that forks while this script is open for writing holds it until
+            // its child execs, and running the script then fails with ETXTBSY. Run it once
+            // (without `ci` it exits at once): after one start no writer can be left.
+            for _ in 0..100 {
+                let started = std::process::Command::new(&path)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                match started {
+                    Err(error) if error.raw_os_error() == Some(26) => {
+                        std::thread::sleep(std::time::Duration::from_millis(20))
+                    }
+                    _ => break,
+                }
+            }
         }
         path
     }
