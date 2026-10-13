@@ -45,9 +45,10 @@ Linux ~6.5 min (unit tests only).
 
 1. `.github/actions/desktop-linux-setup` (new composite): Python, Rust 1.98.1 with the build
    cache on `desktop/target`, apt prerequisites, FFmpeg restored from cache or built.
-2. `desktop.yml`: job `fork-tests` (fork PRs only) and job `package` (SDK, package, isolated
-   presentation, artifact). Heavy integration steps and the advisory M2 stress move out.
-3. `desktop-phase-zero.yml`: deleted; its one unique step lives in `desktop.yml` `package`.
+2. `desktop.yml`: only job `fork-tests` (tests and lint for pull requests from other
+   repositories). Everything else moves to the self-hosted workflow.
+3. `desktop-phase-zero.yml`: deleted; its one unique step (package and presentation check) runs
+   in the `desktop-self-hosted.yml` Linux job.
 4. `desktop-self-hosted.yml` Linux job: persistent build folder and FFmpeg in the runner's
    tool cache; worker, roundtrip, SDK, managed, portable, preview/timeline, audio parity,
    advisory M2 stress; prerequisite check names what is missing. It also packages the test build
@@ -71,8 +72,10 @@ Linux ~6.5 min (unit tests only).
   full 2001 seeks and 50 rebuilds (17.5 min) instead of stopping early. Hosted Desktop CI is
   skipped for own pull requests and runs only for pull requests from other repositories.
 - Baseline per PR was hosted Desktop CI ~50 min plus ~30-40 min of duplicate feasibility jobs
-  on hosted runners. The 15-25 min target holds for every check except the advisory M2 stress;
-  whether it should stay on every push is an open user decision (see the M2 status below).
+  on hosted runners, next to self-hosted Windows ~33 min; that hosted work is gone.
+- The 15-25 min target is not met. Without the M2 stress a push takes about 30 min, set by the
+  Windows job's 18 min integration step; with it, 38.5 min. Whether the M2 stress stays on every
+  push is an open user decision (see the M2 status below).
 
 ## Risks
 
