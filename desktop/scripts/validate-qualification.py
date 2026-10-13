@@ -1311,6 +1311,9 @@ def _validate_m6_gate_measurements(provider_id, gate_name, proof):
             raise ValueError(f"{provider_id}.{gate_name} evidence must name its measured MCP or CLI route")
     elif gate_name == "interruption_and_cleanup":
         _writer_contract(measurements)
+        for scenario in measurements["scenarios"]:
+            if scenario.get("contained") is not True or scenario.get("containment_unverified") is not None:
+                raise ValueError(f"{provider_id}.{gate_name} evidence has a scenario whose containment was not verified")
     elif gate_name == "twenty_cycle_cleanup":
         cycles = measurements.get("cycles_completed")
         peak_rss = measurements.get("peak_rss_kib")
