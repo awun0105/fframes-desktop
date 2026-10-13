@@ -37,10 +37,15 @@ cpal = "=0.18.2"
 agent-client-protocol = "=2.2.0"
 futures = "0.3"
 
+# Cap's GPUI fork: wingleeio/zed with Cap's three patches and a few upstream Zed fixes, mirrored
+# on the `cap-patches` branch of khanhthanhdev/zed-cap. Never pin below cb5d0daa (Cap's last
+# patch); earlier fork commits break the DirectX quad and sprite layout.
 [workspace.dependencies.gpui]
-git = "https://github.com/zed-industries/zed.git"
-rev = "1a84d5d92bd7d6c1cabb116062650af545783fe9"
+git = "https://github.com/khanhthanhdev/zed-cap"
+rev = "c32bfd3962e172b566c9d5514f4fa5cf325e9b06"
 
+# Cap's feature set; each feature only reaches its own platform crate.
 [workspace.dependencies.gpui_platform]
-git = "https://github.com/zed-industries/zed.git"
-rev = "1a84d5d92bd7d6c1cabb116062650af545783fe9"
+git = "https://github.com/khanhthanhdev/zed-cap"
+rev = "c32bfd3962e172b566c9d5514f4fa5cf325e9b06"
+features = ["wayland", "x11", "font-kit", "runtime_shaders"]

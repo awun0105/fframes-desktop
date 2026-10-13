@@ -602,8 +602,10 @@ fn mac_process_info_confirms_exit(read: libc::c_int, errno: libc::c_int) -> bool
 }
 
 /// Lists every process in a group, including zombies, via libproc. macOS does not
-/// expose `/proc`, and `killpg(..., 0)` continues to report zombie-only groups as
-/// present, so termination verification needs process state as well as the probe.
+/// expose `/proc`, and `killpg(..., 0)` cannot tell a zombie-only group from a live one
+/// (it fails with EPERM while the group holds only unreaped zombies), so termination
+/// verification needs process state as well as the probe. Members owned by another user
+/// are listed but refuse `proc_pidinfo` with EPERM, which leaves the scan incomplete.
 #[cfg(target_os = "macos")]
 fn scan_process_group(pgid: i32) -> MacProcScan {
     let mut scan = MacProcScan {
@@ -732,10 +734,11 @@ fn mac_membership_with(
     scan: &mut dyn FnMut() -> MacProcScan,
     pause: &dyn Fn(),
 ) -> GroupMembership {
-    match probe() {
-        Probe::Gone => return GroupMembership::Empty,
-        Probe::Unknown => return GroupMembership::Present,
-        Probe::Exists => {}
+    // macOS answers `kill(-pgid, 0)` with EPERM, not ESRCH, while every member is an
+    // unreaped zombie (the leader before `wait`), so an inconclusive probe is settled by
+    // the scan; an incomplete scan still counts as present.
+    if probe() == Probe::Gone {
+        return GroupMembership::Empty;
     }
     let mut quiet = 0;
     for _ in 0..4 {
@@ -2458,13 +2461,26 @@ mod tests {
 
     #[cfg(unix)]
     fn pid_alive(pid: i32) -> bool {
-        // A zombie still answers signal 0 but cannot write; /proc distinguishes it.
+        // A zombie still answers signal 0 but cannot write; its state letter tells it apart.
         // SAFETY: signal 0 probes existence only.
         let exists = unsafe { libc::kill(pid, 0) } == 0;
-        exists
-            && std::fs::read_to_string(format!("/proc/{pid}/stat"))
-                .map(|s| !s.rsplit(") ").next().unwrap_or("").starts_with('Z'))
-                .unwrap_or(false)
+        exists && process_state(pid).is_some_and(|state| !state.starts_with('Z'))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn process_state(pid: i32) -> Option<String> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        stat.rsplit(") ").next().map(str::to_owned)
+    }
+
+    #[cfg(all(unix, not(target_os = "linux")))]
+    fn process_state(pid: i32) -> Option<String> {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        let state = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+        (!state.is_empty()).then_some(state)
     }
 
     #[cfg(target_os = "linux")]
@@ -2525,7 +2541,11 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn setsid_escaped_helper_survives_group_verification_and_is_observable_only_while_parented() {
-        let mut child = shell("setsid sleep 30 & echo $!; wait");
+        // macOS has no setsid command, so the helper leaves the group through Python and
+        // reports its pid only once it has left.
+        let mut child = shell(
+            "python3 -c 'import os, sys; os.setsid(); print(os.getpid(), flush=True); os.execvp(sys.argv[1], sys.argv[1:])' sleep 30 & wait",
+        );
         let helper = read_pid_line(&mut child);
         // Linux can see the escape while the helper is still a descendant.
         #[cfg(target_os = "linux")]
@@ -2789,7 +2809,9 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn termination_is_bounded_even_when_the_leader_ignores_term() {
-        let mut child = shell("trap '' TERM; while :; do sleep 1; done");
+        // The shell reports its pid once the trap is in place, so TERM cannot win the race.
+        let mut child = shell("trap '' TERM; echo $$; while :; do sleep 1; done");
+        read_pid_line(&mut child);
         let started = Instant::now();
         let report = child
             .terminate_verified(Duration::from_millis(100))
@@ -2908,6 +2930,49 @@ mod tests {
         );
         assert_eq!(membership, GroupMembership::Empty);
         assert_eq!(scans, 2, "one quiet snapshot is not enough to prove empty");
+
+        // The kernel's EPERM for a zombie-only group defers to the scan.
+        let membership = mac_membership_with(
+            500,
+            Some((10, 20)),
+            &mut || Probe::Unknown,
+            &mut || zombie_group.clone(),
+            &|| {},
+        );
+        assert_eq!(membership, GroupMembership::Empty);
+        let incomplete = MacProcScan {
+            entries: Vec::new(),
+            complete: false,
+        };
+        assert_eq!(
+            mac_membership_with(
+                500,
+                Some((10, 20)),
+                &mut || Probe::Unknown,
+                &mut || incomplete.clone(),
+                &|| {},
+            ),
+            GroupMembership::Present
+        );
+        let live_member = MacProcScan {
+            entries: vec![MacProcEntry {
+                pid: 501,
+                pgrp: 500,
+                start: (10, 21),
+                zombie: false,
+            }],
+            complete: true,
+        };
+        assert_eq!(
+            mac_membership_with(
+                500,
+                Some((10, 20)),
+                &mut || Probe::Unknown,
+                &mut || live_member.clone(),
+                &|| {},
+            ),
+            GroupMembership::Members(vec![501])
+        );
     }
 
     #[test]

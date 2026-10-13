@@ -185,7 +185,7 @@ fn current_checkpoint_load_draft_and_copy_preserve_content() {
 #[cfg(unix)]
 #[test]
 fn links_special_files_and_non_utf8_names_are_errors() {
-    use std::os::unix::{ffi::OsStringExt, fs::symlink};
+    use std::os::unix::fs::symlink;
     let d = tempfile::tempdir().unwrap();
     write(d.path(), "src/lib.rs", b"rust");
     symlink("src", d.path().join("linked")).unwrap();
@@ -205,17 +205,22 @@ fn links_special_files_and_non_utf8_names_are_errors() {
     );
     drop(socket);
     fs::remove_file(d.path().join("socket")).unwrap();
-    fs::write(
-        d.path().join(std::ffi::OsString::from_vec(vec![0xff])),
-        b"bad",
-    )
-    .unwrap();
-    assert!(
-        SourceInventory::scan(d.path())
-            .unwrap_err()
-            .reason
-            .contains("non-UTF-8")
-    );
+    // APFS refuses names that are not UTF-8 (EILSEQ), so macOS cannot hold one.
+    #[cfg(not(target_os = "macos"))]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        fs::write(
+            d.path().join(std::ffi::OsString::from_vec(vec![0xff])),
+            b"bad",
+        )
+        .unwrap();
+        assert!(
+            SourceInventory::scan(d.path())
+                .unwrap_err()
+                .reason
+                .contains("non-UTF-8")
+        );
+    }
 }
 
 #[cfg(unix)]

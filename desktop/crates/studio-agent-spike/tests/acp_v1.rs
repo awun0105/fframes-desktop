@@ -130,10 +130,24 @@ fn read_json(root: &Path, name: &str) -> serde_json::Value {
 fn pid_running(pid: i32) -> bool {
     // SAFETY: signal 0 only probes existence.
     let exists = unsafe { libc::kill(pid, 0) } == 0;
-    exists
-        && std::fs::read_to_string(format!("/proc/{pid}/stat"))
-            .map(|stat| !stat.rsplit(") ").next().unwrap_or("").starts_with('Z'))
-            .unwrap_or(false)
+    // A zombie still answers signal 0.
+    exists && process_state(pid).is_some_and(|state| !state.starts_with('Z'))
+}
+
+#[cfg(target_os = "linux")]
+fn process_state(pid: i32) -> Option<String> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat.rsplit(") ").next().map(str::to_owned)
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn process_state(pid: i32) -> Option<String> {
+    let output = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    let state = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    (!state.is_empty()).then_some(state)
 }
 
 #[cfg(unix)]
@@ -1077,13 +1091,18 @@ fn a_setsid_escaped_helper_demotes_ownership_and_is_not_covered_by_group_cleanup
             survived,
             "{mode}: escaped helper must outlive group cleanup"
         );
-        assert_eq!(outcome.escaped_pids, vec![helper as u32], "{mode}");
-        assert_eq!(
-            outcome.ownership,
-            WriterOwnership::Detached,
-            "{mode}: qualification gate must fail"
-        );
-        assert!(!outcome.ownership.is_qualified());
+        // Only Linux scans for escaped descendants; macOS has no escape scan, so the
+        // demotion is not observable there.
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(outcome.escaped_pids, vec![helper as u32], "{mode}");
+            assert_eq!(
+                outcome.ownership,
+                WriterOwnership::Detached,
+                "{mode}: qualification gate must fail"
+            );
+            assert!(!outcome.ownership.is_qualified());
+        }
         assert_eq!(manager.active_count(), 0);
     }
 }

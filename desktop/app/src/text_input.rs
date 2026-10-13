@@ -292,6 +292,12 @@ impl TextInput {
             self.paste(item, window, cx);
         }
     }
+
+    fn paste(&mut self, item: ClipboardItem, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = item.text() {
+            self.replace_text_in_range(None, &text, window, cx);
+        }
+    }
 }
 
 impl Focusable for TextInput {
@@ -438,12 +444,6 @@ impl EntityInputHandler for TextInput {
         let last_layout = self.last_layout.as_ref()?;
         let utf8_idx = last_layout.index_for_x(line_point.x)?;
         Some(self.offset_to_utf16(utf8_idx))
-    }
-
-    fn paste(&mut self, item: ClipboardItem, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = item.text() {
-            self.replace_text_in_range(None, &text, window, cx);
-        }
     }
 }
 

@@ -84,8 +84,7 @@ impl Element for PreviewElement {
         );
         let radii = Corners::all(px(crate::design_system::tokens().metrics.radius_frame));
         // Corner radii round the clip rectangle, so the clip is the letterboxed frame.
-        let painted =
-            window.paint_image(image_bounds, image_bounds, radii, image.clone(), 0, false);
+        let painted = window.paint_image(image_bounds, radii, image.clone(), 0, false);
         if painted.is_ok() {
             let mut ring = gpui::outline(
                 image_bounds,

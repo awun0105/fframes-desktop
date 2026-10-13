@@ -2,7 +2,8 @@ name: Desktop CI
 
 # All desktop checks run on the self-hosted runners (desktop-self-hosted.yml) for every push to
 # this repository. They never take pull requests because this repository is public, so pull
-# requests from other repositories get the tests and lint here, on hosted Ubuntu.
+# requests from other repositories get the tests and lint here, on hosted Ubuntu. Every pull
+# request also gets the macOS tests and lint and the dependency source and advisory check.
 
 on:
   pull_request:
@@ -18,6 +19,8 @@ on:
       - "Cargo.lock"
       - ".github/actions/desktop-linux-setup/**"
       - ".github/workflows/desktop.yml"
+  # Runs the macOS and dependency jobs on demand; the fork tests need a pull request.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -35,7 +38,7 @@ jobs:
   fork-tests:
     name: Desktop tests for a fork (ubuntu-24.04)
     # `head.repo.fork` is true for this repository too (it is a fork of fframes), so compare names.
-    if: github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:
@@ -53,3 +56,58 @@ jobs:
           python3 desktop/scripts/test-packaging.py
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
+
+  # No self-hosted macOS runner exists, so the desktop tests and lint run on hosted macOS.
+  desktop-macos:
+    name: Desktop tests (macos-15)
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      # The cache keeps the dependencies in desktop/target; CARGO_TARGET_DIR points there too.
+      - name: Use the cached build folder
+        run: echo "CARGO_TARGET_DIR=$GITHUB_WORKSPACE/desktop/target" >> "$GITHUB_ENV"
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "1.98.1"
+          components: rustfmt, clippy
+          cache-workspaces: "desktop -> target"
+      - name: macOS native prerequisites
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install nasm || true
+          xcode_dir="$(xcode-select -p 2>/dev/null || echo '/Applications/Xcode.app/Contents/Developer')"
+          if [ -d "$xcode_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib" ]; then
+            echo "LIBCLANG_PATH=$xcode_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib" >> "$GITHUB_ENV"
+          fi
+      # FFmpeg records its install prefix in its pkg-config files, so it is restored to the same path.
+      - name: Restore the pinned FFmpeg install
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ffmpeg-native
+          key: ffmpeg-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('desktop/scripts/build-native-ffmpeg.py') }}
+      - name: Build the pinned FFmpeg install
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: python3 desktop/scripts/build-native-ffmpeg.py --source "$RUNNER_TEMP/ffmpeg-source" --out "$RUNNER_TEMP/ffmpeg-native"
+      - name: Use the pinned FFmpeg install
+        run: echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg-native" >> "$GITHUB_ENV"
+      - name: Test desktop workspace
+        run: cargo test --locked --no-fail-fast --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio
+      - name: Lint desktop workspace
+        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio --all-targets -- -D warnings
+
+  # Dependencies come only from crates.io and the git sources allowed in desktop/deny.toml.
+  desktop-deny:
+    name: Desktop dependency sources and advisories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: desktop/Cargo.toml
+          command: check
+          command-arguments: sources advisories
