@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Switch the app to Cap's GPUI fork"
-status: pending
+status: in-progress
 priority: P1
 effort: "3-4d"
 dependencies: [1]
@@ -31,13 +31,22 @@ The current app, with its current structure and behavior, builds and runs on Cap
 
 ## Todo
 
-- [ ] Scout gpui uses
-- [ ] Pins on the mirror; `cargo deny` in CI
-- [ ] Fix compile errors
+- [x] Scout gpui uses
+- [x] Pins on the mirror; `cargo deny` in CI
+- [x] Fix compile errors
 - [ ] Tests, clippy, qualification green
-- [ ] Manual parity click-through on Windows
+- [x] Manual parity click-through on Windows
 - [ ] macOS CI builds and tests `desktop/`
-- [ ] Spike directory removed
+- [x] Spike directory removed
+
+## Progress
+
+- Scout: 41 files in `desktop/app/src` use gpui and no other desktop crate does; only `preview_element.rs` (`paint_image`) and `text_input.rs` (`EntityInputHandler::paste`) touch the API-change list.
+- Pins: `gpui` and `gpui_platform` on the mirror at `c32bfd39` with Cap's four features in `desktop/Cargo.toml`; the app takes `gpui_platform` once instead of per OS. No `gpui_tokio` is used. `image` already resolves to one version (0.25.10), which matches the fork's `0.25.1` requirement.
+- Compile errors were the two from the API-change list: `preview_element.rs` uses the fork's five-argument `paint_image` (clip and bounds were the same), and `TextInput::paste` moved from `EntityInputHandler` to the inherent impl. The `cfg(macos/linux)` code is covered by CI only.
+- `desktop/deny.toml`: crates.io, the mirror, and Zed's `font-kit` and `xim-rs` forks (pinned by the GPUI fork). "Unmaintained" notices count only for direct dependencies; the `ttf-parser` notice (RUSTSEC-2026-0192, a direct dependency of studio-presets before this change) is ignored with a reason. Vulnerabilities fail for every crate. Job `desktop-deny` in `desktop.yml`.
+- Windows: `cargo test` and clippy (`-D warnings`) pass for the CI package set; the app opens with its look and native chrome unchanged, and the user clicked through the parity list with no differences ([screenshot](./reports/cap-gpui-switch-studio-window.png)).
+- CI: the spike jobs are replaced by `desktop-macos` (test and clippy of `desktop/`, pinned FFmpeg built and cached as on Linux) for every pull request. Linux keeps the self-hosted job and `fork-tests`.
 
 ## Success criteria
 

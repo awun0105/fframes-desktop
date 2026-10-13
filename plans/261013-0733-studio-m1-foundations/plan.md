@@ -22,7 +22,7 @@ Part of [the studio rewrite roadmap](../261013-0733-studio-rewrite-roadmap/plan.
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
 | 1 | [Feasibility spikes](./phase-01-feasibility-spikes.md) | 6-8d | none | In progress |
-| 2 | [Switch the app to Cap's GPUI fork](./phase-02-cap-gpui-switch.md) | 3-4d | 1 | Pending |
+| 2 | [Switch the app to Cap's GPUI fork](./phase-02-cap-gpui-switch.md) | 3-4d | 1 | In progress |
 | 3 | [Parity gpui tests](./phase-03-parity-gpui-tests.md) | 3-5d | 2 | Pending |
 
 ## Success criteria

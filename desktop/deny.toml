@@ -1,0 +1,26 @@
+# cargo deny check sources advisories --manifest-path desktop/Cargo.toml
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    # Cap's GPUI fork (gpui, gpui_platform and their workspace crates).
+    "https://github.com/khanhthanhdev/zed-cap",
+    # Zed's forks that the GPUI fork itself pins by commit.
+    "https://github.com/zed-industries/font-kit",
+    "https://github.com/zed-industries/xim-rs.git",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+# Vulnerabilities fail for every crate; "unmaintained" notices only for crates this workspace
+# depends on directly (paste, proc-macro-error2, rustybuzz and ttf-parser reach it through gpui,
+# image and fframes-media).
+unmaintained = "workspace"
+ignore = [
+    # studio-presets reads font metadata with ttf-parser, as usvg and gpui do; moving to
+    # skrifa (the advisory's suggestion) is a separate change.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained, no known vulnerability" },
+]
