@@ -614,14 +614,14 @@ class M7QualificationTests(unittest.TestCase):
         self.assertIn("gh release create", publish_job)
 
     def test_windows_ffmpeg_dependency_is_immutable_and_hash_pinned_in_ci(self):
+        # The workflows that download the Windows FFmpeg build. Hashes compare case-insensitively.
         workflows = [
-            ROOT / ".github/workflows/desktop.yml",
-            ROOT / ".github/workflows/desktop-phase-zero.yml",
+            ROOT / ".github/workflows/desktop-self-hosted.yml",
             ROOT / ".github/workflows/desktop-release.yml",
             ROOT / ".github/workflows/main.yml",
         ]
         for path in workflows:
-            text = path.read_text()
+            text = path.read_text().lower()
             with self.subTest(workflow=path.name):
                 self.assertNotIn("releases/download/latest/", text)
                 self.assertIn("124799f0643a75eb84a64a589f1abac8f81732587942f3f34458688036153f0d", text)

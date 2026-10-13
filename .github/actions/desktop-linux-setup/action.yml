@@ -1,0 +1,47 @@
+name: Desktop Linux setup
+description: >
+  Python, the pinned Rust toolchain with a build cache on desktop/target, the native packages
+  and the pinned static FFmpeg install, restored from the cache when its build script is unchanged.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    # The cache keeps the dependencies in desktop/target; CARGO_TARGET_DIR points there too.
+    - name: Use the cached build folder
+      shell: bash
+      run: echo "CARGO_TARGET_DIR=$GITHUB_WORKSPACE/desktop/target" >> "$GITHUB_ENV"
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: "1.98.1"
+        components: rustfmt, clippy
+        cache-workspaces: "desktop -> target"
+    - name: Assert native architecture
+      shell: bash
+      run: |
+        python3 -c 'import subprocess; assert "host: x86_64-unknown-linux-gnu" in subprocess.check_output(["rustc", "-vV"], text=True)'
+    - name: Linux native prerequisites
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang libclang-dev cmake pkg-config libssl-dev libfontconfig1-dev libasound2-dev libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libgl1-mesa-dev libxcb1-dev libxcb-shape0-dev libxcb-xfixes0-dev libx11-xcb-dev libzstd-dev nasm xvfb xdotool mesa-vulkan-drivers python3-pil iproute2 util-linux
+        python3 -m pip install Pillow
+        llvm_lib="$(find /usr/lib -name "libclang.so" 2>/dev/null | head -n1)"
+        if [ -n "$llvm_lib" ]; then
+          echo "LIBCLANG_PATH=$(dirname "$llvm_lib")" >> "$GITHUB_ENV"
+        fi
+    # FFmpeg records its install prefix in its pkg-config files, so it is restored to the same path.
+    - name: Restore the pinned FFmpeg install
+      id: ffmpeg
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/ffmpeg-native
+        key: ffmpeg-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('desktop/scripts/build-native-ffmpeg.py') }}
+    - name: Build the pinned FFmpeg install
+      if: steps.ffmpeg.outputs.cache-hit != 'true'
+      shell: bash
+      run: python3 desktop/scripts/build-native-ffmpeg.py --source "$RUNNER_TEMP/ffmpeg-source" --out "$RUNNER_TEMP/ffmpeg-native"
+    - name: Use the pinned FFmpeg install
+      shell: bash
+      run: echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg-native" >> "$GITHUB_ENV"

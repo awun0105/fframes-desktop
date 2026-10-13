@@ -54,7 +54,7 @@ The user selected configurable adapters and deferred qualification. Protocol sub
 
 Desktop builds use core fframes crates from this checkout; they do not require publishing to crates.io or npm. The inherited [core release job](../../.github/workflows/main.yml) runs only in `dmtrKovalenko/fframes`. Forks need no upstream publishing credentials or release tags to build Studio.
 
-Run [Desktop CI](../../.github/workflows/desktop.yml) or [Desktop feasibility artifacts](../../.github/workflows/desktop-phase-zero.yml) from GitHub Actions with **Run workflow** to build the native Linux, Windows and macOS matrix. Both also run for relevant pushes to `main` and pull requests, including changes to the local framework crates. Download the `studio-<target>` artifact from Desktop CI for the packaged app and SDK; these feasibility packages remain subject to the qualification gates below.
+[Desktop self-hosted validation](../../.github/workflows/desktop-self-hosted.yml) runs the tests, lint, real-worker integration and packaging on the self-hosted Linux and Windows runners for every push, including changes to the local framework crates; it never runs for pull requests, because the repository is public. On Linux that includes the isolated-account presentation test. [Desktop CI](../../.github/workflows/desktop.yml) runs the tests and lint on hosted Ubuntu for pull requests from other repositories. See [Self-hosted runners](self-hosted-runners.md) for the machine setup and how to download the `studio-test-<target>` builds; these feasibility packages remain subject to the qualification gates below.
 
 On Unix, build the pinned official FFmpeg source and supply its real static install. Windows uses an FFmpeg 9 shared install and a native MSVC build environment.
 

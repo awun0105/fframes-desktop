@@ -217,11 +217,19 @@ class Driver:
         self.button("retry-audio-output")
 
     def point(self, x: float, y: float, click: bool = True) -> None:
-        assert self.window
-        command = ["xdotool", "mousemove", "--window", self.window, str(round(x)), str(round(y))]
+        self.move(x, y)
         if click:
-            command += ["sleep", "0.1", "mousedown", "1", "mouseup", "1"]
-        self.command(*command)
+            self.click()
+
+    def move(self, x: float, y: float) -> None:
+        """Move the pointer and give the window time to process it: a click that lands before
+        the toolkit has seen the move is dropped."""
+        assert self.window
+        self.command("xdotool", "mousemove", "--window", self.window, str(round(x)), str(round(y)))
+        time.sleep(0.1)
+
+    def click(self) -> None:
+        self.command("xdotool", "mousedown", "1", "mouseup", "1")
 
     def button(self, name: str) -> None:
         box = self.latest.get("buttons", {}).get(name)
@@ -251,16 +259,20 @@ class Driver:
         if not isinstance(bounds, list) or len(bounds) != 4:
             raise QualificationError("missing timeline ruler geometry")
         before = int(self.latest.get("seek_serial", 0))
-        target_x = bounds[0] + max(0.001, min(0.999, fraction)) * bounds[2]
+        # The ruler's hit area ends before its right edge (left + width), so a fraction
+        # that rounds onto that edge would click outside it and never seek.
+        target_x = min(bounds[0] + bounds[2] - 1, max(bounds[0], round(bounds[0] + max(0.001, min(0.999, fraction)) * bounds[2])))
         geometry = self.latest["thumbnail_metrics"]
         # Allow two pixels for X11's border and integer pointer rounding.
         # Derive the allowed nearest frames
         # independently; still require the exact latest serial and displayed frame.
         def cursor(offset):
-            return min(self.latest["total_frames"], max(0, math.floor((round(target_x) - bounds[0] + offset + geometry["scroll_x"]) / geometry["pixels_per_second"] * self.latest["fps"] + 0.5)))
+            return min(self.latest["total_frames"], max(0, math.floor((target_x - bounds[0] + offset + geometry["scroll_x"]) / geometry["pixels_per_second"] * self.latest["fps"] + 0.5)))
         low, high = cursor(-2), cursor(2)
+        self.move(target_x, bounds[1] + bounds[3] * 0.55)
+        # Seek latency runs from the click, not from the pointer move and its settle time.
         begun = time.monotonic()
-        self.point(target_x, bounds[1] + bounds[3] * 0.55)
+        self.click()
         self.wait(
             lambda t: int(t.get("seek_serial", 0)) > before and low <= t.get("position", -1) <= high and t.get("paint_serial") == t.get("seek_serial") and t.get("paint_frame") == min(t["position"], t["total_frames"] - 1),
             f"matching painted seek frame in [{low}, {high}] after serial {before}",
@@ -538,6 +550,7 @@ def main() -> int:
                       "inject_build_failures": args.inject_build_failures},
         "measurements": {"elapsed_seconds": elapsed, "confirmed_seeks": driver.seeks, "rebuilds": driver.rebuilds, "audio_recoveries": driver.audio_recoveries,
                          "failed_builds": driver.failed_builds, "seek_p95_ms": percentile(driver.seek_latencies, 0.95),
+                         "seek_latencies_ms": driver.seek_latencies,
                          "rss_slope_mib_per_min": slope_mib_per_minute(driver.rss_samples),
                          "av_error_ms": None, "timestamp_residual_ms": None,
                          "audio_timing_note": "Unavailable: no physical DAC/output capture was measured.",
@@ -558,6 +571,12 @@ def main() -> int:
     result["finished"] = result["finished"] and not performance_errors
     atomic_write(args.out / "raw-measurements.json", result)
     atomic_write(args.out / "telemetry-samples.json", driver.telemetry_samples)
+    measured = result["measurements"]
+    def ms(value: float | None) -> str:
+        return "n/a" if value is None else f"{value:.0f} ms"
+    print(f"M2 measurements: {driver.seeks} seeks, {driver.rebuilds} rebuilds, {driver.audio_recoveries} audio recoveries in {elapsed:.0f} s; "
+          f"seek p50 {ms(percentile(driver.seek_latencies, 0.5))}, p95 {ms(measured['seek_p95_ms'])}, max {ms(max(driver.seek_latencies, default=None))}; "
+          f"RSS slope {measured['rss_slope_mib_per_min'] if measured['rss_slope_mib_per_min'] is not None else 'n/a'} MiB/min", flush=True)
     if not result["finished"]:
         print(f"M2 qualification did not finish strictly: {error or performance_errors or result['cleanup']}", file=sys.stderr)
         return 1

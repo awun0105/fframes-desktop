@@ -1,5 +1,9 @@
 name: Desktop CI
 
+# All desktop checks run on the self-hosted runners (desktop-self-hosted.yml) for every push to
+# this repository. They never take pull requests because this repository is public, so pull
+# requests from other repositories get the tests and lint here, on hosted Ubuntu.
+
 on:
   pull_request:
     paths:
@@ -12,25 +16,8 @@ on:
       - "webvtt-parser/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - ".github/actions/desktop-linux-setup/**"
       - ".github/workflows/desktop.yml"
-      - ".github/workflows/desktop-phase-zero.yml"
-      - ".github/workflows/desktop-release.yml"
-  push:
-    branches: [main]
-    paths:
-      - "desktop/**"
-      - "fframes-studio-*/**"
-      - "fframes/**"
-      - "fframes-media/**"
-      - "svgr-macro/**"
-      - "media-dir-macro/**"
-      - "webvtt-parser/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/desktop.yml"
-      - ".github/workflows/desktop-phase-zero.yml"
-      - ".github/workflows/desktop-release.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -39,68 +26,24 @@ concurrency:
   group: desktop-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
 jobs:
-  matrix:
-    name: Desktop CI (${{ matrix.runner }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          # macOS is paused: the studio-agent-spike process-group tests fail there (GroupSurvivors).
-          # - runner: macos-15
-          #   target: aarch64-apple-darwin
-    runs-on: ${{ matrix.runner }}
+  fork-tests:
+    name: Desktop tests for a fork (ubuntu-24.04)
+    # `head.repo.fork` is true for this repository too (it is a fork of fframes), so compare names.
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:
       run:
         shell: bash
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "0"
-      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
-      - name: Set native build directory
-        run: |
-          if command -v cygpath >/dev/null 2>&1; then
-            echo "CARGO_TARGET_DIR=$(cygpath -m "$RUNNER_TEMP/studio-native")" >> "$GITHUB_ENV"
-          else
-            echo "CARGO_TARGET_DIR=$RUNNER_TEMP/studio-native" >> "$GITHUB_ENV"
-          fi
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: "1.98.1"
-          components: rustfmt, clippy
-      - name: Assert native architecture
-        run: |
-          python3 -c 'import subprocess; assert "host: ${{ matrix.target }}" in subprocess.check_output(["rustc", "-vV"], text=True)'
-      - name: Linux native prerequisites
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang libclang-dev cmake pkg-config libssl-dev libfontconfig1-dev libasound2-dev libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libgl1-mesa-dev libxcb1-dev libxcb-shape0-dev libxcb-xfixes0-dev libx11-xcb-dev libzstd-dev nasm xvfb xdotool pulseaudio pulseaudio-utils mesa-vulkan-drivers python3-pil
-          python3 -m pip install Pillow
-          llvm_lib="$(find /usr/lib -name "libclang.so" 2>/dev/null | head -n1)"
-          if [ -n "$llvm_lib" ]; then
-            echo "LIBCLANG_PATH=$(dirname "$llvm_lib")" >> "$GITHUB_ENV"
-          fi
-      - name: macOS native prerequisites
-        if: runner.os == 'macOS'
-        run: |
-          HOMEBREW_NO_AUTO_UPDATE=1 brew install nasm || true
-          xcode_dir="$(xcode-select -p 2>/dev/null || echo '/Applications/Xcode.app/Contents/Developer')"
-          if [ -d "$xcode_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib" ]; then
-            echo "LIBCLANG_PATH=$xcode_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib" >> "$GITHUB_ENV"
-          fi
-      - name: Build pinned native FFmpeg install
-        run: |
-          python3 desktop/scripts/build-native-ffmpeg.py --source "$RUNNER_TEMP/ffmpeg-source" --out "$RUNNER_TEMP/ffmpeg-native"
-          echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg-native" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/desktop-linux-setup
       - name: Focused tests and lint
         run: |
           cargo fmt --manifest-path desktop/Cargo.toml --all --check
@@ -110,61 +53,3 @@ jobs:
           python3 desktop/scripts/test-packaging.py
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
-      - name: Build and render annotated worker
-        run: |
-          cargo build --release --manifest-path desktop/fixtures/annotated-video-overlay/Cargo.toml
-          cd desktop/fixtures/annotated-video-overlay
-          cargo run --release -- frame 0 -o "$RUNNER_TEMP/worker-frame"
-      - name: Real worker frame, anchor, crash and restart
-        run: cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test worker_roundtrip -- --ignored
-      - name: Assemble and verify native offline SDK
-        run: python3 desktop/scripts/assemble-phase-zero-sdk.py --out "$RUNNER_TEMP/studio-sdk"
-      - name: Install SDK and launch managed worker
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test managed_worker -- --ignored
-      - name: Portable project and SDK relocation with real worker
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test portable_managed_worker -- --ignored
-      - name: Revision-safe preview and compiled timeline integration
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test preview_coordination --test timeline_controls -- --ignored
-      - name: Real SDK CPU pixels and audio mix parity
-        run: |
-          if [ "$RUNNER_OS" = Linux ]; then
-            fixture="$(mktemp -d /tmp/studio-m2-XXXXXX)/video"
-            echo "STUDIO_M2_FIXTURE=$fixture" >> "$GITHUB_ENV"
-            echo "STUDIO_M2_HOME=$RUNNER_TEMP/m2-home" >> "$GITHUB_ENV"
-            export AUDIO_PREVIEW_FIXTURE_ROOT="$fixture"
-            export AUDIO_PREVIEW_SDK_HOME="$RUNNER_TEMP/m2-home/.fframes/sdk"
-          fi
-          SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" AUDIO_PREVIEW_EVIDENCE="$RUNNER_TEMP/m2-parity.json" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
-      - name: Linux M2 native virtual-output stress and cleanup
-        if: runner.os == 'Linux'
-        # Advisory on the hosted runner: its virtual PulseAudio sink repeatedly fails streams with an
-        # ALSA I/O error (the script retries, then still misses its seek-latency budget on this
-        # 2-core VM). The evidence below is still uploaded. Make it blocking again on a runner
-        # with a stable audio device.
-        continue-on-error: true
-        run: |
-          cargo build --locked --manifest-path desktop/Cargo.toml -p fframes-studio --bin fframes-studio
-          FFRAMES_SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" python3 desktop/scripts/qualify-m2-playback.py --application "$CARGO_TARGET_DIR/debug/fframes-studio" --project "$STUDIO_M2_FIXTURE" --sdk-home "$STUDIO_M2_HOME" --out "$RUNNER_TEMP/m2-native" --virtual-audio --inject-build-failures
-      - name: Retain M2 evidence, including failed runs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: m2-evidence-${{ matrix.target }}
-          path: |
-            ${{ runner.temp }}/m2-parity.json
-            ${{ runner.temp }}/m2-native/*.json
-            ${{ runner.temp }}/m2-native/*.png
-            ${{ runner.temp }}/m2-native/*.log
-          if-no-files-found: warn
-          retention-days: 14
-      - name: Package native app and SDK artifact
-        run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/fframes-studio-${{ matrix.target }}" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
-      - name: Retain artifact and pending qualification record
-        uses: actions/upload-artifact@v4
-        with:
-          name: studio-${{ matrix.target }}
-          path: |
-            ${{ runner.temp }}/fframes-studio-${{ matrix.target }}.zip
-            ${{ runner.temp }}/worker-frame/*.png
-          if-no-files-found: error
-          retention-days: 14
