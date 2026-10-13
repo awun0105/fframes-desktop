@@ -2459,13 +2459,26 @@ mod tests {
 
     #[cfg(unix)]
     fn pid_alive(pid: i32) -> bool {
-        // A zombie still answers signal 0 but cannot write; /proc distinguishes it.
+        // A zombie still answers signal 0 but cannot write; its state letter tells it apart.
         // SAFETY: signal 0 probes existence only.
         let exists = unsafe { libc::kill(pid, 0) } == 0;
-        exists
-            && std::fs::read_to_string(format!("/proc/{pid}/stat"))
-                .map(|s| !s.rsplit(") ").next().unwrap_or("").starts_with('Z'))
-                .unwrap_or(false)
+        exists && process_state(pid).is_some_and(|state| !state.starts_with('Z'))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn process_state(pid: i32) -> Option<String> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        stat.rsplit(") ").next().map(str::to_owned)
+    }
+
+    #[cfg(all(unix, not(target_os = "linux")))]
+    fn process_state(pid: i32) -> Option<String> {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        let state = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+        (!state.is_empty()).then_some(state)
     }
 
     #[cfg(target_os = "linux")]
@@ -2526,7 +2539,10 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn setsid_escaped_helper_survives_group_verification_and_is_observable_only_while_parented() {
-        let mut child = shell("setsid sleep 30 & echo $!; wait");
+        // macOS has no setsid command, so the helper leaves the group through Python.
+        let mut child = shell(
+            "python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' sleep 30 & echo $!; wait",
+        );
         let helper = read_pid_line(&mut child);
         // Linux can see the escape while the helper is still a descendant.
         #[cfg(target_os = "linux")]
