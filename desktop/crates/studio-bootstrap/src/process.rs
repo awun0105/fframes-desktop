@@ -602,8 +602,10 @@ fn mac_process_info_confirms_exit(read: libc::c_int, errno: libc::c_int) -> bool
 }
 
 /// Lists every process in a group, including zombies, via libproc. macOS does not
-/// expose `/proc`, and `killpg(..., 0)` continues to report zombie-only groups as
-/// present, so termination verification needs process state as well as the probe.
+/// expose `/proc`, and `killpg(..., 0)` cannot tell a zombie-only group from a live one
+/// (it fails with EPERM while the group holds only unreaped zombies), so termination
+/// verification needs process state as well as the probe. Members owned by another user
+/// are listed but refuse `proc_pidinfo` with EPERM, which leaves the scan incomplete.
 #[cfg(target_os = "macos")]
 fn scan_process_group(pgid: i32) -> MacProcScan {
     let mut scan = MacProcScan {
@@ -2951,6 +2953,25 @@ mod tests {
                 &|| {},
             ),
             GroupMembership::Present
+        );
+        let live_member = MacProcScan {
+            entries: vec![MacProcEntry {
+                pid: 501,
+                pgrp: 500,
+                start: (10, 21),
+                zombie: false,
+            }],
+            complete: true,
+        };
+        assert_eq!(
+            mac_membership_with(
+                500,
+                Some((10, 20)),
+                &mut || Probe::Unknown,
+                &mut || live_member.clone(),
+                &|| {},
+            ),
+            GroupMembership::Members(vec![501])
         );
     }
 
