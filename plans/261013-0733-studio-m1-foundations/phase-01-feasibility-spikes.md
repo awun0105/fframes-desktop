@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Feasibility spikes"
-status: pending
+status: in-progress
 priority: P1
 effort: "6-8d"
 dependencies: []
@@ -91,10 +91,10 @@ M5a replaces ACP with native protocols for Claude Code and Codex ([Zeron report]
 
 ## Todo
 
-- [ ] S1: mirrors and fork review
-- [ ] S1: window and gpui test on this VM
-- [ ] S1: button port and API-change list
-- [ ] S1: macOS CI job green
+- [x] S1: mirrors and fork review
+- [x] S1: window and gpui test on this VM
+- [x] S1: button port and API-change list
+- [ ] S1: macOS CI job green (job added; awaiting first run)
 - [ ] S2: strict, bounded data shape and key rule
 - [ ] S2: wrapper scene, derived keys, `get_scene_info` rule
 - [ ] S2: `SetTiming` as a Hello capability

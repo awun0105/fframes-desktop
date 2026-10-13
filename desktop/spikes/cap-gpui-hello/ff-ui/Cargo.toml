@@ -1,0 +1,12 @@
+# fframes' button closure (desktop/app/src/ui/{button,icon,interact,probe,
+# tooltip,kbd}.rs, design_system/, assets.rs) copied unchanged except for the
+# GPUI API changes recorded in reports/spike-cap-gpui-api-delta.md.
+[package]
+name = "ff-ui"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui = { workspace = true }
+smallvec = { workspace = true }
