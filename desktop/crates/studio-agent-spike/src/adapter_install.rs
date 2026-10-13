@@ -19,25 +19,36 @@ use std::{
 };
 use studio_bootstrap::{ChildEnvironment, ProcessTreeManager, SpawnOptions, TrackedChild};
 
-/// An npm package that provides an ACP adapter, pinned to an exact version.
+/// An npm package that provides an ACP adapter, pinned to an exact version together with its
+/// whole dependency tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdapterPackage {
     pub name: &'static str,
     pub version: &'static str,
     /// The `bin` entry of the package that starts the adapter.
     pub bin: &'static str,
+    /// The `package.json` that depends on exactly `name@version`.
+    pub manifest: &'static str,
+    /// The `package-lock.json` that `npm ci` installs from.
+    pub lockfile: &'static str,
 }
 
-/// Versions checked against the npm registry on 2026-10-12.
+/// Versions checked against the npm registry on 2026-10-12. To change a version, edit the
+/// dependency in `adapters/<profile>/package.json` and `version` here, then run
+/// `npm install --package-lock-only --ignore-scripts` in that folder to regenerate the lock.
 pub const CLAUDE_ADAPTER: AdapterPackage = AdapterPackage {
     name: "@agentclientprotocol/claude-agent-acp",
     version: "0.89.1",
     bin: "claude-agent-acp",
+    manifest: include_str!("../adapters/claude/package.json"),
+    lockfile: include_str!("../adapters/claude/package-lock.json"),
 };
 pub const CODEX_ADAPTER: AdapterPackage = AdapterPackage {
     name: "@agentclientprotocol/codex-acp",
     version: "2.2.2",
     bin: "codex-acp",
+    manifest: include_str!("../adapters/codex/package.json"),
+    lockfile: include_str!("../adapters/codex/package-lock.json"),
 };
 
 /// The adapter package a first-party profile can install.
@@ -117,7 +128,13 @@ fn resolve_entry(root: &Path, package: &AdapterPackage) -> Result<PathBuf, Insta
     Ok(entry)
 }
 
-/// The installed adapter, if a complete install of exactly this version exists.
+/// Checkouts may turn the lock's line endings into CRLF.
+fn same_lockfile(a: &str, b: &str) -> bool {
+    a.lines().eq(b.lines())
+}
+
+/// The installed adapter, if a complete install of exactly this version, from exactly this
+/// lockfile, exists. An install from an older lock of the same version is replaced.
 pub fn find_installed(
     adapters: &Path,
     package: &AdapterPackage,
@@ -126,6 +143,10 @@ pub fn find_installed(
     let root = final_dir(adapters, package);
     let marker = std::fs::read_to_string(root.join(MARKER)).ok()?;
     if marker.trim() != format!("{}@{}", package.name, package.version) {
+        return None;
+    }
+    let lockfile = std::fs::read_to_string(root.join("package-lock.json")).ok()?;
+    if !same_lockfile(&lockfile, package.lockfile) {
         return None;
     }
     let entry = resolve_entry(&root, package).ok()?;
@@ -416,7 +437,8 @@ fn run_install(
     timeout: Duration,
 ) -> Result<(), InstallError> {
     std::fs::create_dir_all(staging).map_err(io)?;
-    std::fs::write(staging.join("package.json"), "{\"private\":true}\n").map_err(io)?;
+    std::fs::write(staging.join("package.json"), package.manifest).map_err(io)?;
+    std::fs::write(staging.join("package-lock.json"), package.lockfile).map_err(io)?;
 
     let mut env = ChildEnvironment::default_allowlist();
     // Only the folders of the two runtimes: no ambient tools, no secrets.
@@ -438,16 +460,11 @@ fn run_install(
 
     let mut options = SpawnOptions::new(&tools.npm);
     options
-        .arg("install")
+        // `ci` installs exactly the lock and fails when it disagrees with the manifest.
+        .arg("ci")
         .arg("--prefix")
         .arg(staging)
-        .arg(format!("{}@{}", package.name, package.version))
-        .args([
-            "--save-exact",
-            "--no-audit",
-            "--no-fund",
-            "--ignore-scripts",
-        ]);
+        .args(["--no-audit", "--no-fund", "--ignore-scripts"]);
     options.env = env;
     let child = processes
         .spawn(options)
@@ -523,18 +540,34 @@ mod tests {
         name: "fake-adapter",
         version: "1.0.0",
         bin: "fake-acp",
+        manifest: "{\"private\":true,\"dependencies\":{\"fake-adapter\":\"1.0.0\"}}\n",
+        lockfile: "{\"lockfileVersion\":3}\n",
     };
 
-    /// A stand-in for npm that lays out the package like `npm install --prefix <dir>`.
+    /// A stand-in for npm that lays out the package like `npm ci --prefix <dir>`. It refuses
+    /// any other call, and a call without the lockfile next to the manifest.
     fn fake_npm(dir: &Path, body: &str) -> PathBuf {
         #[cfg(windows)]
-        let (path, script) = (dir.join("npm.cmd"), format!("@echo off\r\n{body}\r\n"));
+        let (path, script) = (
+            dir.join("npm.cmd"),
+            format!(
+                "@echo off\r\n\
+                 if not \"%1\"==\"ci\" (echo unexpected npm call 1>&2& exit /b 9)\r\n\
+                 if not exist \"%~3\\package-lock.json\" (echo no lockfile 1>&2& exit /b 9)\r\n\
+                 {body}\r\n"
+            ),
+        );
         // Install gives npm a PATH of only the runtime folders. Real npm is a Node script and
         // needs nothing more; this shell stand-in needs the system tools.
         #[cfg(not(windows))]
         let (path, script) = (
             dir.join("npm"),
-            format!("#!/bin/sh\nPATH=\"$PATH:/usr/bin:/bin\"\n{body}\n"),
+            format!(
+                "#!/bin/sh\nPATH=\"$PATH:/usr/bin:/bin\"\n\
+                 [ \"$1\" = ci ] || {{ echo unexpected npm call >&2; exit 9; }}\n\
+                 [ -f \"$3/package-lock.json\" ] || {{ echo no lockfile >&2; exit 9; }}\n\
+                 {body}\n"
+            ),
         );
         std::fs::write(&path, script).unwrap();
         #[cfg(unix)]
@@ -699,6 +732,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(module.join("dist/index.js"), b"//").unwrap();
+        std::fs::write(staging.join("package-lock.json"), FAKE.lockfile).unwrap();
         std::fs::write(staging.join(MARKER), "fake-adapter@1.0.0\n").unwrap();
         let cancelled = move_into_place(
             &staging,
@@ -807,7 +841,23 @@ mod tests {
     }
 
     #[test]
-    fn pinned_packages_are_exact_versions() {
+    fn an_install_from_another_lockfile_is_replaced() {
+        let f = fixture(SUCCESS);
+        install(&f, &AtomicBool::new(false)).unwrap();
+        let relocked = AdapterPackage {
+            lockfile: "{\"lockfileVersion\":3,\"packages\":{}}\n",
+            ..FAKE
+        };
+        assert!(find_installed(&f.adapters, &relocked, &f.tools.node).is_none());
+        let crlf = AdapterPackage {
+            lockfile: "{\"lockfileVersion\":3}\r\n",
+            ..FAKE
+        };
+        assert!(find_installed(&f.adapters, &crlf, &f.tools.node).is_some());
+    }
+
+    #[test]
+    fn pinned_packages_match_their_manifest_and_lockfile() {
         for package in [CLAUDE_ADAPTER, CODEX_ADAPTER] {
             assert!(
                 package
@@ -815,6 +865,22 @@ mod tests {
                     .chars()
                     .all(|c| c.is_ascii_digit() || c == '.')
             );
+            let manifest: serde_json::Value = serde_json::from_str(package.manifest).unwrap();
+            let lock: serde_json::Value = serde_json::from_str(package.lockfile).unwrap();
+            let packages = lock["packages"].as_object().unwrap();
+            assert_eq!(manifest["dependencies"][package.name], package.version);
+            assert_eq!(packages[""]["dependencies"][package.name], package.version);
+            assert_eq!(
+                packages[&format!("node_modules/{}", package.name)]["version"],
+                package.version
+            );
+            for (path, entry) in packages.iter().filter(|(path, _)| !path.is_empty()) {
+                assert!(
+                    entry["integrity"].is_string() && entry["resolved"].is_string(),
+                    "{path} in the {} lock is not pinned",
+                    package.name
+                );
+            }
         }
         assert_eq!(package_for("claude"), Some(CLAUDE_ADAPTER));
         assert_eq!(package_for("pi"), None);
