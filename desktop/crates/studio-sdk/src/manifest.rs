@@ -203,27 +203,34 @@ impl CompatibilityManifest {
         Ok(())
     }
 
-    /// Validates against the app version supplied by the Studio executable and its native target.
-    pub fn validate_for_current_app_version(&self, app_version: &str) -> Result<(), ManifestError> {
-        let target = if cfg!(all(
+    /// The SDK target triple of this Studio build, if the platform has an SDK identity.
+    pub fn host_target() -> Option<&'static str> {
+        if cfg!(all(
             target_os = "linux",
             target_arch = "x86_64",
             target_env = "gnu"
         )) {
-            "x86_64-unknown-linux-gnu"
+            Some("x86_64-unknown-linux-gnu")
         } else if cfg!(all(
             target_os = "windows",
             target_arch = "x86_64",
             target_env = "msvc"
         )) {
-            "x86_64-pc-windows-msvc"
+            Some("x86_64-pc-windows-msvc")
         } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-            "aarch64-apple-darwin"
+            Some("aarch64-apple-darwin")
         } else {
-            return Err(ManifestError::Validation(
+            None
+        }
+    }
+
+    /// Validates against the app version supplied by the Studio executable and its native target.
+    pub fn validate_for_current_app_version(&self, app_version: &str) -> Result<(), ManifestError> {
+        let target = Self::host_target().ok_or_else(|| {
+            ManifestError::Validation(
                 "this Studio build target has no supported SDK compatibility identity".into(),
-            ));
-        };
+            )
+        })?;
         self.validate_for_app(app_version, target)
     }
 

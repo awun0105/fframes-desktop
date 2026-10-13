@@ -60,14 +60,18 @@ const TY: f32 = FY + 200.0;
 
 /// (start beat, tag, headline)
 const CAPTIONS: &[(f32, &str, &str)] = &[
-    (0.0, "01 / DESCRIBE", "Describe the video."),
-    (create::GENERATE + 0.4, "02 / GENERATE", "Code, then video."),
-    (17.3, "03 / SELECT", "Click any element."),
-    (TYPE_FROM - 0.5, "04 / PROMPT", "Say what changes."),
-    (SEND + 1.6, "05 / RETRIEVE", "It finds the code."),
-    (EDIT, "06 / EDIT", "A real Rust diff."),
-    (PLAY_FROM + 1.5, "07 / PREVIEW", "Rebuilt. Playing."),
-    (EXPORT - 0.5, "08 / EXPORT", "Export an MP4."),
+    (0.0, "STEP 1 / DESCRIBE", "Describe your video."),
+    (
+        create::GENERATE + 0.4,
+        "STEP 2 / DRAFT",
+        "AI makes a draft.",
+    ),
+    (17.3, "STEP 3 / POINT", "Click what to fix."),
+    (TYPE_FROM - 0.5, "STEP 4 / ASK", "Say what to change."),
+    (SEND + 1.6, "STEP 5 / FIND", "AI finds that part."),
+    (EDIT, "STEP 6 / EDIT", "It edits only that."),
+    (PLAY_FROM + 1.5, "STEP 7 / WATCH", "Watch it right away."),
+    (EXPORT - 0.5, "STEP 8 / EXPORT", "Save it as an MP4."),
 ];
 
 fn captions(lb: f32) -> Svgr<'static> {

@@ -158,10 +158,10 @@ class ArtifactTests(unittest.TestCase):
         self.assertTrue((windows_installer.SCRIPT.parent / "fframes-studio.ico").is_file())
         # The installed shortcut passes no SDK variable, so the app must find sdk\ beside bin\.
         setup_view = (assembly.ROOT / "desktop/app/src/setup_view.rs").read_text()
-        self.assertIn('.map(|p| p.join("sdk/compatibility.json"))', setup_view)
+        self.assertIn('p.parent()?.parent()?.join("sdk")', setup_view)
         main = (assembly.ROOT / "desktop/app/src/main.rs").read_text()
         self.assertIn('#![cfg_attr(windows, windows_subsystem = "windows")]', main)
-        self.assertIn('.unwrap_or("studio")', main)
+        self.assertIn(".unwrap_or(Command::Studio {", main)
 
     def test_windows_installer_rejects_incomplete_packages_before_compiling(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -188,6 +188,12 @@ pub struct PromptOutcome {
     pub cancel_requested: bool,
     /// Permission requests still open when the turn ended (closed as cancelled).
     pub unresolved_permissions: u32,
+    /// The adapter ended the turn but reported it incomplete instead of answering with a
+    /// stop reason: only server-side tool calls (which the client can never answer) were
+    /// left without a result. The turn is over and the session usable, but the adapter
+    /// marks such a turn as failed, so it is never eligible to quiesce.
+    #[serde(default)]
+    pub reported_incomplete: bool,
 }
 
 impl PromptOutcome {
@@ -197,6 +203,7 @@ impl PromptOutcome {
             && self.stop_reason == StopReasonKind::EndTurn
             && !self.cancel_requested
             && self.unresolved_permissions == 0
+            && !self.reported_incomplete
     }
 }
 
@@ -528,6 +535,7 @@ mod tests {
             authoritative: true,
             cancel_requested: false,
             unresolved_permissions: 0,
+            reported_incomplete: false,
         }));
         assert!(matches!(overflow, PushOutcome::Overflow));
         assert!(matches!(queue.push(delta("x")), PushOutcome::Closed));
@@ -556,6 +564,7 @@ mod tests {
             authoritative: true,
             cancel_requested: false,
             unresolved_permissions: 0,
+            reported_incomplete: false,
         };
         assert!(outcome.eligible_for_quiescence());
         outcome.cancel_requested = true;
@@ -565,6 +574,9 @@ mod tests {
         assert!(!outcome.eligible_for_quiescence());
         outcome.stop_reason = StopReasonKind::EndTurn;
         outcome.unresolved_permissions = 1;
+        assert!(!outcome.eligible_for_quiescence());
+        outcome.unresolved_permissions = 0;
+        outcome.reported_incomplete = true;
         assert!(!outcome.eligible_for_quiescence());
     }
 }

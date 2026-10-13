@@ -8,6 +8,7 @@ members = [
     "crates/studio-bootstrap",
     "crates/studio-sdk",
     "crates/studio-agent-spike",
+    "crates/studio-test-support",
 ]
 
 [workspace.dependencies]

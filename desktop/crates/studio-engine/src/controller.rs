@@ -1158,7 +1158,8 @@ impl Controller {
     /// before anything is killed (a helper that left the process group is only visible
     /// while its parent lives); termination is whatever the scope's trees verifiably
     /// reported, never inferred from a process count. The facts only ever demote: an
-    /// observed escape makes the writer `Detached` and the draft `UnsafeWriter`.
+    /// observed escape, or one the scope could not rule out, makes the writer `Detached`
+    /// and the draft `UnsafeWriter`.
     fn teardown_agent_scope(&mut self, identity: &TaskIdentity) {
         let Some(scope) = self.scope_of(identity) else {
             return;

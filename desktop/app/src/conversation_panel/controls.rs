@@ -22,8 +22,7 @@ pub struct Guidance {
     pub usable: bool,
 }
 
-pub const NO_AGENT_LAUNCHED: &str =
-    "Opening a project never installs or starts an agent; only Check adapter and tasks do.";
+pub const NO_AGENT_LAUNCHED: &str = "Opening a project or Detect agents never installs or starts an agent; only Select and Install adapter (one connection test each), Check adapter and tasks do.";
 
 pub fn guidance(readiness: &AdapterReadiness, configured: bool) -> Guidance {
     if !configured {
@@ -69,8 +68,8 @@ pub fn guidance(readiness: &AdapterReadiness, configured: bool) -> Guidance {
             AdapterStatus::AuthRequired { methods } => Guidance {
                 headline: "Sign-in required".into(),
                 steps: vec![
-                    "Sign in with the adapter provider's own tool, then set the environment variables the provider documents.".into(),
-                    "Add those variable NAMES to auth_env_names in Setup and Save (values are read from the app's environment and never stored).".into(),
+                    "Sign in with the agent's own tool (for example run `claude` or `codex` once and log in), then Check adapter again. The agent stays selected.".into(),
+                    "Or set the environment variables the provider documents and add their NAMES under sign-in variable names in Setup, then Save (values are read from the app's environment and never stored).".into(),
                     auth_methods_line(methods),
                 ],
                 usable: false,
@@ -86,7 +85,7 @@ pub fn guidance(readiness: &AdapterReadiness, configured: bool) -> Guidance {
             AdapterStatus::MissingExecutable { searched } => Guidance {
                 headline: "Adapter executable not found".into(),
                 steps: vec![
-                    "Install the adapter as its provider documents, then set its absolute path in Setup.".into(),
+                    "Use Detect agents in Setup to find or install it, or set its absolute path there.".into(),
                     format!(
                         "Searched: {}",
                         if searched.is_empty() {
@@ -123,6 +122,16 @@ pub fn guidance(readiness: &AdapterReadiness, configured: bool) -> Guidance {
                 usable: false,
             },
         },
+    }
+}
+
+/// The status line of the Detect row that was just turned on: the readiness headline and
+/// its first step, so the result of the connection test shows next to the agent.
+pub fn turned_on_status(readiness: &AdapterReadiness) -> String {
+    let g = guidance(readiness, true);
+    match g.steps.first() {
+        Some(step) => format!("{} · {step}", g.headline),
+        None => g.headline,
     }
 }
 
@@ -215,6 +224,8 @@ pub struct Controls {
     pub session_restore: Option<SessionRestoreControl>,
     pub retained_queue: Option<RetainedQueueControl>,
     pub can_switch_provider: bool,
+    /// Nothing runs, waits or conflicts and there is a conversation to put away.
+    pub new_chat: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -398,6 +409,15 @@ pub fn derive_controls(
 
     let can_switch_provider = !busy && snapshot.switch_pending.is_none();
 
+    // Mirrors the workflow's own check, which refuses with a warning if this is stale.
+    let new_chat = !busy
+        && snapshot.queue.is_empty()
+        && snapshot.retained_queue.is_empty()
+        && snapshot.switch_pending.is_none()
+        && snapshot.recovery.unresolved_conflicts.is_empty()
+        && task.is_none_or(|t| t.conflict.is_none())
+        && (!snapshot.rows.is_empty() || snapshot.older_rows || task.is_some());
+
     Controls {
         submit,
         stop,
@@ -420,6 +440,7 @@ pub fn derive_controls(
         session_restore,
         retained_queue,
         can_switch_provider,
+        new_chat,
     }
 }
 
@@ -656,7 +677,8 @@ pub fn transport_for_key(key: &str) -> Option<Transport> {
 mod tests {
     use super::*;
     use crate::agent_workflow::{
-        AdapterView, ChangeCard, McpView, RecoveryView, RepairView, ResourceView, ReviewView,
+        AdapterView, ChangeCard, ConflictView, McpView, RecoveryView, RepairView, ResourceView,
+        ReviewView,
     };
     use std::{path::PathBuf, sync::Arc};
     use studio_agent_spike::{DiscoveryReport, driver::PermissionChoice};
@@ -687,6 +709,7 @@ mod tests {
             queue: Vec::new(),
             rows: Vec::new(),
             older_rows: false,
+            chat: 0,
             review_policy: ReviewPolicy::AutoApply,
             undo: UndoView::Unavailable {
                 reason: "No accepted agent edit yet.".into(),
@@ -819,6 +842,52 @@ mod tests {
             assert!(controls.stop.is_none(), "{phase:?}");
             assert!(controls.settings_editable, "{phase:?}");
         }
+    }
+
+    #[test]
+    fn new_chat_is_offered_only_when_idle_with_a_conversation_to_put_away() {
+        assert!(!derive_controls(&base_snapshot(), false, true).new_chat);
+        for phase in [TaskPhase::Accepted, TaskPhase::Failed, TaskPhase::Cancelled] {
+            assert!(
+                derive_controls(&with_task(phase), false, true).new_chat,
+                "{phase:?}"
+            );
+        }
+        for phase in [
+            TaskPhase::Editing,
+            TaskPhase::AwaitingReview,
+            TaskPhase::Promoting,
+        ] {
+            assert!(
+                !derive_controls(&with_task(phase), false, true).new_chat,
+                "{phase:?}"
+            );
+        }
+
+        let mut conflicted = with_task(TaskPhase::Conflict);
+        conflicted.task.as_mut().unwrap().conflict = Some(ConflictView {
+            reason: "changed meanwhile".into(),
+            transaction: None,
+            external_paths: Vec::new(),
+            candidate_paths: Vec::new(),
+            overlapping: Vec::new(),
+            retained_variants: Vec::new(),
+        });
+        assert!(!derive_controls(&conflicted, false, true).new_chat);
+
+        let mut queued = with_task(TaskPhase::Accepted);
+        queued.queue.push(crate::agent_workflow::QueuedBrief {
+            id: 1,
+            summary: "x".into(),
+            queued_unix: 0,
+            scope: None,
+            stale_scope: false,
+        });
+        assert!(!derive_controls(&queued, false, true).new_chat);
+
+        let mut paged = base_snapshot();
+        paged.older_rows = true;
+        assert!(derive_controls(&paged, false, true).new_chat);
     }
 
     #[test]
@@ -1050,6 +1119,32 @@ mod tests {
                 "{headline} blocks Send"
             );
         }
+    }
+
+    #[test]
+    fn a_turned_on_row_shows_the_connection_test_result_and_its_next_step() {
+        assert_eq!(
+            turned_on_status(&AdapterReadiness::Checking),
+            "Checking the adapter… · The adapter is starting in a scratch folder, not in your project."
+        );
+        let ready = turned_on_status(&checked(AdapterStatus::Ready {
+            agent: "claude".into(),
+            version: "1.0".into(),
+        }));
+        assert!(ready.starts_with("Ready · claude 1.0 · "), "{ready}");
+        let auth = turned_on_status(&checked(AdapterStatus::AuthRequired {
+            methods: vec!["oauth".into()],
+        }));
+        assert!(auth.starts_with("Sign-in required · Sign in with the agent's own tool"));
+        assert!(auth.contains("Check adapter again"), "{auth}");
+        let runtime = turned_on_status(&checked(AdapterStatus::MissingRuntime {
+            detail: "node: not found".into(),
+        }));
+        assert!(
+            runtime.starts_with("Adapter runtime missing · ")
+                && runtime.contains("node: not found"),
+            "{runtime}"
+        );
     }
 
     #[test]

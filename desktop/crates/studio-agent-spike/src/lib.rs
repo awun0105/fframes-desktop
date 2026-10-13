@@ -1,7 +1,12 @@
+pub mod adapter_install;
+pub mod detect;
 pub mod discovery;
 pub mod driver;
 pub mod supervisor;
 
+pub use detect::{
+    Detected, DetectionEnv, DetectionSpec, NodeEntry, detect_agents, find_executable, node_entry,
+};
 pub use discovery::{
     AdapterLaunch, AdapterStatus, DiscoveryReport, ExecutableSearch, ProbeOptions, ResolveError,
     probe_adapter, resolve_executable,

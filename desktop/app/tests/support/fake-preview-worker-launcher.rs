@@ -4,13 +4,18 @@ use std::{
     process::{Command, Stdio},
 };
 
+/// Runs `fake-preview-worker.py` with the interpreter the test resolved, recorded next to
+/// this launcher in `python-executable.path` (never a guessed `python` on PATH).
 fn main() {
-    let python = env::current_exe()
+    let Some(python) = env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join("python-executable.path")))
         .and_then(|path| std::fs::read_to_string(path).ok())
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("python"));
+    else {
+        eprintln!("cannot start fake preview worker: python-executable.path is missing");
+        std::process::exit(127);
+    };
     let mut worker = Command::new(python);
     let script = env::current_dir()
         .map(|directory| directory.join("fake-preview-worker.py"))

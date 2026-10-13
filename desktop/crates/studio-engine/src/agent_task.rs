@@ -425,12 +425,14 @@ fn demote(current: &WriterOwnership, observed: &WriterOwnership) -> WriterOwners
 }
 
 /// Facts the controller derived from a task's own process scope: the combined
-/// termination of its trees, the escapes seen before they were killed, and whether
-/// any tree was alive when the scope was torn down.
+/// termination of its trees, the escapes seen before they were killed, why escapes
+/// could not be ruled out (if they could not), and whether any tree was alive when the
+/// scope was torn down.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScopeFacts {
     pub(crate) termination: TerminationReport,
     pub(crate) escaped: Vec<u32>,
+    pub(crate) containment_unverified: Option<String>,
     pub(crate) had_live: bool,
 }
 
@@ -445,8 +447,15 @@ impl ScopeFacts {
                 remaining: Vec::new(),
             },
             escaped: Vec::new(),
+            containment_unverified: None,
             had_live: true,
         }
+    }
+
+    /// An escape was seen or could not be ruled out: either way the writer is treated
+    /// as detached (fail closed).
+    fn detaches_writer(&self) -> bool {
+        !self.escaped.is_empty() || self.containment_unverified.is_some()
     }
 }
 
@@ -456,6 +465,7 @@ impl From<ScopeObservation> for ScopeFacts {
             had_live: observation.live_children > 0,
             termination: observation.termination,
             escaped: observation.escaped,
+            containment_unverified: observation.containment_unverified,
         }
     }
 }
@@ -577,25 +587,24 @@ impl AgentTask {
         }
     }
 
-    /// Applies termination/escape facts derived from the task's own process scope.
+    /// Applies termination/escape facts derived from the task's own process scope. An
+    /// escape that could not be ruled out demotes exactly like an observed one.
     fn apply_scope_facts(&mut self, facts: ScopeFacts) {
+        let detached = facts.detaches_writer();
         match self.writer.as_mut() {
             Some(writer) => {
-                if !facts.escaped.is_empty() {
+                if detached {
                     writer.ownership = WriterOwnership::Detached;
                 }
                 writer.termination = Some(facts.termination);
             }
             // Processes lived in the task scope but no writer was ever registered for
             // them: their ownership model is unproven.
-            None if facts.had_live
-                || !facts.escaped.is_empty()
-                || !facts.termination.verified() =>
-            {
-                let ownership = if facts.escaped.is_empty() {
-                    WriterOwnership::Unknown
-                } else {
+            None if facts.had_live || detached || !facts.termination.verified() => {
+                let ownership = if detached {
                     WriterOwnership::Detached
+                } else {
+                    WriterOwnership::Unknown
                 };
                 self.writer = Some(WriterRecord {
                     generation: WriterGeneration(self.epoch),
@@ -1333,6 +1342,7 @@ mod tests {
         ScopeFacts {
             termination: clean_termination(),
             escaped: vec![],
+            containment_unverified: None,
             had_live: false,
         }
     }
@@ -1618,6 +1628,7 @@ mod tests {
                 remaining: vec![4242],
             },
             escaped: vec![],
+            containment_unverified: None,
             had_live: true,
         };
         assert_eq!(
@@ -1944,6 +1955,39 @@ mod tests {
             !task.writer_safe(),
             "a clean count never outvotes an escape"
         );
+    }
+
+    #[test]
+    fn unverifiable_containment_demotes_like_an_escape() {
+        let unverified = || ScopeFacts {
+            containment_unverified: Some("the escape scan failed".into()),
+            ..clean_facts()
+        };
+        // A registered, qualified writer is detached and never gets a ticket.
+        let mut m = manager();
+        let id = started(&mut m);
+        m.transition(&id, TaskState::Editing).unwrap();
+        m.transition(&id, TaskState::Quiescing).unwrap();
+        let evidence = evidence_for(&m, &id);
+        assert_eq!(
+            m.complete_quiescence(&id, &evidence, unverified).err(),
+            Some(TaskError::QuiescenceBlocked(
+                QuiescenceBlock::UnqualifiedOwnership("detached")
+            ))
+        );
+        let task = m.active().unwrap();
+        assert_eq!(task.writer_ownership(), Some(&WriterOwnership::Detached));
+        assert!(!task.writer_safe());
+
+        // A scope with no registered writer records a detached one: the draft is unsafe.
+        let mut m = manager();
+        let context = context(&mut m);
+        let id = context.identity.clone();
+        m.begin(context).unwrap();
+        m.record_scope_facts(&id, unverified()).unwrap();
+        let task = m.active().unwrap();
+        assert_eq!(task.writer_ownership(), Some(&WriterOwnership::Detached));
+        assert!(!task.writer_safe());
     }
 
     #[test]

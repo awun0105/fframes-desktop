@@ -305,8 +305,13 @@ pub(crate) fn run_pipeline(input: PipelineInput) -> PipelineEnd {
         identity: identity.clone(),
         provider_session: session,
         writer,
+        // A turn the adapter reported incomplete carries no authoritative stop reason.
         completion: last.as_ref().map_or(TurnCompletion::None, |p| {
-            TurnCompletion::from_stop_reason(p.stop_reason.as_str())
+            if p.reported_incomplete || !p.authoritative {
+                TurnCompletion::None
+            } else {
+                TurnCompletion::from_stop_reason(p.stop_reason.as_str())
+            }
         }),
         cancel_requested: last.as_ref().is_some_and(|p| p.cancel_requested),
         unresolved_requests: last.as_ref().map_or(0, |p| p.unresolved_permissions),

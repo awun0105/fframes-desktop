@@ -23,19 +23,25 @@ use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 const SECRET: &str = "sentinel-credential-7f3a9c";
 const WAIT: Duration = Duration::from_secs(20);
 
-/// The fixture peer interpreter; Windows Python installs provide `python`, not `python3`.
-const PYTHON: &str = if cfg!(windows) { "python" } else { "python3" };
+/// The fixture peer interpreter.
+fn python() -> String {
+    studio_test_support::python()
+        .to_str()
+        .expect("the Python path is UTF-8")
+        .to_owned()
+}
 
 fn search() -> ExecutableSearch {
     ExecutableSearch {
         managed_dirs: vec![],
         gui_path: std::env::var_os("PATH"),
+        node: None,
     }
 }
 
 fn config(root: &Path, mode: &str) -> DriverConfig {
     let adapter = AdapterConfig {
-        executable: PYTHON.into(),
+        executable: python(),
         args: vec![
             format!("{}/tests/acp-peer.py", env!("CARGO_MANIFEST_DIR")),
             mode.into(),

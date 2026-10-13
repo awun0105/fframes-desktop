@@ -98,47 +98,47 @@ pub fn fast_scene<'a>(frame: &Frame, lb: f32, p: bool) -> Svgr<'a> {
 
 const STAGES: [(&str, &str, &str, [&str; 2]); 5] = [
     (
-        "SELECT",
-        "CANVAS",
-        "Click the canvas",
+        "POINT",
+        "YOU CLICK",
+        "You click the screen",
         [
-            "The element's id and source",
-            "anchor travel with your prompt.",
+            "Studio notes what you picked and",
+            "where it lives in the code.",
         ],
     ),
     (
-        "GROUND",
-        "TASK PACKET",
-        "Freeze the context",
+        "BRIEF",
+        "AI READS",
+        "It writes a short brief",
         [
-            "Scope, frame time and the exact",
-            "source lines become a task.",
+            "Your words, the moment in the",
+            "video and the exact lines of code.",
         ],
     ),
     (
         "EDIT",
-        "DRAFT",
-        "The agent edits Rust",
+        "AI WRITES",
+        "The AI makes the edit",
         [
-            "Codex or Claude Code writes the",
-            "change to a draft of the project.",
+            "Codex or Claude Code changes a",
+            "safe copy of your project.",
         ],
     ),
     (
         "BUILD",
-        "CARGO",
-        "Cargo builds a worker",
+        "IT COMPILES",
+        "Studio rebuilds the video",
         [
-            "An immutable binary with your",
-            "video, fframes and a bridge.",
+            "The edited project becomes a",
+            "small program that draws it.",
         ],
     ),
     (
-        "PREVIEW",
-        "WORKER",
-        "Frames stream back",
+        "WATCH",
+        "YOU SEE IT",
+        "You watch the result",
         [
-            "The last good build stays on screen",
+            "The old version keeps playing",
             "until the new one is ready.",
         ],
     ),
@@ -189,7 +189,7 @@ pub fn how(lb: f32, p: bool) -> Svgr<'static> {
                 <g opacity={prog(lb, at, at + 0.1)} transform={tr}>
                     <rect x={x} y={y} width={w} height={h} fill={if hot { ACCENT } else { "#121110" }} stroke={if lit { ACCENT } else { "#3d3a35" }} stroke-width="2" />
                     <text x={nx} y={ny} text-anchor={anchor} font-family={DISPLAY} font-size="44" fill={if hot { INK } else if lit { BONE } else { GREY }}>{*name}</text>
-                    <text x={sx} y={sy} text-anchor={sub_anchor} font-family={MONO} font-weight="500" font-size="17" letter-spacing="2" fill={if hot { INK } else { GREY }}>{*sub}</text>
+                    <text x={sx} y={sy} text-anchor={sub_anchor} font-family={MONO} font-weight="600" font-size="20" letter-spacing="2" fill={if hot { INK } else { GREY }}>{*sub}</text>
                 </g>
             )
         })
@@ -216,8 +216,8 @@ pub fn how(lb: f32, p: bool) -> Svgr<'static> {
                 <g opacity={o} transform={format!("translate(0 {dy})")}>
                     <text x={x} y={y} font-family={MONO} font-weight="600" font-size="24" letter-spacing="4" fill={ACCENT}>{num}</text>
                     <text x={x} y={y + hs + 20.0} font-family={DISPLAY} font-size={hs} letter-spacing="-2" fill={BONE}>{*head}</text>
-                    <text x={x} y={y + hs + 80.0} font-family={MONO} font-weight="500" font-size={ds} fill="#b9b4ab">{lines[0]}</text>
-                    <text x={x} y={y + hs + 80.0 + ds * 1.45} font-family={MONO} font-weight="500" font-size={ds} fill="#b9b4ab">{lines[1]}</text>
+                    <text x={x} y={y + hs + 80.0} font-family={MONO} font-weight="500" font-size={ds} fill="#cfcac1">{lines[0]}</text>
+                    <text x={x} y={y + hs + 80.0 + ds * 1.45} font-family={MONO} font-weight="500" font-size={ds} fill="#cfcac1">{lines[1]}</text>
                 </g>
             ))
         })
@@ -231,8 +231,8 @@ pub fn how(lb: f32, p: bool) -> Svgr<'static> {
             {nodes}
             {details}
             <g opacity={note_o}>
-                <text x={nx} y={ny} font-family={MONO} font-weight="600" font-size="20" letter-spacing="3" fill={GREY}>"THE RUST SOURCE STAYS THE AUTHORITY."</text>
-                <text x={nx} y={ny + 32.0} font-family={MONO} font-weight="600" font-size="20" letter-spacing="3" fill={GREY}>"NO HIDDEN TEMPLATE STATE."</text>
+                <text x={nx} y={ny} font-family={MONO} font-weight="600" font-size="22" letter-spacing="3" fill="#9a958d">"YOUR VIDEO IS ALWAYS REAL CODE YOU OWN."</text>
+                <text x={nx} y={ny + 34.0} font-family={MONO} font-weight="600" font-size="22" letter-spacing="3" fill="#9a958d">"NO HIDDEN MAGIC, NO LOCK-IN."</text>
             </g>
         </g>
     )
@@ -258,13 +258,13 @@ fn race(lb: f32, p: bool) -> Svgr<'static> {
     let lanes = [
         (
             BENCH_REMOTION_LABEL,
-            "CHROME + REACT → H.264 MP4",
+            "A POPULAR TOOL THAT DRAWS IN A WEB BROWSER",
             BENCH_REMOTION_S,
             GREY,
         ),
         (
-            BENCH_FFRAMES_LABEL,
-            "RUST + SKIA → H.264 MP4",
+            FFRAMES_GPU_LABEL,
+            "DRAWS DIRECTLY ON THE GRAPHICS CARD",
             BENCH_FFRAMES_S,
             ACCENT,
         ),
@@ -275,7 +275,7 @@ fn race(lb: f32, p: bool) -> Svgr<'static> {
         .enumerate()
         .map(|(i, (name, sub, secs, color))| {
             let y = if p { 800.0 + i as f32 * 290.0 } else { 470.0 + i as f32 * 230.0 };
-            let (name_sz, time_sz) = if p { (40.0, 44.0) } else { (58.0, 52.0) };
+            let (name_sz, time_sz) = if p { (32.0, 44.0) } else { (52.0, 52.0) };
             let appear = snap(lb - 0.6 - i as f32 * 0.3);
             let pr = (real / secs.max(0.001)).min(1.0);
             let done = pr >= 1.0;
@@ -288,7 +288,7 @@ fn race(lb: f32, p: bool) -> Svgr<'static> {
             fframes::svgr!(
                 <g opacity={prog(lb, 0.6 + i as f32 * 0.3, 0.7 + i as f32 * 0.3)} transform={format!("translate({} 0)", (1.0 - appear) * -120.0)}>
                     <text x={x0} y={y} font-family={DISPLAY} font-size={name_sz} letter-spacing="-2" fill={if i == 1 { ACCENT } else { BONE }}>{*name}</text>
-                    <text x={x0 + 4.0} y={y + 34.0} font-family={MONO} font-weight="500" font-size="18" letter-spacing="2.5" fill={GREY}>{*sub}</text>
+                    <text x={x0 + 4.0} y={y + 36.0} font-family={MONO} font-weight="500" font-size={if p { 19.0 } else { 22.0 }} letter-spacing="2" fill="#a29d95">{*sub}</text>
                     <text x={x0 + bw} y={y} text-anchor="end" font-family={MONO} font-weight="600" font-size={time_sz} fill={if done { *color } else { BONE }}>{format!("{shown:.3}s")}</text>
                     <rect x={x0} y={y + 56.0} width={bw} height="64" fill="#141312" stroke="#2f2c29" stroke-width="1.5" />
                     <rect x={x0} y={y + 56.0} width={bar_w} height="64" fill={*color} />
@@ -304,31 +304,31 @@ fn race(lb: f32, p: bool) -> Svgr<'static> {
     let head = if p {
         fframes::svgr!(
             <g>
-                {Slam::new(80.0, 290.0, "100,000", DISPLAY, 130.0, BONE).draw(lb, 0.0, 140.0)}
-                {Slam::new(80.0, 430.0, "TEXT NODES", DISPLAY, 130.0, BONE).draw(lb - 0.3, 0.0, 140.0)}
-                {label(84.0, 500.0, "300 FRAMES · 3840×2160 · H.264 MP4".to_owned(), GREY, 20.0, "start")}
-                {label(84.0, 536.0, "SAME LAYOUT, SAME FONT".to_owned(), GREY, 20.0, "start")}
+                {Slam::new(80.0, 290.0, "THE SPEED", DISPLAY, 130.0, BONE).draw(lb, 0.0, 140.0)}
+                {Slam::new(80.0, 430.0, "TEST", DISPLAY, 130.0, ACCENT).draw(lb - 0.3, 0.0, 140.0)}
+                {label(84.0, 500.0, "SAME 4K VIDEO, 300 FRAMES".to_owned(), "#a29d95", 22.0, "start")}
+                {label(84.0, 538.0, "100,000 PIECES OF TEXT".to_owned(), "#a29d95", 22.0, "start")}
             </g>
         )
     } else {
         fframes::svgr!(
             <g>
-                {Slam::new(150.0, 250.0, "100,000 TEXT NODES", DISPLAY, 120.0, BONE).draw(lb, 0.0, 140.0)}
-                {label(154.0, 310.0, "300 FRAMES · 3840×2160 · H.264 MP4 · SAME LAYOUT, SAME FONT".to_owned(), GREY, 20.0, "start")}
+                {Slam::new(150.0, 250.0, "THE SPEED TEST", DISPLAY, 120.0, BONE).draw(lb, 0.0, 140.0)}
+                {label(154.0, 312.0, "SAME 4K VIDEO · 300 FRAMES · 100,000 PIECES OF TEXT".to_owned(), "#a29d95", 22.0, "start")}
             </g>
         )
     };
     let (lx, ly, la) = if p {
         (84.0, 1190.0 + 290.0, "start")
     } else {
-        (1770.0, 310.0, "end")
+        (1770.0, 312.0, "end")
     };
     fframes::svgr!(
         <g opacity={1.0 - exit}>
             {head}
             {rows}
             <g opacity={prog(lb, RACE_START, RACE_START + 0.2)}>
-                {label(lx, ly, format!("TIME-LAPSE ×{speedup:.1} · MEASURED WALL CLOCK"), ACCENT, 20.0, la)}
+                {label(lx, ly, format!("SPED UP ×{speedup:.1} · REAL TIMES"), ACCENT, 22.0, la)}
             </g>
         </g>
     )
@@ -352,8 +352,8 @@ fn result(l: f32, p: bool) -> Svgr<'static> {
                     <text x="80" y="1250" font-family={DISPLAY} font-size="112" letter-spacing="-4" fill={INK}>"REMOTION"</text>
                 </g>
                 <g font-family={MONO} font-weight="600" font-size="22" letter-spacing="4" fill={INK}>
-                    <text x="80" y="230">"SAME 100,000 TEXT NODES"</text>
-                    <text x="80" y="270">"COMPLETE MP4 · MEDIAN WALL CLOCK"</text>
+                    <text x="80" y="230">"SAME VIDEO, SAME RESULT"</text>
+                    <text x="80" y="270">"TIME TO A FINISHED MP4"</text>
                 </g>
                 <rect x="80" y="296" width="920" height="3" fill={INK} />
             </g>
@@ -366,8 +366,8 @@ fn result(l: f32, p: bool) -> Svgr<'static> {
                 </g>
                 <text x="150" y={900.0 + (1.0 - word) * 60.0} font-family={DISPLAY} font-size="120" letter-spacing="-4" fill={INK} opacity={prog(l, 1.0, 1.08)}>"FASTER THAN REMOTION"</text>
                 <g font-family={MONO} font-weight="600" font-size="22" letter-spacing="4" fill={INK}>
-                    <text x="150" y="170">"SAME 100,000 TEXT NODES"</text>
-                    <text x="1770" y="170" text-anchor="end">"COMPLETE MP4 · MEDIAN WALL CLOCK"</text>
+                    <text x="150" y="170">"SAME VIDEO, SAME RESULT"</text>
+                    <text x="1770" y="170" text-anchor="end">"TIME TO A FINISHED MP4"</text>
                 </g>
                 <rect x="150" y="196" width="1620" height="3" fill={INK} />
             </g>
@@ -384,8 +384,8 @@ fn result(l: f32, p: bool) -> Svgr<'static> {
 fn table(l: f32, p: bool) -> Svgr<'static> {
     let rows = [
         (BENCH_REMOTION_LABEL, BENCH_REMOTION_S, GREY),
-        ("FFRAMES · CPU", BENCH_FFRAMES_CPU_S, BONE),
-        (BENCH_FFRAMES_LABEL, BENCH_FFRAMES_S, ACCENT),
+        ("FFRAMES · WITHOUT GRAPHICS CARD", BENCH_FFRAMES_CPU_S, BONE),
+        (FFRAMES_GPU_LABEL, BENCH_FFRAMES_S, ACCENT),
     ];
     let (x0, rw) = if p { (80.0, 920.0) } else { (150.0, 1620.0) };
     let items: Vec<Svgr> = rows
@@ -395,19 +395,26 @@ fn table(l: f32, p: bool) -> Svgr<'static> {
             let at = 0.3 + i as f32 * 0.5;
             let s = snap(l - at);
             let (y, rh) = if p { (800.0 + i as f32 * 190.0, 166.0) } else { (520.0 + i as f32 * 130.0, 110.0) };
-            let time = format!("{secs:.3} s");
+            let time = format!("{secs:.1} s");
+            // a bar per row, so the difference reads without reading the numbers
+            let grow = expo_out(prog(l, at + 0.2, at + 1.4));
+            let share = secs / slowest();
             let body = if p {
+                let bar_w = (840.0 * share * grow).max(0.5);
                 fframes::svgr!(
                     <g>
                         <text x={x0 + 40.0} y={y - 18.0} font-family={DISPLAY} font-size="34" letter-spacing="-1" fill={BONE}>{*name}</text>
-                        <text x={x0 + 40.0} y={y + 52.0} font-family={MONO} font-weight="600" font-size="56" fill={*color}>{time}</text>
+                        <text x={x0 + 40.0} y={y + 46.0} font-family={MONO} font-weight="600" font-size="52" fill={*color}>{time}</text>
+                        <rect x={x0 + 40.0} y={y + 66.0} width={bar_w} height="10" fill={*color} />
                     </g>
                 )
             } else {
+                let bar_w = (1200.0 * share * grow).max(0.5);
                 fframes::svgr!(
                     <g>
-                        <text x="190" y={y} font-family={DISPLAY} font-size="48" letter-spacing="-1" fill={BONE}>{*name}</text>
-                        <text x="1740" y={y} text-anchor="end" font-family={MONO} font-weight="600" font-size="48" fill={*color}>{time}</text>
+                        <text x="190" y={y} font-family={DISPLAY} font-size="44" letter-spacing="-1" fill={BONE}>{*name}</text>
+                        <rect x="190" y={y + 16.0} width={bar_w} height="10" fill={*color} />
+                        <text x="1740" y={y + 10.0} text-anchor="end" font-family={MONO} font-weight="600" font-size="52" fill={*color}>{time}</text>
                     </g>
                 )
             };
@@ -429,16 +436,16 @@ fn table(l: f32, p: bool) -> Svgr<'static> {
     };
     let (fx, fy) = if p { (84.0, 1420.0) } else { (154.0, 860.0) };
     let (wx, wy, wa) = if p {
-        (1000.0, 740.0, "end")
+        (1000.0, 708.0, "end")
     } else {
         (1740.0, 400.0, "end")
     };
     fframes::svgr!(
         <g opacity={1.0 - exit}>
-            {Slam::new(hx, hy, "THE NUMBERS", DISPLAY, hs, BONE).draw(l, 0.0, 120.0)}
-            {label(wx, wy, "WALL CLOCK".to_owned(), GREY, 18.0, wa)}
+            {Slam::new(hx, hy, "TIME TAKEN", DISPLAY, hs, BONE).draw(l, 0.0, 120.0)}
+            {label(wx, wy, "SHORTER IS BETTER".to_owned(), "#a29d95", 22.0, wa)}
             {items}
-            {label(fx, fy, "RENDER + ENCODE + MP4".to_owned(), BONE, 18.0, "start")}
+            {label(fx, fy, "FROM START TO A FINISHED MP4 FILE".to_owned(), BONE, 22.0, "start")}
             {label(fx, fy + 40.0, BENCH_NOTE.to_owned(), GREY, 18.0, "start")}
             {label(fx, fy + 80.0, "REPRODUCE: RENDER-BENCH/VS-REMOTION".to_owned(), ACCENT, 18.0, "start")}
         </g>
@@ -451,31 +458,38 @@ fn table(l: f32, p: bool) -> Svgr<'static> {
 const REASONS: [(&str, &str, [&str; 2]); 4] = [
     (
         "01",
-        "Skia on the GPU",
-        ["Metal or Vulkan. No headless", "browser, no screenshots."],
+        "Graphics card",
+        [
+            "Drawn like a video game, not by",
+            "screenshotting a web browser.",
+        ],
     ),
     (
         "02",
-        "Static is cached",
-        [
-            "Markup without {} is hashed at",
-            "compile time and drawn once.",
-        ],
+        "Drawn once",
+        ["Parts that never change are", "drawn once and reused."],
     ),
     (
         "03",
         "Every core works",
         [
-            "render_frame runs per frame on",
-            "many threads, no I/O inside.",
+            "Many frames are drawn at once,",
+            "one on each processor core.",
         ],
     ),
     (
         "04",
-        "No readback",
-        ["Frames go from the GPU texture", "straight to the encoder."],
+        "No detours",
+        [
+            "Finished frames go straight from",
+            "the graphics card into the file.",
+        ],
     ),
 ];
+
+/// The fframes lanes of the race and the table, named for viewers who do not
+/// know what Skia or Metal is.
+const FFRAMES_GPU_LABEL: &str = "FFRAMES · WITH GRAPHICS CARD";
 
 const REASON_AT: [f32; 4] = [3.0, 10.0, 17.0, 24.0];
 
@@ -502,15 +516,15 @@ pub fn why(lb: f32, p: bool) -> Svgr<'static> {
         fframes::svgr!(
             <g opacity={stat_o} transform={format!("translate(0 {})", (1.0 - stat_s) * 40.0)}>
                 <text x="80" y="640" font-family={DISPLAY} font-size="150" letter-spacing="-6" fill={ACCENT}>"10×"</text>
-                <text x="470" y="590" font-family={MONO} font-weight="600" font-size="22" letter-spacing="3" fill={BONE}>"SKIA BACKEND VS THE"</text>
-                <text x="470" y="626" font-family={MONO} font-weight="600" font-size="22" letter-spacing="3" fill={BONE}>"CPU BACKEND, 1080P"</text>
+                <text x="470" y="590" font-family={MONO} font-weight="600" font-size="22" letter-spacing="3" fill={BONE}>"FASTER WITH A GRAPHICS"</text>
+                <text x="470" y="626" font-family={MONO} font-weight="600" font-size="22" letter-spacing="3" fill={BONE}>"CARD · 1080P"</text>
             </g>
         )
     } else {
         fframes::svgr!(
             <g opacity={stat_o} transform={format!("translate(0 {})", (1.0 - stat_s) * 40.0)}>
                 <text x="1770" y="330" text-anchor="end" font-family={DISPLAY} font-size="220" letter-spacing="-10" fill={ACCENT}>"10×"</text>
-                <text x="1770" y="376" text-anchor="end" font-family={MONO} font-weight="600" font-size="22" letter-spacing="3" fill={BONE}>"SKIA BACKEND VS THE CPU BACKEND, 1080P"</text>
+                <text x="1770" y="376" text-anchor="end" font-family={MONO} font-weight="600" font-size="22" letter-spacing="3" fill={BONE}>"FASTER WITH A GRAPHICS CARD · 1080P"</text>
             </g>
         )
     };
@@ -533,8 +547,8 @@ pub fn why(lb: f32, p: bool) -> Svgr<'static> {
                     <g>
                         <text x={x + 36.0} y={y + 56.0} font-family={MONO} font-weight="600" font-size="24" letter-spacing="3" fill={ACCENT}>{*num}</text>
                         <text x={x + 36.0} y={y + 128.0} font-family={DISPLAY} font-size="52" letter-spacing="-1" fill={BONE}>{*title}</text>
-                        <text x={x + 36.0} y={y + 178.0} font-family={MONO} font-weight="500" font-size="26" fill="#b9b4ab">{lines[0]}</text>
-                        <text x={x + 36.0} y={y + 214.0} font-family={MONO} font-weight="500" font-size="26" fill="#b9b4ab">{lines[1]}</text>
+                        <text x={x + 36.0} y={y + 178.0} font-family={MONO} font-weight="500" font-size="26" fill="#cfcac1">{lines[0]}</text>
+                        <text x={x + 36.0} y={y + 214.0} font-family={MONO} font-weight="500" font-size="26" fill="#cfcac1">{lines[1]}</text>
                     </g>
                 )
             } else {
@@ -542,8 +556,8 @@ pub fn why(lb: f32, p: bool) -> Svgr<'static> {
                     <g>
                         <text x={x + 36.0} y={y + 74.0} font-family={MONO} font-weight="600" font-size="26" letter-spacing="3" fill={ACCENT}>{*num}</text>
                         <text x={x + 110.0} y={y + 78.0} font-family={DISPLAY} font-size="54" letter-spacing="-1" fill={BONE}>{*title}</text>
-                        <text x="1010" y={y + 54.0} font-family={MONO} font-weight="500" font-size="26" fill="#b9b4ab">{lines[0]}</text>
-                        <text x="1010" y={y + 92.0} font-family={MONO} font-weight="500" font-size="26" fill="#b9b4ab">{lines[1]}</text>
+                        <text x="1010" y={y + 54.0} font-family={MONO} font-weight="500" font-size="26" fill="#cfcac1">{lines[0]}</text>
+                        <text x="1010" y={y + 92.0} font-family={MONO} font-weight="500" font-size="26" fill="#cfcac1">{lines[1]}</text>
                     </g>
                 )
             };

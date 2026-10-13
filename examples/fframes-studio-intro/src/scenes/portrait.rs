@@ -70,8 +70,11 @@ impl Scene for HookScene {
             <g>
                 <image href={bg.href()} x="0" y="0" width="1080" height="1920" />
                 <g transform={format!("translate(0 {lift})")}>
-                    <text x="80" y="716" font-family={MONO} font-weight="500" font-size="22" letter-spacing="2" fill={GREY}>"FFRAMES STUDIO"</text>
-                    <text x="1000" y="716" text-anchor="end" font-family={MONO} font-weight="500" font-size="22" letter-spacing="2" fill={GREY}>"DESKTOP APP"</text>
+                    // what the product is, in one sentence anyone can read
+                    <text x="80" y="440" font-family={MONO} font-weight="600" font-size="24" letter-spacing="4" fill={ACCENT}>"FFRAMES STUDIO"</text>
+                    <text x="1000" y="440" text-anchor="end" font-family={MONO} font-weight="500" font-size="24" letter-spacing="4" fill={GREY}>"DESKTOP APP"</text>
+                    <text x="76" y="540" font-family={DISPLAY} font-size="74" letter-spacing="-2" fill={BONE}>"Make videos by"</text>
+                    <text x="76" y="650" font-family={SERIF} font-style="italic" font-size="100" fill={ACCENT}>"describing"<tspan font-family={DISPLAY} font-style="normal" font-size="74" letter-spacing="-2" fill={BONE}>" them."</tspan></text>
                     <rect x="60" y="750" width="960" height="320" rx="18" fill="#0f0e0d" fill-opacity="0.85"
                           stroke={if after > 0.0 { ACCENT } else { "#4a4640" }} stroke-width="2" />
                     <text x="96" y="872" font-family={MONO} font-weight="600" font-size="64" fill={ACCENT}>"›"</text>
@@ -194,13 +197,28 @@ const CAMERA: &[(f32, f32, f32, f32)] = &[
 
 /// (start beat, tag, two headline lines)
 const CAPTIONS: &[(f32, &str, &str, &str)] = &[
-    (0.0, "01 / WORKSPACE", "One window.", "Your whole video."),
-    (7.0, "02 / SELECT", "Click anything", "on the canvas."),
-    (14.0, "03 / PROMPT", "Say what should", "change."),
-    (32.0, "04 / RETRIEVE", "The agent finds", "the exact code."),
-    (44.0, "05 / EDIT", "A real diff", "in your Rust."),
-    (52.0, "06 / PREVIEW", "Rebuilt, checked,", "playing."),
-    (60.0, "07 / EXPORT", "Happy? Export", "an MP4."),
+    (
+        0.0,
+        "STEP 1 / WORKSPACE",
+        "One window.",
+        "Your whole video.",
+    ),
+    (7.0, "STEP 2 / POINT", "Click anything", "on the screen."),
+    (14.0, "STEP 3 / ASK", "Say what should", "change."),
+    (32.0, "STEP 4 / FIND", "The AI finds", "exactly that part."),
+    (44.0, "STEP 5 / EDIT", "It changes", "only that part."),
+    (
+        52.0,
+        "STEP 6 / WATCH",
+        "The new version",
+        "plays right away.",
+    ),
+    (
+        60.0,
+        "STEP 7 / EXPORT",
+        "Happy? Save it",
+        "as an MP4 video.",
+    ),
 ];
 
 fn captions(lb: f32) -> Svgr<'static> {
@@ -270,12 +288,15 @@ const CARDS: [(&str, &str, [&str; 2]); 3] = [
     (
         "01 / AGENTS",
         "Bring your agent",
-        ["Codex or Claude Code.", "Switch mid-task, context follows."],
+        [
+            "Use Codex or Claude Code.",
+            "Switch any time, lose nothing.",
+        ],
     ),
     (
         "02 / HISTORY",
         "Undo any edit",
-        ["Every change is a revision.", "Compare, restore, export."],
+        ["Every change is saved.", "Compare, go back, export."],
     ),
     (
         "03 / STYLE",
@@ -303,8 +324,8 @@ impl Scene for ProjectScene {
                 .color("uInk", Color::hex("#6f6a63"))
                 .color("uHot", Color::hex(ACCENT)),
         );
-        let h1 = Slam::new(80.0, 310.0, "It's just", DISPLAY, 130.0, BONE);
-        let h2 = Slam::new(80.0, 450.0, "Rust.", DISPLAY, 130.0, ACCENT);
+        let h1 = Slam::new(80.0, 310.0, "Yours to", DISPLAY, 130.0, BONE);
+        let h2 = Slam::new(80.0, 450.0, "keep.", DISPLAY, 130.0, ACCENT);
         let sub = prog(lb, 1.2, 1.6);
         let cards: Vec<Svgr> = CARDS
             .iter()
@@ -331,9 +352,8 @@ impl Scene for ProjectScene {
                 {h1.draw(lb, -140.0, 0.0)}
                 {h2.draw(lb - 0.5, -140.0, 0.0)}
                 <g opacity={sub}>
-                    <text x="84" y="530" font-family={MONO} font-weight="500" font-size="28" letter-spacing="1" fill={GREY}>"An agent edits an ordinary"</text>
-                    <text x="84" y="572" font-family={MONO} font-weight="500" font-size="28" letter-spacing="1" fill={GREY}>"fframes project. Open it in any"</text>
-                    <text x="84" y="614" font-family={MONO} font-weight="500" font-size="28" letter-spacing="1" fill={GREY}>"editor. Render it with the CLI."</text>
+                    <text x="84" y="530" font-family={MONO} font-weight="500" font-size="28" letter-spacing="1" fill={GREY}>"Behind every video is a normal code project."</text>
+                    <text x="84" y="572" font-family={MONO} font-weight="500" font-size="28" letter-spacing="1" fill={GREY}>"No lock-in: developers can open it in any editor."</text>
                 </g>
                 {cards}
             </g>
@@ -414,9 +434,9 @@ fn card<'a>(mut frame: Frame, ctx: &FFramesContext<'a, '_>, lb: f32) -> Svgr<'a>
             (
                 "fframes Studio",
                 "macOS  ·  Windows  ·  Linux",
-                "THE DESKTOP APP",
+                "DESKTOP APP",
             ),
-            ("cargo fframes new my-video", "", "OR THE CLI"),
+            ("cargo fframes new my-video", "", "OR FOR DEVELOPERS"),
         ];
         let cmd_rows: Vec<Svgr> = rows
             .iter()

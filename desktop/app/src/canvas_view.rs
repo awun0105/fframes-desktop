@@ -331,3 +331,110 @@ fn video_pixel_rect(
         height: bottom - y,
     })
 }
+
+/// Where the video frame sits inside the preview surface and how many surface
+/// pixels one video pixel covers. Painting, the selection and scope overlays and
+/// click mapping all read this one geometry, so they cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StageLayout {
+    pub frame_rect: CanvasRect,
+    pub scale: f64,
+}
+
+impl StageLayout {
+    /// The geometry of a viewport, including its current zoom and pan.
+    pub fn from_viewport(viewport: &CanvasViewport) -> Self {
+        let frame_rect = viewport.image_bounds();
+        let (video_width, _) = viewport.video_dimensions();
+        Self {
+            frame_rect,
+            scale: frame_rect.width / f64::from(video_width),
+        }
+    }
+
+    /// Moves a rectangle in surface coordinates into frame coordinates.
+    pub fn to_frame_space(&self, rect: CanvasRect) -> CanvasRect {
+        CanvasRect {
+            x: rect.x - self.frame_rect.x,
+            y: rect.y - self.frame_rect.y,
+            ..rect
+        }
+    }
+}
+
+/// The letterboxed frame centred in `bounds` at fit zoom. `None` when the bounds
+/// or the frame size are empty.
+pub fn stage_layout(bounds: CanvasRect, frame_size: (u32, u32)) -> Option<StageLayout> {
+    CanvasViewport::new(bounds, frame_size.0, frame_size.1)
+        .ok()
+        .map(|viewport| StageLayout::from_viewport(&viewport))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bounds(width: f64, height: f64) -> CanvasRect {
+        CanvasRect {
+            x: 0.0,
+            y: 0.0,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn stage_layout_letterboxes_and_never_upscales() {
+        // A 16:9 frame in a wide surface is centred with bars left and right.
+        let layout = stage_layout(bounds(1000.0, 400.0), (1920, 1080)).unwrap();
+        assert!((layout.frame_rect.height - 400.0).abs() < 1e-9);
+        assert!((layout.frame_rect.width - 400.0 * 16.0 / 9.0).abs() < 1e-9);
+        let left = layout.frame_rect.x;
+        let right = 1000.0 - (layout.frame_rect.x + layout.frame_rect.width);
+        assert!((left - right).abs() < 1e-9 && left > 0.0);
+        assert_eq!(layout.frame_rect.y, 0.0);
+        // preview_scale (unchanged) never upscales and caps at 1280 x 720.
+        let capped = crate::frame_image::preview_scale(1920, 1080, (3840, 2160));
+        assert!((capped - 1280.0 / 1920.0).abs() < 1e-9);
+        assert_eq!(
+            crate::frame_image::preview_scale(640, 360, (3840, 2160)),
+            1.0
+        );
+        let small = crate::frame_image::preview_scale(1920, 1080, (960, 540));
+        assert!((small - 0.5).abs() < 1e-9);
+        assert!((small - 0.5).abs() < 1e-9);
+        assert!(stage_layout(bounds(0.0, 10.0), (1920, 1080)).is_none());
+        assert!(stage_layout(bounds(10.0, 10.0), (0, 1080)).is_none());
+    }
+
+    #[test]
+    fn stage_layout_round_trips_click_points() {
+        let surface = bounds(731.0, 412.0);
+        let viewport = CanvasViewport::new(surface, 1280, 720).unwrap();
+        let layout = StageLayout::from_viewport(&viewport);
+        for (vx, vy) in [(0.5, 0.5), (640.0, 360.0), (1279.0, 719.0), (100.25, 33.75)] {
+            let wx = layout.frame_rect.x + vx * layout.scale;
+            let wy = layout.frame_rect.y + vy * layout.scale;
+            let back = viewport.point_to_video(wx, wy).expect("inside the frame");
+            assert!((back.x - vx).abs() < 1e-6 && (back.y - vy).abs() < 1e-6);
+        }
+        // Outside the letterboxed frame there is nothing to hit.
+        let outside = layout.frame_rect.x - 1.0;
+        assert!(viewport.point_to_video(outside, 10.0).is_none());
+    }
+
+    #[test]
+    fn stage_layout_follows_zoom_and_frame_space_is_relative() {
+        let mut viewport = CanvasViewport::new(bounds(800.0, 450.0), 1600, 900).unwrap();
+        viewport.zoom_at(400.0, 225.0, 2.0).unwrap();
+        let layout = StageLayout::from_viewport(&viewport);
+        assert!((layout.scale - 1.0).abs() < 1e-9);
+        let in_frame = layout.to_frame_space(CanvasRect {
+            x: layout.frame_rect.x + 10.0,
+            y: layout.frame_rect.y + 20.0,
+            width: 5.0,
+            height: 6.0,
+        });
+        assert_eq!((in_frame.x, in_frame.y, in_frame.width), (10.0, 20.0, 5.0));
+    }
+}

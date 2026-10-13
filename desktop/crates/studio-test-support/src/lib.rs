@@ -1,0 +1,95 @@
+//! Test-only helpers shared by the studio crates. Used only as a dev-dependency.
+
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    sync::OnceLock,
+};
+
+/// The Python interpreter for test fixtures, resolved once per test binary.
+///
+/// Candidates, in order: the `PYTHON` environment variable; the interpreter under
+/// `$pythonLocation` (set by `actions/setup-python`); the `sys.executable` reported by the
+/// Windows launcher `py -3`; `python3`; `python`. The first one that runs
+/// `-c "import sys"` successfully wins (this skips the Windows Store `python` alias).
+///
+/// # Panics
+///
+/// When no candidate works, with the list of candidates that were tried.
+pub fn python() -> &'static Path {
+    static PYTHON: OnceLock<PathBuf> = OnceLock::new();
+    PYTHON.get_or_init(resolve_python)
+}
+
+fn resolve_python() -> PathBuf {
+    let mut tried = Vec::new();
+    let mut candidates = Vec::new();
+    if let Some(value) = std::env::var_os("PYTHON").filter(|v| !v.is_empty()) {
+        candidates.push(PathBuf::from(value));
+    }
+    if let Some(location) = std::env::var_os("pythonLocation").filter(|v| !v.is_empty()) {
+        let location = PathBuf::from(location);
+        candidates.push(if cfg!(windows) {
+            location.join("python.exe")
+        } else {
+            location.join("bin").join("python3")
+        });
+    }
+    match launcher_executable() {
+        Some(path) => candidates.push(path),
+        None => tried.push("py -3 (no usable sys.executable)".to_owned()),
+    }
+    candidates.push(PathBuf::from("python3"));
+    candidates.push(PathBuf::from("python"));
+    for candidate in candidates {
+        if runs(&candidate) {
+            return candidate;
+        }
+        tried.push(candidate.display().to_string());
+    }
+    panic!(
+        "no working Python interpreter for the test fixtures; tried: {}. \
+         Set PYTHON to an interpreter that runs `-c \"import sys\"`.",
+        tried.join(", ")
+    );
+}
+
+/// `sys.executable` as reported by the Windows `py` launcher, if it is installed.
+fn launcher_executable() -> Option<PathBuf> {
+    let output = Command::new("py")
+        .args(["-3", "-c", "import sys; print(sys.executable)"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(output.stdout).ok()?;
+    let path = path.trim();
+    (!path.is_empty()).then(|| PathBuf::from(path))
+}
+
+fn runs(interpreter: impl AsRef<OsStr>) -> bool {
+    Command::new(interpreter)
+        .args(["-c", "import sys"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_resolved_interpreter_runs_python() {
+        let python = python();
+        assert!(runs(python), "{}", python.display());
+        // Resolved once: every call returns the same path.
+        assert!(std::ptr::eq(python, super::python()));
+    }
+}

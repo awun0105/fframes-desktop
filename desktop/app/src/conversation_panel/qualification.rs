@@ -129,7 +129,7 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn hash_file(path: &Path) -> std::io::Result<String> {
+pub(crate) fn hash_file(path: &Path) -> std::io::Result<String> {
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; 64 * 1024];
@@ -150,6 +150,7 @@ pub fn launch_identity(file: &AdapterFile, paths: &AppPaths) -> Result<LaunchIde
     let search = ExecutableSearch {
         managed_dirs: vec![paths.data.join("adapters")],
         gui_path: None,
+        node: None,
     };
     let executable = resolve_executable(&file.executable, &search)
         .map_err(|e| format!("the adapter executable cannot be resolved: {e}"))?;
@@ -629,9 +630,13 @@ fn check_record(
         .pointer("/measurements/scenarios")
         .and_then(Value::as_array)
         .ok_or("the writer-containment record has no scenarios")?;
+    // Each scenario must itself say it was contained (it ran to the point it measures and
+    // nothing escaped or went unverified); the ledger's pass/fail status is not enough.
     for required in REQUIRED_SCENARIOS {
         let measured = scenarios.iter().any(|s| {
             text(s, "name") == Some(required)
+                && s.get("contained") == Some(&Value::Bool(true))
+                && s.get("containment_unverified").is_none_or(Value::is_null)
                 && s.get("escaped_descendants") == Some(&Value::from(0))
                 && s.get("group_empty_after") == Some(&Value::Bool(true))
         });
@@ -715,9 +720,9 @@ mod tests {
             "adapter": {"agent_name": "real-adapter", "protocol_version": 1, "launch_identity": digest},
             "cleanup": {"owned_processes_after": 0},
             "measurements": {"scenarios": [
-                {"name": "edit", "escaped_descendants": 0, "group_empty_after": true},
-                {"name": "stop", "escaped_descendants": 0, "group_empty_after": true},
-                {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true}
+                {"name": "edit", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+                {"name": "stop", "escaped_descendants": 0, "group_empty_after": true, "contained": true},
+                {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": true, "contained": true}
             ]}
         })
     }
@@ -986,7 +991,30 @@ mod tests {
 
     #[test]
     fn missing_or_unclean_containment_measurements_never_qualify() {
-        let cases: [(&str, RecordEdit, &str); 4] = [
+        let cases: [(&str, RecordEdit, &str); 7] = [
+            (
+                "scenario not contained",
+                |r| r["measurements"]["scenarios"][1]["contained"] = json!(false),
+                "stop",
+            ),
+            (
+                "containment not stated",
+                |r| {
+                    r["measurements"]["scenarios"][2]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("contained");
+                },
+                "provider_crash",
+            ),
+            (
+                "containment unverified",
+                |r| {
+                    r["measurements"]["scenarios"][0]["containment_unverified"] =
+                        json!("the escape scan failed")
+                },
+                "edit",
+            ),
             (
                 "escaped writer",
                 |r| r["measurements"]["scenarios"][1]["escaped_descendants"] = json!(1),

@@ -1,0 +1,10 @@
+[package]
+name = "studio-test-support"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Test-only helpers shared by the fframes studio crates"
+publish = false
+
+[lib]
+path = "src/lib.rs"

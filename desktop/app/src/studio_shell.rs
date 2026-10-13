@@ -1,4 +1,3 @@
-use crate::design_system::colors::{ACCENT, BACKGROUND, BORDER, MUTED, PANEL, TEXT};
 use crate::{
     agent_workflow::{AgentWorkflow, BuildSettings},
     conversation_panel::{
@@ -11,8 +10,8 @@ use crate::{
 };
 use crate::{
     audio_service::{AudioEvent, AudioService, OutputDevice, OutputHandle},
-    canvas_view::CanvasViewState,
-    design_system::{self, ButtonStyle},
+    canvas_view::{CanvasViewState, StageLayout},
+    design_system::{self, Shadow, TextStyle, shadow, text_style},
     export_service::{ExportControl, ExportProgress, export_mp4},
     frame_image::{ImagePresentationManager, create_render_image},
     preset_panel::{
@@ -20,10 +19,17 @@ use crate::{
     },
     preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent},
     timeline_view::{TimelineEvent, TimelineView},
+    ui::{
+        Badge, BoundsProbe, Button, ButtonVariant, Collapsible, Icon, IconButton, IconButtonSize,
+        Menu, MenuState, Notice, SectionTitle, StatusDot, TabItem, TabRail, Tone, card, divider,
+        heading, icon,
+        interact::{DISABLED_OPACITY, Handler, focusable, on_activate, with_tooltip},
+        muted,
+    },
 };
 use gpui::{
     AppContext, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, canvas, div, px, rgb,
+    StatefulInteractiveElement, Styled, Window, canvas, div, px,
 };
 use parking_lot::Mutex;
 use std::{
@@ -113,6 +119,8 @@ struct Backend {
     /// capture/publication on its own job threads.
     controller: Option<Arc<Mutex<Controller>>>,
     compatibility: Option<CompatibilityManifest>,
+    /// Why no manifest resolved for this host; shown while `compatibility` is `None`.
+    compatibility_error: String,
     sdk_home: Option<PathBuf>,
     sdk: String,
     agent_sdk: Option<AgentSdk>,
@@ -128,11 +136,8 @@ impl Backend {
     fn command(&mut self, command: Command) -> Result<(), String> {
         if matches!(command, Command::Initialize) {
             self.paths = Some(AppPaths::system().map_err(|e| e.to_string())?);
-            let (compatibility, sdk_home) = SetupView::defaults()?;
-            self.compatibility = Some(compatibility);
-            self.sdk_home = Some(sdk_home);
             self.catalog = Catalog::load(self.paths.as_ref().expect("just set"));
-            self.check_sdk();
+            self.refresh_compatibility();
             return Ok(());
         }
         let paths = self
@@ -146,7 +151,7 @@ impl Backend {
                 let compatibility = self
                     .compatibility
                     .as_ref()
-                    .ok_or("Compatible SDK manifest unavailable")?;
+                    .ok_or_else(|| self.compatibility_error.clone())?;
                 let name = path
                     .file_name()
                     .and_then(|s| s.to_str())
@@ -322,14 +327,14 @@ impl Backend {
                 if let Err(error) = SetupView::install_sdk(
                     self.compatibility
                         .as_ref()
-                        .ok_or("SDK manifest unavailable")?,
+                        .ok_or_else(|| self.compatibility_error.clone())?,
                     self.sdk_home.as_deref().ok_or("SDK home unavailable")?,
                     &self.processes,
                 ) {
                     self.sdk = "Failed · repair the reported installation error and retry".into();
                     return Err(error);
                 }
-                self.check_sdk();
+                self.refresh_compatibility();
             }
             Command::ImportSdkBundle(bundle) => {
                 if let Err(error) = SetupView::install_sdk_from_bundle(
@@ -340,7 +345,8 @@ impl Backend {
                     self.sdk = "Failed · repair the reported installation error and retry".into();
                     return Err(error);
                 }
-                self.check_sdk();
+                // An imported SDK may be the first manifest this host has.
+                self.refresh_compatibility();
             }
             Command::Restore(path, revision) => self
                 .current()?
@@ -398,29 +404,53 @@ impl Backend {
         self.check_sdk();
         Ok(())
     }
+    /// Resolves the SDK manifest for this host; without one the reason becomes the SDK status.
+    fn refresh_compatibility(&mut self) {
+        match SetupView::defaults() {
+            Ok((compatibility, sdk_home)) => {
+                self.compatibility = Some(compatibility);
+                self.sdk_home = Some(sdk_home);
+            }
+            Err(error) => {
+                self.compatibility = None;
+                self.sdk_home = Some(crate::setup_view::default_sdk_home());
+                self.compatibility_error = error;
+            }
+        }
+        self.check_sdk();
+    }
     fn check_sdk(&mut self) {
         self.agent_sdk = None;
-        let Some(compatibility) = &self.compatibility else {
-            self.sdk = "SDK manifest unavailable".into();
-            return;
-        };
-        let report = Doctor::run_host_preflight(compatibility);
-        if !report.is_ready() {
-            self.sdk = format!("Host prerequisites needed: {}", report.format_summary());
-            return;
-        }
         let sdk = self
             .controller
             .as_ref()
             .and_then(|c| c.lock().sdk_path().map(PathBuf::from))
-            .or_else(|| self.sdk_home.as_ref().map(|h| h.join("active")));
-        self.sdk = match sdk {
-            Some(path) if path.exists() => {
-                let selected = std::fs::read_to_string(path.join("compatibility.json"))
-                    .map_err(|e| e.to_string())
-                    .and_then(|s| {
-                        CompatibilityManifest::from_json_str(&s).map_err(|e| e.to_string())
-                    });
+            .or_else(|| self.sdk_home.as_ref().map(|h| h.join("active")))
+            .filter(|path| path.exists());
+        // Host prerequisites come from the SDK that is actually selected, which may be the
+        // only manifest this host has; the app default stands in while none is installed.
+        let selected = sdk.as_ref().map(|path| {
+            std::fs::read_to_string(path.join("compatibility.json"))
+                .map_err(|e| e.to_string())
+                .and_then(|s| CompatibilityManifest::from_json_str(&s).map_err(|e| e.to_string()))
+        });
+        let preflight = match &selected {
+            Some(Ok(manifest)) => manifest,
+            Some(Err(_)) | None => match &self.compatibility {
+                Some(compatibility) => compatibility,
+                None => {
+                    self.sdk = self.compatibility_error.clone();
+                    return;
+                }
+            },
+        };
+        let report = Doctor::run_host_preflight(preflight);
+        if !report.is_ready() {
+            self.sdk = format!("Host prerequisites needed: {}", report.format_summary());
+            return;
+        }
+        self.sdk = match (sdk, selected) {
+            (Some(path), Some(selected)) => {
                 let selected = match selected {
                     Ok(manifest) => manifest,
                     Err(error) => {
@@ -519,7 +549,10 @@ pub struct StudioShell {
     epoch: u64,
     error: Option<String>,
     failed_open: Option<PathBuf>,
-    navigation: &'static str,
+    left_tab: LeftTab,
+    sdk_open: bool,
+    recents_open: bool,
+    status_open: bool,
     preview: Option<Arc<PreviewCoordinator>>,
     preview_session: Option<studio_engine::OpenSession>,
     preview_state: studio_engine::PreviewState,
@@ -550,6 +583,10 @@ pub struct StudioShell {
     resume_scrub: bool,
     qualifying: bool,
     button_bounds: HashMap<String, [f32; 4]>,
+    player_width: f32,
+    overflow_open: bool,
+    overflow_menu: MenuState,
+    overflow_focus: gpui::FocusHandle,
     painted_frame: Option<usize>,
     /// Set while the accepted source is ahead of what the preview shows: a handoff that
     /// failed (or has not finished) keeps the old preview playing under this label.
@@ -800,6 +837,7 @@ impl StudioShell {
             paths: None,
             controller: None,
             compatibility: None,
+            compatibility_error: "SDK manifest unavailable".into(),
             sdk_home: None,
             sdk: "Checking SDK…".into(),
             agent_sdk: None,
@@ -861,7 +899,10 @@ impl StudioShell {
             epoch: 0,
             error: None,
             failed_open: None,
-            navigation: "Project",
+            left_tab: LeftTab::Project,
+            sdk_open: true,
+            recents_open: true,
+            status_open: false,
             preview: None,
             preview_session: None,
             preview_state: studio_engine::PreviewState::default(),
@@ -906,6 +947,10 @@ impl StudioShell {
             resume_scrub: false,
             qualifying: false,
             button_bounds: HashMap::new(),
+            player_width: f32::INFINITY,
+            overflow_open: false,
+            overflow_menu: MenuState::new(Vec::new(), None),
+            overflow_focus: cx.focus_handle(),
             painted_frame: None,
         };
         shell.dispatch(Command::Initialize, cx);
@@ -2502,32 +2547,11 @@ impl StudioShell {
         self.export_status = Some(ExportProgress::Cancelled);
         cx.notify();
     }
-    fn button(
-        &self,
-        id: impl Into<gpui::ElementId>,
-        label: impl Into<gpui::SharedString>,
-        enabled: bool,
-        cx: &mut Context<Self>,
-        action: impl Fn(&mut Self, &mut gpui::Context<Self>) + 'static,
-    ) -> impl IntoElement {
-        let label = label.into();
-        let action = std::rc::Rc::new(action);
-        let click = action.clone();
-        let id = id.into();
-        let style = match &id {
-            gpui::ElementId::Name(name)
-                if matches!(name.as_ref(), "Project" | "Assets" | "Style")
-                    && name.as_ref() == self.navigation =>
-            {
-                ButtonStyle::Selected
-            }
-            gpui::ElementId::Name(name) if matches!(name.as_ref(), "build-preview" | "create") => {
-                ButtonStyle::Primary
-            }
-            gpui::ElementId::Name(name) if name.as_ref() == "close" => ButtonStyle::Destructive,
-            _ => ButtonStyle::Secondary,
-        };
-        let name = match &id {
+
+    /// Bounds reporter for the buttons native qualification clicks; `None` outside
+    /// qualification and for every other button.
+    fn bounds_probe(&self, id: &gpui::ElementId, cx: &mut Context<Self>) -> Option<BoundsProbe> {
+        let name = match id {
             gpui::ElementId::Name(name)
                 if self.qualifying
                     && matches!(
@@ -2549,45 +2573,1096 @@ impl StudioShell {
             _ => None,
         };
         let entity = cx.entity();
-        design_system::button(
-            div()
-                .id(id)
-                .relative()
-                .role(gpui::Role::Button)
-                .aria_label(label.clone())
-                .tab_index(0)
-                .tab_stop(enabled)
-                .text_sm(),
-            style,
-            enabled,
-        )
-        .on_click(cx.listener(move |shell, _, _, cx| {
-            if enabled {
-                click(shell, cx);
+        name.map(|name| {
+            BoundsProbe::new(move |bounds, cx| {
+                entity.update(cx, |shell, _| {
+                    shell.button_bounds.insert(name.clone(), bounds);
+                });
+            })
+        })
+    }
+}
+
+impl StudioShell {
+    /// A `ui::Button` wired to a shell action, with the qualification bounds probe.
+    #[allow(clippy::too_many_arguments)]
+    fn ui_button(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        enabled: bool,
+        variant: ButtonVariant,
+        glyph: Option<Icon>,
+        cx: &mut Context<Self>,
+        action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> Button {
+        let entity = cx.entity();
+        let probe = self.bounds_probe(&gpui::ElementId::Name(id.into()), cx);
+        let mut button = Button::new(id, label)
+            .variant(variant)
+            .disabled(!enabled)
+            .probe(probe)
+            .on_click(move |_, cx| {
+                entity.update(cx, |shell, cx| action(shell, cx));
+            });
+        if let Some(glyph) = glyph {
+            button = button.icon(glyph);
+        }
+        button
+    }
+
+    fn render_header(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let enabled = !self.busy;
+        let project = self.presentation.project.clone();
+        let mut actions = div().flex().items_center().gap(px(tokens.metrics.space_2));
+        for id in header_actions(project.is_some()) {
+            let button = match id {
+                "create" => self.ui_button(
+                    "create",
+                    "Create…",
+                    enabled,
+                    ButtonVariant::Editor,
+                    Some(Icon::Plus),
+                    cx,
+                    |s, cx| s.pick(Picker::Create, cx),
+                ),
+                "open" => self.ui_button(
+                    "open",
+                    "Open…",
+                    enabled,
+                    ButtonVariant::Editor,
+                    Some(Icon::FolderOpen),
+                    cx,
+                    |s, cx| s.pick(Picker::Open, cx),
+                ),
+                "import" => self.ui_button(
+                    "import",
+                    "Import Rust…",
+                    enabled,
+                    ButtonVariant::Editor,
+                    Some(Icon::Upload),
+                    cx,
+                    |s, cx| s.pick(Picker::Import, cx),
+                ),
+                "export-mp4" => self.ui_button(
+                    "export-mp4",
+                    "Export MP4…",
+                    enabled
+                        && project.is_some()
+                        && self.presentation.agent_sdk.is_some()
+                        && self.export_cancelled.is_none(),
+                    ButtonVariant::Primary,
+                    Some(Icon::Download),
+                    cx,
+                    |s, cx| s.pick(Picker::Export, cx),
+                ),
+                _ => self.ui_button(
+                    "close",
+                    "Close project",
+                    enabled && project.is_some(),
+                    ButtonVariant::Editor,
+                    None,
+                    cx,
+                    |s, cx| s.dispatch(Command::Close, cx),
+                ),
+            };
+            actions = actions.child(button);
+        }
+        let title = project
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| "fframes Studio".into());
+        let mut text = div()
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .child(text_style(div().truncate(), TextStyle::Title).child(title));
+        if let Some(p) = &project {
+            let path = p.root.display().to_string();
+            text = text.child(with_tooltip(
+                text_style(div().id("project-path").truncate(), TextStyle::Small)
+                    .text_color(tokens.palette.text_2)
+                    .child(path.clone()),
+                Some(path.into()),
+            ));
+        }
+        card()
+            .h(px(tokens.metrics.header_h))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(tokens.metrics.space_4))
+            .px(px(tokens.metrics.space_4))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .min_w_0()
+                    .gap(px(tokens.metrics.space_3))
+                    .child(icon(Icon::Layers, 20., tokens.palette.accent))
+                    .child(text),
+            )
+            .child(actions)
+            .into_any_element()
+    }
+
+    /// Warning, error, export and recovery notices; empty when there is nothing to say.
+    fn render_notices(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let enabled = !self.busy;
+        let mut notices = Vec::new();
+        if let Some(label) = &self.awaiting_preview {
+            notices.push(
+                Notice::new("awaiting-preview", Tone::Warning, label.clone()).into_any_element(),
+            );
+        }
+        if let Some(error) = &self.error {
+            let (title, details) = error_title_details(error);
+            let mut notice = Notice::new("error", Tone::Danger, title);
+            if let Some(details) = details {
+                notice = notice.details(details);
             }
-        }))
-        .on_key_down(
-            cx.listener(move |shell, event: &gpui::KeyDownEvent, _, cx| {
-                if enabled && matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                    action(shell, cx);
-                    cx.stop_propagation();
+            if let Some(path) = self.failed_open.clone().filter(|_| {
+                error.contains("Duplicate project ID")
+                    || error.contains("Relocated project content differs")
+            }) {
+                notice = notice.action(self.ui_button(
+                    "independent",
+                    "Use this folder as an independent project",
+                    enabled,
+                    ButtonVariant::Editor,
+                    None,
+                    cx,
+                    move |s, cx| s.dispatch(Command::Independent(path.clone()), cx),
+                ));
+            }
+            notices.push(notice.into_any_element());
+        }
+        let Some(p) = &self.presentation.project else {
+            return notices;
+        };
+        if let Some(status) = &self.export_status {
+            let (tone, message) = match status {
+                ExportProgress::Started { revision, label } => (
+                    Tone::Info,
+                    format!("Export snapshot · {label} · {revision}"),
+                ),
+                ExportProgress::Rendering { done, total } => {
+                    (Tone::Info, format!("Rendering MP4 · {done}/{total} frames"))
                 }
-            }),
+                ExportProgress::Audio => (Tone::Info, "Writing and verifying audio".into()),
+                ExportProgress::Warning(message) => {
+                    (Tone::Warning, format!("Export warning · {message}"))
+                }
+                ExportProgress::Verifying => {
+                    (Tone::Info, "Verifying MP4 before publication".into())
+                }
+                ExportProgress::Complete {
+                    destination,
+                    revision,
+                } => (
+                    Tone::Success,
+                    format!("Exported {} · revision {}", destination.display(), revision),
+                ),
+                ExportProgress::Failed(message) => {
+                    (Tone::Danger, format!("Export failed · {message}"))
+                }
+                ExportProgress::Cancelled => (
+                    Tone::Info,
+                    "Export cancelled · partial output removed".into(),
+                ),
+            };
+            let mut notice = Notice::new("export-status", tone, message);
+            if self.export_cancelled.is_some() {
+                notice = notice.action(self.ui_button(
+                    "cancel-export",
+                    "Cancel export",
+                    true,
+                    ButtonVariant::Editor,
+                    None,
+                    cx,
+                    |shell, cx| shell.cancel_export(cx),
+                ));
+            }
+            notices.push(notice.into_any_element());
+        }
+        if p.interrupted {
+            notices.push(
+                Notice::new(
+                    "interrupted-job",
+                    Tone::Warning,
+                    if p.draft.is_some() {
+                        "Interrupted job · retained draft available"
+                    } else {
+                        "Interrupted before draft publication · source and saved checkpoint are safe"
+                    },
+                )
+                .into_any_element(),
+            );
+        }
+        if let Some(text) = &p.recovery_notice {
+            notices.push(
+                Notice::new("recovery-notice", Tone::Warning, text.clone()).into_any_element(),
+            );
+        }
+        notices
+    }
+
+    /// Source, checkpoint and job on one line; the other status lines when expanded.
+    fn render_status_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let p = self.presentation.project.as_ref()?;
+        let tokens = design_system::tokens();
+        let expanded = status_strip_expanded(&p.job, self.error.is_some(), self.status_open);
+        let tone = if p.source == p.accepted {
+            Tone::Success
+        } else {
+            Tone::Warning
+        };
+        let summary = format!(
+            "Source {} · Checkpoint {} · Job {}",
+            &p.source.as_str()[..12],
+            &p.accepted.as_str()[..12],
+            p.job
+        );
+        let line = |text: &'static str| {
+            text_style(div(), TextStyle::Small)
+                .text_color(tokens.palette.text_2)
+                .child(text)
+        };
+        let lines = div()
+            .flex()
+            .flex_col()
+            .gap(px(tokens.metrics.space_1))
+            .pt(px(tokens.metrics.space_1))
+            .child(line(if p.source == p.accepted {
+                "Current source matches the saved checkpoint"
+            } else {
+                "Source changed · saved checkpoint remains available"
+            }))
+            .child(line(if p.history_available {
+                "Local history available"
+            } else {
+                "Previous machine history unavailable · source baseline saved locally"
+            }))
+            .child(line(if p.worker_available {
+                "Worker bridge available · build an immutable preview"
+            } else {
+                "Worker bridge missing · source remains navigable"
+            }));
+        let entity = cx.entity();
+        Some(
+            card()
+                .id("status-strip")
+                .flex_none()
+                .px(px(tokens.metrics.space_3))
+                .py(px(tokens.metrics.space_2))
+                .child(
+                    Collapsible::new("status-details", expanded)
+                        .header(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(tokens.metrics.space_2))
+                                .child(StatusDot::new(tone))
+                                .child(
+                                    text_style(div(), TextStyle::Small)
+                                        .text_color(tokens.palette.text_2)
+                                        .child(summary),
+                                ),
+                        )
+                        .content(lines)
+                        .on_toggle(move |open, _, cx| {
+                            entity.update(cx, |shell, cx| {
+                                shell.status_open = open;
+                                cx.notify();
+                            });
+                        }),
+                )
+                .into_any_element(),
         )
-        .child(label)
-        .children(name.map(|name| {
+    }
+
+    /// Tab rail and the open tab's content.
+    fn render_left_column(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let entity = cx.entity();
+        let rail = TabRail::new(
+            "left-tabs",
+            LeftTab::ALL
+                .iter()
+                .map(|tab| TabItem::new(tab.icon(), tab.name()).id(tab.name()))
+                .collect(),
+            self.left_tab.index(),
+        )
+        .on_select(move |index, _, cx| {
+            entity.update(cx, |shell, cx| {
+                shell.left_tab = LeftTab::from_index(index);
+                cx.notify();
+            });
+        });
+        let content = match left_tab_content(self.left_tab) {
+            LeftContent::Files => self.render_project_tab(cx),
+            LeftContent::Assets => self.render_assets_tab(cx),
+            LeftContent::Presets => self.render_style_tab(cx),
+        };
+        card()
+            .w(px(tokens.metrics.left_column_w))
+            .flex_none()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .gap(px(tokens.metrics.space_3))
+            .p(px(tokens.metrics.space_4))
+            .child(rail)
+            .child(content)
+            .into_any_element()
+    }
+
+    /// A 28 px file row: icon, truncated name, hover fill. The full name is the tooltip.
+    fn list_row(
+        &self,
+        id: String,
+        label: String,
+        glyph: Icon,
+        cx: &mut Context<Self>,
+        action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> gpui::Stateful<gpui::Div> {
+        let tokens = design_system::tokens();
+        let entity = cx.entity();
+        let handler: Handler = std::rc::Rc::new(move |_, cx| {
+            entity.update(cx, |shell, cx| action(shell, cx));
+        });
+        let row = div()
+            .id(id)
+            .role(gpui::Role::Button)
+            .aria_label(label.clone())
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(tokens.metrics.space_2))
+            .h(px(LIST_ROW_H))
+            .px(px(tokens.metrics.space_2))
+            .min_w_0()
+            .rounded(px(tokens.metrics.radius_item))
+            .hover(|style| style.bg(design_system::tokens().palette.ctl_hover))
+            .child(icon(glyph, tokens.metrics.icon_sm, tokens.palette.text_2))
+            .child(
+                text_style(div().min_w_0().flex_1().truncate(), TextStyle::Body)
+                    .text_color(tokens.palette.text_1)
+                    .child(label.clone()),
+            );
+        let row = on_activate(focusable(row, false), false, Some(handler));
+        with_tooltip(row, Some(label.into()))
+    }
+
+    /// The file list of a project tab, or the hint shown while no project is open.
+    fn file_list(
+        &self,
+        files: Option<&[String]>,
+        root: Option<PathBuf>,
+        glyph: Icon,
+        empty: &'static str,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let tokens = design_system::tokens();
+        let mut list = div()
+            .id("inventory")
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .overflow_y_scroll();
+        let (Some(files), Some(root)) = (files, root) else {
+            return list.child(
+                text_style(div(), TextStyle::Body)
+                    .text_color(tokens.palette.text_2)
+                    .child("Create or open a project to browse its files."),
+            );
+        };
+        if files.is_empty() {
+            list = list.child(
+                text_style(div(), TextStyle::Body)
+                    .text_color(tokens.palette.text_2)
+                    .child(empty),
+            );
+        }
+        for file in files {
+            let path = root.join(file);
+            list = list.child(self.list_row(
+                format!("file-{file}"),
+                file.clone(),
+                glyph,
+                cx,
+                move |_, cx| cx.reveal_path(&path),
+            ));
+        }
+        list
+    }
+
+    fn render_project_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let enabled = !self.busy;
+        let project = self.presentation.project.clone();
+        let mut title = SectionTitle::new("Files");
+        if let Some(p) = &project {
+            title = title.trailing(Badge::new(p.file_count.to_string()));
+        }
+        let files = self.file_list(
+            project.as_ref().map(|p| p.files.as_slice()),
+            project.as_ref().map(|p| p.root.clone()),
+            Icon::File,
+            "No files to show",
+            cx,
+        );
+        let mut tab = div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .gap(px(tokens.metrics.space_2))
+            .child(title)
+            .child(files);
+        if let Some(p) = &project
+            && p.file_count > p.files.len()
+        {
+            tab = tab.child(
+                text_style(div(), TextStyle::Small)
+                    .flex_none()
+                    .text_color(tokens.palette.text_3)
+                    .child(format!(
+                        "Showing {} of {} files",
+                        p.files.len(),
+                        p.file_count
+                    )),
+            );
+        }
+
+        let sdk_ready = self.presentation.agent_sdk.is_some();
+        let status = if self.busy {
+            "Operation in progress…".to_owned()
+        } else {
+            self.presentation.sdk.clone()
+        };
+        let entity = cx.entity();
+        let sdk = Collapsible::new("sdk-section", self.sdk_open)
+            .header(SectionTitle::new("Managed SDK"))
+            .content(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(tokens.metrics.space_2))
+                    .pt(px(tokens.metrics.space_2))
+                    .child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap(px(tokens.metrics.space_2))
+                            .child(
+                                div()
+                                    .pt(px(5.))
+                                    .child(StatusDot::new(sdk_status_tone(self.busy, sdk_ready))),
+                            )
+                            .child(
+                                text_style(div().min_w_0().flex_1(), TextStyle::Small)
+                                    .text_color(tokens.palette.text_2)
+                                    .child(status),
+                            ),
+                    )
+                    .child(self.ui_button(
+                        "install",
+                        "Install managed SDK",
+                        enabled,
+                        ButtonVariant::Editor,
+                        None,
+                        cx,
+                        |s, cx| s.dispatch(Command::InstallSdk, cx),
+                    ))
+                    .child(self.ui_button(
+                        "import-sdk-bundle",
+                        "Import offline SDK bundle…",
+                        enabled,
+                        ButtonVariant::Editor,
+                        None,
+                        cx,
+                        |s, cx| s.pick(Picker::SdkBundle, cx),
+                    ))
+                    .child(self.ui_button(
+                        "sdk",
+                        "Select installed SDK…",
+                        enabled && project.is_some(),
+                        ButtonVariant::Editor,
+                        None,
+                        cx,
+                        |s, cx| s.pick(Picker::Sdk, cx),
+                    )),
+            )
+            .on_toggle(move |open, _, cx| {
+                entity.update(cx, |shell, cx| {
+                    shell.sdk_open = open;
+                    cx.notify();
+                });
+            });
+        let mut library = div()
+            .id("left-library")
+            .flex_none()
+            .max_h(px(360.))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .gap(px(tokens.metrics.space_3))
+            .child(divider())
+            .child(sdk);
+        if project.is_some() {
+            let entity = cx.entity();
+            library = library.child(
+                Collapsible::new("recents-section", self.recents_open)
+                    .header(SectionTitle::new("Recent projects"))
+                    .content(
+                        div()
+                            .pt(px(tokens.metrics.space_2))
+                            .child(self.render_recents(cx)),
+                    )
+                    .on_toggle(move |open, _, cx| {
+                        entity.update(cx, |shell, cx| {
+                            shell.recents_open = open;
+                            cx.notify();
+                        });
+                    }),
+            );
+        }
+        tab.child(library).into_any_element()
+    }
+
+    fn render_assets_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let project = self.presentation.project.clone();
+        let files = self.file_list(
+            project.as_ref().map(|p| p.assets.as_slice()),
+            project.as_ref().map(|p| p.root.clone()),
+            Icon::Image,
+            "No assets imported",
+            cx,
+        );
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .gap(px(tokens.metrics.space_2))
+            .child(SectionTitle::new("Assets"))
+            .child(files)
+            .child(self.ui_button(
+                "asset",
+                "Copy asset…",
+                !self.busy && project.is_some(),
+                ButtonVariant::Editor,
+                Some(Icon::Plus),
+                cx,
+                |s, cx| s.pick(Picker::Asset, cx),
+            ))
+            .into_any_element()
+    }
+
+    fn render_style_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let mut tab = div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .gap(px(tokens.metrics.space_2));
+        if let Some(p) = &self.presentation.project {
+            if p.styles.is_empty() {
+                tab = tab.child(
+                    text_style(div(), TextStyle::Small)
+                        .text_color(tokens.palette.text_3)
+                        .child("No style preset configured"),
+                );
+            }
+            for file in &p.styles {
+                let path = p.root.join(file);
+                tab = tab.child(self.list_row(
+                    format!("file-{file}"),
+                    file.clone(),
+                    Icon::File,
+                    cx,
+                    move |_, cx| cx.reveal_path(&path),
+                ));
+            }
+        }
+        tab.child(
+            div()
+                .id("preset-scroll")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .child(self.preset_panel.clone()),
+        )
+        .into_any_element()
+    }
+
+    /// The recent-projects list. Rendered once: in the left column while a project is
+    /// open, in the empty state otherwise, so its element ids stay unique.
+    fn render_recents(&self, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+        let tokens = design_system::tokens();
+        let enabled = !self.busy;
+        let mut recents = div()
+            .id("recents")
+            .flex()
+            .flex_col()
+            .gap(px(tokens.metrics.space_1));
+        if self.presentation.recents.is_empty() {
+            recents = recents.child(
+                text_style(div(), TextStyle::Body)
+                    .text_color(tokens.palette.text_2)
+                    .child("No recent projects"),
+            );
+        }
+        for recent in self.presentation.recents.clone() {
+            let id = String::from(recent.id.clone());
+            let path = recent.path.clone();
+            let project_id = recent.id.clone();
+            let group = format!("recent-group-{id}");
+            let label = format!(
+                "{}{}",
+                recent.name,
+                if recent.missing { " · Missing" } else { "" }
+            );
+            let open_enabled = enabled && !recent.missing;
+            let entity = cx.entity();
+            let open: Handler = std::rc::Rc::new(move |_, cx| {
+                entity.update(cx, |shell, cx| {
+                    shell.dispatch(Command::Open(path.clone()), cx)
+                });
+            });
+            let mut name_line = div()
+                .flex()
+                .items_center()
+                .gap(px(tokens.metrics.space_2))
+                .child(
+                    text_style(div().min_w_0().flex_1().truncate(), TextStyle::Body)
+                        .text_color(tokens.palette.text_1)
+                        .child(recent.name.clone()),
+                );
+            if recent.missing {
+                name_line = name_line.child(Badge::new("Missing").tone(Tone::Warning));
+            }
+            let main = div()
+                .id(format!("recent-{id}"))
+                .role(gpui::Role::Button)
+                .aria_label(label)
+                .flex()
+                .flex_col()
+                .w_full()
+                .min_w_0()
+                .px(px(tokens.metrics.space_2))
+                .py(px(tokens.metrics.space_1))
+                .rounded(px(tokens.metrics.radius_item))
+                .child(name_line)
+                .child(
+                    text_style(div().truncate(), TextStyle::Small)
+                        .text_color(tokens.palette.text_3)
+                        .child(recent.path.display().to_string()),
+                );
+            let main = if open_enabled {
+                main.hover(|style| style.bg(design_system::tokens().palette.ctl_hover))
+            } else {
+                main.opacity(DISABLED_OPACITY)
+            };
+            let main = on_activate(focusable(main, !open_enabled), !open_enabled, Some(open));
+            let main = with_tooltip(main, Some(recent.path.display().to_string().into()));
+
+            // Row actions appear on pointer hover and while keyboard focus is inside.
+            let mut actions = div()
+                .id(format!("recent-actions-{id}"))
+                .focusable()
+                .absolute()
+                .top(px(tokens.metrics.space_1))
+                .right(px(tokens.metrics.space_1))
+                .flex()
+                .items_center()
+                .gap(px(tokens.metrics.space_1))
+                .rounded(px(tokens.metrics.radius_item))
+                .bg(tokens.palette.ctl_hover)
+                .opacity(0.)
+                .group_hover(group.clone(), |style| style.opacity(1.))
+                .in_focus(|style| style.opacity(1.));
+            for action in recent_row_actions(recent.missing) {
+                let entity = cx.entity();
+                let target = project_id.clone();
+                actions = actions.child(match action {
+                    "locate" => Button::new(format!("locate-{id}"), "Locate…")
+                        .disabled(!enabled)
+                        .on_click(move |_, cx| {
+                            entity.update(cx, |shell, cx| {
+                                shell.pick(Picker::Locate(target.clone()), cx)
+                            });
+                        })
+                        .into_any_element(),
+                    _ => IconButton::new(format!("remove-{id}"), Icon::X)
+                        .size(IconButtonSize::Small)
+                        .label("Remove recent")
+                        .disabled(!enabled)
+                        .on_click(move |_, cx| {
+                            entity.update(cx, |shell, cx| {
+                                shell.dispatch(Command::RemoveRecent(target.clone()), cx)
+                            });
+                        })
+                        .into_any_element(),
+                });
+            }
+            recents = recents.child(div().relative().group(group).child(main).child(actions));
+        }
+        recents
+    }
+
+    fn render_empty_state(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let enabled = !self.busy;
+        let actions = div()
+            .flex()
+            .flex_wrap()
+            .gap(px(tokens.metrics.space_2))
+            .child(self.ui_button(
+                "create",
+                "Create…",
+                enabled,
+                ButtonVariant::Primary,
+                Some(Icon::Plus),
+                cx,
+                |s, cx| s.pick(Picker::Create, cx),
+            ))
+            .child(self.ui_button(
+                "open",
+                "Open…",
+                enabled,
+                ButtonVariant::Editor,
+                Some(Icon::FolderOpen),
+                cx,
+                |s, cx| s.pick(Picker::Open, cx),
+            ))
+            .child(self.ui_button(
+                "import",
+                "Import Rust…",
+                enabled,
+                ButtonVariant::Editor,
+                Some(Icon::Upload),
+                cx,
+                |s, cx| s.pick(Picker::Import, cx),
+            ));
+        div()
+            .id("empty-state")
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                card()
+                    .w_full()
+                    .max_w(px(520.))
+                    .max_h_full()
+                    .flex()
+                    .flex_col()
+                    .gap(px(tokens.metrics.space_4))
+                    .p(px(tokens.metrics.space_6))
+                    .child(heading("fframes Studio"))
+                    .child(muted("A native workspace for your video projects"))
+                    .child(actions)
+                    .child(SectionTitle::new("Recent projects"))
+                    .child(self.render_recents(cx).max_h(px(260.)).overflow_y_scroll()),
+            )
+            .into_any_element()
+    }
+
+    /// A `ui::IconButton` wired to a shell action, with the qualification bounds
+    /// probe. The label is the accessible name and the tooltip.
+    #[allow(clippy::too_many_arguments)]
+    fn ui_icon_button(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        glyph: Icon,
+        size: IconButtonSize,
+        enabled: bool,
+        cx: &mut Context<Self>,
+        action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> IconButton {
+        let entity = cx.entity();
+        let probe = self.bounds_probe(&gpui::ElementId::Name(id.into()), cx);
+        IconButton::new(id, glyph)
+            .size(size)
+            .label(label)
+            .disabled(!enabled)
+            .probe(probe)
+            .on_click(move |_, cx| {
+                entity.update(cx, |shell, cx| action(shell, cx));
+            })
+    }
+
+    /// The preview, transport and history controls: toolbar, stage and transport
+    /// inside one card. The timeline card is placed by `render`.
+    fn render_player_area(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let entity = cx.entity();
+        let mut player = card()
+            .relative()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .child(self.render_player_toolbar(cx))
+            .child(self.render_stage(cx))
+            .child(self.render_transport(cx))
+            .child(
+                // Measures the card so the transport can pick its compact layout.
+                canvas(
+                    move |bounds, _, cx| {
+                        let width = f32::from(bounds.size.width);
+                        entity.update(cx, |shell, cx| {
+                            if transport_mode(shell.player_width) != transport_mode(width)
+                                || show_total_time(shell.player_width) != show_total_time(width)
+                            {
+                                cx.notify();
+                            }
+                            shell.player_width = width;
+                        });
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full(),
+            );
+        if let Some(menu) = self.render_overflow_menu(cx) {
+            player = player.child(menu);
+        }
+        player.into_any_element()
+    }
+
+    fn render_player_toolbar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let palette = tokens.palette;
+        let (label, tone) = match &self.preview_state.status {
+            studio_engine::PreviewStatus::Building => {
+                ("Building/preparing · prior preview retained", Tone::Info)
+            }
+            studio_engine::PreviewStatus::Preparing => {
+                ("Preparing matching frame and audio", Tone::Info)
+            }
+            studio_engine::PreviewStatus::Error(_) => {
+                ("Preview failed · prior preview retained", Tone::Warning)
+            }
+            _ => ("CPU preview · shaders unsupported", Tone::Neutral),
+        };
+        let audio_label = self.output.as_ref().map_or_else(
+            || self.audio_note.clone(),
+            |output| {
+                let metrics = output.metrics();
+                format!(
+                    "{} · {} Hz · predicted output clock{}{} · latency {:.1}ms · underruns {}",
+                    output.device,
+                    output.sample_rate,
+                    if self.muted { " · muted" } else { "" },
+                    if metrics.invalid_timestamps > 0 {
+                        " (latency estimate)"
+                    } else {
+                        ""
+                    },
+                    metrics.predicted_latency_ms,
+                    metrics.underrun_frames
+                )
+            },
+        );
+        let audio_ready = self.displayed.is_some();
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(tokens.metrics.space_2))
+            .h(px(tokens.metrics.toolbar_h))
+            .px(px(tokens.metrics.space_3))
+            .border_b_1()
+            .border_color(palette.line)
+            .overflow_hidden()
+            .child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .child(Badge::new(label).tone(tone)),
+            )
+            .child(with_tooltip(
+                div().id("canvas-hint").flex_none().child(icon(
+                    Icon::Info,
+                    tokens.metrics.icon_md,
+                    palette.text_3,
+                )),
+                Some(CANVAS_HINT.into()),
+            ))
+            .child(
+                text_style(div(), TextStyle::Small)
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_right()
+                    .text_color(palette.text_2)
+                    .child(audio_label),
+            )
+            .child(self.ui_button(
+                "next-audio-output",
+                "Next output",
+                audio_ready,
+                ButtonVariant::Editor,
+                None,
+                cx,
+                |s, cx| s.cycle_output(cx),
+            ))
+            .child(self.ui_button(
+                "retry-audio-output",
+                "Retry audio",
+                audio_ready,
+                ButtonVariant::Editor,
+                None,
+                cx,
+                |s, cx| s.change_output(OutputDevice::Default, cx),
+            ))
+            .child(self.ui_button(
+                "no-audio-output",
+                "No audio",
+                audio_ready,
+                ButtonVariant::Editor,
+                None,
+                cx,
+                |s, cx| s.change_output(OutputDevice::Unavailable, cx),
+            ))
+            .into_any_element()
+    }
+
+    /// The stage: the letterboxed frame with its ring, shadow and overlays inside
+    /// the `preview-surface` that owns pointer, keyboard and telemetry.
+    fn render_stage(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let palette = tokens.palette;
+        let radius = px(tokens.metrics.radius_frame);
+        let mut preview_surface = div()
+            .id("preview-surface")
+            .relative()
+            .tab_index(0)
+            .role(gpui::Role::Group)
+            .aria_label("Compiled preview")
+            .focus_visible(|s| s.shadow(crate::ui::interact::focus_ring()))
+            .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
+                if event.keystroke.modifiers.alt
+                    || event.keystroke.modifiers.control
+                    || event.keystroke.modifiers.platform
+                    || event.keystroke.modifiers.shift
+                {
+                    return;
+                }
+                match event.keystroke.key.as_str() {
+                    "space" => shell.toggle_playback(cx),
+                    "left" => shell.step_preview(-1, cx),
+                    "right" => shell.step_preview(1, cx),
+                    "home" => shell.seek_preview(0, cx),
+                    "c" => shell.cycle_canvas_selection(cx),
+                    "0" => shell.reset_canvas_view(cx),
+                    "escape" => {
+                        shell.canvas.clear_selection();
+                        shell.install_task_scope(shell.timeline.read(cx).selected_scope(), cx);
+                        cx.notify();
+                    }
+                    "end" => {
+                        if let Some(d) = &shell.displayed {
+                            shell.seek_preview(d.timeline.total_frames, cx);
+                        }
+                    }
+                    _ => return,
+                }
+                cx.stop_propagation();
+            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|shell, event: &gpui::MouseDownEvent, _, cx| {
+                    shell.canvas_pointer_down(event, cx)
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Middle,
+                cx.listener(|shell, event: &gpui::MouseDownEvent, _, cx| {
+                    shell.canvas_pointer_down(event, cx)
+                }),
+            )
+            .on_mouse_move(cx.listener(|shell, event: &gpui::MouseMoveEvent, _, cx| {
+                shell.canvas_pointer_move(event, cx)
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|shell, _, _, cx| shell.canvas_pointer_up(MouseButton::Left, cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|shell, _, _, cx| shell.canvas_pointer_up(MouseButton::Left, cx)),
+            )
+            .on_mouse_up(
+                MouseButton::Middle,
+                cx.listener(|shell, _, _, cx| shell.canvas_pointer_up(MouseButton::Middle, cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Middle,
+                cx.listener(|shell, _, _, cx| shell.canvas_pointer_up(MouseButton::Middle, cx)),
+            )
+            .on_scroll_wheel(cx.listener(|shell, event: &gpui::ScrollWheelEvent, _, cx| {
+                shell.canvas_scroll(event, cx)
+            }))
+            .flex_1()
+            .min_h(px(120.))
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap_2();
+        let entity = cx.entity();
+        // The surface is the padded stage's content box; its bounds are what the
+        // preview telemetry and click mapping report.
+        preview_surface = preview_surface.child(
             canvas(
-                move |bounds, _, cx| {
-                    entity.update(cx, |shell, _| {
-                        shell.button_bounds.insert(
-                            name,
-                            [
-                                f32::from(bounds.left()),
-                                f32::from(bounds.top()),
-                                f32::from(bounds.size.width),
-                                f32::from(bounds.size.height),
-                            ],
-                        );
+                move |bounds, window, cx| {
+                    let dpi = window.scale_factor();
+                    let extent = (
+                        (f32::from(bounds.size.width) * dpi).round().max(1.) as u32,
+                        (f32::from(bounds.size.height) * dpi).round().max(1.) as u32,
+                    );
+                    entity.update(cx, |shell, cx| {
+                        shell.canvas_origin =
+                            (f64::from(bounds.origin.x), f64::from(bounds.origin.y));
+                        shell.canvas_extent =
+                            (f64::from(bounds.size.width), f64::from(bounds.size.height));
+                        shell.preview_extent = extent;
+                        if let Some(displayed) = &shell.displayed {
+                            let before = shell.canvas.viewport.clone();
+                            let _ = shell.canvas.resize(
+                                f64::from(bounds.size.width),
+                                f64::from(bounds.size.height),
+                                displayed.timeline.width as u32,
+                                displayed.timeline.height as u32,
+                            );
+                            if before != shell.canvas.viewport {
+                                cx.notify();
+                            }
+                        }
+                        if shell.displayed.as_ref().is_some_and(|d| {
+                            crate::frame_image::preview_scale(
+                                d.timeline.width,
+                                d.timeline.height,
+                                extent,
+                            ) != shell.preview_state.scale()
+                        }) {
+                            shell.request_frame(shell.transport.position(), cx);
+                        }
                     });
                 },
                 |_, _, _, _| {},
@@ -2595,13 +3670,626 @@ impl StudioShell {
             .absolute()
             .top_0()
             .left_0()
-            .size_full()
-        }))
+            .size_full(),
+        );
+        if let Some(image) = self.images.current_image() {
+            let image = gpui::img(image).rounded(radius);
+            preview_surface = if let Some(layout) = self
+                .canvas
+                .viewport
+                .as_ref()
+                .map(StageLayout::from_viewport)
+            {
+                let frame = layout.frame_rect;
+                let placed = |element: gpui::Div, rect: studio_engine::CanvasRect| {
+                    element
+                        .absolute()
+                        .left(px(rect.x as f32))
+                        .top(px(rect.y as f32))
+                        .w(px(rect.width as f32))
+                        .h(px(rect.height as f32))
+                };
+                // Overlays live inside the frame, so they clip to it and use frame
+                // coordinates.
+                let mut content = placed(div(), frame)
+                    .overflow_hidden()
+                    .child(image.size_full());
+                if let Some(bounds) = self.canvas.selected_bounds() {
+                    content = content.child(
+                        placed(div(), layout.to_frame_space(bounds))
+                            .border_2()
+                            .border_color(palette.accent)
+                            .bg(palette.selection),
+                    );
+                }
+                if let (Some(viewport), Some(rect)) =
+                    (&self.canvas.viewport, &self.canvas.rectangle_scope)
+                {
+                    content = content.child(
+                        placed(
+                            div(),
+                            layout.to_frame_space(viewport.video_scope_bounds(rect)),
+                        )
+                        .border_2()
+                        .border_color(palette.warning),
+                    );
+                }
+                preview_surface
+                    .child(
+                        placed(div(), frame)
+                            .rounded(radius)
+                            .shadow(shadow(Shadow::Preview).into_vec()),
+                    )
+                    .child(content)
+                    .child(
+                        placed(div(), frame)
+                            .rounded(radius)
+                            .border_1()
+                            .border_color(palette.line),
+                    )
+            } else {
+                preview_surface.child(image.size_full())
+            };
+        } else {
+            preview_surface = preview_surface
+                .child(
+                    text_style(div(), TextStyle::Title)
+                        .text_color(palette.text_1)
+                        .child(if self.displayed.is_some() {
+                            "Empty video"
+                        } else {
+                            "No preview available"
+                        }),
+                )
+                .child(
+                    text_style(div(), TextStyle::Body)
+                        .text_color(palette.text_2)
+                        .child("Build preview to compile the project's current source."),
+                );
+        }
+        let mut stage = div()
+            .id("stage")
+            .relative()
+            .flex_1()
+            .min_h(px(120.))
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .p(px(tokens.metrics.space_4))
+            .bg(palette.stage)
+            .child(preview_surface);
+        if let Some(message) = &self.canvas.message {
+            stage = stage.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom(px(tokens.metrics.space_4))
+                    .flex()
+                    .justify_center()
+                    .child(
+                        text_style(div(), TextStyle::Small)
+                            .px(px(tokens.metrics.space_3))
+                            .py(px(tokens.metrics.space_1))
+                            .rounded(px(tokens.metrics.radius_control))
+                            .border_1()
+                            .border_color(palette.line)
+                            .bg(palette.card)
+                            .text_color(palette.text_2)
+                            .child(message.clone()),
+                    ),
+            );
+        }
+        stage.into_any_element()
+    }
+
+    fn render_transport(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        let palette = tokens.palette;
+        let enabled = !self.busy;
+        let project = self.presentation.project.clone();
+        let mode = transport_mode(self.player_width);
+        let has_frames = self
+            .displayed
+            .as_ref()
+            .is_some_and(|d| d.timeline.total_frames > 0);
+        let playing = self.transport.playing() || self.resume_install;
+        let readout = match &self.displayed {
+            Some(d) => {
+                let fps = d.timeline.fps as f64;
+                let current = format_clock(self.preview_state.position() as f64 / fps);
+                let text = if show_total_time(self.player_width) {
+                    format!(
+                        "{current} / {}",
+                        format_clock(d.timeline.total_frames as f64 / fps)
+                    )
+                } else {
+                    current
+                };
+                let tip = format!(
+                    "Displayed {} · frame {} / {} · {:.3}s{}",
+                    &d.identity().source_revision[..12.min(d.identity().source_revision.len())],
+                    self.preview_state.position(),
+                    d.timeline.total_frames,
+                    self.preview_state.position() as f64 / fps,
+                    if project
+                        .as_ref()
+                        .is_some_and(|p| p.source.as_str() != d.identity().source_revision)
+                    {
+                        " · prior revision"
+                    } else {
+                        ""
+                    }
+                );
+                (text, Some(tip))
+            }
+            None => ("0:00.00 / 0:00.00".to_owned(), None),
+        };
+        let readout_style = if mode == TransportMode::Compact {
+            TextStyle::Label
+        } else {
+            TextStyle::Body
+        };
+        let can_build = enabled && project.as_ref().is_some_and(|p| p.worker_available);
+        let can_cancel = self.preview.is_some();
+        let (build, cancel) = match mode {
+            TransportMode::Full => (
+                self.ui_button(
+                    "build-preview",
+                    "Build preview",
+                    can_build,
+                    ButtonVariant::Primary,
+                    Some(Icon::Hammer),
+                    cx,
+                    |s, cx| s.dispatch(Command::Build, cx),
+                )
+                .into_any_element(),
+                self.ui_button(
+                    "cancel-preview",
+                    "Cancel build",
+                    can_cancel,
+                    ButtonVariant::Editor,
+                    Some(Icon::Square),
+                    cx,
+                    |s, cx| s.dispatch(Command::CancelBuild, cx),
+                )
+                .into_any_element(),
+            ),
+            TransportMode::Compact => (
+                self.ui_icon_button(
+                    "build-preview",
+                    "Build preview",
+                    Icon::Hammer,
+                    IconButtonSize::Medium,
+                    can_build,
+                    cx,
+                    |s, cx| s.dispatch(Command::Build, cx),
+                )
+                .variant(ButtonVariant::Primary)
+                .into_any_element(),
+                self.ui_icon_button(
+                    "cancel-preview",
+                    "Cancel build",
+                    Icon::Square,
+                    IconButtonSize::Medium,
+                    can_cancel,
+                    cx,
+                    |s, cx| s.dispatch(Command::CancelBuild, cx),
+                )
+                .variant(ButtonVariant::Editor)
+                .into_any_element(),
+            ),
+        };
+        let overflow = self.overflow_trigger(cx);
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(tokens.metrics.space_2))
+            .h(px(tokens.metrics.transport_h))
+            .px(px(tokens.metrics.space_3))
+            .border_t_1()
+            .border_color(palette.line)
+            .overflow_hidden()
+            .child(with_tooltip(
+                text_style(div().id("time-readout"), readout_style)
+                    .flex_none()
+                    .min_w(px(if mode == TransportMode::Compact {
+                        60.
+                    } else {
+                        120.
+                    }))
+                    .text_color(palette.text_1)
+                    .child(readout.0),
+                readout.1.map(Into::into),
+            ))
+            .child(div().flex_1())
+            .child(self.ui_icon_button(
+                "previous-frame",
+                "Previous frame",
+                Icon::StepBack,
+                IconButtonSize::Small,
+                has_frames,
+                cx,
+                |s, cx| s.step_preview(-1, cx),
+            ))
+            .child(self.ui_icon_button(
+                "play-pause",
+                if playing { "Pause" } else { "Play" },
+                if playing { Icon::Pause } else { Icon::Play },
+                IconButtonSize::Large,
+                has_frames,
+                cx,
+                |s, cx| s.toggle_playback(cx),
+            ))
+            .child(self.ui_icon_button(
+                "next-frame",
+                "Next frame",
+                Icon::StepForward,
+                IconButtonSize::Small,
+                has_frames,
+                cx,
+                |s, cx| s.step_preview(1, cx),
+            ))
+            .child(self.ui_icon_button(
+                "mute-audio",
+                if self.muted { "Unmute (M)" } else { "Mute (M)" },
+                if self.muted {
+                    Icon::VolumeX
+                } else {
+                    Icon::Volume2
+                },
+                IconButtonSize::Medium,
+                self.displayed.is_some(),
+                cx,
+                |s, cx| s.toggle_mute(cx),
+            ))
+            .child(div().flex_1())
+            .child(build)
+            .child(cancel)
+            .child(overflow)
+            .into_any_element()
+    }
+
+    /// Actions behind the overflow button, in menu order.
+    fn current_overflow_actions(&self) -> Vec<(OverflowAction, bool)> {
+        let project = self.presentation.project.as_ref();
+        overflow_actions(
+            !self.busy,
+            project.is_some(),
+            project.is_some_and(|p| p.draft.is_some()),
+        )
+    }
+
+    fn overflow_trigger(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let entity = cx.entity();
+        let anchor = self.overflow_menu.anchor_cell();
+        div()
+            .relative()
+            .flex_none()
+            .child(
+                IconButton::new("overflow-actions", Icon::MoreHorizontal)
+                    .size(IconButtonSize::Medium)
+                    .label("More actions")
+                    .on_click(move |window, cx| {
+                        entity.update(cx, |shell, cx| {
+                            if shell.overflow_open {
+                                shell.close_overflow(window, cx);
+                            } else {
+                                shell.open_overflow(window, cx);
+                            }
+                        });
+                    }),
+            )
+            .child(
+                canvas(move |bounds, _, _| anchor.set(bounds), |_, _, _, _| {})
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+            )
+            .into_any_element()
+    }
+
+    fn open_overflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let actions = self.current_overflow_actions();
+        // The trigger keeps reporting into the old anchor cell until its next paint,
+        // so carry the bounds over to the rebuilt state.
+        let bounds = self.overflow_menu.anchor_cell().get();
+        let labels = actions.iter().map(|(a, _)| a.label().into()).collect();
+        self.overflow_menu = MenuState::new(labels, None).with_disabled(disabled_rows(&actions));
+        self.overflow_menu.anchor_cell().set(bounds);
+        self.overflow_open = true;
+        window.focus(&self.overflow_focus, cx);
+        cx.notify();
+    }
+
+    fn close_overflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.overflow_open {
+            self.overflow_open = false;
+            window.focus(&self.focus, cx);
+            cx.notify();
+        }
+    }
+
+    /// Marks the open menu's rows from current availability (nothing is cached), so it
+    /// never shows or keyboard-navigates a stale enable flag.
+    fn sync_overflow(&mut self) {
+        let disabled = disabled_rows(&self.current_overflow_actions());
+        self.overflow_menu.set_disabled(disabled);
+    }
+
+    fn run_overflow(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(action) = enabled_overflow_action(&self.current_overflow_actions(), index) else {
+            return;
+        };
+        self.close_overflow(window, cx);
+        let project = self.presentation.project.clone();
+        match action {
+            OverflowAction::Refresh => self.dispatch(Command::Refresh, cx),
+            OverflowAction::Checkpoint => self.dispatch(Command::Checkpoint, cx),
+            OverflowAction::Restore => self.pick(Picker::Restore, cx),
+            OverflowAction::RevealDraft => {
+                if let Some(draft) = project.and_then(|p| p.draft) {
+                    cx.reveal_path(&draft);
+                }
+            }
+            OverflowAction::RevealCheckpoint => {
+                if let Some(project) = project {
+                    cx.reveal_path(&project.checkpoint);
+                }
+            }
+        }
+    }
+
+    fn render_overflow_menu(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        if !self.overflow_open {
+            return None;
+        }
+        let select = cx.entity();
+        let highlight = cx.entity();
+        let dismiss = cx.entity();
+        Some(
+            Menu::new("overflow-menu", &self.overflow_menu, &self.overflow_focus)
+                .row_ids(
+                    self.current_overflow_actions()
+                        .iter()
+                        .map(|(a, _)| a.id().into())
+                        .collect(),
+                )
+                .on_highlight(move |index, _, cx| {
+                    highlight.update(cx, |shell, cx| {
+                        shell.overflow_menu.set_highlighted(index);
+                        cx.notify();
+                    });
+                })
+                .on_select(move |index, window, cx| {
+                    select.update(cx, |shell, cx| shell.run_overflow(index, window, cx));
+                })
+                .on_dismiss(move |window, cx| {
+                    dismiss.update(cx, |shell, cx| shell.close_overflow(window, cx));
+                })
+                .into_any_element(),
+        )
+    }
+
+    fn render_agent_column(&self) -> gpui::AnyElement {
+        let tokens = design_system::tokens();
+        div()
+            .w(px(tokens.metrics.agent_panel_w))
+            .flex_none()
+            .min_h_0()
+            .overflow_hidden()
+            .rounded(px(tokens.metrics.radius_card))
+            .border_1()
+            .border_color(tokens.palette.line)
+            .bg(tokens.palette.card)
+            .child(self.panel.clone())
+            .into_any_element()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeftTab {
+    Project,
+    Assets,
+    Style,
+}
+
+/// What a left-column tab shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeftContent {
+    Files,
+    Assets,
+    Presets,
+}
+
+/// Height of a file or asset row.
+const LIST_ROW_H: f32 = 28.;
+
+fn left_tab_content(tab: LeftTab) -> LeftContent {
+    match tab {
+        LeftTab::Project => LeftContent::Files,
+        LeftTab::Assets => LeftContent::Assets,
+        LeftTab::Style => LeftContent::Presets,
+    }
+}
+
+/// The actions of a recent-project row, as the id prefix of each button: a missing
+/// project can be located, every project can be removed.
+fn recent_row_actions(missing: bool) -> Vec<&'static str> {
+    if missing {
+        vec!["locate", "remove"]
+    } else {
+        vec!["remove"]
+    }
+}
+
+/// Dot tone of the managed SDK line: busy, ready or missing.
+fn sdk_status_tone(busy: bool, ready: bool) -> Tone {
+    if busy {
+        Tone::Info
+    } else if ready {
+        Tone::Success
+    } else {
+        Tone::Warning
+    }
+}
+
+impl LeftTab {
+    const ALL: [LeftTab; 3] = [LeftTab::Project, LeftTab::Assets, LeftTab::Style];
+
+    /// Also the tab's element id.
+    fn name(self) -> &'static str {
+        match self {
+            LeftTab::Project => "Project",
+            LeftTab::Assets => "Assets",
+            LeftTab::Style => "Style",
+        }
+    }
+
+    fn icon(self) -> Icon {
+        match self {
+            LeftTab::Project => Icon::Folder,
+            LeftTab::Assets => Icon::Image,
+            LeftTab::Style => Icon::Palette,
+        }
+    }
+
+    fn index(self) -> usize {
+        Self::ALL.iter().position(|tab| *tab == self).unwrap_or(0)
+    }
+
+    fn from_index(index: usize) -> Self {
+        Self::ALL.get(index).copied().unwrap_or(LeftTab::Project)
+    }
+}
+
+/// Ids of the header actions. Create, open and import live in the empty state while
+/// no project is open, so each id is rendered once.
+fn header_actions(project_open: bool) -> Vec<&'static str> {
+    if project_open {
+        vec!["create", "open", "import", "export-mp4", "close"]
+    } else {
+        vec!["export-mp4", "close"]
+    }
+}
+
+/// The status strip opens when asked to, while a job is active and on any error.
+fn status_strip_expanded(job: &str, has_error: bool, user_open: bool) -> bool {
+    user_open || has_error || matches!(job, "Queued" | "Running" | "Cancelling")
+}
+
+/// First line as the notice title; the full text as details when there is more.
+fn error_title_details(text: &str) -> (String, Option<String>) {
+    let title = text.lines().find(|l| !l.trim().is_empty()).unwrap_or(text);
+    let details = (text.trim() != title.trim()).then(|| text.to_owned());
+    (title.trim().to_owned(), details)
+}
+
+const CANVAS_HINT: &str = "Select: click · Rectangle: Shift-drag · Cycle: Alt-click/C · Zoom: Ctrl-wheel · Pan: middle-drag · Fit: 0";
+
+/// Player width under which the transport uses icon-only Build and Cancel.
+const TRANSPORT_COMPACT_BELOW: f32 = 760.;
+/// Player width under which the time readout drops the total.
+const TRANSPORT_TOTAL_HIDDEN_BELOW: f32 = 620.;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransportMode {
+    Full,
+    Compact,
+}
+
+fn transport_mode(player_width: f32) -> TransportMode {
+    if player_width < TRANSPORT_COMPACT_BELOW {
+        TransportMode::Compact
+    } else {
+        TransportMode::Full
+    }
+}
+
+fn show_total_time(player_width: f32) -> bool {
+    player_width >= TRANSPORT_TOTAL_HIDDEN_BELOW
+}
+
+/// `m:ss.cc`, truncated to centiseconds.
+fn format_clock(seconds: f64) -> String {
+    let centis = (seconds.max(0.) * 100.).floor() as u64;
+    format!(
+        "{}:{:02}.{:02}",
+        centis / 6000,
+        centis / 100 % 60,
+        centis % 100
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverflowAction {
+    Refresh,
+    Checkpoint,
+    Restore,
+    RevealDraft,
+    RevealCheckpoint,
+}
+
+impl OverflowAction {
+    /// The id the action's button had before it moved into the menu.
+    fn id(self) -> &'static str {
+        match self {
+            Self::Refresh => "refresh",
+            Self::Checkpoint => "checkpoint",
+            Self::Restore => "restore",
+            Self::RevealDraft => "draft",
+            Self::RevealCheckpoint => "reveal-checkpoint",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Refresh => "Refresh",
+            Self::Checkpoint => "Save checkpoint",
+            Self::Restore => "Restore as copy…",
+            Self::RevealDraft => "Reveal retained draft",
+            Self::RevealCheckpoint => "Reveal checkpoint",
+        }
+    }
+}
+
+/// Every overflow entry with whether it is available now, under the enable rules the
+/// buttons had: refresh needs an idle shell; checkpoint and restore need an idle shell and
+/// a project; the draft needs a retained draft; the checkpoint reveal needs a project.
+/// Unavailable entries stay in the menu as disabled rows.
+fn overflow_actions(idle: bool, has_project: bool, has_draft: bool) -> Vec<(OverflowAction, bool)> {
+    vec![
+        (OverflowAction::Refresh, idle),
+        (OverflowAction::Checkpoint, idle && has_project),
+        (OverflowAction::Restore, idle && has_project),
+        (OverflowAction::RevealDraft, has_project && has_draft),
+        (OverflowAction::RevealCheckpoint, has_project),
+    ]
+}
+
+/// The menu's disabled flags for `actions`, in menu order.
+fn disabled_rows(actions: &[(OverflowAction, bool)]) -> Vec<bool> {
+    actions.iter().map(|(_, enabled)| !enabled).collect()
+}
+
+/// The action at `index` when it is currently available.
+fn enabled_overflow_action(
+    actions: &[(OverflowAction, bool)],
+    index: usize,
+) -> Option<OverflowAction> {
+    match actions.get(index) {
+        Some((action, true)) => Some(*action),
+        _ => None,
     }
 }
 
 impl Render for StudioShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.overflow_open {
+            self.sync_overflow();
+        }
         if self.clear_images {
             self.images.clear(window);
             self.clear_images = false;
@@ -2730,698 +4418,35 @@ impl Render for StudioShell {
             }
         }
         self.activate_audio(cx);
-        let enabled = !self.busy;
         let tokens = design_system::tokens();
-        let project = self.presentation.project.clone();
-        let mut header = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .p(px(tokens.metrics.space_4))
-            .border_b_1()
-            .border_color(rgb(BORDER))
-            .bg(rgb(tokens.palette.surface))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div().text_lg().child(
-                            project
-                                .as_ref()
-                                .map(|p| p.name.clone())
-                                .unwrap_or_else(|| "fframes Studio".into()),
-                        ),
-                    )
-                    .child(
-                        div().text_xs().text_color(rgb(MUTED)).child(
-                            project
-                                .as_ref()
-                                .map(|p| p.root.display().to_string())
-                                .unwrap_or_else(|| {
-                                    "A native workspace for your video projects".into()
-                                }),
-                        ),
-                    ),
-            );
-        header = header.child(
+        let gutter = px(tokens.metrics.gutter);
+        let project_open = self.presentation.project.is_some();
+        let header = self.render_header(cx);
+        let notices = self.render_notices(cx);
+        let strip = self.render_status_strip(cx);
+        let left = self.render_left_column(cx);
+        let main = if project_open {
+            let player = self.render_player_area(cx);
             div()
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
                 .flex()
-                .gap_2()
-                .child(self.button("create", "Create…", enabled, cx, |s, cx| {
-                    s.pick(Picker::Create, cx)
-                }))
-                .child(self.button("open", "Open…", enabled, cx, |s, cx| {
-                    s.pick(Picker::Open, cx)
-                }))
-                .child(self.button("import", "Import Rust…", enabled, cx, |s, cx| {
-                    s.pick(Picker::Import, cx)
-                }))
-                .child(self.button(
-                    "export-mp4",
-                    "Export MP4…",
-                    enabled
-                        && project.is_some()
-                        && self.presentation.agent_sdk.is_some()
-                        && self.export_cancelled.is_none(),
-                    cx,
-                    |s, cx| s.pick(Picker::Export, cx),
-                ))
-                .child(self.button(
-                    "close",
-                    "Close project",
-                    enabled && project.is_some(),
-                    cx,
-                    |s, cx| s.dispatch(Command::Close, cx),
-                )),
-        );
-        let mut navigation = div()
-            .w(px(tokens.metrics.sidebar_width))
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .gap(px(tokens.metrics.space_3))
-            .p(px(tokens.metrics.space_4))
-            .bg(rgb(tokens.palette.sidebar))
-            .border_r_1()
-            .border_color(rgb(BORDER));
-        for name in ["Project", "Assets", "Style"] {
-            navigation = navigation.child(self.button(name, name, true, cx, move |s, cx| {
-                s.navigation = name;
-                cx.notify();
-            }));
-        }
-        let mut inventory = div()
-            .id("inventory")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .text_xs()
-            .text_color(rgb(MUTED));
-        if let Some(p) = &project {
-            let files = match self.navigation {
-                "Assets" => &p.assets,
-                "Style" => &p.styles,
-                _ => &p.files,
-            };
-            if files.is_empty() {
-                inventory = inventory.child(if self.navigation == "Style" {
-                    "No style preset configured"
-                } else {
-                    "No assets imported"
-                });
-            }
-            for file in files {
-                let path = p.root.join(file);
-                inventory = inventory.child(self.button(
-                    format!("file-{file}"),
-                    file.clone(),
-                    true,
-                    cx,
-                    move |_, cx| cx.reveal_path(&path),
-                ));
-            }
-            if self.navigation == "Project" && p.file_count > p.files.len() {
-                inventory = inventory.child(format!(
-                    "Showing {} of {} files",
-                    p.files.len(),
-                    p.file_count
-                ));
-            }
-        } else {
-            inventory = inventory.child("Create or open a project to browse its files.");
-        }
-        navigation = navigation.child(inventory).child(self.button(
-            "asset",
-            "Copy asset…",
-            enabled && project.is_some(),
-            cx,
-            |s, cx| s.pick(Picker::Asset, cx),
-        ));
-        let mut center = div()
-            .id("center")
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .p(px(tokens.metrics.space_4))
-            .gap(px(tokens.metrics.space_2));
-        if let Some(p) = &project {
-            center = center.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(rgb(MUTED))
-                    .child(format!(
-                        "Source {} · Checkpoint {} · Job {}",
-                        &p.source.as_str()[..12],
-                        &p.accepted.as_str()[..12],
-                        p.job
-                    ))
-                    .child(if p.source == p.accepted {
-                        "Current source matches the saved checkpoint"
-                    } else {
-                        "Source changed · saved checkpoint remains available"
-                    })
-                    .child(if p.history_available {
-                        "Local history available"
-                    } else {
-                        "Previous machine history unavailable · source baseline saved locally"
-                    })
-                    .child(if p.worker_available {
-                        "Worker bridge available · build an immutable preview"
-                    } else {
-                        "Worker bridge missing · source remains navigable"
-                    }),
-            );
-            if let Some(status) = &self.export_status {
-                let message = match status {
-                    ExportProgress::Started { revision, label } => {
-                        format!("Export snapshot · {label} · {revision}")
-                    }
-                    ExportProgress::Rendering { done, total } => {
-                        format!("Rendering MP4 · {done}/{total} frames")
-                    }
-                    ExportProgress::Audio => "Writing and verifying audio".into(),
-                    ExportProgress::Warning(message) => format!("Export warning · {message}"),
-                    ExportProgress::Verifying => "Verifying MP4 before publication".into(),
-                    ExportProgress::Complete {
-                        destination,
-                        revision,
-                    } => format!("Exported {} · revision {}", destination.display(), revision),
-                    ExportProgress::Failed(message) => format!("Export failed · {message}"),
-                    ExportProgress::Cancelled => "Export cancelled · partial output removed".into(),
-                };
-                let mut status_row = div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .px_3()
-                    .py_2()
-                    .rounded_md()
-                    .bg(rgb(PANEL))
-                    .text_xs()
-                    .child(message);
-                if self.export_cancelled.is_some() {
-                    status_row = status_row.child(self.button(
-                        "cancel-export",
-                        "Cancel export",
-                        true,
-                        cx,
-                        |shell, cx| shell.cancel_export(cx),
-                    ));
-                }
-                center = center.child(status_row);
-            }
-            if p.interrupted {
-                center = center.child(div().text_color(rgb(ACCENT)).child(if p.draft.is_some() {
-                    "Interrupted job · retained draft available"
-                } else {
-                    "Interrupted before draft publication · source and saved checkpoint are safe"
-                }));
-            }
-            if let Some(notice) = &p.recovery_notice {
-                center = center.child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(ACCENT))
-                        .child(notice.clone()),
-                );
-            }
-        }
-        let mut preview_surface = div()
-            .id("preview-surface")
-            .relative()
-            .tab_index(0)
-            .role(gpui::Role::Group)
-            .aria_label("Compiled preview")
-            .focus_visible(|s| s.border_color(rgb(ACCENT)))
-            .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
-                if event.keystroke.modifiers.alt
-                    || event.keystroke.modifiers.control
-                    || event.keystroke.modifiers.platform
-                    || event.keystroke.modifiers.shift
-                {
-                    return;
-                }
-                match event.keystroke.key.as_str() {
-                    "space" => shell.toggle_playback(cx),
-                    "left" => shell.step_preview(-1, cx),
-                    "right" => shell.step_preview(1, cx),
-                    "home" => shell.seek_preview(0, cx),
-                    "c" => shell.cycle_canvas_selection(cx),
-                    "0" => shell.reset_canvas_view(cx),
-                    "escape" => {
-                        shell.canvas.clear_selection();
-                        shell.install_task_scope(shell.timeline.read(cx).selected_scope(), cx);
-                        cx.notify();
-                    }
-                    "end" => {
-                        if let Some(d) = &shell.displayed {
-                            shell.seek_preview(d.timeline.total_frames, cx);
-                        }
-                    }
-                    _ => return,
-                }
-                cx.stop_propagation();
-            }))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|shell, event: &gpui::MouseDownEvent, _, cx| {
-                    shell.canvas_pointer_down(event, cx)
-                }),
-            )
-            .on_mouse_down(
-                MouseButton::Middle,
-                cx.listener(|shell, event: &gpui::MouseDownEvent, _, cx| {
-                    shell.canvas_pointer_down(event, cx)
-                }),
-            )
-            .on_mouse_move(cx.listener(|shell, event: &gpui::MouseMoveEvent, _, cx| {
-                shell.canvas_pointer_move(event, cx)
-            }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|shell, _, _, cx| shell.canvas_pointer_up(MouseButton::Left, cx)),
-            )
-            .on_mouse_up_out(
-                MouseButton::Left,
-                cx.listener(|shell, _, _, cx| shell.canvas_pointer_up(MouseButton::Left, cx)),
-            )
-            .on_mouse_up(
-                MouseButton::Middle,
-                cx.listener(|shell, _, _, cx| shell.canvas_pointer_up(MouseButton::Middle, cx)),
-            )
-            .on_mouse_up_out(
-                MouseButton::Middle,
-                cx.listener(|shell, _, _, cx| shell.canvas_pointer_up(MouseButton::Middle, cx)),
-            )
-            .on_scroll_wheel(cx.listener(|shell, event: &gpui::ScrollWheelEvent, _, cx| {
-                shell.canvas_scroll(event, cx)
-            }))
-            .flex_1()
-            .min_h(px(120.))
-            .border_1()
-            .border_color(rgb(BORDER))
-            .rounded_lg()
-            .bg(rgb(tokens.palette.canvas))
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap_2();
-        let entity = cx.entity();
-        preview_surface = preview_surface.child(
-            canvas(
-                move |bounds, window, cx| {
-                    let dpi = window.scale_factor();
-                    let extent = (
-                        (f32::from(bounds.size.width) * dpi).round().max(1.) as u32,
-                        (f32::from(bounds.size.height) * dpi).round().max(1.) as u32,
-                    );
-                    entity.update(cx, |shell, cx| {
-                        shell.canvas_origin =
-                            (f64::from(bounds.origin.x), f64::from(bounds.origin.y));
-                        shell.canvas_extent =
-                            (f64::from(bounds.size.width), f64::from(bounds.size.height));
-                        shell.preview_extent = extent;
-                        if let Some(displayed) = &shell.displayed {
-                            let before = shell.canvas.viewport.clone();
-                            let _ = shell.canvas.resize(
-                                f64::from(bounds.size.width),
-                                f64::from(bounds.size.height),
-                                displayed.timeline.width as u32,
-                                displayed.timeline.height as u32,
-                            );
-                            if before != shell.canvas.viewport {
-                                cx.notify();
-                            }
-                        }
-                        if shell.displayed.as_ref().is_some_and(|d| {
-                            crate::frame_image::preview_scale(
-                                d.timeline.width,
-                                d.timeline.height,
-                                extent,
-                            ) != shell.preview_state.scale()
-                        }) {
-                            shell.request_frame(shell.transport.position(), cx);
-                        }
-                    });
-                },
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full(),
-        );
-        if let Some(image) = self.images.current_image() {
-            let image = gpui::img(image);
-            preview_surface = if let Some(bounds) = self
-                .canvas
-                .viewport
-                .as_ref()
-                .map(studio_engine::CanvasViewport::image_bounds)
-            {
-                preview_surface.child(
-                    image
-                        .absolute()
-                        .left(px(bounds.x as f32))
-                        .top(px(bounds.y as f32))
-                        .w(px(bounds.width as f32))
-                        .h(px(bounds.height as f32)),
-                )
-            } else {
-                preview_surface.child(image.size_full())
-            };
-        } else {
-            preview_surface = preview_surface
-                .child(div().text_lg().child(if self.displayed.is_some() {
-                    "Empty video"
-                } else {
-                    "No preview available"
-                }))
+                .flex_col()
+                .gap(gutter)
+                .child(player)
                 .child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(MUTED))
-                        .child("Build preview to compile the project's current source."),
-                );
-        }
-        if let Some(bounds) = self.canvas.selected_bounds() {
-            preview_surface = preview_surface.child(
-                div()
-                    .absolute()
-                    .left(px(bounds.x as f32))
-                    .top(px(bounds.y as f32))
-                    .w(px(bounds.width as f32))
-                    .h(px(bounds.height as f32))
-                    .border_2()
-                    .border_color(rgb(ACCENT)),
-            );
-        }
-        if let (Some(viewport), Some(rect)) = (&self.canvas.viewport, &self.canvas.rectangle_scope)
-        {
-            let bounds = viewport.video_scope_bounds(rect);
-            preview_surface = preview_surface.child(
-                div()
-                    .absolute()
-                    .left(px(bounds.x as f32))
-                    .top(px(bounds.y as f32))
-                    .w(px(bounds.width as f32))
-                    .h(px(bounds.height as f32))
-                    .border_2()
-                    .border_color(rgb(design_system::colors::WARNING_TEXT)),
-            );
-        }
-        center = center.child(preview_surface);
-        center = center.child(
-            div()
-                .text_xs()
-                .text_color(rgb(MUTED))
-                .child("Select: click · Rectangle: Shift-drag · Cycle: Alt-click/C · Zoom: Ctrl-wheel · Pan: middle-drag · Fit: 0"),
-        );
-        if let Some(message) = &self.canvas.message {
-            center = center.child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(MUTED))
-                    .child(message.clone()),
-            );
-        }
-        let label = match &self.preview_state.status {
-            studio_engine::PreviewStatus::Building => "Building/preparing · prior preview retained",
-            studio_engine::PreviewStatus::Preparing => "Preparing matching frame and audio",
-            studio_engine::PreviewStatus::Error(_) => "Preview failed · prior preview retained",
-            _ => "CPU preview · shaders unsupported",
+                    card()
+                        .flex_none()
+                        .overflow_hidden()
+                        .child(self.timeline.clone()),
+                )
+                .into_any_element()
+        } else {
+            self.render_empty_state(cx)
         };
-        center = center.child(div().text_xs().text_color(rgb(MUTED)).child(label));
-        let audio_label = self.output.as_ref().map_or_else(
-            || self.audio_note.clone(),
-            |output| {
-                let metrics = output.metrics();
-                format!(
-                    "{} · {} Hz · predicted output clock{}{} · latency {:.1}ms · underruns {}",
-                    output.device,
-                    output.sample_rate,
-                    if self.muted { " · muted" } else { "" },
-                    if metrics.invalid_timestamps > 0 {
-                        " (latency estimate)"
-                    } else {
-                        ""
-                    },
-                    metrics.predicted_latency_ms,
-                    metrics.underrun_frames
-                )
-            },
-        );
-        center = center.child(div().text_xs().text_color(rgb(MUTED)).child(audio_label));
-        if let Some(d) = &self.displayed {
-            center = center.child(div().text_xs().child(format!(
-                    "Displayed {} · frame {} / {} · {:.3}s{}",
-                    &d.identity().source_revision[..12.min(d.identity().source_revision.len())],
-                    self.preview_state.position(),
-                    d.timeline.total_frames,
-                    self.preview_state.position() as f64 / d.timeline.fps as f64,
-                    if project
-                        .as_ref()
-                        .is_some_and(|p| p.source.as_str() != d.identity().source_revision)
-                    {
-                        " · prior revision"
-                    } else {
-                        ""
-                    }
-                )));
-        }
-        center = center.child(
-            div()
-                .flex()
-                .gap_2()
-                .flex_wrap()
-                .child(self.button(
-                    "build-preview",
-                    "Build preview",
-                    enabled && project.as_ref().is_some_and(|p| p.worker_available),
-                    cx,
-                    |s, cx| s.dispatch(Command::Build, cx),
-                ))
-                .child(self.button(
-                    "cancel-preview",
-                    "Cancel build",
-                    self.preview.is_some(),
-                    cx,
-                    |s, cx| s.dispatch(Command::CancelBuild, cx),
-                ))
-                .child(
-                    self.button(
-                        "play-pause",
-                        if self.transport.playing() || self.resume_install {
-                            "Pause"
-                        } else {
-                            "Play"
-                        },
-                        self.displayed
-                            .as_ref()
-                            .is_some_and(|d| d.timeline.total_frames > 0),
-                        cx,
-                        |s, cx| s.toggle_playback(cx),
-                    ),
-                )
-                .child(self.button(
-                    "mute-audio",
-                    if self.muted { "Unmute (M)" } else { "Mute (M)" },
-                    self.displayed.is_some(),
-                    cx,
-                    |s, cx| s.toggle_mute(cx),
-                ))
-                .child(self.button(
-                    "next-audio-output",
-                    "Next output",
-                    self.displayed.is_some(),
-                    cx,
-                    |s, cx| s.cycle_output(cx),
-                ))
-                .child(self.button(
-                    "retry-audio-output",
-                    "Retry audio",
-                    self.displayed.is_some(),
-                    cx,
-                    |s, cx| s.change_output(OutputDevice::Default, cx),
-                ))
-                .child(self.button(
-                    "no-audio-output",
-                    "No audio",
-                    self.displayed.is_some(),
-                    cx,
-                    |s, cx| s.change_output(OutputDevice::Unavailable, cx),
-                ))
-                .child(
-                    self.button(
-                        "previous-frame",
-                        "Previous frame",
-                        self.displayed
-                            .as_ref()
-                            .is_some_and(|d| d.timeline.total_frames > 0),
-                        cx,
-                        |s, cx| s.step_preview(-1, cx),
-                    ),
-                )
-                .child(
-                    self.button(
-                        "next-frame",
-                        "Next frame",
-                        self.displayed
-                            .as_ref()
-                            .is_some_and(|d| d.timeline.total_frames > 0),
-                        cx,
-                        |s, cx| s.step_preview(1, cx),
-                    ),
-                )
-                .child(self.button("refresh", "Refresh", enabled, cx, |s, cx| {
-                    s.dispatch(Command::Refresh, cx)
-                }))
-                .child(self.button(
-                    "checkpoint",
-                    "Save checkpoint",
-                    enabled && project.is_some(),
-                    cx,
-                    |s, cx| s.dispatch(Command::Checkpoint, cx),
-                ))
-                .child(self.button(
-                    "restore",
-                    "Restore as copy…",
-                    enabled && project.is_some(),
-                    cx,
-                    |s, cx| s.pick(Picker::Restore, cx),
-                )),
-        );
-        if let Some(p) = &project {
-            let mut history = div().flex().gap_2().flex_wrap();
-            if let Some(draft) = p.draft.clone() {
-                history = history.child(self.button(
-                    "draft",
-                    "Reveal retained draft",
-                    true,
-                    cx,
-                    move |_, cx| cx.reveal_path(&draft),
-                ));
-            }
-            let checkpoint = p.checkpoint.clone();
-            history = history.child(self.button(
-                "reveal-checkpoint",
-                "Reveal checkpoint",
-                true,
-                cx,
-                move |_, cx| cx.reveal_path(&checkpoint),
-            ));
-            center = center.child(history);
-        }
-        center = center.child(self.timeline.clone());
-        if self.navigation == "Style" {
-            center = center.child(self.preset_panel.clone());
-        }
-        // SDK readiness and recent projects live under the navigation; the agent has its
-        // own panel (and its own readiness) on the right.
-        let mut library = div()
-            .flex_shrink_0()
-            .max_h(px(360.))
-            .flex()
-            .flex_col()
-            .gap_2()
-            .pt_3()
-            .border_t_1()
-            .border_color(rgb(BORDER))
-            .child("Managed SDK")
-            .child(div().text_xs().text_color(rgb(MUTED)).child(if self.busy {
-                "Operation in progress…".into()
-            } else {
-                self.presentation.sdk.clone()
-            }))
-            .child(
-                self.button("install", "Install managed SDK", enabled, cx, |s, cx| {
-                    s.dispatch(Command::InstallSdk, cx)
-                }),
-            )
-            .child(self.button(
-                "import-sdk-bundle",
-                "Import offline SDK bundle…",
-                enabled,
-                cx,
-                |s, cx| s.pick(Picker::SdkBundle, cx),
-            ))
-            .child(self.button(
-                "sdk",
-                "Select installed SDK…",
-                enabled && project.is_some(),
-                cx,
-                |s, cx| s.pick(Picker::Sdk, cx),
-            ))
-            .child(div().mt_2().child("Recent projects"));
-        let mut recents = div()
-            .id("recents")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_2();
-        if self.presentation.recents.is_empty() {
-            recents = recents.child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(MUTED))
-                    .child("No recent projects"),
-            );
-        }
-        for recent in self.presentation.recents.clone() {
-            let id = String::from(recent.id.clone());
-            let path = recent.path.clone();
-            let project_id = recent.id;
-            recents = recents
-                .child(self.button(
-                    format!("recent-{id}"),
-                    format!(
-                        "{}{}",
-                        recent.name,
-                        if recent.missing { " · Missing" } else { "" }
-                    ),
-                    enabled && !recent.missing,
-                    cx,
-                    move |s, cx| s.dispatch(Command::Open(path.clone()), cx),
-                ))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child(recent.path.display().to_string()),
-                );
-            if recent.missing {
-                let locate_id = project_id.clone();
-                recents = recents.child(self.button(
-                    format!("locate-{id}"),
-                    "Locate…",
-                    enabled,
-                    cx,
-                    move |s, cx| s.pick(Picker::Locate(locate_id.clone()), cx),
-                ));
-            }
-            recents = recents.child(self.button(
-                format!("remove-{id}"),
-                "Remove recent",
-                enabled,
-                cx,
-                move |s, cx| s.dispatch(Command::RemoveRecent(project_id.clone()), cx),
-            ));
-        }
-        library = library.child(recents);
-        navigation = navigation.child(library);
-        let mut root = div()
+        let agent = self.render_agent_column();
+        div()
             .size_full()
             .track_focus(&self.focus)
             .tab_group()
@@ -3435,66 +4460,25 @@ impl Render for StudioShell {
                     cx.stop_propagation();
                 }
             }))
-            .bg(rgb(BACKGROUND))
-            .text_color(rgb(TEXT))
+            .bg(tokens.palette.window)
+            .text_color(tokens.palette.text_1)
             .flex()
             .flex_col()
-            .child(header);
-        if let Some(label) = &self.awaiting_preview {
-            root = root.child(
+            .p(gutter)
+            .gap(gutter)
+            .child(header)
+            .children(notices)
+            .children(strip)
+            .child(
                 div()
-                    .id("awaiting-preview")
-                    .flex_shrink_0()
-                    .p(px(tokens.metrics.space_3))
-                    .bg(rgb(design_system::colors::WARNING))
-                    .text_color(rgb(design_system::colors::WARNING_TEXT))
-                    .text_sm()
-                    .child(label.clone()),
-            );
-        }
-        if let Some(error) = &self.error {
-            root = root.child(
-                div()
-                    .id("error")
-                    .max_h(px(120.))
-                    .flex_shrink_0()
-                    .overflow_y_scroll()
-                    .p(px(tokens.metrics.space_3))
-                    .bg(rgb(design_system::colors::DANGER))
-                    .text_color(rgb(design_system::colors::DANGER_TEXT))
-                    .text_sm()
-                    .child(error.clone()),
-            );
-        }
-        if let Some(path) = self.failed_open.clone().filter(|_| {
-            self.error.as_ref().is_some_and(|e| {
-                e.contains("Duplicate project ID")
-                    || e.contains("Relocated project content differs")
-            })
-        }) {
-            root = root.child(self.button(
-                "independent",
-                "Use this folder as an independent project",
-                enabled,
-                cx,
-                move |s, cx| s.dispatch(Command::Independent(path.clone()), cx),
-            ));
-        }
-        root.child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .flex()
-                .child(navigation)
-                .child(center)
-                .child(
-                    div()
-                        .w(px(tokens.metrics.agent_panel_width))
-                        .flex_shrink_0()
-                        .min_h_0()
-                        .child(self.panel.clone()),
-                ),
-        )
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .gap(gutter)
+                    .child(left)
+                    .child(main)
+                    .child(agent),
+            )
     }
 }
 
@@ -3502,6 +4486,100 @@ impl Render for StudioShell {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn transport_mode_switches_below_760() {
+        assert_eq!(transport_mode(1200.), TransportMode::Full);
+        assert_eq!(transport_mode(760.), TransportMode::Full);
+        assert_eq!(transport_mode(759.9), TransportMode::Compact);
+        assert!(show_total_time(620.));
+        assert!(!show_total_time(619.));
+    }
+
+    #[test]
+    fn clock_formats_minutes_seconds_centiseconds() {
+        assert_eq!(format_clock(0.), "0:00.00");
+        assert_eq!(format_clock(1.2), "0:01.20");
+        assert_eq!(format_clock(5.5), "0:05.50");
+        assert_eq!(format_clock(125.999), "2:05.99");
+        assert_eq!(format_clock(-3.), "0:00.00");
+    }
+
+    #[test]
+    fn a_click_on_an_action_that_became_unavailable_is_inert() {
+        use OverflowAction::*;
+        let idle = overflow_actions(true, true, false);
+        assert_eq!(enabled_overflow_action(&idle, 1), Some(Checkpoint));
+        // The shell went busy after the menu opened.
+        let busy = overflow_actions(false, true, false);
+        assert_eq!(enabled_overflow_action(&busy, 1), None);
+        assert_eq!(enabled_overflow_action(&busy, 4), Some(RevealCheckpoint));
+        assert_eq!(enabled_overflow_action(&busy, 9), None);
+    }
+
+    #[test]
+    fn overflow_actions_follow_the_old_enable_rules() {
+        use OverflowAction::*;
+        assert_eq!(
+            overflow_actions(true, true, true),
+            vec![
+                (Refresh, true),
+                (Checkpoint, true),
+                (Restore, true),
+                (RevealDraft, true),
+                (RevealCheckpoint, true)
+            ]
+        );
+        assert_eq!(
+            overflow_actions(true, true, false),
+            vec![
+                (Refresh, true),
+                (Checkpoint, true),
+                (Restore, true),
+                (RevealDraft, false),
+                (RevealCheckpoint, true)
+            ]
+        );
+        assert_eq!(
+            overflow_actions(true, false, false),
+            vec![
+                (Refresh, true),
+                (Checkpoint, false),
+                (Restore, false),
+                (RevealDraft, false),
+                (RevealCheckpoint, false)
+            ]
+        );
+        assert_eq!(
+            overflow_actions(false, true, false),
+            vec![
+                (Refresh, false),
+                (Checkpoint, false),
+                (Restore, false),
+                (RevealDraft, false),
+                (RevealCheckpoint, true)
+            ]
+        );
+        assert!(
+            overflow_actions(false, false, false)
+                .iter()
+                .all(|(_, on)| !on)
+        );
+        let ids: Vec<_> = overflow_actions(true, true, true)
+            .iter()
+            .map(|(a, _)| a.id())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                "refresh",
+                "checkpoint",
+                "restore",
+                "draft",
+                "reveal-checkpoint"
+            ]
+        );
+    }
 
     #[test]
     fn restore_command_exports_selected_checkpoint_without_requiring_healthy_source() {
@@ -3528,6 +4606,7 @@ mod tests {
             paths: Some(paths),
             controller: Some(Arc::new(Mutex::new(controller))),
             compatibility: None,
+            compatibility_error: "SDK manifest unavailable".into(),
             sdk_home: None,
             sdk: String::new(),
             agent_sdk: None,
@@ -3551,5 +4630,67 @@ mod tests {
             fs::read(root.join("studio.json")).unwrap(),
             b"invalid source manifest"
         );
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    #[test]
+    fn header_hides_project_pickers_while_the_empty_state_shows() {
+        assert_eq!(header_actions(false), ["export-mp4", "close"]);
+        assert_eq!(
+            header_actions(true),
+            ["create", "open", "import", "export-mp4", "close"]
+        );
+    }
+
+    #[test]
+    fn status_strip_expands_for_errors_and_active_jobs() {
+        assert!(!status_strip_expanded("Idle", false, false));
+        assert!(!status_strip_expanded("Succeeded", false, false));
+        assert!(status_strip_expanded("Idle", true, false));
+        assert!(status_strip_expanded("Running", false, false));
+        assert!(status_strip_expanded("Cancelling", false, false));
+        assert!(status_strip_expanded("Idle", false, true));
+    }
+
+    #[test]
+    fn error_notice_splits_title_and_details() {
+        assert_eq!(error_title_details("boom"), ("boom".into(), None));
+        let (title, details) = error_title_details("boom\nmore context");
+        assert_eq!(title, "boom");
+        assert_eq!(details.as_deref(), Some("boom\nmore context"));
+    }
+
+    #[test]
+    fn left_tab_content_maps_each_tab() {
+        assert_eq!(left_tab_content(LeftTab::Project), LeftContent::Files);
+        assert_eq!(left_tab_content(LeftTab::Assets), LeftContent::Assets);
+        assert_eq!(left_tab_content(LeftTab::Style), LeftContent::Presets);
+    }
+
+    #[test]
+    fn recent_rows_offer_locate_only_when_missing() {
+        assert_eq!(recent_row_actions(true), ["locate", "remove"]);
+        assert_eq!(recent_row_actions(false), ["remove"]);
+    }
+
+    #[test]
+    fn sdk_status_tone_prefers_busy_then_ready() {
+        assert_eq!(sdk_status_tone(true, true), Tone::Info);
+        assert_eq!(sdk_status_tone(false, true), Tone::Success);
+        assert_eq!(sdk_status_tone(false, false), Tone::Warning);
+    }
+
+    #[test]
+    fn left_tabs_keep_their_element_ids() {
+        let names: Vec<_> = LeftTab::ALL.iter().map(|t| t.name()).collect();
+        assert_eq!(names, ["Project", "Assets", "Style"]);
+        for tab in LeftTab::ALL {
+            assert_eq!(LeftTab::from_index(tab.index()), tab);
+        }
+        assert_eq!(LeftTab::from_index(9), LeftTab::Project);
     }
 }

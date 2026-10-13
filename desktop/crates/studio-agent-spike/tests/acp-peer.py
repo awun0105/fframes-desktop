@@ -153,11 +153,100 @@ def spawn_helper(escape, hold_pipes=False):
     (root / "helper.pid").write_text(str(helper.pid))
 
 
+turn_count = 0
+first_prompt_id = None
+line_bytes = 0
+CLAUDE_NAME = "@agentclientprotocol/claude-agent-acp"
+SERVER_TOOL_MESSAGE = "Internal error: Claude ended the turn without returning results for tool calls: "
+
+
+def pulse(seconds, interval, bodies):
+    """Sends the update bodies in turn every `interval` seconds for `seconds`."""
+    deadline = time.time() + seconds
+    i = 0
+    while time.time() < deadline:
+        update(bodies[i % len(bodies)])
+        i += 1
+        time.sleep(interval)
+
+
 def run_prompt(message):
-    global prompt_id
+    global prompt_id, turn_count, first_prompt_id
     prompt_id = message["id"]
+    turn_count += 1
     text = message["params"]["prompt"][0]["text"]
-    record("prompt.json", {"sessionId": message["params"]["sessionId"], "text": text})
+    images = sum(1 for block in message["params"]["prompt"] if block.get("type") == "image")
+    record("prompt.json", {"sessionId": message["params"]["sessionId"], "text": text, "lineBytes": line_bytes, "images": images})
+    if mode == "secret-tail":
+        chunk("tails" if turn_count == 1 else "Hello")
+        finish()
+        return
+    if mode == "stale-finish":
+        if turn_count == 1:
+            first_prompt_id = prompt_id
+            chunk("first")
+            finish()
+            return
+        send({"id": first_prompt_id, "result": {"stopReason": "end_turn"}})
+        # Dispatched after the stale response: once the host sees it, the stale one was handled.
+        update({"sessionUpdate": "tool_call", "toolCallId": "after-stale", "title": "Marker", "kind": "other", "status": "pending"})
+        record("stale-sent", True)
+        wait_for_file("go")
+        chunk("second")
+        finish()
+        return
+    if mode == "thoughts":
+        chunk("plan A", "agent_thought_chunk")
+        chunk("Answer ")
+        chunk("more thinking", "agent_thought_chunk")
+        chunk("done.")
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "image", "data": "AAAA", "mimeType": "image/png"}})
+        finish()
+        return
+    if mode == "inert-updates":
+        update({"sessionUpdate": "plan", "entries": [{"content": "step", "priority": "low", "status": "pending"}]})
+        update({"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "compact", "description": "Compact the context"}]})
+        update({"sessionUpdate": "session_info_update", "title": "Renamed"})
+        chunk("still fine")
+        finish()
+        return
+    if mode == "push-options":
+        update({"sessionUpdate": "current_mode_update", "currentModeId": "plan"})
+        update({"sessionUpdate": "config_option_update", "configOptions": [dict(OPTIONS["configOptions"][0], currentValue="deep")]})
+        finish()
+        return
+    if mode == "empty-turn":
+        finish()
+        return
+    if mode == "prompt-error":
+        send({"id": prompt_id, "error": {"code": -32603, "message": "backend unavailable"}})
+        prompt_id = None
+        return
+    if mode == "dup-finish":
+        chunk("once")
+        send({"id": prompt_id, "result": {"stopReason": "end_turn"}})
+        send({"id": prompt_id, "result": {"stopReason": "end_turn"}})
+        # Late, and dispatched after the duplicate: once it is counted, the duplicate was handled.
+        update({"sessionUpdate": "tool_call", "toolCallId": "after-dup", "title": "Marker", "kind": "other", "status": "pending"})
+        prompt_id = None
+        return
+    if mode == "foreign-perm":
+        send({"id": "perm-1", "method": "session/request_permission", "params": {"sessionId": "someone-else", "toolCall": {"toolCallId": "x", "title": "Foreign"}, "options": [{"optionId": "allow", "name": "Allow once", "kind": "allow_once"}]}})
+        return
+    if mode == "unknown-method":
+        send({"id": "x1", "method": "custom/ping", "params": {}})
+        chunk("survived")
+        finish()
+        return
+    if mode == "crlf":
+        stdout = sys.stdout.buffer
+        stdout.write(b"\r\n\n")
+        for text in ("crlf ", "framed"):
+            body = json.dumps({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": SESSION_ID, "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": text}}}})
+            stdout.write(body.encode() + b"\r\n")
+        stdout.flush()
+        finish()
+        return
     if mode == "race-end-turn":
         wait_for_file("go")
         finish()
@@ -214,6 +303,39 @@ def run_prompt(message):
     if mode == "big-delta":
         chunk("a" * 900000 + " tail")
         finish()
+        return
+    if mode.startswith("srvtool"):
+        if turn_count > 1:
+            finish()
+            return
+        ids = ["srvtoolu_a", "toolu_b"] if mode == "srvtool-client" else ["srvtoolu_a", "srvtoolu_b"]
+        # Like the Claude adapter: fail every unfinished call, then report the turn.
+        for tool_id in ids:
+            update({"sessionUpdate": "tool_call_update", "toolCallId": tool_id, "status": "failed"})
+        error = {"code": -32603, "message": SERVER_TOOL_MESSAGE + ", ".join(ids)}
+        if mode != "srvtool-nodata":
+            error["data"] = {"errorKind": "incomplete_tool_call"}
+        send({"id": prompt_id, "error": error})
+        prompt_id = None
+        return
+    if mode == "inert-forever":
+        pulse(30, 0.1, [
+            {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "compact", "description": "Compact"}]},
+            {"sessionUpdate": "session_info_update", "title": "Busy"},
+        ])
+        return
+    if mode == "active-slow":
+        pulse(2, 0.1, [
+            {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "working "}},
+            {"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": "thinking "}},
+            {"sessionUpdate": "plan", "entries": [{"content": "step", "priority": "low", "status": "pending"}]},
+            {"sessionUpdate": "tool_call", "toolCallId": "slow", "title": "Slow tool", "kind": "other", "status": "in_progress"},
+            {"sessionUpdate": "tool_call_update", "toolCallId": "slow", "status": "in_progress"},
+        ])
+        finish()
+        return
+    if mode == "active-forever":
+        pulse(30, 0.1, [{"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "still going "}}])
         return
     if mode == "hang-prompt" or mode == "hang-cancel" or mode == "stall-stdin":
         if mode == "stall-stdin":
@@ -315,6 +437,7 @@ def run_prompt(message):
 
 
 for line in sys.stdin:
+    line_bytes = len(line.rstrip("\r\n").encode("utf-8"))
     message = json.loads(line)
     method = message.get("method")
     if method:
@@ -344,11 +467,13 @@ for line in sys.stdin:
         result = {
             "protocolVersion": version,
             "agentInfo": {"name": "protocol-peer", "version": "test"},
-            "agentCapabilities": {"loadSession": mode == "load", "promptCapabilities": {"image": False}},
+            "agentCapabilities": {"loadSession": mode == "load", "promptCapabilities": {"image": mode == "image-ok"}},
             "authMethods": [{"id": "key", "name": "API key"}] if mode in AUTH_MODES else [],
         }
         if mode == "meta-secret":
             result["agentInfo"] = {"name": "agent-" + SECRET, "version": "v-" + SECRET}
+        if mode.startswith("srvtool") and mode != "srvtool-other-agent":
+            result["agentInfo"] = {"name": CLAUDE_NAME, "version": "test"}
         send({"id": message["id"], "result": result})
     elif method == "authenticate":
         if mode == "auth-rejected":
@@ -370,11 +495,13 @@ for line in sys.stdin:
             send({"id": message["id"], "result": {}})
         else:
             result = {"sessionId": SESSION_ID}
-            if mode in ("options", "options-silent"):
+            if mode in ("options", "options-silent", "push-options"):
                 result.update(OPTIONS)
             if mode == "meta-secret":
                 result.update(SECRET_OPTIONS)
             send({"id": message["id"], "result": result})
+            if mode == "idle-crash":
+                sys.exit(5)
     elif method == "session/set_mode":
         record("set-mode.json", message["params"])
         if mode == "options-silent":
@@ -415,6 +542,8 @@ for line in sys.stdin:
             finish()
         elif mode == "permission" and outcome["outcome"] == "cancelled":
             finish("cancelled")
+    elif message.get("id") == "x1":
+        record("custom-ping.json", message)
     elif message.get("id") == "late-perm":
         record("late-perm.json", message.get("result"))
     elif message.get("id") in ("fs-1", "term-1"):

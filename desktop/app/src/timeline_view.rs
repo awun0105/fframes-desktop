@@ -1,14 +1,16 @@
 //! Native compiled tracks. Geometry/selection are engine-owned; textures are window-owned.
-use crate::design_system::colors::{ACCENT, BORDER, MUTED};
 use crate::{
-    design_system::{self, ButtonStyle},
+    design_system::{self, TextStyle, TrackKind, segment_colors, text_style, track_color},
     frame_image::create_render_image,
     thumbnail_cache::{ThumbnailCache, ThumbnailKey},
+    ui::{
+        BoundsProbe, Button, Icon, IconButton, IconButtonSize, SectionTitle, Slider, icon,
+        interact::focus_ring, slider::ZOOM_TRACK_H,
+    },
 };
 use gpui::{
     Bounds, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, canvas, div, px,
-    rgb,
 };
 use studio_engine::{PreviewFrame, TaskScope, TimelineModel, TimelineSelection, TimelineViewport};
 
@@ -30,7 +32,8 @@ pub struct TimelineView {
     position: usize,
     focus: FocusHandle,
     bounds: Option<Bounds<Pixels>>,
-    fit_bounds: Option<Bounds<Pixels>>,
+    /// `[left, top, width, height]` of the Fit button, reported by its probe.
+    fit_bounds: Option<[f32; 4]>,
     drag: Option<(usize, bool)>,
     cache: ThumbnailCache,
     pending_thumbnail: Option<(ThumbnailKey, PreviewFrame)>,
@@ -118,12 +121,13 @@ impl TimelineView {
             .collect()
     }
     pub fn qualification_metrics(&self) -> serde_json::Value {
-        let rect = |b: Bounds<Pixels>, height: f32| {
+        // The ruler covers the time axis only: the track gutter sits to its left.
+        let ruler = |b: Bounds<Pixels>| {
             [
-                f32::from(b.left()),
+                f32::from(b.left()) + axis_inset(),
                 f32::from(b.top()),
-                f32::from(b.size.width),
-                height,
+                (f32::from(b.size.width) - axis_inset()).max(0.),
+                design_system::tokens().metrics.ruler_h,
             ]
         };
         serde_json::json!({
@@ -137,8 +141,8 @@ impl TimelineView {
                 "position": self.position,
                 "total_frames": self.model.as_ref().map(|m| m.report().total_frames),
             },
-            "ruler_bounds": self.bounds.map(|b| rect(b, 20.)),
-            "fit_bounds": self.fit_bounds.map(|b| rect(b, f32::from(b.size.height))),
+            "ruler_bounds": self.bounds.map(ruler),
+            "fit_bounds": self.fit_bounds,
         })
     }
     pub fn thumbnail(&mut self, key: ThumbnailKey, frame: PreviewFrame, cx: &mut Context<Self>) {
@@ -167,10 +171,12 @@ impl TimelineView {
         }
     }
     fn pointer_frame(&self, x: Pixels) -> Option<usize> {
-        self.viewport.frame_at_x(
-            f32::from(x - self.bounds?.left()) as f64,
-            self.model.as_ref()?,
-        )
+        let axis_x = f32::from(x - self.bounds?.left()) - axis_inset();
+        if axis_x < 0. {
+            return None;
+        }
+        self.viewport
+            .frame_at_x(f64::from(axis_x), self.model.as_ref()?)
     }
     fn pointer_down(
         &mut self,
@@ -183,9 +189,9 @@ impl TimelineView {
         };
         window.focus(&self.focus, cx);
         let range = event.modifiers.shift
-            || self
-                .bounds
-                .is_some_and(|b| event.position.y - b.top() > px(24.));
+            || self.bounds.is_some_and(|b| {
+                hit_zone(f32::from(event.position.y), f32::from(b.top())) == HitZone::Lanes
+            });
         self.drag = Some((frame, range));
         if range {
             self.selection
@@ -283,56 +289,19 @@ impl TimelineView {
         }
         cx.stop_propagation();
     }
-    fn button(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        cx: &mut Context<Self>,
-        action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> impl IntoElement {
-        let enabled = self
-            .model
-            .as_ref()
-            .is_some_and(|m| m.report().total_frames > 0);
-        let action = std::rc::Rc::new(action);
-        let click = action.clone();
-        let entity = cx.entity();
-        design_system::button(
-            div()
-                .id(id)
-                .relative()
-                .role(gpui::Role::Button)
-                .aria_label(label)
-                .tab_index(0)
-                .tab_stop(enabled)
-                .text_xs(),
-            ButtonStyle::Secondary,
-            enabled,
-        )
-        .on_click(cx.listener(move |view, _, _, cx| {
-            if enabled {
-                click(view, cx);
-            }
-        }))
-        .on_key_down(cx.listener(move |view, event: &gpui::KeyDownEvent, _, cx| {
-            if enabled && matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                action(view, cx);
-                cx.stop_propagation();
-            }
-        }))
-        .child(label)
-        .children((id == "timeline-fit").then(|| {
-            canvas(
-                move |bounds, _, cx| {
-                    entity.update(cx, |view, _| view.fit_bounds = Some(bounds));
-                },
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
-        }))
+    fn action(
+        entity: &gpui::Entity<Self>,
+        run: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> impl Fn(&mut Window, &mut gpui::App) + 'static {
+        let entity = entity.clone();
+        move |_, cx| entity.update(cx, |view, cx| run(view, cx))
+    }
+    /// Zoom to the slider `fraction`, keeping the playhead where it is on screen.
+    fn set_zoom_fraction(&mut self, fraction: f32, cx: &mut Context<Self>) {
+        let target = fraction_to_zoom(fraction);
+        if self.viewport.pixels_per_second > 0. {
+            self.zoom(target / self.viewport.pixels_per_second, cx);
+        }
     }
 }
 
@@ -340,6 +309,193 @@ fn thumbnail_scale(model: &TimelineModel) -> f64 {
     (160. / model.report().width as f64)
         .min(90. / model.report().height as f64)
         .min(1.)
+}
+
+/// Zoom range of `TimelineViewport` (pixels per second); the viewport clamps to it.
+const ZOOM_MIN: f64 = 0.01;
+const ZOOM_MAX: f64 = 100_000.;
+/// Left inset of the segment label and the room kept on its right.
+const LABEL_PAD_LEFT: f32 = 13.;
+const LABEL_PAD_RIGHT: f32 = 10.;
+const ACCENT_BAR_W: f32 = 3.;
+const PLAYHEAD_HEAD: f32 = 12.;
+const PLAYHEAD_RING: f32 = 4.;
+const MAJOR_TICK_H: f32 = 8.;
+const MINOR_TICK_H: f32 = 5.;
+const MINOR_PER_MAJOR: usize = 5;
+const ZOOM_SLIDER_W: f32 = 72.;
+const CARD_PAD: f32 = 11.;
+const CARD_PAD_TOP: f32 = 9.;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HitZone {
+    Ruler,
+    Lanes,
+}
+
+/// Which part of the timeline a pointer at window `y` hits, given the top of the
+/// timeline area. The ruler scrubs, the lanes select.
+fn hit_zone(y: f32, top: f32) -> HitZone {
+    if y - top < design_system::tokens().metrics.ruler_h {
+        HitZone::Ruler
+    } else {
+        HitZone::Lanes
+    }
+}
+
+/// Width left of the time axis: the track gutter plus its gap.
+fn axis_inset() -> f32 {
+    let metrics = design_system::tokens().metrics;
+    metrics.track_gutter_w + metrics.space_2
+}
+
+/// Zoom (pixels per second) as a 0..=1 slider fraction on a log scale.
+fn zoom_to_fraction(pixels_per_second: f64) -> f32 {
+    ((pixels_per_second.clamp(ZOOM_MIN, ZOOM_MAX) / ZOOM_MIN).ln() / (ZOOM_MAX / ZOOM_MIN).ln())
+        as f32
+}
+
+/// Inverse of [`zoom_to_fraction`].
+fn fraction_to_zoom(fraction: f32) -> f64 {
+    ZOOM_MIN * (ZOOM_MAX / ZOOM_MIN).powf(f64::from(fraction.clamp(0., 1.)))
+}
+
+/// Where a segment label sits: `left` from the segment's left edge, `width` available.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LabelSlice {
+    left: f32,
+    width: f32,
+}
+
+/// Anchors a label to the part of a segment (at `x`, `width` wide) that is inside
+/// a viewport `view_width` wide.
+fn label_slice(x: f32, width: f32, view_width: f32) -> LabelSlice {
+    let visible_start = (-x).clamp(0., width);
+    let visible_end = (view_width - x).min(width).max(visible_start);
+    LabelSlice {
+        left: visible_start + LABEL_PAD_LEFT,
+        width: (visible_end - visible_start - LABEL_PAD_LEFT - LABEL_PAD_RIGHT).max(0.),
+    }
+}
+
+/// Minor tick positions between the major ticks at `majors` (x, ascending).
+fn minor_tick_xs(majors: &[f64], view_width: f64) -> Vec<f64> {
+    let [first, second, ..] = majors else {
+        return Vec::new();
+    };
+    let step = (second - first) / MINOR_PER_MAJOR as f64;
+    if !(step.is_finite() && step > 1.) {
+        return Vec::new();
+    }
+    let start = first - (first / step).floor().max(0.) * step;
+    let count = ((view_width - start) / step).floor().max(0.) as usize + 1;
+    (0..count)
+        .map(|index| start + index as f64 * step)
+        .filter(|x| majors.iter().all(|major| (major - x).abs() > 0.5))
+        .collect()
+}
+
+fn lane_name(base: &str, index: usize, count: usize) -> String {
+    if count > 1 {
+        format!("{base} {}", index + 1)
+    } else {
+        base.to_owned()
+    }
+}
+
+/// A track row: gutter with icon and name, then the clipped band for segments.
+fn track_row(top: f32, name: String, glyph: Icon, segments: Vec<gpui::AnyElement>) -> gpui::Div {
+    let tokens = design_system::tokens();
+    let metrics = tokens.metrics;
+    div()
+        .absolute()
+        .left_0()
+        .right_0()
+        .top(px(top))
+        .h(px(metrics.track_h))
+        .flex()
+        .items_center()
+        .gap(px(metrics.space_2))
+        .child(
+            text_style(div(), TextStyle::Small)
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .w(px(metrics.track_gutter_w))
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .overflow_hidden()
+                .text_color(tokens.palette.text_2)
+                .child(icon(glyph, metrics.icon_sm, tokens.palette.text_2))
+                .child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(name),
+                ),
+        )
+        .child(
+            div()
+                .relative()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .overflow_hidden()
+                .rounded(px(metrics.radius_segment))
+                .bg(tokens.palette.card_2)
+                .children(segments),
+        )
+}
+
+/// Segment box with its accent bar and clipped label. The caller adds ids and handlers.
+fn segment(
+    kind: TrackKind,
+    selected: bool,
+    x: f32,
+    width: f32,
+    view_width: f32,
+    label: String,
+) -> gpui::Div {
+    let metrics = design_system::tokens().metrics;
+    let colors = segment_colors(kind, selected);
+    let slice = label_slice(x, width, view_width);
+    div()
+        .absolute()
+        .left(px(x))
+        .top_0()
+        .w(px(width))
+        .h(px(metrics.track_h))
+        .overflow_hidden()
+        .rounded(px(metrics.radius_segment))
+        .border_1()
+        .border_color(colors.border)
+        .bg(colors.fill)
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top_0()
+                .bottom_0()
+                .w(px(ACCENT_BAR_W))
+                .bg(track_color(kind)),
+        )
+        .child(
+            text_style(div(), TextStyle::Small)
+                .absolute()
+                .left(px(slice.left))
+                .top_0()
+                .bottom_0()
+                .w(px(slice.width))
+                .flex()
+                .items_center()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_color(colors.label)
+                .child(label),
+        )
 }
 
 impl Render for TimelineView {
@@ -359,63 +515,110 @@ impl Render for TimelineView {
                 self.release_failures += usize::from(window.drop_image(image).is_err());
             }
         }
-        let toolbar = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .text_xs()
-            .child("Timeline")
-            .child(self.button("timeline-zoom-out", "−", cx, |v, cx| v.zoom(0.5, cx)))
-            .child(self.button("timeline-zoom-in", "+", cx, |v, cx| v.zoom(2., cx)))
-            .child(self.button("timeline-fit", "Fit", cx, |v, cx| {
-                if let Some(m) = &v.model {
-                    v.viewport.fit(m);
-                    cx.notify();
-                }
-            }))
-            .child(
-                self.button("timeline-cycle", "Cycle scene (S)", cx, |v, cx| {
-                    if let Some(m) = &v.model {
-                        v.selection.cycle_scene_at(v.position, m);
-                        v.emit_scope_changed(cx);
-                        cx.notify();
-                    }
-                }),
-            );
-        let mut root = div()
+        let tokens = design_system::tokens();
+        let colors = tokens.palette;
+        let metrics = tokens.metrics;
+        let enabled = self
+            .model
+            .as_ref()
+            .is_some_and(|m| m.report().total_frames > 0);
+        let entity = cx.entity();
+        let zoom_fraction = zoom_to_fraction(self.viewport.pixels_per_second);
+        let toolbar = SectionTitle::new("Timeline").trailing(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(metrics.space_1))
+                .child(
+                    IconButton::new("timeline-zoom-out", Icon::ZoomOut)
+                        .size(IconButtonSize::Small)
+                        .label("−")
+                        .disabled(!enabled)
+                        .on_click(Self::action(&entity, |v, cx| v.zoom(0.5, cx))),
+                )
+                .child(
+                    div().w(px(ZOOM_SLIDER_W)).child(
+                        Slider::new("timeline-zoom-slider", zoom_fraction)
+                            .track(ZOOM_TRACK_H)
+                            .step(0.)
+                            .disabled(!enabled)
+                            .on_change({
+                                let entity = entity.clone();
+                                move |fraction, _, cx| {
+                                    entity.update(cx, |v, cx| v.set_zoom_fraction(fraction, cx));
+                                }
+                            }),
+                    ),
+                )
+                .child(
+                    IconButton::new("timeline-zoom-in", Icon::ZoomIn)
+                        .size(IconButtonSize::Small)
+                        .label("+")
+                        .disabled(!enabled)
+                        .on_click(Self::action(&entity, |v, cx| v.zoom(2., cx))),
+                )
+                .child(
+                    Button::new("timeline-fit", "Fit")
+                        .disabled(!enabled)
+                        .probe(Some(BoundsProbe::new({
+                            let entity = entity.clone();
+                            move |rect, cx| entity.update(cx, |v, _| v.fit_bounds = Some(rect))
+                        })))
+                        .on_click(Self::action(&entity, |v, cx| {
+                            if let Some(m) = &v.model {
+                                v.viewport.fit(m);
+                                cx.notify();
+                            }
+                        })),
+                )
+                .child(
+                    IconButton::new("timeline-cycle", Icon::Layers)
+                        .size(IconButtonSize::Small)
+                        .label("Cycle scene (S)")
+                        .disabled(!enabled)
+                        .on_click(Self::action(&entity, |v, cx| {
+                            if let Some(m) = &v.model {
+                                v.selection.cycle_scene_at(v.position, m);
+                                v.emit_scope_changed(cx);
+                                cx.notify();
+                            }
+                        })),
+                ),
+        );
+        let root = div()
             .flex()
             .flex_col()
-            .gap_1()
+            .gap(px(metrics.space_1 + 2.))
             .min_w_0()
             .flex_shrink_0()
-            .border_t_1()
-            .border_color(rgb(BORDER))
-            .pt_2()
+            .h(px(metrics.timeline_default_h - 2.))
+            .pl(px(CARD_PAD))
+            .pr(px(CARD_PAD))
+            .pt(px(CARD_PAD_TOP))
+            .pb(px(CARD_PAD))
             .child(toolbar);
         let Some(model) = &self.model else {
             return root.child(
-                div()
-                    .h(px(130.))
-                    .text_sm()
-                    .text_color(rgb(MUTED))
+                text_style(div(), TextStyle::Body)
+                    .text_color(colors.text_2)
                     .child("No compiled timeline available."),
             );
         };
-        let colors = design_system::tokens().palette;
+        let inset = axis_inset();
+        let view_width = self.viewport.width as f32;
         let geometry = self.viewport.geometry(model);
-        let entity = cx.entity().downgrade();
+        let weak = cx.entity().downgrade();
         let mut tracks = div()
             .id("compiled-timeline")
             .track_focus(&self.focus)
             .role(gpui::Role::Group)
             .aria_label("Compiled timeline: ruler scrubs, tracks select ranges")
             .relative()
-            .h(px(138.))
+            .flex_1()
+            .min_h_0()
             .overflow_hidden()
-            .border_1()
-            .border_color(rgb(BORDER))
-            .bg(rgb(colors.surface))
-            .focus_visible(|s| s.border_color(rgb(ACCENT)))
+            .rounded(px(metrics.radius_segment))
+            .focus_visible(|s| s.shadow(focus_ring()))
             .on_key_down(cx.listener(|view, event, _, cx| view.key(event, cx)))
             .on_mouse_down(
                 MouseButton::Left,
@@ -439,10 +642,10 @@ impl Render for TimelineView {
                     gpui::ScrollDelta::Lines(p) => (p.x + p.y) * 32.,
                 } as f64;
                 if e.modifiers.control {
-                    let anchor = v
-                        .bounds
-                        .map_or(0., |b| f32::from(e.position.x - b.left()) as f64);
-                    v.viewport.zoom((delta * 0.01).exp(), anchor, model);
+                    let anchor = v.bounds.map_or(0., |b| {
+                        f32::from(e.position.x - b.left() - px(axis_inset())) as f64
+                    });
+                    v.viewport.zoom((delta * 0.01).exp(), anchor.max(0.), model);
                 } else {
                     v.viewport.scroll_by(-delta, model);
                 }
@@ -452,10 +655,11 @@ impl Render for TimelineView {
             .child(
                 canvas(
                     move |bounds, _, cx| {
-                        let _ = entity.update(cx, |view, cx| {
+                        let _ = weak.update(cx, |view, cx| {
                             view.bounds = Some(bounds);
                             if let Some(model) = &view.model {
-                                let width = f32::from(bounds.size.width) as f64;
+                                let width =
+                                    (f32::from(bounds.size.width) - axis_inset()).max(0.) as f64;
                                 if (view.viewport.width - width).abs() > 0.5 {
                                     let first = view.viewport.width == 0.;
                                     view.viewport.resize(width, model);
@@ -472,42 +676,59 @@ impl Render for TimelineView {
                 .absolute()
                 .size_full(),
             );
-        for tick in geometry.ticks {
-            tracks = tracks.child(
-                div()
-                    .absolute()
-                    .left(px(tick.x as f32))
-                    .top_0()
-                    .text_xs()
-                    .text_color(rgb(MUTED))
-                    .child(tick.label),
-            );
-        }
-        if let Some(range) = &self.selection.range {
-            let start = self.viewport.x_at_frame(range.start, model);
-            let end = self.viewport.x_at_frame(range.end, model);
-            tracks = tracks.child(
-                div()
-                    .absolute()
-                    .left(px(start as f32))
-                    .top(px(22.))
-                    .w(px((end - start) as f32))
-                    .h(px(114.))
-                    .bg(rgb(colors.accent_tint)),
-            );
-        }
-        // Tracks scroll vertically independently of the ruler. Only horizontal visible geometry is rendered.
-        let scene_lanes = geometry.scene_lane_count;
-        let mut lanes = div()
-            .id("timeline-lanes")
+
+        // Ruler: major ticks carry the labels, minor ticks subdivide them.
+        let major_xs: Vec<f64> = geometry.ticks.iter().map(|tick| tick.x).collect();
+        let mut ruler = div()
             .absolute()
-            .top(px(24.))
-            .bottom_0()
-            .w_full()
-            .overflow_y_scroll();
-        let mut content = div().relative().h(px(
-            ((scene_lanes + model.report().audio_tracks.len()).max(2) * 28) as f32,
-        ));
+            .left(px(inset))
+            .right_0()
+            .top_0()
+            .h(px(metrics.ruler_h))
+            .overflow_hidden();
+        for x in minor_tick_xs(&major_xs, self.viewport.width) {
+            ruler = ruler.child(
+                div()
+                    .absolute()
+                    .left(px(x as f32))
+                    .bottom_0()
+                    .w(px(1.))
+                    .h(px(MINOR_TICK_H))
+                    .bg(colors.line_strong),
+            );
+        }
+        for tick in geometry.ticks {
+            let x = tick.x as f32;
+            ruler = ruler
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(x))
+                        .bottom_0()
+                        .w(px(1.))
+                        .h(px(MAJOR_TICK_H))
+                        .bg(colors.line_strong),
+                )
+                .child(
+                    text_style(div(), TextStyle::Small)
+                        .absolute()
+                        .left(px(x + 4.))
+                        .top(px(3.))
+                        .whitespace_nowrap()
+                        .text_color(colors.text_3)
+                        .child(tick.label),
+                );
+        }
+        tracks = tracks.child(ruler);
+
+        // Lanes scroll vertically independently of the ruler. Only horizontal visible geometry is rendered.
+        let scene_lanes = geometry.scene_lane_count.max(1);
+        let audio_count = model.report().audio_tracks.len();
+        let row_top = |row: usize| row as f32 * (metrics.track_h + metrics.track_gap);
+        let mut scene_rows: Vec<Vec<gpui::AnyElement>> =
+            (0..scene_lanes).map(|_| Vec::new()).collect();
+        let mut audio_rows: Vec<Vec<gpui::AnyElement>> =
+            (0..audio_count).map(|_| Vec::new()).collect();
         for rect in geometry.scenes {
             let scene = &model.report().scenes[rect.index];
             if scene.start_frame == scene.end_frame {
@@ -515,83 +736,150 @@ impl Render for TimelineView {
             }
             let selected = self.selection.scene_id.as_ref() == Some(&scene.instance_id);
             let index = rect.index;
-            content = content.child(
-                div()
-                    .id(format!("scene-{}", scene.instance_id))
-                    .role(gpui::Role::Button)
-                    .aria_label(format!("Scene {} instance {}", scene.name, scene.index))
-                    .tab_index(0)
-                    .absolute()
-                    .left(px(rect.x as f32))
-                    .top(px((rect.lane * 28) as f32))
-                    .w(px(rect.width.max(1.) as f32))
-                    .h(px(24.))
-                    .overflow_hidden()
-                    .px_1()
-                    .rounded_sm()
-                    .bg(rgb(if selected {
-                        colors.accent_tint
-                    } else {
-                        colors.surface_raised
-                    }))
-                    .text_xs()
-                    .focus_visible(|s| s.border_1().border_color(rgb(ACCENT)))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |v, e: &gpui::MouseDownEvent, w, cx| {
-                            if e.modifiers.shift {
-                                return;
-                            }
-                            if let Some(m) = &v.model {
-                                v.selection.select_scene(index, m);
-                            }
-                            v.emit_scope_changed(cx);
-                            w.focus(&v.focus, cx);
-                            cx.notify();
-                            cx.stop_propagation();
-                        }),
-                    )
-                    .on_key_down(cx.listener(move |v, e: &gpui::KeyDownEvent, _, cx| {
-                        if e.keystroke.key == "enter" {
-                            if let Some(m) = &v.model {
-                                v.selection.select_scene(index, m);
-                            }
-                            v.emit_scope_changed(cx);
-                            cx.notify();
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .child(format!("{} #{}", scene.name, scene.index)),
-            );
+            let kind = if rect.lane == 0 {
+                TrackKind::Clip
+            } else {
+                TrackKind::Overlay
+            };
+            let element = segment(
+                kind,
+                selected,
+                rect.x as f32,
+                rect.width.max(1.) as f32,
+                view_width,
+                format!("{} #{}", scene.name, scene.index),
+            )
+            .id(format!("scene-{}", scene.instance_id))
+            .role(gpui::Role::Button)
+            .aria_label(format!("Scene {} instance {}", scene.name, scene.index))
+            .tab_index(0)
+            .focus_visible(|s| s.border_color(design_system::tokens().palette.accent))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |v, e: &gpui::MouseDownEvent, w, cx| {
+                    if e.modifiers.shift {
+                        return;
+                    }
+                    if let Some(m) = &v.model {
+                        v.selection.select_scene(index, m);
+                    }
+                    v.emit_scope_changed(cx);
+                    w.focus(&v.focus, cx);
+                    cx.notify();
+                    cx.stop_propagation();
+                }),
+            )
+            .on_key_down(cx.listener(move |v, e: &gpui::KeyDownEvent, _, cx| {
+                if e.keystroke.key == "enter" {
+                    if let Some(m) = &v.model {
+                        v.selection.select_scene(index, m);
+                    }
+                    v.emit_scope_changed(cx);
+                    cx.notify();
+                    cx.stop_propagation();
+                }
+            }));
+            scene_rows[rect.lane.min(scene_lanes - 1)].push(element.into_any_element());
         }
         for rect in geometry.audio {
             let audio = &model.report().audio_tracks[rect.index];
-            content = content.child(
+            let element = segment(
+                TrackKind::Audio,
+                false,
+                rect.x as f32,
+                rect.width.max(1.) as f32,
+                view_width,
+                format!("♫ {} · {:.3}s", audio.file, audio.start_seconds),
+            );
+            audio_rows[rect.lane.min(audio_count - 1)].push(element.into_any_element());
+        }
+        let total_rows = scene_lanes + audio_count;
+        let mut content = div().relative().h(px(
+            (row_top(total_rows) - metrics.track_gap).max(metrics.track_h)
+        ));
+        for (lane, segments) in scene_rows.into_iter().enumerate() {
+            content = content.child(track_row(
+                row_top(lane),
+                lane_name("Scenes", lane, scene_lanes),
+                Icon::Layers,
+                segments,
+            ));
+        }
+        for (track, segments) in audio_rows.into_iter().enumerate() {
+            content = content.child(track_row(
+                row_top(scene_lanes + track),
+                lane_name("Audio", track, audio_count),
+                Icon::Volume2,
+                segments,
+            ));
+        }
+        let lanes = div()
+            .id("timeline-lanes")
+            .absolute()
+            .top(px(metrics.ruler_h))
+            .bottom_0()
+            .w_full()
+            .overflow_y_scroll()
+            .child(content);
+        tracks = tracks.child(lanes);
+
+        // Selection range and playhead share one clip box over the time axis.
+        let mut overlay = div()
+            .absolute()
+            .left(px(inset))
+            .right_0()
+            .top_0()
+            .bottom_0()
+            .overflow_hidden();
+        if let Some(range) = &self.selection.range {
+            let start = self.viewport.x_at_frame(range.start, model);
+            let end = self.viewport.x_at_frame(range.end, model);
+            overlay = overlay.child(
                 div()
                     .absolute()
-                    .left(px(rect.x as f32))
-                    .top(px(((scene_lanes + rect.lane) * 28) as f32))
-                    .w(px(rect.width.max(1.) as f32))
-                    .h(px(24.))
-                    .overflow_hidden()
-                    .px_1()
-                    .rounded_sm()
-                    .bg(rgb(colors.success_surface))
-                    .text_xs()
-                    .child(format!("♫ {} · {:.3}s", audio.file, audio.start_seconds)),
+                    .left(px(start as f32))
+                    .top(px(metrics.ruler_h))
+                    .bottom_0()
+                    .w(px((end - start) as f32))
+                    .bg(colors.selection)
+                    .border_l_1()
+                    .border_r_1()
+                    .border_color(colors.accent),
             );
         }
-        lanes = lanes.child(content);
-        tracks = tracks.child(lanes).child(
-            div()
-                .absolute()
-                .left(px(self.viewport.x_at_frame(self.position, model) as f32))
-                .top_0()
-                .bottom_0()
-                .w(px(1.))
-                .bg(rgb(ACCENT)),
-        );
-        let mut thumbs = div().relative().h(px(38.)).overflow_hidden();
+        let playhead_x = self.viewport.x_at_frame(self.position, model) as f32;
+        let ring = PLAYHEAD_HEAD + 2. * PLAYHEAD_RING;
+        overlay = overlay
+            .child(
+                div()
+                    .absolute()
+                    .left(px(playhead_x))
+                    .top_0()
+                    .bottom_0()
+                    .w(px(1.))
+                    .bg(colors.playhead),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(px(playhead_x + 0.5 - ring / 2.))
+                    .top(px((metrics.ruler_h - ring) / 2.))
+                    .size(px(ring))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(colors.card)
+                    .child(
+                        div()
+                            .size(px(PLAYHEAD_HEAD))
+                            .rounded_full()
+                            .bg(colors.playhead),
+                    ),
+            );
+        tracks = tracks.child(overlay);
+
+        let mut thumbs = div().relative().flex_none().h(px(38.)).overflow_hidden();
         for frame in self.viewport.thumbnail_frames(model) {
             let key = ThumbnailKey::new(
                 model.report().envelope.identity.clone(),
@@ -602,7 +890,7 @@ impl Render for TimelineView {
                 thumbs = thumbs.child(
                     div()
                         .absolute()
-                        .left(px(self.viewport.x_at_frame(frame, model) as f32))
+                        .left(px(self.viewport.x_at_frame(frame, model) as f32 + inset))
                         .w(px(64.))
                         .h(px(36.))
                         .overflow_hidden()
@@ -625,13 +913,83 @@ impl Render for TimelineView {
                         .map_or(String::new(), |_| " · scene selected".into())
                 )
             });
-        root =
-            root.child(tracks)
-                .child(thumbs)
-                .child(div().text_xs().text_color(rgb(MUTED)).child(format!(
+        root.child(tracks).child(thumbs).child(
+            text_style(div(), TextStyle::Small)
+                .flex_none()
+                .text_color(colors.text_3)
+                .child(format!(
                     "{} · {selected} · drag tracks / Shift-drag for range",
                     model.time_label(self.position)
-                )));
-        root
+                )),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ruler_click_scrubs_and_lane_click_selects() {
+        let ruler_h = design_system::tokens().metrics.ruler_h;
+        assert_eq!(ruler_h, 26.);
+        assert_eq!(hit_zone(100., 100.), HitZone::Ruler);
+        assert_eq!(hit_zone(100. + ruler_h - 0.5, 100.), HitZone::Ruler);
+        assert_eq!(hit_zone(100. + ruler_h, 100.), HitZone::Lanes);
+        assert_eq!(hit_zone(300., 100.), HitZone::Lanes);
+    }
+
+    #[test]
+    fn zoom_slider_maps_to_zoom_range_and_back() {
+        assert_eq!(zoom_to_fraction(ZOOM_MIN), 0.);
+        assert_eq!(zoom_to_fraction(ZOOM_MAX), 1.);
+        assert_eq!(zoom_to_fraction(ZOOM_MIN / 10.), 0.);
+        assert_eq!(zoom_to_fraction(ZOOM_MAX * 10.), 1.);
+        assert_eq!(fraction_to_zoom(-1.), ZOOM_MIN);
+        for pps in [0.5, 12., 100., 4_000.] {
+            let back = fraction_to_zoom(zoom_to_fraction(pps));
+            assert!((back / pps - 1.).abs() < 1e-3, "{pps} -> {back}");
+        }
+        assert!(fraction_to_zoom(0.25) < fraction_to_zoom(0.75));
+    }
+
+    #[test]
+    fn segment_label_anchors_to_visible_slice() {
+        let inner = LABEL_PAD_LEFT + LABEL_PAD_RIGHT;
+        // Fully visible: label starts after the left padding.
+        let whole = label_slice(10., 100., 500.);
+        assert_eq!(whole.left, LABEL_PAD_LEFT);
+        assert_eq!(whole.width, 100. - inner);
+        // Scrolled past the left edge: label follows the visible part.
+        let left_cut = label_slice(-50., 100., 500.);
+        assert_eq!(left_cut.left, 50. + LABEL_PAD_LEFT);
+        assert_eq!(left_cut.width, 50. - inner);
+        // Cut by the right edge of the viewport.
+        let right_cut = label_slice(450., 100., 500.);
+        assert_eq!(right_cut.left, LABEL_PAD_LEFT);
+        assert_eq!(right_cut.width, 50. - inner);
+        // Too little visible: no width, never negative.
+        assert_eq!(label_slice(490., 100., 500.).width, 0.);
+        // Longer than the viewport on both sides.
+        let both = label_slice(-1000., 5000., 400.);
+        assert_eq!(both.left, 1000. + LABEL_PAD_LEFT);
+        assert_eq!(both.width, 400. - inner);
+    }
+
+    #[test]
+    fn minor_ticks_subdivide_majors_without_overlap() {
+        assert!(minor_tick_xs(&[], 300.).is_empty());
+        assert!(minor_tick_xs(&[10.], 300.).is_empty());
+        let minors = minor_tick_xs(&[20., 120., 220.], 300.);
+        assert!(minors.iter().all(|x| (0. ..=300.).contains(x)));
+        assert!(!minors.iter().any(|x| [20., 120., 220.].contains(x)));
+        assert_eq!(minors.iter().filter(|x| **x > 20. && **x < 120.).count(), 4);
+    }
+
+    #[test]
+    fn axis_inset_is_gutter_plus_gap() {
+        assert_eq!(axis_inset(), 112.);
+        assert_eq!(lane_name("Audio", 0, 1), "Audio");
+        assert_eq!(lane_name("Audio", 1, 2), "Audio 2");
     }
 }

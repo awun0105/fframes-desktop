@@ -44,15 +44,19 @@ fn qualified() -> WriterOwnership {
     }
 }
 
-/// The host never consults the global PATH: the description names the interpreter by its
-/// absolute path, as a user's Setup would.
-fn python3() -> String {
-    std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
-        .map(|dir| dir.join("python3"))
-        .find(|candidate| candidate.is_file())
-        .expect("python3 on PATH")
-        .to_string_lossy()
-        .into_owned()
+/// The host never consults the global PATH: the description names the resolved test
+/// interpreter by its absolute path, as a user's Setup would.
+fn python() -> String {
+    let python = studio_test_support::python();
+    let absolute = if python.is_absolute() {
+        python.to_path_buf()
+    } else {
+        std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+            .map(|dir| dir.join(python))
+            .find(|candidate| candidate.is_file())
+            .expect("the test interpreter on PATH")
+    };
+    absolute.to_string_lossy().into_owned()
 }
 
 fn agent_script() -> String {
@@ -89,7 +93,7 @@ impl World {
     fn adapter(&self, auth_env_names: Vec<String>) -> AdapterFile {
         AdapterFile {
             provider: "scripted".into(),
-            executable: python3(),
+            executable: python(),
             args: vec![agent_script(), self.agent.to_string_lossy().into_owned()],
             auth_env_names,
             auth_method: None,
@@ -615,7 +619,7 @@ fn a_long_real_conversation_pages_back_inside_the_resident_limits() {
     config.adapter = Some(AdapterSettings {
         provider: "scripted".into(),
         adapter: AdapterConfig {
-            executable: python3(),
+            executable: python(),
             args: vec![agent_script(), agent.to_string_lossy().into_owned()],
             auth_env_names: vec![],
         },

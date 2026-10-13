@@ -13,16 +13,18 @@
 //!
 //! * The **model** half (everything above [`PresetPanel`]) is GPUI-free and unit-testable.
 //! * [`PresetPanel`] renders a [`PresetView`] and emits [`PresetEvent`]s for the shell.
-use crate::design_system::colors::{
-    BORDER, DANGER, DANGER_TEXT, MUTED, PANEL, SUCCESS, TEXT, WARNING,
-};
 use crate::{
-    design_system::{self, ButtonStyle},
+    design_system::{self, TextStyle, text_style},
     text_input::TextInput,
+    ui::{
+        Button, ButtonVariant, Collapsible, Icon, IconButton, IconButtonSize, Notice, SectionTitle,
+        Tone, divider, icon,
+        interact::{Handler, focusable, on_activate, with_tooltip},
+    },
 };
 use gpui::{
     AppContext, Context, ElementId, Entity, EventEmitter, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div, px, rgb,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 use parking_lot::Mutex;
 use std::{
@@ -541,6 +543,7 @@ pub struct PresetPanel {
     selected: Option<String>,
     last: Option<PresetReport>,
     css: Option<CssView>,
+    css_open: bool,
     token: Entity<TextInput>,
     value: Entity<TextInput>,
 }
@@ -562,6 +565,7 @@ impl PresetPanel {
             selected: None,
             last: None,
             css: None,
+            css_open: true,
             token: input("Token, for example color.accent", cx),
             value: input("Value, for example #ff5533 or 120", cx),
         }
@@ -619,49 +623,85 @@ impl PresetPanel {
 
     // ---- building blocks ---------------------------------------------------------------
 
-    fn button(
+    #[allow(clippy::too_many_arguments)]
+    /// A stacked, full-width `ui::Button` that runs `action` on this panel.
+    fn action_button(
         &self,
         id: impl Into<ElementId>,
-        label: impl Into<SharedString>,
+        label: &'static str,
         enabled: bool,
-        selected: bool,
+        variant: ButtonVariant,
+        glyph: Option<Icon>,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> gpui::Stateful<gpui::Div> {
-        let label: SharedString = label.into();
-        let action = Rc::new(action);
-        let on_click = action.clone();
-        design_system::button(
-            div()
-                .id(id)
-                .role(gpui::Role::Button)
-                .aria_label(label.clone())
-                .tab_index(0)
-                .tab_stop(enabled)
-                .text_xs(),
-            if selected {
-                ButtonStyle::Selected
-            } else {
-                ButtonStyle::Secondary
-            },
-            enabled,
-        )
-        .on_click(cx.listener(move |this, _, _, cx| {
-            if enabled {
-                on_click(this, cx);
-            }
-        }))
-        .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
-            if enabled && matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                action(this, cx);
-                cx.stop_propagation();
-            }
-        }))
-        .child(label)
+    ) -> Button {
+        let entity = cx.entity();
+        let mut button = Button::new(id, label)
+            .variant(variant)
+            .disabled(!enabled)
+            .on_click(move |_, cx| {
+                entity.update(cx, |panel, cx| action(panel, cx));
+            });
+        if let Some(glyph) = glyph {
+            button = button.icon(glyph);
+        }
+        button
     }
 
-    fn line(text: impl Into<SharedString>, color: u32) -> gpui::Div {
-        div().text_xs().text_color(rgb(color)).child(text.into())
+    /// One preset in the list: a radio-style row with a check on the selected one.
+    /// The accessible name and tooltip carry the full label.
+    fn preset_row(
+        &self,
+        key: String,
+        label: String,
+        shown: String,
+        selected: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let tokens = design_system::tokens();
+        let entity = cx.entity();
+        let id = format!("preset-{key}");
+        let handler: Handler = Rc::new(move |_, cx| {
+            entity.update(cx, |panel, cx| {
+                panel.selected = Some(key.clone());
+                cx.notify();
+            });
+        });
+        let check = if selected {
+            icon(Icon::Check, tokens.metrics.icon_sm, tokens.palette.accent)
+        } else {
+            icon(Icon::Check, tokens.metrics.icon_sm, tokens.palette.text_3).opacity(0.)
+        };
+        let mut row = div()
+            .id(id)
+            .role(gpui::Role::RadioButton)
+            .aria_label(label.clone())
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(tokens.metrics.space_2))
+            .h(px(PRESET_ROW_H))
+            .px(px(tokens.metrics.space_2))
+            .min_w_0()
+            .rounded(px(tokens.metrics.radius_item))
+            .hover(|style| style.bg(design_system::tokens().palette.ctl_hover))
+            .child(check)
+            .child(
+                text_style(div().min_w_0().flex_1().truncate(), TextStyle::Body)
+                    .text_color(tokens.palette.text_1)
+                    .child(shown),
+            );
+        if selected {
+            row = row.bg(tokens.palette.ctl);
+        }
+        let row = on_activate(focusable(row, false), false, Some(handler));
+        with_tooltip(row, Some(label.into()))
+    }
+
+    fn small(text: impl Into<SharedString>, color: gpui::Rgba) -> gpui::Div {
+        text_style(div(), TextStyle::Small)
+            .text_color(color)
+            .child(text.into())
     }
 
     fn run(&mut self, command: PresetCommand, cx: &mut Context<Self>) {
@@ -718,79 +758,77 @@ impl PresetPanel {
 
 impl Render for PresetPanel {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let tokens = design_system::tokens();
+        let palette = tokens.palette;
         let mut root = div()
             .id("preset-panel")
             .flex()
             .flex_col()
-            .gap_2()
-            .p_3()
-            .rounded_md()
-            .border_1()
-            .border_color(rgb(BORDER))
-            .bg(rgb(PANEL))
-            .child(div().text_sm().child("Style presets"))
-            .child(Self::line(
-                "Presets style the video only; Studio's own interface never changes.",
-                MUTED,
-            ));
+            .gap(px(tokens.metrics.space_3))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(tokens.metrics.space_1))
+                    .child(SectionTitle::new("Style presets"))
+                    .child(Self::small(
+                        "Presets style the video only; Studio's own interface never changes.",
+                        palette.text_2,
+                    )),
+            );
         let Some(view) = self.view.clone() else {
-            return root.child(Self::line("Open a project to choose a preset.", MUTED));
+            return root.child(Self::small(
+                "Open a project to choose a preset.",
+                palette.text_2,
+            ));
         };
         let enabled = view.mutation.is_enabled();
         if let PresetMutation::Disabled(reason) = &view.mutation {
-            root = root.child(
-                div()
-                    .p_2()
-                    .rounded_md()
-                    .bg(rgb(WARNING))
-                    .text_xs()
-                    .child(format!("Preset changes are disabled: {reason}")),
-            );
+            root = root.child(Notice::new(
+                "preset-disabled",
+                Tone::Warning,
+                format!("Preset changes are disabled: {reason}"),
+            ));
         }
         match &view.applied {
             Some(applied) => {
-                root = root.child(Self::line(
+                root = root.child(Self::small(
                     format!(
                         "Applied: {} {} ({})",
                         applied.name,
                         applied.version,
                         &applied.hash[..12]
                     ),
-                    TEXT,
+                    palette.text_1,
                 ));
             }
             None => {
-                root = root.child(Self::line(
+                root = root.child(Self::small(
                     "No preset applied yet; this project keeps its own styles until you choose one.",
-                    MUTED,
+                    palette.text_2,
                 ));
             }
         }
-        let mut list = div().flex().flex_col().gap_1();
+        let mut list = div().flex().flex_col();
         for entry in &view.entries {
-            let key = entry.key.clone();
-            let label = format!(
-                "{}{} {} · {}{}",
-                if entry.applied { "✓ " } else { "" },
+            let detail = format!(
+                "{} {} · {}{}",
                 entry.name,
                 entry.version,
                 if entry.bundled { "bundled" } else { "imported" },
                 if entry.applied { " · applied" } else { "" }
             );
-            list = list.child(self.button(
-                format!("preset-{}", entry.key),
+            let label = format!("{}{detail}", if entry.applied { "✓ " } else { "" });
+            list = list.child(self.preset_row(
+                entry.key.clone(),
                 label,
-                true,
+                detail,
                 self.selected.as_deref() == Some(entry.key.as_str()),
                 cx,
-                move |this, cx| {
-                    this.selected = Some(key.clone());
-                    cx.notify();
-                },
             ));
         }
         for skipped in &view.skipped {
-            list = list.child(Self::line(format!("Skipped: {skipped}"), DANGER_TEXT));
+            list = list.child(Self::small(format!("Skipped: {skipped}"), palette.danger));
         }
         root = root.child(list);
         let selected = self
@@ -799,22 +837,24 @@ impl Render for PresetPanel {
             .and_then(|key| view.entries.iter().find(|e| &e.key == key))
             .cloned();
         if let Some(entry) = &selected {
-            root = root.child(Self::line(
+            root = root.child(Self::small(
                 format!("{} — {}", entry.id, entry.description),
-                MUTED,
+                palette.text_2,
             ));
         }
         let key = selected.as_ref().map(|e| e.key.clone());
         let can_select = enabled && key.is_some();
         let reapply = enabled && selected.as_ref().is_some_and(|e| e.same_id_applied);
         let reset = enabled && view.applied.is_some() && key.is_some();
-        let mut actions = div().flex().gap_2().flex_wrap();
+        // At 216 px the buttons stack; a row would not fit their labels.
+        let mut actions = div().flex().flex_col().gap(px(tokens.metrics.space_2));
         let apply_key = key.clone();
-        actions = actions.child(self.button(
+        actions = actions.child(self.action_button(
             "preset-apply",
             "Apply",
             can_select,
-            false,
+            ButtonVariant::Primary,
+            Some(Icon::Check),
             cx,
             move |this, cx| {
                 if let Some(key) = apply_key.clone() {
@@ -823,11 +863,12 @@ impl Render for PresetPanel {
             },
         ));
         let reapply_key = key.clone();
-        actions = actions.child(self.button(
+        actions = actions.child(self.action_button(
             "preset-reapply",
             "Reapply (keep overrides)",
             reapply,
-            false,
+            ButtonVariant::Editor,
+            Some(Icon::RefreshCw),
             cx,
             move |this, cx| {
                 if let Some(key) = reapply_key.clone() {
@@ -836,11 +877,12 @@ impl Render for PresetPanel {
             },
         ));
         let reset_key = key.clone();
-        actions = actions.child(self.button(
+        actions = actions.child(self.action_button(
             "preset-reset",
             "Reset overrides",
             reset,
-            false,
+            ButtonVariant::Editor,
+            Some(Icon::History),
             cx,
             move |this, cx| {
                 if let Some(key) = reset_key.clone() {
@@ -848,143 +890,200 @@ impl Render for PresetPanel {
                 }
             },
         ));
-        let export_key = key.clone();
-        actions = actions
-            .child(self.button(
-                "preset-import",
-                "Import preset folder…",
-                true,
-                false,
-                cx,
-                |_, cx| {
-                    cx.emit(PresetEvent::Pick(PresetPick::ImportFolder));
-                },
-            ))
-            .child(self.button(
-                "preset-export",
-                "Export selected…",
-                key.is_some(),
-                false,
-                cx,
-                move |_, cx| {
-                    if let Some(key) = export_key.clone() {
-                        cx.emit(PresetEvent::Pick(PresetPick::Export { key }));
-                    }
-                },
-            ))
-            .child(self.button(
-                "preset-css",
-                "CSS import report…",
-                true,
-                false,
-                cx,
-                |_, cx| {
-                    cx.emit(PresetEvent::Pick(PresetPick::ImportCss));
-                },
-            ));
         root = root.child(actions);
 
+        let export_key = key.clone();
+        root = root.child(divider()).child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(tokens.metrics.space_2))
+                .child(self.action_button(
+                    "preset-import",
+                    "Import preset folder…",
+                    true,
+                    ButtonVariant::Editor,
+                    Some(Icon::Upload),
+                    cx,
+                    |_, cx| {
+                        cx.emit(PresetEvent::Pick(PresetPick::ImportFolder));
+                    },
+                ))
+                .child(self.action_button(
+                    "preset-export",
+                    "Export selected…",
+                    key.is_some(),
+                    ButtonVariant::Editor,
+                    Some(Icon::Download),
+                    cx,
+                    move |_, cx| {
+                        if let Some(key) = export_key.clone() {
+                            cx.emit(PresetEvent::Pick(PresetPick::Export { key }));
+                        }
+                    },
+                ))
+                .child(self.action_button(
+                    "preset-css",
+                    "CSS import report…",
+                    true,
+                    ButtonVariant::Editor,
+                    Some(Icon::File),
+                    cx,
+                    |_, cx| {
+                        cx.emit(PresetEvent::Pick(PresetPick::ImportCss));
+                    },
+                )),
+        );
+
         // Project overrides: the user's layer, kept across Reapply and reopen.
-        root = root.child(div().text_sm().mt_1().child("Project overrides"));
+        root = root
+            .child(divider())
+            .child(SectionTitle::new("Project overrides"));
         if let Some(applied) = &view.applied {
+            let mut overrides = div().flex().flex_col();
             if applied.overridden.is_empty() {
-                root = root.child(Self::line("No project overrides.", MUTED));
+                overrides = overrides.child(Self::small("No project overrides.", palette.text_2));
             }
             for (token, layer, value) in &applied.overridden {
                 let clear = token.clone();
-                root = root.child(
+                let entity = cx.entity();
+                overrides = overrides.child(
                     div()
                         .flex()
-                        .gap_2()
                         .items_center()
-                        .child(Self::line(format!("{token} · {layer} · {value}"), TEXT))
-                        .child(self.button(
-                            format!("clear-{token}"),
-                            "Clear",
-                            enabled,
-                            false,
-                            cx,
-                            move |this, cx| {
-                                this.run(
-                                    PresetCommand::ClearOverride {
-                                        token: clear.clone(),
-                                    },
-                                    cx,
-                                );
-                            },
-                        )),
+                        .gap(px(tokens.metrics.space_2))
+                        .min_h(px(tokens.metrics.field_row_h))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w_0()
+                                .child(
+                                    text_style(div().truncate(), TextStyle::Body)
+                                        .text_color(palette.text_1)
+                                        .child(token.clone()),
+                                )
+                                .child(
+                                    text_style(div().truncate(), TextStyle::Small)
+                                        .text_color(palette.text_3)
+                                        .child(format!("{layer} · {value}")),
+                                ),
+                        )
+                        .child(
+                            IconButton::new(format!("clear-{token}"), Icon::X)
+                                .size(IconButtonSize::Small)
+                                .label("Clear")
+                                .disabled(!enabled)
+                                .on_click(move |_, cx| {
+                                    entity.update(cx, |this, cx| {
+                                        this.run(
+                                            PresetCommand::ClearOverride {
+                                                token: clear.clone(),
+                                            },
+                                            cx,
+                                        );
+                                    });
+                                }),
+                        ),
                 );
             }
-            for diagnostic in &applied.diagnostics {
-                root = root.child(
-                    div()
-                        .p_1()
-                        .rounded_md()
-                        .bg(rgb(WARNING))
-                        .text_xs()
-                        .child(format!("Kept, not applied: {diagnostic}")),
-                );
+            root = root.child(overrides);
+            for (index, diagnostic) in applied.diagnostics.iter().enumerate() {
+                root = root.child(Notice::new(
+                    ElementId::from(("preset-diagnostic", index)),
+                    Tone::Warning,
+                    format!("Kept, not applied: {diagnostic}"),
+                ));
             }
             let token = self.field("override-token", self.token.clone(), cx);
             let value = self.field("override-value", self.value.clone(), cx);
-            root = root.child(token).child(value).child(self.button(
-                "override-set",
-                "Set override",
-                enabled,
-                false,
-                cx,
-                |this, cx| this.set_override(cx),
-            ));
+            root = root.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(tokens.metrics.space_2))
+                    .child(token)
+                    .child(value)
+                    .child(self.action_button(
+                        "override-set",
+                        "Set override",
+                        enabled,
+                        ButtonVariant::Editor,
+                        Some(Icon::Plus),
+                        cx,
+                        |this, cx| this.set_override(cx),
+                    )),
+            );
         }
 
         if let Some(last) = &self.last {
-            let (background, lines) = match &last.outcome {
+            let tone = match &last.outcome {
                 Outcome::Committed { .. } | Outcome::Unchanged { .. } | Outcome::Done(_) => {
-                    (SUCCESS, last.status_lines())
+                    Tone::Success
                 }
-                Outcome::Refused(_) => (DANGER, last.status_lines()),
+                Outcome::Refused(_) => Tone::Danger,
             };
-            let mut status = div()
-                .id("preset-status")
-                .flex()
-                .flex_col()
-                .gap_1()
-                .p_2()
-                .rounded_md()
-                .bg(rgb(background));
-            for line in lines {
-                status = status.child(Self::line(line, TEXT));
+            let (title, body) = status_text(last.status_lines());
+            let mut status = Notice::new("preset-status", tone, title);
+            if let Some(body) = body {
+                status = status.body(body);
             }
             root = root.child(status);
         }
         if let Some(css) = &self.css {
-            let mut report = div()
-                .id("css-report")
+            let mut lines = div()
+                .id("css-lines")
                 .max_h(px(200.))
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()
-                .gap_1()
-                .child(Self::line(
+                .gap(px(tokens.metrics.space_1))
+                .pt(px(tokens.metrics.space_1))
+                .child(Self::small(
                     format!(
                         "CSS report · {}: {} accepted · {} unsupported · {} rejected",
                         css.file, css.accepted, css.unsupported, css.rejected
                     ),
-                    TEXT,
+                    palette.text_1,
                 ));
             for line in &css.lines {
-                report = report.child(Self::line(line.clone(), MUTED));
+                lines = lines.child(Self::small(line.clone(), palette.text_2));
             }
             if css.truncated {
-                report = report.child(Self::line(
+                lines = lines.child(Self::small(
                     format!("Showing the first {MAX_CSS_LINES} declarations."),
-                    MUTED,
+                    palette.text_2,
                 ));
             }
-            root = root.child(report);
+            let entity = cx.entity();
+            root = root.child(
+                div().id("css-report").child(
+                    Collapsible::new("css-report-section", self.css_open)
+                        .header(SectionTitle::new("CSS import report"))
+                        .content(lines)
+                        .on_toggle(move |open, _, cx| {
+                            entity.update(cx, |panel, cx| {
+                                panel.css_open = open;
+                                cx.notify();
+                            });
+                        }),
+                ),
+            );
         }
         root
     }
+}
+
+/// Height of a preset list row.
+const PRESET_ROW_H: f32 = 34.;
+
+/// The first status line as the notice title and the remaining lines as its body.
+fn status_text(lines: Vec<String>) -> (String, Option<String>) {
+    let mut lines = lines.into_iter();
+    let title = lines.next().unwrap_or_default();
+    let rest = lines.collect::<Vec<_>>().join("\n");
+    (title, (!rest.is_empty()).then_some(rest))
 }
 
 #[cfg(test)]
@@ -997,6 +1096,23 @@ mod tests {
         assert_eq!(parse_value("\"#ff0000\""), serde_json::json!("#ff0000"));
         assert_eq!(parse_value("#ff0000"), serde_json::json!("#ff0000"));
         assert_eq!(parse_value("{\"a\":1}"), serde_json::json!({"a": 1}));
+    }
+
+    #[test]
+    fn status_text_splits_title_from_body() {
+        assert_eq!(status_text(vec![]), (String::new(), None));
+        assert_eq!(status_text(vec!["a".into()]), ("a".into(), None));
+        assert_eq!(
+            status_text(vec!["a".into(), "b".into(), "c".into()]),
+            (
+                "a".into(),
+                Some(
+                    "b
+c"
+                    .into()
+                )
+            )
+        );
     }
 
     #[test]

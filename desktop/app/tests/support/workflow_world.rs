@@ -3,6 +3,7 @@ use fframes_studio::{
     build_service::{BuildKey, BuildLimits, BuildService, CompileRequest, Compiler},
     preview_coordinator::{PreviewCoordinator, SeekIntent},
 };
+use fframes_studio_protocol::{EditorGeometrySupport, EditorObjectIdentity, EditorSourceAnchor};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::{
@@ -17,12 +18,10 @@ use std::{
 use studio_agent_spike::{AdapterConfig, ExecutableSearch, McpStdioSupport, driver::OptionValue};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 use studio_engine::{
-    AgentTaskId, Boundary, CanvasTaskSelection, CanvasTaskSelectionKind, CompiledScope,
-    Controller, DraftState, Fault, ScopeSelection, TaskScope, TaskState, TransactionHooks,
-    TimelineSelection, VideoPixelRect, app_paths::AppPaths,
-    build_materialization::MaterializedBuild,
+    AgentTaskId, Boundary, CanvasTaskSelection, CanvasTaskSelectionKind, CompiledScope, Controller,
+    DraftState, Fault, ScopeSelection, TaskScope, TaskState, TimelineSelection, TransactionHooks,
+    VideoPixelRect, app_paths::AppPaths, build_materialization::MaterializedBuild,
 };
-use fframes_studio_protocol::{EditorGeometrySupport, EditorObjectIdentity, EditorSourceAnchor};
 
 #[path = "build_fixture.rs"]
 mod fixture;
@@ -34,8 +33,10 @@ mod preview_fixture;
 const WAIT: Duration = Duration::from_secs(90);
 const GOOD_CONFIG: &str = r#"{"frames":120,"tracks":[[0.0,2.0]],"audio":"tone","pixel":40}"#;
 
-/// The scripted agent's interpreter; Windows Python installs provide `python`, not `python3`.
-const PYTHON: &str = if cfg!(windows) { "python" } else { "python3" };
+/// The scripted agent's interpreter (the resolved test interpreter).
+fn python() -> String {
+    studio_test_support::python().to_string_lossy().into_owned()
+}
 
 fn agent_script() -> String {
     format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR"))
@@ -95,7 +96,7 @@ struct Options {
     handoff: Option<Arc<dyn PreviewHandoff>>,
     row_limits: Option<fframes_studio::agent_workflow::log::RowLimits>,
     hooks: Option<Arc<dyn TransactionHooks>>,
-    /// Command prefix before `python3` (e.g. `env VAR=x`).
+    /// Command prefix before the interpreter (e.g. `env VAR=x`).
     wrapper: Vec<String>,
     executable: Option<String>,
     adapter: bool,
@@ -240,6 +241,7 @@ impl World {
         config.search = ExecutableSearch {
             managed_dirs: vec![],
             gui_path: std::env::var_os("PATH"),
+            node: None,
         };
         config.build = Some(BuildSettings {
             service: self.service.clone(),
@@ -285,10 +287,10 @@ impl World {
             (Some(executable), _) => executable.clone(),
             (None, Some((first, rest))) => {
                 args.extend(rest.iter().cloned());
-                args.push(PYTHON.into());
+                args.push(python());
                 first.clone()
             }
-            (None, None) => PYTHON.to_owned(),
+            (None, None) => python(),
         };
         args.push(agent_script());
         args.push(self.agent.to_string_lossy().into_owned());

@@ -16,9 +16,9 @@ const LANE_X: f32 = 80.0;
 const LANE_W: f32 = 920.0;
 
 const REASONS: [&str; 3] = [
-    "Skia draws on the GPU",
-    "Static markup is cached",
-    "Every core renders frames",
+    "Uses the graphics card",
+    "Reuses what never changes",
+    "Draws many frames at once",
 ];
 
 fn lane(y: f32, name: &str, time: String, width: f32, fill: &str, color: &str) -> Svgr<'static> {
@@ -85,18 +85,18 @@ impl Scene for FastScene {
             <g>
                 <image href={bg.href()} x="0" y="0" width="1080" height="1920" />
                 <g opacity={prog(lb, 0.0, 0.3)} transform={format!("translate(0 {})", (1.0 - tag) * 24.0)}>
-                    <text x="80" y="300" font-family={MONO} font-weight="600" font-size="24" letter-spacing="4" fill={ACCENT}>"WHY IT IS FAST"</text>
-                    <text x="80" y="372" font-family={DISPLAY} font-size="56" letter-spacing="-1" fill={BONE}>"Same video. Same machine."</text>
+                    <text x="80" y="300" font-family={MONO} font-weight="600" font-size="24" letter-spacing="4" fill={ACCENT}>"THE SPEED TEST"</text>
+                    <text x="80" y="372" font-family={DISPLAY} font-size="56" letter-spacing="-1" fill={BONE}>"Same video, side by side."</text>
                 </g>
                 {big.draw(lb - 0.2, -160.0, 0.0)}
                 <g opacity={prog(lb, 0.6, 0.9)}>
                     <text x="84" y="690" font-family={DISPLAY} font-size="62" letter-spacing="-1" fill={BONE}>"FASTER THAN REMOTION"</text>
                 </g>
                 <g opacity={race_o}>
-                    {lane(850.0, "REMOTION", format!("{remotion:.1} s"), share(remotion), "#76726c", BONE)}
-                    {lane(970.0, "FFRAMES  /  SKIA GPU", format!("{fframes_t:.1} s"), share(fframes_t), ACCENT, ACCENT)}
-                    <text x="80" y="1100" font-family={MONO} font-weight="500" font-size="21" fill={GREY}>"100,000 text nodes, 300 frames, 4K, Apple M-series"</text>
-                    <text x="80" y="1134" font-family={MONO} font-weight="500" font-size="21" fill={GREY}>"Measured median render time."</text>
+                    {lane(850.0, "REMOTION  /  WEB BROWSER", format!("{remotion:.1} s"), share(remotion), "#76726c", BONE)}
+                    {lane(970.0, "FFRAMES  /  GRAPHICS CARD", format!("{fframes_t:.1} s"), share(fframes_t), ACCENT, ACCENT)}
+                    <text x="80" y="1102" font-family={MONO} font-weight="500" font-size="23" fill="#a29d95">"300 frames of 4K, 100,000 pieces of text."</text>
+                    <text x="80" y="1140" font-family={MONO} font-weight="500" font-size="23" fill="#a29d95">"Real measured times, Apple M-series Macs."</text>
                 </g>
                 {reasons}
             </g>

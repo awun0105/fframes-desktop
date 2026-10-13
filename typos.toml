@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["*.snapshot.txt", "sessions.json"]
+extend-exclude = ["*.snapshot.txt", "sessions.json", "package-lock.json"]
 [default.extend-words]
 hd = "hd"
 # "PNGs" is split into "PN" + "Gs"

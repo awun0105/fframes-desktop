@@ -627,7 +627,7 @@ mod tests {
     fn peer(root: &Path, mode: &str) -> (AcpSession, ProcessTreeManager) {
         let manager = ProcessTreeManager::new();
         let config = AdapterConfig {
-            executable: if cfg!(windows) { "python" } else { "python3" }.into(),
+            executable: studio_test_support::python().to_string_lossy().into_owned(),
             args: vec![
                 format!("{}/tests/acp-peer.py", env!("CARGO_MANIFEST_DIR")),
                 mode.into(),
@@ -797,7 +797,7 @@ mod tests {
     fn session_new_carries_configured_stdio_servers_in_the_acp_wire_shape() {
         let manager = ProcessTreeManager::new();
         let config = AdapterConfig {
-            executable: if cfg!(windows) { "python" } else { "python3" }.into(),
+            executable: studio_test_support::python().to_string_lossy().into_owned(),
             args: vec![
                 format!("{}/tests/acp-peer.py", env!("CARGO_MANIFEST_DIR")),
                 "question".into(),

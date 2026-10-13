@@ -377,12 +377,14 @@ mod tests {
         net::TcpListener,
         sync::{
             Arc,
-            atomic::{AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
         },
     };
 
+    /// Serves until it is dropped, so a slow transfer client start never finds it gone.
     struct TestServer {
         requests: Arc<AtomicUsize>,
+        stop: Arc<AtomicBool>,
         thread: Option<thread::JoinHandle<()>>,
     }
 
@@ -393,24 +395,23 @@ mod tests {
             listener.set_nonblocking(true).unwrap();
             let requests = Arc::new(AtomicUsize::new(0));
             let count = requests.clone();
+            let stop = Arc::new(AtomicBool::new(false));
+            let stopped = stop.clone();
             let thread = thread::spawn(move || {
-                let mut last_request = Instant::now();
-                loop {
+                while !stopped.load(Ordering::SeqCst) {
                     let (mut stream, _) = match listener.accept() {
                         Ok(connection) => connection,
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                            if last_request.elapsed() > Duration::from_secs(2) {
-                                break;
-                            }
                             thread::sleep(Duration::from_millis(10));
                             continue;
                         }
                         Err(_) => break,
                     };
-                    last_request = Instant::now();
                     count.fetch_add(1, Ordering::SeqCst);
+                    // Accepted sockets inherit the listener's non-blocking mode on Windows.
+                    stream.set_nonblocking(false).unwrap();
                     stream
-                        .set_read_timeout(Some(Duration::from_secs(1)))
+                        .set_read_timeout(Some(Duration::from_secs(5)))
                         .unwrap();
                     let mut request = [0; 8192];
                     let read = stream.read(&mut request).unwrap_or(0);
@@ -453,6 +454,7 @@ mod tests {
             (
                 Self {
                     requests,
+                    stop,
                     thread: Some(thread),
                 },
                 format!("http://{address}/artifact"),
@@ -462,6 +464,7 @@ mod tests {
 
     impl Drop for TestServer {
         fn drop(&mut self) {
+            self.stop.store(true, Ordering::SeqCst);
             if let Some(thread) = self.thread.take() {
                 let _ = thread.join();
             }

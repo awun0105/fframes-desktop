@@ -6,6 +6,7 @@
 
 use crate::{
     AdapterConfig,
+    detect::NodeEntry,
     driver::{
         AcpDriver, AgentFailure, DriverConfig, DriverLimits, DriverMode, FailureKind,
         InitializedInfo, McpStdioSupport, Phase,
@@ -27,6 +28,11 @@ pub struct ExecutableSearch {
     /// An explicitly resolved GUI `PATH` value (for example from a login shell).
     /// `None` means bare names resolve only inside `managed_dirs`.
     pub gui_path: Option<OsString>,
+    /// Absolute Node.js runtime for adapters that are JavaScript (a `.js` entry or an npm
+    /// `.cmd` shim). Such an adapter starts as `node <entry>`, because the launch `PATH`
+    /// never contains `node`; a batch launcher whose entry is unknown starts itself with this
+    /// runtime's folder first on its `PATH`.
+    pub node: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -41,6 +47,13 @@ pub enum ResolveError {
     Empty,
     #[error("search root '{}' is relative; search roots must be absolute", .0.display())]
     RelativeRoot(PathBuf),
+    #[error(
+        "adapter '{}' is a Node.js script, but Node.js was not found; install Node.js and press Detect agents",
+        .0.display()
+    )]
+    NodeRequired(PathBuf),
+    #[error("{1}")]
+    UnreadableLauncher(PathBuf, String),
 }
 
 fn display_paths(paths: &[PathBuf]) -> String {
@@ -55,7 +68,7 @@ fn display_paths(paths: &[PathBuf]) -> String {
     }
 }
 
-fn is_executable_file(path: &Path) -> bool {
+pub(crate) fn is_executable_file(path: &Path) -> bool {
     let Ok(meta) = std::fs::metadata(path) else {
         return false;
     };
@@ -73,7 +86,7 @@ fn is_executable_file(path: &Path) -> bool {
     }
 }
 
-fn candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
+pub(crate) fn candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
     // Windows cannot start a file without an executable extension, and npm installs an
     // extensionless shell script next to the `.cmd` launcher, so a bare name only matches
     // with an extension appended.
@@ -203,8 +216,39 @@ impl AdapterLaunch {
         search: &ExecutableSearch,
         lookup: impl Fn(&str) -> Option<String>,
     ) -> Result<Self, ResolveError> {
-        let executable = resolve_executable(&config.executable, search)?;
-        let roots = search.roots()?;
+        let resolved = resolve_executable(&config.executable, search)?;
+        let mut roots = search.roots()?;
+        let node = search
+            .node
+            .clone()
+            .filter(|node| node.is_absolute() && is_executable_file(node));
+        let kind = crate::detect::node_entry(&resolved)
+            .map_err(|reason| ResolveError::UnreadableLauncher(resolved.clone(), reason))?;
+        // A JavaScript adapter, and whatever it starts with `node`, find the same runtime
+        // first on the launch PATH.
+        let mut put_node_first = |node: &Path| {
+            if let Some(dir) = node.parent() {
+                roots.retain(|root| root != dir);
+                roots.insert(0, dir.to_owned());
+            }
+        };
+        let (executable, args) = match (kind, node) {
+            (NodeEntry::Script(entry), Some(node)) => {
+                put_node_first(&node);
+                let entry = entry.to_string_lossy().into_owned();
+                (
+                    node,
+                    [entry].into_iter().chain(config.args.clone()).collect(),
+                )
+            }
+            (NodeEntry::Script(_), None) => return Err(ResolveError::NodeRequired(resolved)),
+            // A launcher whose entry is unknown calls `node` itself, if it needs it at all.
+            (NodeEntry::Shim, Some(node)) => {
+                put_node_first(&node);
+                (resolved, config.args.clone())
+            }
+            (NodeEntry::Shim | NodeEntry::Native, _) => (resolved, config.args.clone()),
+        };
         let mut env = ChildEnvironment::default_allowlist();
         // The ambient PATH is never inherited: an adapter that starts through
         // `/usr/bin/env node` must find its runtime in the explicit absolute roots only.
@@ -227,7 +271,7 @@ impl AdapterLaunch {
         }
         Ok(Self {
             executable,
-            args: config.args.clone(),
+            args,
             env,
             secrets,
             auth_names: config.auth_env_names.clone(),
@@ -467,6 +511,86 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn npm_shim_adapters_start_through_the_explicit_node() {
+        let managed = tempfile::tempdir().unwrap();
+        let entry = managed.path().join("node_modules/pkg/dist/index.js");
+        std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        std::fs::write(&entry, b"//").unwrap();
+        std::fs::write(
+            managed.path().join("pkg-acp.cmd"),
+            "@ECHO off\r\nIF EXIST \"%dp0%\\node.exe\" SET \"_prog=%dp0%\\node.exe\"\r\n\
+             \"%_prog%\"  \"%dp0%\\node_modules\\pkg\\dist\\index.js\" %*\r\n",
+        )
+        .unwrap();
+        let runtime = tempfile::tempdir().unwrap();
+        let node = runtime.path().join("node.exe");
+        std::fs::write(&node, b"").unwrap();
+        let config = AdapterConfig {
+            executable: "pkg-acp".into(),
+            args: vec!["--acp".into()],
+            auth_env_names: vec![],
+        };
+        let mut search = ExecutableSearch {
+            managed_dirs: vec![managed.path().to_owned()],
+            gui_path: None,
+            node: None,
+        };
+        assert!(matches!(
+            AdapterLaunch::resolve_with_env(&config, &search, |_| None),
+            Err(ResolveError::NodeRequired(_))
+        ));
+
+        search.node = Some(node.clone());
+        let launch = AdapterLaunch::resolve_with_env(&config, &search, |_| None).unwrap();
+        assert_eq!(launch.executable, node);
+        assert_eq!(
+            launch.args,
+            vec![entry.to_string_lossy().into_owned(), "--acp".to_owned()]
+        );
+        let path = launch.env.get("Path").expect("launch Path");
+        let first = std::env::split_paths(path).next().unwrap();
+        assert_eq!(first, runtime.path(), "{path}");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_shim_without_a_known_entry_starts_itself_with_node_first_on_its_path() {
+        let managed = tempfile::tempdir().unwrap();
+        let shim = managed.path().join("pkg-acp.cmd");
+        std::fs::write(&shim, "@ECHO off\r\nnode \"%~dp0\\lib\\main\" %*\r\n").unwrap();
+        let runtime = tempfile::tempdir().unwrap();
+        let node = runtime.path().join("node.exe");
+        std::fs::write(&node, b"").unwrap();
+        let config = AdapterConfig {
+            executable: "pkg-acp".into(),
+            args: vec!["--acp".into()],
+            auth_env_names: vec![],
+        };
+        let mut search = ExecutableSearch {
+            managed_dirs: vec![managed.path().to_owned()],
+            gui_path: None,
+            node: None,
+        };
+        // Without Node the launcher still starts as it is.
+        let launch = AdapterLaunch::resolve_with_env(&config, &search, |_| None).unwrap();
+        assert_eq!(launch.executable, shim);
+        assert_eq!(launch.args, vec!["--acp".to_owned()]);
+
+        search.node = Some(node);
+        let launch = AdapterLaunch::resolve_with_env(&config, &search, |_| None).unwrap();
+        assert_eq!(launch.executable, shim);
+        assert_eq!(launch.args, vec!["--acp".to_owned()]);
+        let path = launch.env.get("Path").expect("launch Path");
+        let first = std::env::split_paths(path).next().unwrap();
+        assert_eq!(first, runtime.path());
+        assert!(
+            path.contains(&managed.path().display().to_string()),
+            "{path}"
+        );
+    }
+
+    #[test]
     fn bare_names_never_fall_back_to_the_global_path() {
         // `sh` exists on the global PATH but is not in the (empty) search roots.
         assert!(matches!(
@@ -485,11 +609,13 @@ mod tests {
         let search = ExecutableSearch {
             managed_dirs: vec![managed.path().to_owned()],
             gui_path: Some(std::env::join_paths([gui.path()]).unwrap()),
+            node: None,
         };
         assert_eq!(resolve_executable("adapter", &search).unwrap(), managed_exe);
         let gui_only = ExecutableSearch {
             managed_dirs: vec![],
             gui_path: search.gui_path.clone(),
+            node: None,
         };
         assert!(
             resolve_executable("adapter", &gui_only)
@@ -588,6 +714,7 @@ mod tests {
         let search = ExecutableSearch {
             managed_dirs: vec![managed.path().to_owned()],
             gui_path: Some(std::env::join_paths([gui.path()]).unwrap()),
+            node: None,
         };
         let launch = AdapterLaunch::resolve_with_env(&config, &search, |_| None).unwrap();
         let expected = format!("{}:{}", managed.path().display(), gui.path().display());
@@ -602,10 +729,12 @@ mod tests {
         let relative_managed = ExecutableSearch {
             managed_dirs: vec![PathBuf::from("bin")],
             gui_path: None,
+            node: None,
         };
         let relative_gui = ExecutableSearch {
             managed_dirs: vec![],
             gui_path: Some(OsString::from("/usr/bin:relative/bin")),
+            node: None,
         };
         for search in [relative_managed, relative_gui] {
             assert!(matches!(
@@ -627,6 +756,7 @@ mod tests {
         let search = ExecutableSearch {
             managed_dirs: vec![dir.path().to_owned()],
             gui_path: None,
+            node: None,
         };
         assert!(
             resolve_executable("adapter", &search)
@@ -645,6 +775,7 @@ mod tests {
         let search = ExecutableSearch {
             managed_dirs: vec![dir.path().to_owned()],
             gui_path: None,
+            node: None,
         };
         assert_eq!(resolve_executable("adapter", &search).unwrap(), launcher);
         assert_eq!(
@@ -665,6 +796,7 @@ mod tests {
         let search = ExecutableSearch {
             managed_dirs: vec![],
             gui_path: Some(gui),
+            node: None,
         };
         if cfg!(windows) {
             assert_eq!(search.roots().unwrap(), vec![dir.path().to_owned()]);

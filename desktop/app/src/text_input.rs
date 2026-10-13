@@ -1,13 +1,26 @@
 use crate::design_system;
-use crate::design_system::colors::{ACCENT, BORDER, MUTED, PANEL};
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, InteractiveElement,
     IntoElement, LayoutId, PaintQuad, ParentElement, Pixels, Render, ShapedLine, SharedString,
     Style, Styled, TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, px,
-    relative, rgb, rgba, size,
+    relative, size,
 };
 use std::ops::Range;
+
+/// Horizontal padding inside the field box.
+const FIELD_PAD_X: f32 = 10.;
+
+/// Height of the field box: the plain input height, or the control height
+/// when `compact`.
+pub fn field_height(compact: bool) -> f32 {
+    let metrics = design_system::tokens().metrics;
+    if compact {
+        metrics.control_h
+    } else {
+        metrics.input_h
+    }
+}
 
 /// Key context shared by every input built on [`TextInput`].
 pub const KEY_CONTEXT: &str = "TextInput";
@@ -437,6 +450,8 @@ impl EntityInputHandler for TextInput {
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let is_focused = self.focus_handle.is_focused(window);
+        let tokens = design_system::tokens();
+        let (metrics, palette) = (tokens.metrics, tokens.palette);
 
         let composition_info = if let Some(marked) = &self.marked_range {
             format!("Composing (marked): {:?}", &self.content[marked.clone()])
@@ -460,25 +475,31 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::paste_action))
-            .p(px(design_system::tokens().metrics.space_2))
-            .border_1()
-            .border_color(if is_focused { rgb(ACCENT) } else { rgb(BORDER) })
-            .bg(rgb(PANEL))
-            .rounded(px(design_system::tokens().metrics.radius_md))
             .w_full()
             .flex()
             .flex_col()
-            .gap(px(design_system::tokens().metrics.space_1))
+            .gap(px(metrics.space_1))
             .child(
-                div()
-                    .h(px(24.))
+                design_system::text_style(div(), design_system::TextStyle::Body)
+                    .flex()
+                    .items_center()
                     .w_full()
-                    .child(TextElement { input: cx.entity() }),
+                    .h(px(field_height(self.compact)))
+                    .px(px(FIELD_PAD_X))
+                    .rounded(px(metrics.radius_control))
+                    .border_1()
+                    .border_color(if is_focused {
+                        gpui::Hsla::from(palette.accent)
+                    } else {
+                        gpui::transparent_black()
+                    })
+                    .bg(palette.ctl)
+                    .text_color(palette.text_1)
+                    .child(div().w_full().child(TextElement { input: cx.entity() })),
             )
             .children((!self.compact || self.marked_range.is_some()).then(|| {
-                div()
-                    .text_xs()
-                    .text_color(rgb(MUTED))
+                design_system::text_style(div(), design_system::TextStyle::Small)
+                    .text_color(palette.text_2)
                     .child(composition_info)
             }))
     }
@@ -544,7 +565,7 @@ impl Element for TextElement {
         let (display_text, text_color) = if content.is_empty() {
             (
                 input.placeholder.clone(),
-                gpui::Hsla::from(rgb(design_system::tokens().palette.muted)),
+                gpui::Hsla::from(design_system::tokens().palette.text_3),
             )
         } else {
             (content, style.color)
@@ -600,7 +621,7 @@ impl Element for TextElement {
                         point(bounds.left() + cursor_pos, bounds.top()),
                         size(px(2.), bounds.bottom() - bounds.top()),
                     ),
-                    rgb(design_system::tokens().palette.accent),
+                    design_system::tokens().palette.accent,
                 )),
             )
         } else {
@@ -616,7 +637,7 @@ impl Element for TextElement {
                             bounds.bottom(),
                         ),
                     ),
-                    rgba(design_system::tokens().palette.selection_overlay),
+                    design_system::tokens().palette.selection,
                 )),
                 None,
             )
@@ -693,5 +714,21 @@ mod tests {
         let emoji_range = utf16_range_to_utf8_in_slice(text, &(0..2));
         assert_eq!(emoji_range, 0..4);
         assert_eq!(&text[emoji_range], "🔥");
+    }
+
+    #[test]
+    fn field_heights_match_spec() {
+        assert_eq!(field_height(false), 32.);
+        assert_eq!(field_height(true), 28.);
+    }
+
+    #[test]
+    fn field_colours_come_from_tokens() {
+        let palette = design_system::tokens().palette;
+        // Fill, focus border, caret, selection and placeholder resolve to
+        // these roles in `Render` and `prepaint`.
+        assert!(palette.ctl.a > 0. && palette.ctl.a < 1.);
+        assert!(palette.selection.a > 0. && palette.selection.a < 1.);
+        assert_ne!(palette.accent, palette.text_3);
     }
 }

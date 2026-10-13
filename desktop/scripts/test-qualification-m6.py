@@ -283,9 +283,9 @@ def default_authentic_proof(
         },
         "measurements": {
             "scenarios": [
-                {"name": "edit", "escaped_descendants": 0, "group_empty_after": True},
-                {"name": "stop", "escaped_descendants": 0, "group_empty_after": True},
-                {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": True}
+                {"name": "edit", "escaped_descendants": 0, "group_empty_after": True, "contained": True},
+                {"name": "stop", "escaped_descendants": 0, "group_empty_after": True, "contained": True},
+                {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": True, "contained": True}
             ]
         }
     }
@@ -330,9 +330,9 @@ def qualifying_measurements(gate_name, latency=120.0, rss=45000.0):
         },
         "interruption_and_cleanup": {
             "scenarios": [
-                {"name": "edit", "escaped_descendants": 0, "group_empty_after": True},
-                {"name": "stop", "escaped_descendants": 0, "group_empty_after": True},
-                {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": True},
+                {"name": "edit", "escaped_descendants": 0, "group_empty_after": True, "contained": True},
+                {"name": "stop", "escaped_descendants": 0, "group_empty_after": True, "contained": True},
+                {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": True, "contained": True},
             ],
         },
         "restoration_and_fallback": {
@@ -680,8 +680,8 @@ def test_writer_contract_missing_edit_scenario_rejected():
         proof = default_authentic_proof()
         # Omit "edit" scenario
         proof["measurements"]["scenarios"] = [
-            {"name": "stop", "escaped_descendants": 0, "group_empty_after": True},
-            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": True},
+            {"name": "stop", "escaped_descendants": 0, "group_empty_after": True, "contained": True},
+            {"name": "provider_crash", "escaped_descendants": 0, "group_empty_after": True, "contained": True},
         ]
         rel_path, sha256 = sandbox.write_evidence("ev_no_edit.json", proof)
         record = load_baseline()
@@ -694,6 +694,30 @@ def test_writer_contract_missing_edit_scenario_rejected():
             record,
             "scenario edit was not measured",
             "Writer contract missing edit scenario rejected",
+            tmp_path=sandbox.ledger_path,
+        )
+    finally:
+        sandbox.close()
+
+
+def test_writer_contract_unverified_containment_rejected():
+    sandbox = EvidenceTestSandbox()
+    try:
+        proof = default_authentic_proof()
+        # Nothing escaped, but the crash scenario's containment could not be verified.
+        proof["measurements"]["scenarios"][2]["contained"] = False
+        proof["measurements"]["scenarios"][2]["containment_unverified"] = "job query failed"
+        rel_path, sha256 = sandbox.write_evidence("ev_unverified.json", proof)
+        record = load_baseline()
+        bind_provider(record)
+        gate = record["providers"]["claude"]["gates"]["interruption_and_cleanup"]
+        gate["status"] = "pass"
+        del gate["prerequisite"]
+        gate["evidence"] = [{"path": rel_path, "sha256": sha256}]
+        expect_failure(
+            record,
+            "containment was not verified",
+            "Writer contract with unverified containment rejected",
             tmp_path=sandbox.ledger_path,
         )
     finally:
@@ -817,6 +841,7 @@ def main():
     test_development_evidence_for_authentic_gate()
     test_development_kind_on_provider_gate_rejected()
     test_writer_contract_missing_edit_scenario_rejected()
+    test_writer_contract_unverified_containment_rejected()
     test_duplicate_evidence_citation()
     test_teardown_failure_in_evidence()
     test_native_app_export_claim_rejected()

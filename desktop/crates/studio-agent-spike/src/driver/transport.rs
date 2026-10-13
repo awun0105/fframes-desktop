@@ -109,6 +109,12 @@ impl Ingress {
     }
 }
 
+/// Whether an outbound line of `len` bytes (without its newline) may be written: the
+/// framed line, newline included, is at most `max` bytes, the same bound inbound frames get.
+pub(super) fn fits_wire(len: usize, max: usize) -> bool {
+    len < max
+}
+
 pub(super) type LineSink = Pin<Box<dyn futures::Sink<String, Error = io::Error> + Send>>;
 pub(super) type LineStream = Pin<Box<dyn futures::Stream<Item = io::Result<String>> + Send>>;
 
@@ -256,7 +262,7 @@ pub(super) fn spawn_writer(
         .expect("spawn acp stdin writer");
     let sink = futures::sink::unfold((tx, shared), async |(tx, shared), line: String| {
         let mut bytes = line.into_bytes();
-        if bytes.len() >= shared.limits.max_message_bytes {
+        if !fits_wire(bytes.len(), shared.limits.max_message_bytes) {
             let failure = AgentFailure::new(
                 FailureKind::OversizedOutbound,
                 shared.phase(),
