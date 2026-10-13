@@ -529,8 +529,13 @@ mod tests {
     fn fake_npm(dir: &Path, body: &str) -> PathBuf {
         #[cfg(windows)]
         let (path, script) = (dir.join("npm.cmd"), format!("@echo off\r\n{body}\r\n"));
+        // Install gives npm a PATH of only the runtime folders. Real npm is a Node script and
+        // needs nothing more; this shell stand-in needs the system tools.
         #[cfg(not(windows))]
-        let (path, script) = (dir.join("npm"), format!("#!/bin/sh\n{body}\n"));
+        let (path, script) = (
+            dir.join("npm"),
+            format!("#!/bin/sh\nPATH=\"$PATH:/usr/bin:/bin\"\n{body}\n"),
+        );
         std::fs::write(&path, script).unwrap();
         #[cfg(unix)]
         {
