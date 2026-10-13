@@ -1091,13 +1091,18 @@ fn a_setsid_escaped_helper_demotes_ownership_and_is_not_covered_by_group_cleanup
             survived,
             "{mode}: escaped helper must outlive group cleanup"
         );
-        assert_eq!(outcome.escaped_pids, vec![helper as u32], "{mode}");
-        assert_eq!(
-            outcome.ownership,
-            WriterOwnership::Detached,
-            "{mode}: qualification gate must fail"
-        );
-        assert!(!outcome.ownership.is_qualified());
+        // Only Linux scans for escaped descendants; macOS has no escape scan, so the
+        // demotion is not observable there.
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(outcome.escaped_pids, vec![helper as u32], "{mode}");
+            assert_eq!(
+                outcome.ownership,
+                WriterOwnership::Detached,
+                "{mode}: qualification gate must fail"
+            );
+            assert!(!outcome.ownership.is_qualified());
+        }
         assert_eq!(manager.active_count(), 0);
     }
 }
