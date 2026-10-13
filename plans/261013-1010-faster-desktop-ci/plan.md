@@ -1,6 +1,6 @@
 ---
 title: "Faster desktop CI: caches, one hosted workflow, heavy tests on self-hosted Linux"
-status: in-progress
+status: completed
 ---
 
 # Faster desktop CI
@@ -61,6 +61,18 @@ Linux ~6.5 min (unit tests only).
 - YAML parses; `test-qualification-m7.py`, `test-packaging.py` pass locally.
 - The PR's own run: every job green; compare times with the baseline. The first run only
   fills caches (caches made on a branch serve that branch; caches made on `main` serve all).
+
+## Results (2026-10-13)
+
+- Local: actionlint passes on both workflows; `test-packaging.py` (60 tests, 6 skipped) and
+  `test-qualification-m7.py` (11 tests) pass.
+- Self-hosted run 38364760112 (warm build folders, every job green): Windows 30 min, Linux
+  38.5 min. The Linux job is about 21 min without the advisory M2 stress, which now runs its
+  full 2001 seeks and 50 rebuilds (17.5 min) instead of stopping early. Hosted Desktop CI is
+  skipped for own pull requests and runs only for pull requests from other repositories.
+- Baseline per PR was hosted Desktop CI ~50 min plus ~30-40 min of duplicate feasibility jobs
+  on hosted runners. The 15-25 min target holds for every check except the advisory M2 stress;
+  whether it should stay on every push is an open user decision (see the M2 status below).
 
 ## Risks
 
