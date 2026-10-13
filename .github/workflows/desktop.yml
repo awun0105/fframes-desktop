@@ -1,9 +1,8 @@
 name: Desktop CI
 
-# The heavy work runs on the self-hosted runners (desktop-self-hosted.yml) for every push. They
-# never take pull requests because this repository is public, so pull requests from other
-# repositories get the hosted tests here. The isolated-account presentation test needs root
-# and a throwaway machine, so it runs here, on hosted Ubuntu, for pushes to main and manual runs.
+# All desktop checks run on the self-hosted runners (desktop-self-hosted.yml) for every push to
+# this repository. They never take pull requests because this repository is public, so pull
+# requests from other repositories get the tests and lint here, on hosted Ubuntu.
 
 on:
   pull_request:
@@ -19,23 +18,6 @@ on:
       - "Cargo.lock"
       - ".github/actions/desktop-linux-setup/**"
       - ".github/workflows/desktop.yml"
-      - ".github/workflows/desktop-release.yml"
-  push:
-    branches: [main]
-    paths:
-      - "desktop/**"
-      - "fframes-studio-*/**"
-      - "fframes/**"
-      - "fframes-media/**"
-      - "svgr-macro/**"
-      - "media-dir-macro/**"
-      - "webvtt-parser/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/actions/desktop-linux-setup/**"
-      - ".github/workflows/desktop.yml"
-      - ".github/workflows/desktop-release.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -53,7 +35,7 @@ jobs:
   fork-tests:
     name: Desktop tests for a fork (ubuntu-24.04)
     # `head.repo.fork` is true for this repository too (it is a fork of fframes), so compare names.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     defaults:
@@ -71,40 +53,3 @@ jobs:
           python3 desktop/scripts/test-packaging.py
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
-
-  package:
-    # macOS is paused: the studio-agent-spike process-group tests fail there (GroupSurvivors).
-    name: Desktop package and isolated presentation (ubuntu-24.04)
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    defaults:
-      run:
-        shell: bash
-    env:
-      TARGET: x86_64-unknown-linux-gnu
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/desktop-linux-setup
-      - name: Assemble and verify native offline SDK
-        run: python3 desktop/scripts/assemble-phase-zero-sdk.py --out "$RUNNER_TEMP/studio-sdk"
-      - name: Package native app and SDK artifact
-        run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/fframes-studio-$TARGET" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
-      - name: Linux isolated-account offline native presentation, input and source click
-        run: |
-          sudo -E /usr/bin/python3 desktop/scripts/qualify-linux-native.py --application "$RUNNER_TEMP/fframes-studio-$TARGET/bin/fframes-studio" --bundle "$RUNNER_TEMP/studio-sdk" --out "$RUNNER_TEMP/linux-native-evidence" --isolated-user
-      - name: Retain artifact and pending qualification record
-        uses: actions/upload-artifact@v4
-        with:
-          name: studio-x86_64-unknown-linux-gnu
-          path: |
-            ${{ runner.temp }}/fframes-studio-x86_64-unknown-linux-gnu.zip
-            ${{ runner.temp }}/linux-native-evidence/presentation.json
-            ${{ runner.temp }}/linux-native-evidence/environment.json
-            ${{ runner.temp }}/linux-native-evidence/native-window.png
-            ${{ runner.temp }}/linux-native-evidence/application.log
-          if-no-files-found: error
-          retention-days: 14
-
-  # Physical-display/IME, Windows/macOS interactive and authenticated ACP gates
-  # need their own recorded runs; an Xvfb workload does not qualify those gates.

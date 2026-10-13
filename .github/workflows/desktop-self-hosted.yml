@@ -50,12 +50,18 @@ jobs:
           for package in libclang-dev libssl-dev libasound2-dev; do
             dpkg -s "$package" >/dev/null 2>&1 || missing="$missing $package"
           done
-          # The presentation test drives the app on a virtual display.
+          # The presentation test drives the app on a virtual display, as an isolated account
+          # without network (root for unshare and setpriv).
           command -v Xvfb >/dev/null || missing="$missing xvfb"
           command -v xdotool >/dev/null || missing="$missing xdotool"
+          command -v ip >/dev/null || missing="$missing iproute2"
+          { command -v unshare && command -v setpriv; } >/dev/null || missing="$missing util-linux"
           python3 -c "import PIL" 2>/dev/null || missing="$missing python3-pil"
           if [ -n "$missing" ]; then
             echo "::error::Missing native prerequisites. As root, run: apt-get install -y$missing"; exit 1
+          fi
+          if ! sudo -n /usr/bin/python3 -c "" 2>/dev/null; then
+            echo "::error::The runner user needs passwordless sudo for the isolated-account presentation test (see docs/desktop/self-hosted-runners.md)"; exit 1
           fi
           # Only the advisory audio stress uses these.
           for tool in pulseaudio pactl; do
@@ -129,10 +135,10 @@ jobs:
       # fframes-studio-* packages, which come from hosted runners.
       - name: Package native app and SDK test build
         run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
-      - name: Native presentation, input and source click
-        # The same check as the hosted isolated-account run, as the runner user: that variant
-        # needs root and a throwaway machine, so it runs on hosted Ubuntu for main.
-        run: python3 desktop/scripts/qualify-linux-native.py --application "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu/bin/fframes-studio" --bundle "$RUNNER_TEMP/studio-sdk" --out "$RUNNER_TEMP/linux-native-evidence"
+      - name: Isolated-account offline native presentation, input and source click
+        # Root sets up the account and network namespaces; the app runs as `nobody`. The
+        # evidence it leaves is owned by `nobody` and removed with sudo below.
+        run: sudo -E /usr/bin/python3 desktop/scripts/qualify-linux-native.py --application "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu/bin/fframes-studio" --bundle "$RUNNER_TEMP/studio-sdk" --out "$RUNNER_TEMP/linux-native-evidence" --isolated-user
       - name: Retain test build and evidence
         id: test-build
         if: always()
@@ -143,6 +149,7 @@ jobs:
             ${{ runner.temp }}/studio-test-x86_64-unknown-linux-gnu.zip
             ${{ runner.temp }}/worker-frame/*.png
             ${{ runner.temp }}/linux-native-evidence/presentation.json
+            ${{ runner.temp }}/linux-native-evidence/environment.json
             ${{ runner.temp }}/linux-native-evidence/native-window.png
             ${{ runner.temp }}/linux-native-evidence/application.log
             ${{ runner.temp }}/m2-parity.json
@@ -165,9 +172,12 @@ jobs:
             echo "gh run download $GITHUB_RUN_ID -R $GITHUB_REPOSITORY -n studio-test-x86_64-unknown-linux-gnu -D studio-test"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove the M2 fixture
+      - name: Remove the M2 fixture and the isolated-account evidence
         if: always()
-        run: if [ -n "${STUDIO_M2_TMP:-}" ]; then rm -rf "$STUDIO_M2_TMP"; fi
+        run: |
+          if [ -n "${STUDIO_M2_TMP:-}" ]; then rm -rf "$STUDIO_M2_TMP"; fi
+          # Owned by `nobody`, so the runner could not clean its temp folder otherwise.
+          sudo -n rm -rf "$RUNNER_TEMP/linux-native-evidence"
 
   windows:
     name: Desktop validation (self-hosted Windows)

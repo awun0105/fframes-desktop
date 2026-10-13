@@ -26,6 +26,9 @@ Linux ~6.5 min (unit tests only).
   on hosted Ubuntu for pushes to `main` and manual runs only. Self-hosted test builds are
   uploaded as `studio-test-<target>` for download, never under the release `fframes-studio-*`
   name. Setup guide: `docs/desktop/self-hosted-runners.md`.
+- Revised again: the runner user has passwordless sudo, and the user accepted root-for-pushers
+  on that machine, so the isolated-account test runs on self-hosted Linux for every push and
+  hosted Ubuntu runs only the tests for pull requests from other repositories.
 
 ## Constraints
 
