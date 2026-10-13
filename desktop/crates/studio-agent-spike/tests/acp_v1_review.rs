@@ -359,12 +359,17 @@ fn shutdown_of_a_wedged_connection_uses_the_bounded_fallback_and_demotes_ownersh
         "fallback is bounded: {took:?}"
     );
     assert!(outcome.termination.verified(), "{:?}", outcome.termination);
-    assert_eq!(outcome.escaped_pids, vec![helper as u32]);
-    assert_eq!(
-        outcome.ownership,
-        WriterOwnership::Detached,
-        "the fallback applies the same sticky demotion as the normal path"
-    );
+    // Only Linux scans for escaped descendants; macOS has no escape scan, so the
+    // demotion is not observable there.
+    #[cfg(target_os = "linux")]
+    {
+        assert_eq!(outcome.escaped_pids, vec![helper as u32]);
+        assert_eq!(
+            outcome.ownership,
+            WriterOwnership::Detached,
+            "the fallback applies the same sticky demotion as the normal path"
+        );
+    }
     assert_eq!(manager.active_count(), 0);
 }
 

@@ -2539,9 +2539,10 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn setsid_escaped_helper_survives_group_verification_and_is_observable_only_while_parented() {
-        // macOS has no setsid command, so the helper leaves the group through Python.
+        // macOS has no setsid command, so the helper leaves the group through Python and
+        // reports its pid only once it has left.
         let mut child = shell(
-            "python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' sleep 30 & echo $!; wait",
+            "python3 -c 'import os, sys; os.setsid(); print(os.getpid(), flush=True); os.execvp(sys.argv[1], sys.argv[1:])' sleep 30 & wait",
         );
         let helper = read_pid_line(&mut child);
         // Linux can see the escape while the helper is still a descendant.
@@ -2806,7 +2807,9 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn termination_is_bounded_even_when_the_leader_ignores_term() {
-        let mut child = shell("trap '' TERM; while :; do sleep 1; done");
+        // The shell reports its pid once the trap is in place, so TERM cannot win the race.
+        let mut child = shell("trap '' TERM; echo $$; while :; do sleep 1; done");
+        read_pid_line(&mut child);
         let started = Instant::now();
         let report = child
             .terminate_verified(Duration::from_millis(100))

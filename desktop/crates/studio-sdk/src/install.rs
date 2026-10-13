@@ -1019,7 +1019,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let installer = SdkInstaller::new(tmp.path().join("sdk_home"));
         let active = installer.active_sdk_dir();
-        let manifest = CompatibilityManifest::default_linux_x64();
+        let mut manifest = CompatibilityManifest::default_linux_x64();
+        manifest.target_triple = current_target_triple().into();
         fs::create_dir_all(active.join("toolchain/bin")).unwrap();
         fs::create_dir_all(active.join("ffmpeg/include")).unwrap();
         fs::create_dir_all(active.join("ffmpeg/lib")).unwrap();
