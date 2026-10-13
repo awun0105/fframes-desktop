@@ -550,6 +550,7 @@ def main() -> int:
                       "inject_build_failures": args.inject_build_failures},
         "measurements": {"elapsed_seconds": elapsed, "confirmed_seeks": driver.seeks, "rebuilds": driver.rebuilds, "audio_recoveries": driver.audio_recoveries,
                          "failed_builds": driver.failed_builds, "seek_p95_ms": percentile(driver.seek_latencies, 0.95),
+                         "seek_latencies_ms": driver.seek_latencies,
                          "rss_slope_mib_per_min": slope_mib_per_minute(driver.rss_samples),
                          "av_error_ms": None, "timestamp_residual_ms": None,
                          "audio_timing_note": "Unavailable: no physical DAC/output capture was measured.",
@@ -570,6 +571,12 @@ def main() -> int:
     result["finished"] = result["finished"] and not performance_errors
     atomic_write(args.out / "raw-measurements.json", result)
     atomic_write(args.out / "telemetry-samples.json", driver.telemetry_samples)
+    measured = result["measurements"]
+    def ms(value: float | None) -> str:
+        return "n/a" if value is None else f"{value:.0f} ms"
+    print(f"M2 measurements: {driver.seeks} seeks, {driver.rebuilds} rebuilds, {driver.audio_recoveries} audio recoveries in {elapsed:.0f} s; "
+          f"seek p50 {ms(percentile(driver.seek_latencies, 0.5))}, p95 {ms(measured['seek_p95_ms'])}, max {ms(max(driver.seek_latencies, default=None))}; "
+          f"RSS slope {measured['rss_slope_mib_per_min'] if measured['rss_slope_mib_per_min'] is not None else 'n/a'} MiB/min", flush=True)
     if not result["finished"]:
         print(f"M2 qualification did not finish strictly: {error or performance_errors or result['cleanup']}", file=sys.stderr)
         return 1
