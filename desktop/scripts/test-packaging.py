@@ -1173,7 +1173,7 @@ class M3LedgerTests(unittest.TestCase):
                 qualification.scan_for_secrets(text, "evidence")
 
     def test_the_launch_identity_digest_matches_the_applications_vector(self):
-        # The same vector is asserted by the application (conversation_panel/qualification.rs).
+        # The same vector is asserted by the application (studio-engine containment.rs).
         digest = qualification.launch_identity_digest("aa" * 32, ["--acp", "x y"], ["B", "A"], [(0, "bb" * 32)])
         self.assertEqual(digest, "819ef19d8b35aa9874b2025b70414b64535eed3d11429bfaf1f342e5fabbdb65")
         self.assertNotEqual(digest, qualification.launch_identity_digest("aa" * 32, ["--acp", "x y"], ["B", "A"], []))

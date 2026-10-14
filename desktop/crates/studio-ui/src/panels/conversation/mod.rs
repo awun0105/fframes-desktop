@@ -85,7 +85,6 @@ fn evidence_image_key(task: &studio_engine::AgentTaskId, artifact_id: &str) -> S
     format!("{}:{artifact_id}", task.0)
 }
 
-use crate::ui::{self, BoundsProbe};
 use controls::{
     Controls, InputKey, KeyMods, ReplyTracker, ReviewControls, SaveTracker, SubmitKind,
     UndoControl, derive_controls, guidance, route_input_key,
@@ -118,11 +117,13 @@ use studio_engine::providers::provider_profiles;
 use studio_engine::{DraftState, ReviewPolicy, TaskScope, app_paths::AppPaths};
 use studio_harness::driver::{ConfigKind, OptionValue, ToolStatus};
 use studio_theme::{METRICS, TextStyle, Theme, text_style};
-use studio_ui::kit::{
+
+use crate::kit::{
     Badge, Card, CollapsibleSection, EditorButton, Icon, IconButton, IconButtonSize, Menu,
     MenuItem, MenuState, Notice, Select, TextInput, TextInputEvent, TextInputState, Toggle,
     Tone as UiTone, field_row, heading, icon, label,
 };
+use crate::probe::{self, BoundsProbe};
 
 /// Height of the composer container and the inset of its contents.
 const COMPOSER_H: f32 = 64.;
@@ -2357,7 +2358,7 @@ impl ConversationPanel {
                         canvas(
                             move |bounds, _, cx| {
                                 entity.update(cx, |panel, _| {
-                                    panel.prompt_bounds = Some(ui::bounds_to_record(bounds));
+                                    panel.prompt_bounds = Some(probe::bounds_to_record(bounds));
                                 });
                             },
                             |_, _, _, _| {},

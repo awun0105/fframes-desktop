@@ -37,7 +37,8 @@ use studio_harness::{
     adapter_install::{self, InstallError, InstalledAdapter},
 };
 use studio_theme::METRICS;
-use studio_ui::kit::{Badge, Tone as UiTone, focusable, label, on_activate};
+
+use crate::kit::{Badge, Tone as UiTone, focusable, label, on_activate};
 
 // ---- state -------------------------------------------------------------------------------------
 

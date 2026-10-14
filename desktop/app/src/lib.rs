@@ -1,6 +1,6 @@
 pub mod app;
 pub mod assets;
-pub mod conversation_panel;
+pub use studio_ui::panels::conversation as conversation_panel;
 pub use studio_ui::{actions, canvas_view, frame_image, preset_panel, setup_view, timeline_view};
 pub mod selection_spike;
 
