@@ -291,6 +291,19 @@ impl Studio {
         );
     }
 
+    /// Makes the shell report the measured buttons' bounds under `buttons` in the telemetry.
+    pub fn report_button_bounds(&mut self) {
+        self.window
+            .update(&mut self.cx, |shell, _, cx| shell.report_button_bounds(cx))
+            .unwrap();
+    }
+
+    /// Resizes the window's content area, as the user dragging its edge would.
+    pub fn resize(&mut self, width: f32, height: f32) {
+        gpui::VisualTestContext::from_window(self.window.into(), &self.cx)
+            .simulate_resize(gpui::size(gpui::px(width), gpui::px(height)));
+    }
+
     /// Moves the pointer to window point `at` with no button held.
     pub fn hover(&mut self, (x, y): (f32, f32)) {
         let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);

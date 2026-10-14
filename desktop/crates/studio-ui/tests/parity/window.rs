@@ -8,6 +8,40 @@ const CAPTION_BUTTON_W: f64 = 46.;
 /// The sidebar and agent probes fill a card inside its 1 px border.
 const BORDERS: f64 = 2.;
 
+fn button_width(t: &Value, id: &str) -> Option<f64> {
+    t["buttons"][id][2].as_f64()
+}
+
+/// The header actions drop their labels when the window gets too narrow for them and get
+/// them back when it widens again; Close project has no icon and keeps its label.
+#[gpui::test]
+fn narrow_windows_show_the_header_actions_as_icons(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::open(cx);
+    studio.report_button_bounds();
+    let wide = studio.wait("header actions measured", |t| {
+        button_width(t, "create").is_some() && button_width(t, "close").is_some()
+    });
+    let labelled = button_width(&wide, "create").unwrap();
+    let close = button_width(&wide, "close").unwrap();
+    let height = wide["viewport"][1].as_f64().unwrap() as f32;
+
+    studio.resize(800., height);
+    let narrow = studio.wait("icon-only actions", |t| {
+        button_width(t, "create").is_some_and(|width| width < labelled - 20.)
+    });
+    assert_eq!(
+        button_width(&narrow, "close"),
+        Some(close),
+        "{:#}",
+        narrow["buttons"]
+    );
+
+    studio.resize(1536., height);
+    studio.wait("labelled actions again", |t| {
+        button_width(t, "create") == Some(labelled)
+    });
+}
+
 fn bounds(t: &Value, section: &str) -> [f64; 4] {
     let b = &t["sections"][section];
     std::array::from_fn(|i| b[i].as_f64().unwrap())

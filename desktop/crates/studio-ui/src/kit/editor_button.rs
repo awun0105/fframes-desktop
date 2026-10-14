@@ -454,6 +454,25 @@ mod tests {
     }
 
     #[test]
+    fn icon_only_moves_the_label_into_the_tooltip() {
+        let theme = Theme::light();
+        let tooltip = |button: &EditorButton| button.tooltip.as_ref().map(|(_, text)| text.clone());
+
+        let button = EditorButton::plain(&theme, "a")
+            .label("Open…")
+            .icon_only(&theme);
+        assert_eq!(button.label, None);
+        assert_eq!(tooltip(&button).as_deref(), Some("Open…"));
+
+        let button = EditorButton::plain(&theme, "b")
+            .label("Open…")
+            .tooltip(&theme, "Open a project")
+            .icon_only(&theme);
+        assert_eq!(button.label, None);
+        assert_eq!(tooltip(&button).as_deref(), Some("Open a project"));
+    }
+
+    #[test]
     fn fills_reproduce_the_editor_variants() {
         let theme = Theme::light();
         let hsla = Hsla::from;

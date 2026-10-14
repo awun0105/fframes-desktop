@@ -14,6 +14,14 @@ use super::StudioShell;
 use crate::probe::BoundsProbe;
 
 impl StudioShell {
+    /// Reports the bounds of the measured buttons in the telemetry without writing a
+    /// telemetry file, for test harnesses that read [`Self::telemetry`] directly.
+    pub fn report_button_bounds(&mut self, cx: &mut Context<Self>) {
+        self.qualifying = true;
+        // The cached sections render again with their bounds probes.
+        cx.notify();
+    }
+
     /// Observe the production shell while the external harness sends native input.
     /// File serialization/writes stay off the UI thread and are awaited (no queue).
     pub fn start_qualification(
@@ -372,6 +380,7 @@ impl StudioShell {
                             | "previous-frame"
                             | "next-frame"
                             | "close"
+                            | "create"
                     ) =>
             {
                 Some(name.to_string())

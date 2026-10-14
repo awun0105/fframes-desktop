@@ -135,9 +135,11 @@ The decisions:
      - The compact rule is fframes' own: Cap's action widths do not apply. The actions drop their labels when the title (200 px minimum), the labelled actions (600 px with a project open, 260 px without) and the window controls do not fit. The labelled actions measure 520 / 215 px in the Windows app and 566 / 246 px in the test platform. Close project has no icon and keeps its label.
      - Tests:
        - unit tests for the compact rule;
-       - the parity test `the_sections_fill_their_boxes`: on Windows the header ends where the 138 px caption begins and the caption reaches the window's right edge; elsewhere the header spans the window.
+       - the parity test `the_sections_fill_their_boxes`: on Windows the header ends where the 138 px caption begins and the caption reaches the window's right edge; elsewhere the header spans the window;
+       - the parity test `narrow_windows_show_the_header_actions_as_icons`: it resizes the window to 800 px and back. Create narrows and widens again, and Close project keeps its width. It fails when the rule is off, when Close loses its label, and when the viewport is read only once. The shell's `report_button_bounds` turns the button probes on for the harness.
      - Native check on the VM, with window messages because the remote session was disconnected:
        - `WM_NCHITTEST` answers `HTCAPTION` over the title and the empty middle, `HTCLIENT` over the header buttons and the body, and `HTMINBUTTON`, `HTMAXBUTTON` and `HTCLOSE` over the caption;
+       - a double-click on the title maximizes and restores (`WM_NCLBUTTONDBLCLK` passes through gpui's non-client mouse-down handler first, so no listener swallows a press over the drag area);
        - maximize maximizes, the maximized client area starts at the work area and its top-right corner is Close;
        - restore restores, minimize minimizes, and Close quits with exit code 0.
      - Not checked with real input:
