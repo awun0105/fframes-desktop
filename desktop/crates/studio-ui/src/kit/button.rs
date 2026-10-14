@@ -498,6 +498,25 @@ impl RenderOnce for Button {
 /// copy-pasted verbatim into `settings/recordings.tsx`, `settings/screenshots.tsx`
 /// and `recordings-overlay.tsx`; the teleprompter's `ToolButton` is the same
 /// shape at `size-7` with `gray-12`-alpha washes.
+/// fframes' icon-only button boxes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IconButtonSize {
+    Small,
+    Medium,
+    Large,
+}
+
+impl IconButtonSize {
+    /// The box side and the glyph size, in pixels.
+    pub const fn box_and_glyph(self) -> (f32, f32) {
+        match self {
+            Self::Small => (24., 14.),
+            Self::Medium => (28., 16.),
+            Self::Large => (32., 16.),
+        }
+    }
+}
+
 #[derive(IntoElement)]
 pub struct IconButton {
     id: ElementId,
@@ -560,6 +579,49 @@ impl IconButton {
             rounded: Some(px(7.)),
             ..Self::new(id, icon)
         }
+    }
+
+    /// One of fframes' three icon-button boxes, with its glyph size.
+    pub fn editor_size(mut self, size: IconButtonSize) -> Self {
+        let (side, glyph) = size.box_and_glyph();
+        self.size = px(side);
+        self.icon_size = px(glyph);
+        self
+    }
+
+    /// The main action: a white glyph on the accent, the lighter accent on hover.
+    pub fn accent(mut self, theme: &Theme) -> Self {
+        let glyph = Hsla::from(theme.on_accent());
+        self.bg = Some(Hsla::from(theme.editor.accent));
+        self.hover_bg = Some(Hsla::from(theme.editor.accent_2));
+        self.active_bg = None;
+        self.idle = glyph;
+        self.active_color = glyph;
+        self.hover_color = Some(glyph);
+        self
+    }
+
+    /// A neutral control with the subtle `ctl` fill at rest.
+    pub fn ctl_fill(mut self, theme: &Theme) -> Self {
+        self.bg = Some(Hsla::from(theme.editor.ctl));
+        self.hover_bg = Some(Hsla::from(theme.editor.ctl_hover));
+        self
+    }
+
+    /// A soft red: a red glyph on the danger surface, deepening on hover.
+    pub fn destructive(mut self, theme: &Theme) -> Self {
+        let glyph = Hsla::from(theme.red_11);
+        self.bg = Some(Hsla::from(theme.red_3));
+        self.hover_bg = Some(Hsla::from(studio_theme::mix(
+            theme.red_3,
+            theme.red_11,
+            0.12,
+        )));
+        self.active_bg = None;
+        self.idle = glyph;
+        self.active_color = glyph;
+        self.hover_color = Some(glyph);
+        self
     }
 
     /// Shows `text` on hover after the standard delay; it also names the button
@@ -685,8 +747,16 @@ impl RenderOnce for IconButton {
             on_bounds,
         } = self;
         let name = label.or_else(|| tooltip.as_ref().map(|(_, text)| text.clone()));
+        // gpui svgs do not inherit a parent's text colour, so the glyph follows
+        // the hover through a group rather than through the cascade.
+        let group: SharedString = match &id {
+            ElementId::Name(name) => SharedString::from(format!("ib-{name}")),
+            other => SharedString::from(format!("ib-{other:?}")),
+        };
+        let glyph_hover = hover_color.filter(|_| !disabled && !active);
 
         focusable(div().id(id), &theme, disabled)
+            .group(group.clone())
             .role(Role::Button)
             .when_some(name, |this, name| this.aria_label(name))
             .relative()
@@ -709,11 +779,15 @@ impl RenderOnce for IconButton {
             .when(!disabled && on_click.is_some(), |this| {
                 this.cursor_pointer()
             })
-            .child(svg().path(icon).size(icon_size).text_color(if active {
-                active_color
-            } else {
-                idle
-            }))
+            .child(
+                svg()
+                    .path(icon)
+                    .size(icon_size)
+                    .text_color(if active { active_color } else { idle })
+                    .when_some(glyph_hover, |this, color| {
+                        this.group_hover(group, move |style| style.text_color(color))
+                    }),
+            )
             .when(
                 !disabled && (hover_bg.is_some() || hover_color.is_some()),
                 |this| {
@@ -812,6 +886,43 @@ mod tests {
         assert_eq!(button.active_color, hsla(theme.editor.text_1));
         assert_eq!(button.rounded, Some(px(7.)));
         assert_eq!((button.size, button.icon_size), (px(28.), px(16.)));
+    }
+
+    #[test]
+    fn editor_sizes_set_the_box_and_the_glyph() {
+        let theme = Theme::light();
+        let sized = |size| {
+            let button = IconButton::editor(&theme, "b", "icons/x.svg").editor_size(size);
+            (f32::from(button.size), f32::from(button.icon_size))
+        };
+        assert_eq!(sized(IconButtonSize::Small), (24., 14.));
+        assert_eq!(sized(IconButtonSize::Medium), (28., 16.));
+        assert_eq!(sized(IconButtonSize::Large), (32., 16.));
+    }
+
+    #[test]
+    fn icon_fills_match_the_text_buttons() {
+        let theme = Theme::dark();
+        let hsla = Hsla::from;
+        let accent = IconButton::editor(&theme, "a", "icons/x.svg").accent(&theme);
+        assert_eq!(accent.bg, Some(hsla(theme.editor.accent)));
+        assert_eq!(accent.hover_bg, Some(hsla(theme.editor.accent_2)));
+        assert_eq!(
+            (accent.idle, accent.hover_color),
+            (hsla(theme.on_accent()), Some(hsla(theme.on_accent())))
+        );
+
+        let ctl = IconButton::editor(&theme, "b", "icons/x.svg").ctl_fill(&theme);
+        assert_eq!(ctl.bg, Some(hsla(theme.editor.ctl)));
+        assert_eq!(ctl.hover_bg, Some(hsla(theme.editor.ctl_hover)));
+
+        let destructive = IconButton::editor(&theme, "c", "icons/x.svg").destructive(&theme);
+        assert_eq!(destructive.bg, Some(hsla(theme.red_3)));
+        assert_eq!(destructive.idle, hsla(theme.red_11));
+        assert_eq!(
+            destructive.hover_bg,
+            Some(hsla(studio_theme::mix(theme.red_3, theme.red_11, 0.12)))
+        );
     }
 
     #[test]

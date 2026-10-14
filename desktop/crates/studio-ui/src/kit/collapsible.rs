@@ -231,6 +231,81 @@ impl RenderOnce for Disclosure {
     }
 }
 
+/// A section its owner opens and closes: a [`Disclosure`] header over content
+/// that animates its height. The owner keeps `open` and flips it from
+/// `on_toggle`; the measurement and the animation live in keyed state.
+#[derive(IntoElement)]
+pub struct CollapsibleSection {
+    id: ElementId,
+    open: bool,
+    header: Vec<AnyElement>,
+    content: Option<AnyElement>,
+    on_toggle: Option<ToggleHandler>,
+}
+
+impl CollapsibleSection {
+    pub fn new(id: impl Into<ElementId>, open: bool) -> Self {
+        Self {
+            id: id.into(),
+            open,
+            header: Vec::new(),
+            content: None,
+            on_toggle: None,
+        }
+    }
+
+    pub fn header(mut self, header: impl IntoElement) -> Self {
+        self.header.push(header.into_any_element());
+        self
+    }
+
+    pub fn content(mut self, content: impl IntoElement) -> Self {
+        self.content = Some(content.into_any_element());
+        self
+    }
+
+    /// Called with the requested open state.
+    pub fn on_toggle(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_toggle = Some(Box::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for CollapsibleSection {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let CollapsibleSection {
+            id,
+            open,
+            header,
+            content,
+            on_toggle,
+        } = self;
+        // The entity, not a clone of its value: the open flag is a `Cell`.
+        let state = window.use_keyed_state((id.clone(), "state".to_string()), cx, |_, _| {
+            CollapsibleState::new(open)
+        });
+        let state = state.read(cx);
+        state.set_open(open);
+        let (height, animating) = state.height_for(Instant::now());
+        if animating {
+            window.request_animation_frame();
+        }
+        let measure = state.measure_cell();
+
+        let mut disclosure = Disclosure::new((id.clone(), "header".to_string()), open);
+        disclosure.extend(header);
+        if let Some(handler) = on_toggle {
+            disclosure = disclosure.on_toggle(handler);
+        }
+        div()
+            .id(id)
+            .flex()
+            .flex_col()
+            .child(disclosure)
+            .children(content.map(|content| Collapsible::new(height, measure).content(content)))
+    }
+}
+
 /// The clipped container. Give it the height [`CollapsibleState::height_for`]
 /// returned and the content to measure.
 #[derive(IntoElement)]
@@ -284,6 +359,74 @@ impl RenderOnce for Collapsible {
                     )
                     .children(content),
             )
+    }
+}
+
+#[cfg(test)]
+mod section_in_a_window {
+    use gpui::{Context, Render, TestAppContext, VisualTestContext};
+
+    use super::*;
+    use crate::kit::test_support::{Log, log, press, tab};
+
+    /// A controlled section over a 40px body, inside a box the test measures.
+    struct Panel {
+        open: bool,
+        toggles: Log<bool>,
+    }
+
+    impl Render for Panel {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let toggles = self.toggles.clone();
+            div().flex().flex_col().size_full().child(
+                div().debug_selector(|| "panel".into()).child(
+                    CollapsibleSection::new("sdk", self.open)
+                        .header(div().child("SDK"))
+                        .content(div().h(px(40.)).child("body"))
+                        .on_toggle(cx.listener(move |this, open: &bool, _, cx| {
+                            toggles.borrow_mut().push(*open);
+                            this.open = *open;
+                            cx.notify();
+                        })),
+                ),
+            )
+        }
+    }
+
+    fn panel(cx: &mut TestAppContext, open: bool) -> (Log<bool>, &mut VisualTestContext) {
+        let toggles = log();
+        let shared = toggles.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Panel {
+            open,
+            toggles: shared,
+        });
+        cx.run_until_parked();
+        (toggles, cx)
+    }
+
+    fn height(cx: &mut VisualTestContext) -> f32 {
+        f32::from(cx.debug_bounds("panel").expect("painted").size.height)
+    }
+
+    #[gpui::test]
+    fn an_open_section_shows_its_content(cx: &mut TestAppContext) {
+        let (_, cx) = panel(cx, true);
+        assert!(height(cx) >= 40., "{}", height(cx));
+    }
+
+    #[gpui::test]
+    fn a_closed_section_shows_only_its_header(cx: &mut TestAppContext) {
+        let (_, cx) = panel(cx, false);
+        assert!(height(cx) < 40., "{}", height(cx));
+    }
+
+    #[gpui::test]
+    fn the_header_asks_the_owner_to_flip_it(cx: &mut TestAppContext) {
+        let (toggles, cx) = panel(cx, false);
+        tab(cx);
+        press(cx, "enter");
+        press(cx, "space");
+        assert_eq!(*toggles.borrow(), [true, false]);
     }
 }
 

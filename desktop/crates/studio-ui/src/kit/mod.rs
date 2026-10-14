@@ -57,8 +57,8 @@ mod toggle;
 mod tooltip;
 
 pub use badge::{Badge, StatusDot, Tone, tone_color, tone_surface};
-pub use button::{Button, ButtonSize, ButtonVariant, ClickHandler, IconButton};
-pub use collapsible::{Collapsible, CollapsibleState, Disclosure};
+pub use button::{Button, ButtonSize, ButtonVariant, ClickHandler, IconButton, IconButtonSize};
+pub use collapsible::{Collapsible, CollapsibleSection, CollapsibleState, Disclosure};
 pub use color_picker::{
     ColorPicker, ColorPickerSnapshot, hsv_to_rgb, hue_from_point, preview_ring, rgb_to_hsv,
     sv_from_point,
@@ -87,7 +87,7 @@ pub use slider::{
 };
 pub use surface::{Card, Popover, Section, SettingRow, divider, titled_group};
 pub use tab_rail::{TabRail, TabRailItem, tab_target};
-pub use text::{heading, label, muted};
+pub use text::{heading, label, muted, section_title};
 pub use text_input::{
     TextInput, TextInputEvent, TextInputState, bind_keys as bind_text_input_keys,
     text_input_has_focus,

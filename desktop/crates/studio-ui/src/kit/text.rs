@@ -1,6 +1,6 @@
 //! Text helpers over the theme's text styles, for the editor palette.
 
-use gpui::{Div, ParentElement, SharedString, Styled, div};
+use gpui::{Div, ParentElement, SharedString, Styled, div, px};
 
 use studio_theme::{TextStyle, Theme, text_style};
 
@@ -23,4 +23,52 @@ pub fn heading(theme: &Theme, text: impl Into<SharedString>) -> Div {
     text_style(div(), TextStyle::Heading)
         .text_color(theme.editor.text_1)
         .child(text.into())
+}
+
+/// A section's title row: `Label` text in `text_2`, at least 22px high, with
+/// any further child (a count, an action) pushed to the end.
+pub fn section_title(theme: &Theme, text: impl Into<SharedString>) -> Div {
+    text_style(div(), TextStyle::Label)
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(8.))
+        .min_h(px(22.))
+        .text_color(theme.editor.text_2)
+        .child(text.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{Context, InteractiveElement, IntoElement, Render, TestAppContext, Window, px};
+
+    use super::*;
+
+    struct Titled;
+
+    impl Render for Titled {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            div().w(px(300.)).child(
+                section_title(&theme, "Files")
+                    .debug_selector(|| "title".into())
+                    .child(
+                        div()
+                            .debug_selector(|| "trailing".into())
+                            .w(px(20.))
+                            .h(px(10.)),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn a_section_title_pushes_its_trailing_element_to_the_end(cx: &mut TestAppContext) {
+        let (_, cx) = cx.add_window_view(|_, _| Titled);
+        cx.run_until_parked();
+        let title = cx.debug_bounds("title").expect("title");
+        let trailing = cx.debug_bounds("trailing").expect("trailing");
+        assert_eq!(f32::from(title.size.height), 22.);
+        assert_eq!(f32::from(trailing.right()), 300.);
+    }
 }

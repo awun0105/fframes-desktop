@@ -11,7 +11,7 @@ use gpui::{
 use studio_theme::{METRICS, TextStyle, Theme, text_style};
 
 use super::badge::{Tone, tone_color, tone_surface};
-use super::button::{Button, IconButton};
+use super::button::IconButton;
 use super::collapsible::{Collapsible, CollapsibleState, Disclosure};
 use super::icon::{Icon, icon};
 
@@ -73,7 +73,7 @@ impl Notice {
         self
     }
 
-    pub fn action(mut self, button: Button) -> Self {
+    pub fn action(mut self, button: impl IntoElement) -> Self {
         self.actions.push(button.into_any_element());
         self
     }

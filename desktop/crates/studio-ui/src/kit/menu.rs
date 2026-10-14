@@ -447,11 +447,13 @@ impl RenderOnce for Menu {
                 anchored_placement(bounds, items.len(), max_height, viewport)
             });
 
-        div()
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
+        // Deferred and placed in window coordinates, so a menu hosted inside a
+        // clipped card still paints above everything and its click-away layer
+        // still covers the whole window.
+        let layer = div()
+            .relative()
+            .w(viewport.width)
+            .h(viewport.height)
             .child(
                 // Click-away dismiss, the way a native menu closes.
                 div()
@@ -531,7 +533,14 @@ impl RenderOnce for Menu {
                                     })
                             })),
                     ),
-            )
+            );
+        gpui::deferred(
+            gpui::anchored()
+                .position_mode(gpui::AnchoredPositionMode::Window)
+                .position(point(px(0.), px(0.)))
+                .child(layer),
+        )
+        .with_priority(1)
     }
 }
 
@@ -540,6 +549,49 @@ mod tests {
     use super::*;
     use crate::kit::test_support::{Log, log, press};
     use gpui::{Context, FocusHandle, Render, TestAppContext, point, size};
+
+    /// A menu rendered inside a small clipped box, the way a card hosts it.
+    struct Clipped {
+        dismissed: Log<()>,
+        picked: Log<usize>,
+    }
+
+    impl Render for Clipped {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            let items = vec![MenuItem::new("One", false), MenuItem::new("Two", false)];
+            let state = MenuState::new(point(px(40.), px(200.)), &items);
+            let (dismissed, picked) = (self.dismissed.clone(), self.picked.clone());
+            div().size_full().child(
+                div()
+                    .relative()
+                    .w(px(100.))
+                    .h(px(30.))
+                    .overflow_hidden()
+                    .child(
+                        Menu::editor(&theme, "clipped", items, &state)
+                            .on_dismiss(move |_, _| dismissed.borrow_mut().push(()))
+                            .on_select(move |index, _, _| picked.borrow_mut().push(*index)),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn a_menu_inside_a_clipped_box_still_covers_the_window(cx: &mut TestAppContext) {
+        let (dismissed, picked) = (log(), log());
+        let shared = (dismissed.clone(), picked.clone());
+        let (_, cx) = cx.add_window_view(|_, _| Clipped {
+            dismissed: shared.0,
+            picked: shared.1,
+        });
+        cx.run_until_parked();
+        // The first row, well outside the 100x30 host.
+        cx.simulate_click(point(px(60.), px(217.)), gpui::Modifiers::none());
+        assert_eq!(*picked.borrow(), [0]);
+        cx.simulate_click(point(px(600.), px(500.)), gpui::Modifiers::none());
+        assert_eq!(dismissed.borrow().len(), 1);
+    }
 
     fn with_disabled(flags: &[bool], highlighted: Option<usize>) -> MenuState {
         let items: Vec<MenuItem> = flags
