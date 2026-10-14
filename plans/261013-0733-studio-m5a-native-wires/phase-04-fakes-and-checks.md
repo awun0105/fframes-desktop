@@ -9,6 +9,8 @@ dependencies: [2, 3]
 
 # Phase 4: Fake CLIs, cross-driver tests and platform checks
 
+> **Spike S5 (2026-10-14) contradicts parts of this phase.** Read the [native-wires report, Result section](../261013-0733-studio-m1-foundations/reports/spike-native-wires.md#result) before building: neither CLI's turn-end frame means the work is done (Claude runs unprompted turns with their own `result`; Codex completes items after `turn/completed`), Codex has no `turn/aborted` and its interrupt leaves the command running, only `untrusted` asks before every command, and session stop needs interrupt, stdin close, a grace period and a containment kill.
+
 ## Goal
 
 All three drivers are tested the same way on Windows, macOS and Linux CI without real CLIs, and checked by hand with real ones.

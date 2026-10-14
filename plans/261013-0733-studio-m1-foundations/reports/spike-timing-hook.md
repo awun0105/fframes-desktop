@@ -10,7 +10,9 @@ production code.
 `Duration::Auto`, reorder, trim and split change preview frames through `SetTiming`. The same
 `studio_worker` process serves every request, with no rebuild or restart. The render path given the
 same document draws frames byte-identical to the preview frames at four times, and the encoded MP4
-matches them too. The same holds on `examples/fframes-studio-intro` (ten scenes).
+matches them too. On `examples/fframes-studio-intro` (ten scenes) a narrower in-process check also
+passes: `Previewer::set_timing` and `render_frame`, without the worker, `SetTiming` or an encoded file.
+The template run is the one that meets the exit criterion.
 
 | Exit criterion | Status |
 |---|---|
