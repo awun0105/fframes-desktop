@@ -498,7 +498,35 @@ pub struct Opened {
     pub resolution: Option<Resolution>,
     /// The ownership policy this workflow was opened under (saving reuses it).
     pub policy: OwnershipPolicy,
+    /// Signalled when the workflow publishes a snapshot; take it before reading one.
+    pub wake: Arc<WorkflowWake>,
 }
+
+/// One workflow's snapshot wake: the first publish after [`Self::take`] signals, later
+/// ones only mark it pending, so a stream of snapshots costs the UI one wake.
+pub struct WorkflowWake {
+    pending: AtomicBool,
+    signal: Box<dyn Fn() + Send + Sync>,
+}
+
+impl WorkflowWake {
+    pub fn new(signal: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
+        Arc::new(Self {
+            pending: AtomicBool::new(false),
+            signal: Box::new(signal),
+        })
+    }
+    pub fn wake(&self) {
+        if !self.pending.swap(true, Ordering::AcqRel) {
+            (self.signal)();
+        }
+    }
+    /// True once per signal.
+    pub fn take(&self) -> bool {
+        self.pending.swap(false, Ordering::AcqRel)
+    }
+}
+
 /// A post-commit hand-off tagged with the workflow it came from.
 pub struct QueuedHandoff {
     pub serial: u64,
@@ -579,7 +607,10 @@ pub struct HostParams {
     pub build: Option<BuildSettings>,
     pub adapter: Option<AdapterSettings>,
     pub serial: u64,
+    /// Receives hand-offs.
     pub inbox: Arc<HostInbox>,
+    /// Signalled by published snapshots.
+    pub wake: Arc<WorkflowWake>,
 }
 
 /// Where task launches look for the adapter. The global PATH is never consulted: an
@@ -611,7 +642,7 @@ pub fn workflow_config(params: HostParams) -> WorkflowConfig {
         params.serial,
         params.inbox.clone(),
     )));
-    let wake = params.inbox.clone();
+    let wake = params.wake;
     config.notify = Some(Arc::new(move || wake.wake()));
     config
 }
@@ -624,6 +655,7 @@ pub fn open_workflow(
     build: Option<BuildSettings>,
     serial: u64,
     inbox: Arc<HostInbox>,
+    wake: Arc<WorkflowWake>,
     policy: OwnershipPolicy,
 ) -> Opened {
     let qualification = load_qualification_snapshot(&paths);
@@ -651,6 +683,7 @@ pub fn open_workflow(
         adapter: settings,
         serial,
         inbox,
+        wake: wake.clone(),
     });
     Opened {
         serial,
@@ -661,6 +694,7 @@ pub fn open_workflow(
         settings_error,
         resolution,
         policy,
+        wake,
     }
 }
 
@@ -999,12 +1033,14 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let paths = AppPaths::new(temp.path().join("data")).unwrap();
         let inbox = Arc::new(HostInbox::default());
+        let wake = WorkflowWake::new(|| ());
         let config = workflow_config(HostParams {
             paths: paths.clone(),
             build: None,
             adapter: None,
             serial: 7,
             inbox: inbox.clone(),
+            wake: wake.clone(),
         });
         assert!(config.search.gui_path.is_none());
         assert_eq!(
@@ -1014,6 +1050,27 @@ mod tests {
         assert!(config.adapter.is_none());
         assert!(config.handoff.is_some());
         (config.notify.as_ref().unwrap())();
-        assert!(inbox.take_wake(), "a published snapshot wakes the UI");
+        assert!(wake.take(), "a published snapshot wakes the UI");
+        assert!(
+            !inbox.take_wake(),
+            "through its workflow's wake, not the inbox"
+        );
+    }
+
+    #[test]
+    fn a_workflow_wake_signals_once_until_it_is_taken() {
+        let signals = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = signals.clone();
+        let wake = WorkflowWake::new(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+        });
+        assert!(!wake.take());
+        wake.wake();
+        wake.wake();
+        assert_eq!(signals.load(Ordering::SeqCst), 1);
+        assert!(wake.take());
+        assert!(!wake.take());
+        wake.wake();
+        assert_eq!(signals.load(Ordering::SeqCst), 2);
     }
 }

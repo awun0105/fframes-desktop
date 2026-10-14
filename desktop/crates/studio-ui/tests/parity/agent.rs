@@ -225,3 +225,41 @@ fn switching_projects_mid_turn_shows_nothing_of_the_old_turn(cx: &mut gpui::Test
     }
     assert_eq!(source(&studio), original);
 }
+
+/// After a switch mid-turn the new project's agent still reaches the panel: its reply
+/// streams in to the last chunk.
+#[gpui::test]
+fn the_agent_of_the_project_switched_to_still_updates_the_panel(cx: &mut gpui::TestAppContext) {
+    let mut studio = studio_with_agent(cx);
+    let second = ["Second ", "reply"];
+    fs::write(
+        studio.agent_evidence().join("plan.json"),
+        json!({"turns": [
+            {"text": REPLY, "permission": {"title": "Edit src/lib.rs"}},
+            {"text": second},
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    send_brief(&mut studio);
+    let other = studio.another_project("other");
+    studio.dispatch(OpenProject);
+    studio.choose_path(&other);
+    studio.wait("the other project with its own agent", |t| {
+        t["busy"] == false
+            && t["project_path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("other"))
+            && t["panel"]["attached"] == true
+    });
+    studio.dispatch(FocusPrompt);
+    studio.settle(Duration::from_millis(50));
+    studio.type_text(BRIEF);
+    studio.dispatch(SubmitPrompt);
+    let replied = studio.wait("the second reply", |t| {
+        rows(t, "agent")
+            .first()
+            .is_some_and(|row| row["chars"] == second.concat().len())
+    });
+    assert_eq!(rows(&replied, "user").len(), 1, "{:#}", replied["panel"]);
+}

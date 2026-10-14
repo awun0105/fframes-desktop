@@ -9,12 +9,15 @@
 //! A monitor thread watches what nobody sends a command about: the open project's source
 //! changing on disk ([`EngineEvent::SourceChanged`]) and background cleanup failing
 //! ([`EngineEvent::CleanupProblem`]).
+//!
+//! An open agent workflow says it published a snapshot with [`EngineEvent::WorkflowChanged`],
+//! stamped with its session, so a window that left the session never hears it.
 
 use super::backend::{Backend, Command, Presentation, StudioEnvironment};
 use crate::agent::{AgentWorkflow, BuildSettings};
 use crate::containment::OwnershipPolicy;
 use crate::presets::{Catalog, PresetReport};
-use crate::providers::host::HostInbox;
+use crate::providers::host::{HostInbox, WorkflowWake};
 use crate::services::build_service::BuildService;
 use crate::services::export_service::{ExportControl, ExportProgress, ExportRequest, export_mp4};
 use crate::services::preview_coordinator::BuildSpec;
@@ -84,6 +87,9 @@ pub enum EngineEvent {
     SourceChanged { session: Option<SessionId> },
     /// Background cleanup could not finish (the newest problem). Never filtered.
     CleanupProblem(TeardownReport),
+    /// The agent workflow opened with `serial` published a snapshot. Not repeated until its
+    /// [`WorkflowWake`] (in [`crate::providers::host::Opened`]) is taken.
+    WorkflowChanged { session: SessionId, serial: u64 },
 }
 
 impl EngineEvent {
@@ -96,6 +102,7 @@ impl EngineEvent {
             EngineEvent::PreviewGated(gated) => Some(gated.session),
             EngineEvent::SourceChanged { session } => Some(*session),
             EngineEvent::CleanupProblem(_) => None,
+            EngineEvent::WorkflowChanged { session, .. } => Some(Some(*session)),
         }
     }
 }
@@ -106,7 +113,8 @@ pub struct WorkflowOpen {
     /// The window's open serial, carried by the result.
     pub serial: u64,
     pub build: Option<BuildSettings>,
-    /// Receives the result.
+    /// Receives the result and the workflow's hand-offs; its snapshots arrive as
+    /// [`EngineEvent::WorkflowChanged`].
     pub inbox: Arc<HostInbox>,
     pub policy: OwnershipPolicy,
 }
@@ -365,7 +373,7 @@ fn run(
             }
             Job::PreviewNews(news) => EngineEvent::PreviewGated(Box::new(gate(&engine, news))),
             Job::OpenWorkflow(open) => {
-                open_workflow(&engine, *open);
+                open_workflow(&engine, *open, &events);
                 drop(engine);
                 continue;
             }
@@ -379,7 +387,7 @@ fn run(
     }
 }
 
-fn open_workflow(engine: &Inner, open: WorkflowOpen) {
+fn open_workflow(engine: &Inner, open: WorkflowOpen, events: &async_channel::Sender<EngineEvent>) {
     let project = {
         let backend = engine.backend.lock();
         (backend.session == Some(open.session))
@@ -390,12 +398,16 @@ fn open_workflow(engine: &Inner, open: WorkflowOpen) {
         return;
     };
     let WorkflowOpen {
+        session,
         serial,
         build,
         inbox,
         policy,
-        ..
     } = open;
+    let events = events.clone();
+    let wake = WorkflowWake::new(move || {
+        let _ = events.try_send(EngineEvent::WorkflowChanged { session, serial });
+    });
     let replay = move || {
         let opened = crate::providers::host::open_workflow(
             controller,
@@ -403,6 +415,7 @@ fn open_workflow(engine: &Inner, open: WorkflowOpen) {
             build,
             serial,
             inbox.clone(),
+            wake,
             policy,
         );
         inbox.push_opened(opened);
@@ -707,6 +720,57 @@ mod workflow_and_export_tests {
                 workflow.close();
             }
         }
+        engine.shutdown(Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_workflow_change_is_one_event_of_its_session_until_it_is_taken() {
+        let temp = tempfile::tempdir().unwrap();
+        let (engine, events, session) = opened_engine(&temp);
+        let inbox = Arc::new(HostInbox::default());
+        engine.open_workflow(WorkflowOpen {
+            session: session.unwrap(),
+            serial: 4,
+            build: None,
+            inbox: inbox.clone(),
+            policy: OwnershipPolicy::Validated,
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let opened = loop {
+            if let Some(opened) = inbox.take_opened().pop() {
+                break opened;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "workflow open deadline"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let changes = || {
+            let mut changes = Vec::new();
+            while let Ok(event) = events.try_recv() {
+                if let EngineEvent::WorkflowChanged { session, serial } = event {
+                    changes.push((session, serial));
+                }
+            }
+            changes
+        };
+        // The wake outlives its workflow; closing it first leaves no publish racing the
+        // assertions. Then drop whatever the workflow published.
+        if let Ok(workflow) = opened.result {
+            workflow.close();
+        }
+        changes();
+        opened.wake.take();
+        for _ in 0..5 {
+            opened.wake.wake();
+        }
+        assert_eq!(changes(), [(session.unwrap(), 4)]);
+        opened.wake.wake();
+        assert!(changes().is_empty(), "nothing more until it is taken");
+        assert!(opened.wake.take());
+        opened.wake.wake();
+        assert_eq!(changes(), [(session.unwrap(), 4)]);
         engine.shutdown(Duration::from_secs(5));
     }
 

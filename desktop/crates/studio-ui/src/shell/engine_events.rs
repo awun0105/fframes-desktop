@@ -190,6 +190,11 @@ impl StudioShell {
                     self.dispatch(Command::Refresh, cx);
                 }
             }
+            EngineEvent::WorkflowChanged { serial, .. } => {
+                if self.agent.attached == Some(serial) {
+                    self.agent_refreshed(cx);
+                }
+            }
             EngineEvent::CleanupProblem(report) => {
                 // Background teardown only ever reports problems; show the newest one.
                 self.error = Some(format!(
@@ -441,10 +446,9 @@ impl StudioShell {
         }
     }
 
-    /// The agent half of the window, run whenever the workflow, its open or a history page
+    /// The agent half of the window, run whenever a hand-off, an open or a history page
     /// woke it: adopt a finished open, adopt committed promotions on this thread (the only
-    /// place the preview coordinator is touched), retry a refused build selection (a task
-    /// ending wakes it) and refresh the panel.
+    /// place the preview coordinator is touched), then [`Self::agent_refreshed`].
     pub(super) fn agent_woken(&mut self, cx: &mut Context<Self>) {
         let inbox = self.agent.inbox.clone();
         inbox.take_wake();
@@ -469,6 +473,18 @@ impl StudioShell {
             if let Some(workflow) = &self.agent.workflow {
                 let _ = workflow.report_handoff(&published, outcome);
             }
+        }
+        self.agent_refreshed(cx);
+    }
+
+    /// After the workflow changed: report the displayed revision, retry a refused build
+    /// selection (a task ending publishes a snapshot) and refresh the panel. Takes the
+    /// attached workflow's wake first, so the next publish wakes the window again.
+    fn agent_refreshed(&mut self, cx: &mut Context<Self>) {
+        if self.agent.attached.is_some()
+            && let Some(wake) = &self.agent.wake
+        {
+            wake.take();
         }
         self.report_displayed();
         self.sync_agent_build();
@@ -572,6 +588,7 @@ impl StudioShell {
             return;
         }
         self.agent.opening = None;
+        self.agent.wake = Some(opened.wake);
         let workflow = Arc::new(workflow);
         let preview_identity = self
             .displayed

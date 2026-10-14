@@ -103,7 +103,7 @@ impl World {
     }
 
     /// Opens the workflow exactly like the shell does: the saved description, the
-    /// UI hand-off sink and the wake callback.
+    /// UI hand-off sink and a snapshot wake.
     fn open(&mut self, inbox: &Arc<HostInbox>) -> host::Opened {
         let opened = host::open_workflow(
             self.controller.clone(),
@@ -111,6 +111,7 @@ impl World {
             Some(self.build()),
             1,
             inbox.clone(),
+            host::WorkflowWake::new(|| ()),
             self.policy(),
         );
         assert!(
@@ -254,6 +255,7 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
         None,
         3,
         inbox,
+        host::WorkflowWake::new(|| ()),
         OwnershipPolicy::Validated,
     );
     assert!(opened.adapter.is_none() && opened.settings_error.is_none());
@@ -276,6 +278,7 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
         None,
         4,
         Arc::new(HostInbox::default()),
+        host::WorkflowWake::new(|| ()),
         OwnershipPolicy::Validated,
     );
     assert!(opened.adapter.is_none());
@@ -569,6 +572,7 @@ fn the_production_policy_never_lets_a_saved_adapter_claim_containment() {
         Some(world.build()),
         9,
         inbox.clone(),
+        host::WorkflowWake::new(|| ()),
         OwnershipPolicy::Validated,
     );
     let resolution = opened.resolution.clone().expect("an adapter is saved");

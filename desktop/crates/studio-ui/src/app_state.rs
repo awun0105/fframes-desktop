@@ -155,6 +155,9 @@ mod tests {
                 format!("changed {:?}", session.map(|s| s.0))
             }
             EngineEvent::CleanupProblem(report) => format!("cleanup {}", report.label),
+            EngineEvent::WorkflowChanged { session, serial } => {
+                format!("workflow {} of {}", serial, session.0)
+            }
         }
     }
 
@@ -199,6 +202,31 @@ mod tests {
             vec![finished(1, Some(1)), refreshed(1), refreshed(2)],
         );
         assert_eq!(seen(cx, &w), ["finished 1", "refreshed Some(1)"]);
+        assert_eq!(w.state.read_with(cx, |s, _| s.dropped()), 1);
+    }
+
+    #[gpui::test]
+    fn a_workflow_change_of_a_session_no_longer_open_is_dropped(cx: &mut TestAppContext) {
+        let changed = |session, serial| EngineEvent::WorkflowChanged {
+            session: SessionId(session),
+            serial,
+        };
+        let w = window(cx);
+        deliver(cx, &w, vec![finished(1, Some(1)), changed(1, 1)]);
+        deliver(
+            cx,
+            &w,
+            vec![finished(2, Some(2)), changed(1, 1), changed(2, 2)],
+        );
+        assert_eq!(
+            seen(cx, &w),
+            [
+                "finished 1",
+                "workflow 1 of 1",
+                "finished 2",
+                "workflow 2 of 2"
+            ]
+        );
         assert_eq!(w.state.read_with(cx, |s, _| s.dropped()), 1);
     }
 

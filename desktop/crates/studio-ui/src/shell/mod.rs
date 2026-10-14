@@ -28,7 +28,7 @@ use studio_engine::containment::OwnershipPolicy;
 use studio_engine::engine::backend::StudioEnvironment;
 use studio_engine::engine::backend::{Command, Presentation};
 use studio_engine::engine::handle::EngineHandle;
-use studio_engine::providers::host::HostInbox;
+use studio_engine::providers::host::{HostInbox, WorkflowWake};
 use studio_engine::services::audio_service::{AudioService, OutputDevice, OutputHandle};
 use studio_engine::services::build_service::BuildService;
 use studio_engine::services::export_service::{ExportControl, ExportProgress};
@@ -177,11 +177,15 @@ pub struct StudioShell {
 }
 
 /// The shell's side of the per-project agent workflow: which project it belongs to, how
-/// it was opened and what must still be reported to it. Workflow threads reach the UI only
-/// through [`HostInbox`], which the frame loop drains.
+/// it was opened and what must still be reported to it. Workflow threads reach the UI
+/// through [`HostInbox`] (open results, hand-offs), which the frame loop drains, and
+/// through the engine's `WorkflowChanged` events (published snapshots).
 struct AgentHost {
     inbox: Arc<HostInbox>,
     workflow: Option<Arc<AgentWorkflow>>,
+    /// The attached workflow's snapshot wake, taken before each poll so the next publish
+    /// signals again.
+    wake: Option<Arc<WorkflowWake>>,
     session: Option<studio_engine::OpenSession>,
     /// Serial of the open in flight, if any; a result with another serial is closed.
     opening: Option<u64>,
@@ -203,6 +207,7 @@ impl AgentHost {
         Self {
             inbox: Arc::new(HostInbox::default()),
             workflow: None,
+            wake: None,
             session: None,
             opening: None,
             attached: None,

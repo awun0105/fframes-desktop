@@ -24,7 +24,7 @@ dependencies: [3]
 
 - [x] Scout handler groups
 - [x] Split modules
-- [ ] Snapshots through engine events
+- [x] Snapshots through engine events
 - [ ] Agent tests green
 
 ## Success criteria
@@ -48,3 +48,14 @@ Tasks 1 and 2 were done ahead of phase 3, since they need nothing from it. The s
 Permissions live with the turn that raises them (`prompt.rs`). Tool settings live with task start (`turn.rs`). Each child is an `impl Actor` block with `use super::*`. The only edits were `pub(super)` on methods that a sibling calls. A line-multiset diff against `HEAD` shows only module wiring and rustfmt reflows. The full workspace run matches the baseline per binary. The moved code has no `cfg` gates, so the Windows-only check covers it.
 
 Task 3 (snapshots through engine events) waits for phase 3's channels.
+
+## Progress (2026-10-15)
+
+Task 3 is done. The actor itself did not change: it already calls the workflow's `notify` on every snapshot publish and evidence image. What changed is where that call goes.
+
+- `providers::host::WorkflowWake` is one workflow's wake: the first publish after `take` signals, later ones only mark it pending. `host::open_workflow` takes one, and `Opened` returns it.
+- The engine builds it in `open_workflow` with a signal that sends `EngineEvent::WorkflowChanged { session, serial }`. `AppState` drops the event like any other session-scoped one, so a window that left the session never hears its workflow.
+- The shell keeps the attached workflow's wake. An event whose serial is the attached one refreshes the agent half: it takes the wake, then reports the displayed revision, retries the build selection and polls the panel. Every refresh (also one woken by the inbox) takes the wake first, so no read leaves it pending. That includes the refresh right after an open is adopted: a workflow publishes while it opens, before the shell attaches it, and its event is ignored for not being attached yet. Without a take there, every later wake was lost.
+- Kept on the inbox, on purpose: open results, hand-offs (a hand-off of an old serial is dropped and its staged worker reaped) and the panel's history-page wake. The inbox's single `dirty` flag is why it was not moved to the engine channel as a whole: a stale wake would strand the next session.
+
+Tests: a `WorkflowWake` unit test; an engine-handle test (five publishes give one event stamped with the session and serial, nothing more until it is taken); an `AppState` test (a change from a session no longer open is dropped); and the parity test `the_agent_of_the_project_switched_to_still_updates_the_panel` (a reply streams to its last chunk in the project opened mid-turn). Two mutations each fail all six agent parity tests: the shell ignoring the event, and never taking the wake. An earlier version took the wake at adoption separately; removing that take also failed all six, and the take now belongs to the refresh that follows adoption. `app/tests/agent_workflow_ui.rs` (Linux only) passes a wake to `host::open_workflow`; it was type-checked here with its gate removed. Task 4 is closed by the Linux CI job, which runs it.
