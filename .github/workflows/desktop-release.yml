@@ -26,7 +26,11 @@ on:
         type: boolean
         default: false
       consumer_release:
-        description: "Publish only targets proven eligible by the M7 ledger"
+        description: "Publish the release policy's eligible targets (needs a green full self-hosted run and a green Desktop CI run on main at the tag commit)"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Publish nothing; with consumer_release, run the release gate and verify the packages"
         type: boolean
         default: false
       sign_artifacts:
@@ -184,8 +188,7 @@ jobs:
           cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p fframes-studio --all-targets -- -D warnings
           cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
           python3 desktop/scripts/test-packaging.py
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
+          python3 desktop/scripts/test-release-gate.py
       - name: Build and render annotated worker
         run: |
           cargo build --release --manifest-path desktop/fixtures/annotated-video-overlay/Cargo.toml
@@ -287,13 +290,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Unsigned, unqualified builds for early users. The consumer release below stays gated by M7.
+  # Unsigned builds for early users. The consumer release below is gated by release-gate.py.
   publish-preview:
     name: Publish Unsigned Preview
     needs: [matrix]
     if: >-
       always() && !cancelled() &&
-      (github.event_name == 'push' || (inputs.preview_release == true && inputs.consumer_release != true)) &&
+      (github.event_name == 'push' || (inputs.preview_release == true && inputs.consumer_release != true && inputs.dry_run != true)) &&
       (needs.matrix.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.run_id != ''))
     runs-on: ubuntu-latest
     permissions:
@@ -392,25 +395,23 @@ jobs:
           RUN_ID: ${{ inputs.run_id }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          publication = json.loads(Path("desktop/packaging/release-policy.json").read_text())["publication"]
-          if not publication["consumer_release_enabled"] or not publication["trusted_release_keys_configured"]:
-              raise SystemExit("Consumer release is disabled until trusted signing keys and qualification are configured.")
-          PY
-          eligible_targets_json="$(python3 desktop/scripts/test-qualification-m7.py --eligible-targets --verify-worktree)"
-          eligible_targets="$(printf '%s' "$eligible_targets_json" | python3 -c 'import json, sys; print(" ".join(json.load(sys.stdin)))')"
-          if [ -z "$eligible_targets" ]; then
-            echo "No target is eligible for consumer publication." >&2
-            exit 1
-          fi
+          set -o pipefail
           tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
-          ledger_commit="$(python3 -c 'import json; print(json.load(open("desktop/qualification/m7-results.json"))["source"]["commit"])')"
-          if [ "$tag_commit" != "$ledger_commit" ]; then
-            echo "Release tag commit does not match the qualified M7 source commit." >&2
-            exit 1
-          fi
+          # The successful runs of a workflow at the tag commit, as `gh run view --json` objects.
+          runs() {
+            gh run list -R "$REPOSITORY" --workflow "$1" --commit "$tag_commit" --status success --limit 50 \
+                --json databaseId -q '.[].databaseId' |
+              while read -r id; do
+                gh run view "$id" -R "$REPOSITORY" --json workflowName,headSha,headBranch,conclusion,jobs
+              done | jq -s .
+          }
+          runs desktop-self-hosted.yml > "$RUNNER_TEMP/self-hosted-runs.json"
+          runs desktop.yml > "$RUNNER_TEMP/desktop-runs.json"
+          eligible_targets="$(python3 desktop/scripts/release-gate.py \
+            --policy desktop/packaging/release-policy.json \
+            --tag-commit "$tag_commit" \
+            --self-hosted-runs "$RUNNER_TEMP/self-hosted-runs.json" \
+            --desktop-runs "$RUNNER_TEMP/desktop-runs.json")"
           if [ -n "$RUN_ID" ]; then
             run_commit="$(gh run view "$RUN_ID" -R "$REPOSITORY" --json headSha -q .headSha)"
             if [ "$run_commit" != "$tag_commit" ]; then
@@ -450,7 +451,7 @@ jobs:
               exit 1
             fi
             cp "$candidate" "dist/$expected"
-            python3 desktop/scripts/test-qualification-m7.py --verify-package "$target" "dist/$expected"
+            python3 desktop/scripts/verify-package.py --policy desktop/packaging/release-policy.json "$target" "dist/$expected"
           done
           ls -lh dist/
 
@@ -481,6 +482,7 @@ jobs:
           cat release-notes.md
 
       - name: Publish GitHub Release
+        if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
@@ -505,3 +507,7 @@ jobs:
               "${extra_args[@]}"
           fi
           echo "Release successfully published: $(gh release view "$RELEASE_TAG" --json url -q .url)"
+
+      - name: Dry run summary
+        if: inputs.dry_run == true
+        run: echo "Dry run: $RELEASE_TAG would publish $ELIGIBLE_TARGETS; nothing was published."

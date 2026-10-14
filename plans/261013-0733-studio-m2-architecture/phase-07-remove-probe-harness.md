@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Remove the bounds-probe harness"
-status: pending
+status: in-progress
 priority: P1
 effort: "2-3d"
 dependencies: [4]
@@ -36,11 +36,43 @@ Delete the bounds-probe qualification harness, its evidence, scripts and CI jobs
 
 ## Todo
 
-- [ ] Scout references
+- [x] Scout references
 - [ ] Parity coverage check
-- [ ] Release gate replacement with refusal test
+- [x] Release gate replacement with refusal test
 - [ ] Harness code, tests, data, scripts and CI jobs deleted
 
 ## Success criteria
 
 `grep -rnE "qualify_|qualification::|presentation_stress|stress_metrics|bounds_probe|start_agent_telemetry" desktop --include=*.rs` matches only `studio-engine/src/containment/` and the `qualify-writer` subcommand (both deleted in M3 phase 4); the kept probes still exist; the containment ledger tests and `qualify_writer` tests pass; all CI workflows and a release dry run with `consumer_release_enabled` set pass.
+
+## Scouting results and decisions (2026-10-15)
+
+The scout found these against the lists above:
+
+- **The X11 test needs `qualify-m3`.** `app/tests/x11_shell.rs` is the only CI test that drives a real window (Xvfb and xdotool). It launches `fframes-studio qualify-m3 --project ? --telemetry ? --test-writer-containment x11-scripted-peer`, reads the telemetry file, and clicks at the button bounds the telemetry measures. The user decided to **keep a test-only mode**: `qualify-m2`, `qualify-presentation` and the stress code go, and `qualify-m3` becomes one hidden observation flag on the studio command. That flag writes `telemetry()` to a file and keeps the test-only containment injection. M3 phase 4 deletes it with the ledger. The success grep therefore also matches this mode and the bounds probes it needs.
+- **Telemetry is not harness.** `StudioShell::telemetry` (`shell/qualification.rs`) and the conversation panel's `telemetry` are what the parity tests read. They stay. Only `start_qualification` (the `qualify-m2` file writer) goes; `start_agent_telemetry` becomes the observation flag's writer. Once the qualification parts are gone, `shell/qualification.rs` is renamed after what it holds.
+- **Bounds probes stay** (the parity harness's `report_button_bounds`, the settings parity test and the X11 test click by them), unless gpui offers a test bounds lookup that replaces them.
+- **`evidence_preview.rs` stays.** It draws the agent panel's evidence images (`actor/mod.rs`, `actor/prompt.rs`); it is not harness.
+- **`CandidateProbe` does not exist** under that name; the kept-probes check uses the names that exist.
+- **`qualification.json` in the package stays as a file.** The finalize, installer and Windows signing scripts need it for the target triple and whether the SDK is included. `package-phase-zero.py` writes it from the build inputs instead of copying `desktop/qualification/m0-results.json`.
+- **`test-packaging.py` loads `validate-qualification.py` and `qualify-m3-agent.py` and reads the m0/m2 ledgers**, and every workflow runs it. Those parts go before the scripts do.
+- **No workflow runs the m7 tests**, although earlier plans say so. The new gate's tests run in the fast CI steps.
+- **The release gate's runs.** `desktop.yml` has no push trigger, so "a green `desktop.yml` run on main" means a manually dispatched run on `main` at the tag commit. A self-hosted run counts as full when every job's full-only step "Real worker frame, anchor, crash and restart" succeeded; in a fast push run that step is `skipped` (checked against run 38614584722).
+- **Lost with the native Windows harness.** `qualify-windows-native.py` (with `qualify-m2`) is the only tool for Windows real-input checks: the caption hit-test, a real title drag, Close's hover colour, and render counts under a real mouse. Nothing in the repository verifies these after this phase.
+
+Order, one commit per step, each green in CI:
+
+1. The release gate (`desktop/scripts/release-gate.py`), `desktop/scripts/verify-package.py` and their offline tests, a `dry_run` input, and `eligible_targets` in the release policy. The release workflow stops reading `desktop/qualification/` and the m7 script.
+2. `test-packaging.py` and `package-phase-zero.py` stop reading the ledgers and the deleted scripts. The workflows drop the m0/m2 ledger validation, the M2 stress step and the isolated-account step.
+3. Rust: the subcommands, the stress code, the probe example and the m3/m5 evidence tests.
+4. The scripts, `desktop/qualification/` and their docs references.
+
+### Step 1 done: the release gate
+
+- `desktop/scripts/release-gate.py` refuses unless the policy enables consumer releases, lists `eligible_targets` that the release builds, and the tag commit has a successful full self-hosted run (every job's full-only step succeeded) and a successful `Desktop CI` run on `main`. The workflow fetches the runs with `gh run list --commit` and `gh run view --json`, and the script decides offline.
+- `desktop/scripts/verify-package.py` replaces the m7 script's package check. The old check compared the archive's digest with the one the M7 ledger recorded for a qualified candidate; with the ledger gone, it checks the target is eligible and the archive holds exactly the files its signed-and-finalized `inventory.json` lists, with matching sizes and digests, all under one folder named like the archive (CI test builds are `studio-test-<target>`, release builds `fframes-studio-<target>`).
+- The release policy gains `eligible_targets` (empty) and loses `qualification.trusted_evidence_keys`, which only the m7 script read. Consumer release stays disabled in the committed policy; a test asserts that.
+- `dry_run` (with `consumer_release`) runs the gate and the verifier and skips publishing.
+- `desktop/scripts/test-release-gate.py`: 23 offline tests, run in the fast steps of all three workflows. Refusals tested: disabled policy, no eligible target, an eligible target the release does not build, an ineligible package target, only a fast run, one job fast, a failed run, a run of another commit or workflow, a Desktop CI run off `main`, and a package with a changed, unlisted, missing or out-of-root file. Eight mutations of the checks each fail the tests. A test also ties the gate's workflow and step names to the workflow files, and that `inputs.full` gates the step in each job.
+- Against real runs (read-only `gh`): the fast push run of `9e82d3c` is refused as not full; the full dispatched run of `5cdf529` passes the full-run check and is refused only for having no `Desktop CI` run on `main`. The Linux package of that run (366 MB, made by `package-phase-zero.py`) verifies, and a copy with one byte of `qualification.json` changed is refused.
+- Not done here: a live dispatch of the release workflow with `dry_run`. It needs a tag and a policy with consumer release enabled, which must not be committed; it is left to the user.

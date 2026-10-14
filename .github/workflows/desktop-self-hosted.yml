@@ -108,6 +108,7 @@ jobs:
       - name: Packaging tests and qualification ledgers
         run: |
           python3 desktop/scripts/test-packaging.py
+          python3 desktop/scripts/test-release-gate.py
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
           python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
       - name: Build and render annotated worker
@@ -284,6 +285,8 @@ jobs:
       - name: Packaging tests and qualification ledgers
         run: |
           python desktop/scripts/test-packaging.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python desktop/scripts/test-release-gate.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

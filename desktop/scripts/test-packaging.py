@@ -252,9 +252,8 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("prepare-github-release.py", preview)
         self.assertIn("(unsigned preview)", preview)
         self.assertIn("published bytes are immutable", preview)
-        self.assertNotIn("consumer_release_enabled", preview)
-        self.assertIn("consumer_release_enabled", consumer)
-        self.assertIn("--eligible-targets", consumer)
+        self.assertNotIn("release-gate.py", preview)
+        self.assertIn("release-gate.py", consumer)
         self.assertLess(
             workflow.index("Check the release tag matches the app version"),
             workflow.index("Focused tests and lint"),
