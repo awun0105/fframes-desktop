@@ -3,7 +3,7 @@ phase: 3
 title: "Todo panel"
 status: pending
 priority: P2
-effort: "2-3d"
+effort: "1-2d"
 dependencies: []
 ---
 
@@ -12,6 +12,8 @@ dependencies: []
 ## Goal
 
 The agent's current plan shows as a todo panel docked above the composer, updated live.
+
+Effort was 2-3d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md), which compiled `todo_panel.rs` and its gpui tests on the Cap fork against an ACP-shaped plan entry; the `Plan` event in three drivers remains.
 
 ## Port sources
 

@@ -3,7 +3,7 @@ title: "M4 Editing: timing doc, SDK release, Cap timeline, playback, export pane
 description: "Add the timeline.json timing model end to end with its own timing revision, ship it and the extended export contract in an SDK release with project migration, and port Cap's timeline, edit history, playhead wake and export panel."
 status: pending
 priority: P1
-effort: "24-34d"
+effort: "24-33d"
 branch: feat/studio-rewrite
 tags: [desktop, feature, gpui, frontend]
 blockedBy: [261013-0733-studio-m2-architecture, 261013-0733-studio-m3-durable-writes]
@@ -31,7 +31,7 @@ Cap sources (pinned `a32e4806b`, `apps/desktop-gpui/src`; on the same patched GP
 | `editor_export.rs` | 3,120 | `ExportPhase`, `ExportUi` (global persistence), `start_export`, and the panel built from Cap's kit |
 | `editor_clips.rs` | 4,103 | clip track rendering, clip selection and clip drag on the timeline |
 
-Snapping (part of the confirmed editing scope) is new design: Cap's timeline only snaps to zero.
+Snapping (part of the confirmed editing scope) ports from Cap: `arm_drag_snap` and `snap_dragged_time` in `editor_window.rs` snap drags to zero, the playhead, the total and other segment edges, and `snap_split_time` in `editor_edits.rs` snaps splits (corrected by spike S4).
 
 ## Phases
 
@@ -40,10 +40,12 @@ Snapping (part of the confirmed editing scope) is new design: Cap's timeline onl
 | 1 | [Timing hook and export options in fframes and the runtime](./phase-01-timing-doc-runtime.md) | 4-5d | none | Pending |
 | 2 | [SDK release, template and project migration](./phase-02-sdk-release-and-migration.md) | 4-6d | 1 | Pending |
 | 3 | [Engine timing document and edit history](./phase-03-engine-timeline-doc.md) | 3-4d | 1 (manual check needs 2) | Pending |
-| 4 | [Port Cap's timeline view](./phase-04-timeline-view-port.md) | 4-6d | 3 | Pending |
-| 5 | [Trim, split, reorder and snapping](./phase-05-timeline-edit-interactions.md) | 3-4d | 2, 4 | Pending |
-| 6 | [Playback pipeline](./phase-06-playback-pump.md) | 3-4d | 3 | Pending |
-| 7 | [Export panel](./phase-07-export-panel.md) | 3-5d | 2, 3 | Pending |
+| 4 | [Port Cap's timeline view](./phase-04-timeline-view-port.md) | 5-7d | 3 | Pending |
+| 5 | [Trim, split, reorder and snapping](./phase-05-timeline-edit-interactions.md) | 2.5-3.5d | 2, 4 | Pending |
+| 6 | [Playback pipeline](./phase-06-playback-pump.md) | 2.5-3.5d | 3 | Pending |
+| 7 | [Export panel](./phase-07-export-panel.md) | 3-4d | 2, 3 | Pending |
+
+Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) re-estimated phases 4-7 and found that Cap's timeline snaps, so phase 5 ports snapping.
 
 ## Success criteria
 

@@ -3,7 +3,7 @@ phase: 4
 title: "Split the studio shell"
 status: pending
 priority: P1
-effort: "5-7d"
+effort: "6-9d"
 dependencies: [2, 3]
 ---
 
@@ -12,6 +12,8 @@ dependencies: [2, 3]
 ## Goal
 
 `studio_shell.rs` (4,696 lines) and the remaining views move into `studio-ui` modules laid out like Cap's editor window, none over 1,500 lines, and the parity suite moves with them.
+
+Effort was 5-7d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md): only Cap's chrome ports; every `render_*` and the panels, sidebar and settings pages are rewritten against snapshots.
 
 ## Tasks
 

@@ -3,7 +3,7 @@ phase: 6
 title: "Playback pipeline"
 status: pending
 priority: P1
-effort: "3-4d"
+effort: "2.5-3.5d"
 dependencies: [3]
 ---
 
@@ -12,6 +12,8 @@ dependencies: [3]
 ## Goal
 
 Replace the 16 ms tick with Cap's latest-wins wake and frame pump while keeping the existing `PlaybackClock` and its epoch fencing as the transport.
+
+Effort was 3-4d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md): the UI frame path (`PreviewFrameView`, `PumpStats`, `PlayheadSignal`, `playhead_extrapolation`) is about 350 lines and fframes already converts frames; the engine side dominates.
 
 ## Port sources
 

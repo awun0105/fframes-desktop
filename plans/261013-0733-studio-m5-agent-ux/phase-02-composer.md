@@ -13,6 +13,8 @@ dependencies: []
 
 Replace the prompt field with Zeron's composer: multiline input, slash commands the agent advertises, file and image attachments within confinement rules, stop, and steering while a turn runs.
 
+The 5-7d estimate holds only if the composer keeps Zeron's `ComposerInput` (compiled on the Cap fork with one GPUI API change in [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) rather than building on the kit `TextInput` as pattern 1 says; that route is 8-10d. Record the choice when the phase starts.
+
 ## Port sources
 
 Zeron `crates/ui/src/composer.rs` (16,330 lines): `ComposerInput`, `ComposerEvent`, `SlashState`, `AttachmentDraft`, `Composer`; `composer/chip.rs`; tests in `composer/*_tests.rs`. Steering semantics from Zeron's ACP harness (`crates/harness/src/acp/mod.rs`): `StepBoundary` (preempting) for some adapters, `TurnBoundary` for others. Drop dictation, voice, frost, question panels and Zeron settings (closure from spike S4).

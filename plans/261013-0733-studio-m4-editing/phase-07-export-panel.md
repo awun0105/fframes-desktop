@@ -3,7 +3,7 @@ phase: 7
 title: "Export panel"
 status: pending
 priority: P2
-effort: "3-5d"
+effort: "3-4d"
 dependencies: [2, 3]
 ---
 
@@ -12,6 +12,8 @@ dependencies: [2, 3]
 ## Goal
 
 A Cap-style export panel with container, codec, scale and fps presets, a size estimate, progress and cancel, using the export options added in phase 1 and bundled in phase 2.
+
+Effort was 3-5d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md): only the settings fields, `ExportPhase` and the progress overlay port; preview pane, share and upload flows are dropped.
 
 ## Port sources
 

@@ -3,7 +3,7 @@ phase: 6
 title: "Agent panel on a transcript row model"
 status: pending
 priority: P2
-effort: "3-4d"
+effort: "3-5d"
 dependencies: [4, 5, 7]
 ---
 
@@ -12,6 +12,8 @@ dependencies: [4, 5, 7]
 ## Goal
 
 The conversation panel moves to `studio-ui/src/agent/` and renders through Zeron's transcript structure (stable row ids, gpui `list()`, stick-to-bottom), still showing today's row kinds. Markdown, todos and diffs come in M5.
+
+Effort was 3-4d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md): row identity, list state and stick-to-bottom are written new on the fork's `ListState`, with Zeron's `transcript.rs` as reference; zui's tail reservation is not needed.
 
 ## Port sources
 

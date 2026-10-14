@@ -3,7 +3,7 @@ title: "fframes Studio rewrite on Zeron and Cap foundations (roadmap)"
 description: "Rebuild the desktop app on Cap's GPUI fork with Cap's components, editor layout and settings screens, Zeron-style crate layering, Cap-style timing edits and playback, and an agent panel with Zeron's internals in Cap chrome, in six mergeable milestones."
 status: pending
 priority: P1
-effort: "110-156 engineer-days (sum of milestones)"
+effort: "110-157 engineer-days (sum of milestones, after spike S4)"
 branch: feat/studio-rewrite
 tags: [desktop, refactor, gpui, feature, critical]
 blockedBy: [261013-1010-faster-desktop-ci]
@@ -22,11 +22,11 @@ This roadmap indexes six milestone plans. Each milestone ends with the app build
 | # | Milestone | Blocked by | Effort | Status |
 |---|-----------|-----------|--------|--------|
 | M1 | [Foundations: spikes, Cap GPUI switch, parity tests](../261013-0733-studio-m1-foundations/plan.md) | CI branch merged | 12-17d | Pending |
-| M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 26-35d | Pending |
+| M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 27-38d | Pending |
 | M3 | [Durable writes, containment and tools on Windows and macOS](../261013-0733-studio-m3-durable-writes/plan.md) | M1 phase 1; phases 3-5 also need M2 phases 1, 3, 8 | 18-27d | Pending |
-| M4 | [Editing: timing doc, SDK release, timeline, playback, export](../261013-0733-studio-m4-editing/plan.md) | M2, M3 | 24-34d | Pending |
+| M4 | [Editing: timing doc, SDK release, timeline, playback, export](../261013-0733-studio-m4-editing/plan.md) | M2, M3 | 24-33d | Pending |
 | M5a | [Native agent wires: Claude stream-json, Codex app-server](../261013-0733-studio-m5a-native-wires/plan.md) | M2, M3 | 10-14d | Pending |
-| M5 | [Agent UX: markdown, composer, todo, diffs, history](../261013-0733-studio-m5-agent-ux/plan.md) | M2, M3, M5a | 17-25d (re-estimate after spike S4) | Pending |
+| M5 | [Agent UX: markdown, composer, todo, diffs, history](../261013-0733-studio-m5-agent-ux/plan.md) | M2, M3, M5a | 16-24d (re-estimated from spike S4) | Pending |
 | M6 | [Cleanup: spike names, docs, platform checks](../261013-0733-studio-m6-cleanup/plan.md) | M4, M5 | 3-4d | Pending |
 
 M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1, phase 4 after M2 phases 1 and 8, and phase 3 after M3 phases 1, 2 and 4 and M2 phase 3 (so it also waits for M2 phase 8). Writer qualification by ledger stays usable until M3 phase 4 replaces it, so there is no window in which a real agent cannot apply on Linux. One executor (confirmed 2026-10-13): run M1, M2, M3, M4, M5a, M5, M6 in that order, doing M3 phases 1, 2 and 5 between M2 phases where their dependencies allow. The overlaps described above say what may interleave, not that work runs at once.

@@ -3,7 +3,7 @@ phase: 5
 title: "Trim, split, reorder and snapping"
 status: pending
 priority: P1
-effort: "3-4d"
+effort: "2.5-3.5d"
 dependencies: [2, 4]
 ---
 
@@ -13,9 +13,11 @@ dependencies: [2, 4]
 
 Users trim clip edges, split at the playhead, reorder by drag, snap to the playhead and neighbouring edges, and undo or redo from the keyboard.
 
+Effort was 3-4d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md), which found that Cap does snap, so snapping is a port rather than new design.
+
 ## Port sources
 
-Cap `editor_window.rs`: drag state, `split_at_playhead`, undo and redo wiring. Snapping is new design (Cap's timeline only snaps to zero): a one-dimensional target list built from the playhead and clip edges.
+Cap `editor_window.rs`: drag state, `split_at_playhead`, undo and redo wiring. Snapping ports from Cap: `arm_drag_snap` (`editor_window.rs`) builds a one-dimensional target list once when a drag arms (zero, the playhead, the total and every other segment's edges; Shift bypasses, `DRAG_SNAP_PX` = 8), `snap_dragged_time` applies it, and `snap_split_time` (`editor_edits.rs`, `SPLIT_SNAP_PX` = 7) snaps splits.
 
 ## Tasks
 

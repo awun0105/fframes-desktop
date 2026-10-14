@@ -3,7 +3,7 @@ title: "M5 Agent UX: streaming markdown, composer, todos, diff review, history"
 description: "Port Zeron's markdown, composer, todo panel, change viewer and search onto the M2 transcript rows, extend the ACP driver for plans and commands, make partial apply validated, and store many sessions per project."
 status: pending
 priority: P1
-effort: "17-25d (re-estimate from spike S4)"
+effort: "16-24d"
 branch: feat/studio-rewrite
 tags: [desktop, feature, gpui, frontend, security]
 blockedBy: [261013-0733-studio-m2-architecture, 261013-0733-studio-m3-durable-writes, 261013-0733-studio-m5a-native-wires]
@@ -46,9 +46,11 @@ Syntax highlighting is written as a small module with five tree-sitter grammars 
 |---|-------|--------|-----------|--------|
 | 1 | [Streaming markdown](./phase-01-streaming-markdown.md) | 3-5d | none | Pending |
 | 2 | [Composer](./phase-02-composer.md) | 5-7d | none | Pending |
-| 3 | [Todo panel](./phase-03-todo-panel.md) | 2-3d | none | Pending |
+| 3 | [Todo panel](./phase-03-todo-panel.md) | 1-2d | none | Pending |
 | 4 | [Diff review](./phase-04-diff-review.md) | 4-6d | 1 | Pending |
 | 5 | [Session history](./phase-05-session-history.md) | 3-4d | none | Pending |
+
+Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) compiled the todo panel and `ComposerInput` on the Cap fork with one GPUI API change. Phase 3 shrinks; phase 2 holds at 5-7d only if it keeps `ComposerInput` rather than building on the kit `TextInput` (8-10d).
 
 ## Success criteria
 

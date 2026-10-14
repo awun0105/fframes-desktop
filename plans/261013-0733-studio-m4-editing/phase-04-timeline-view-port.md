@@ -3,7 +3,7 @@ phase: 4
 title: "Port Cap's timeline view"
 status: pending
 priority: P1
-effort: "4-6d"
+effort: "5-7d"
 dependencies: [3]
 ---
 
@@ -12,6 +12,8 @@ dependencies: [3]
 ## Goal
 
 Replace today's timeline view with Cap's structure: a `Transform` zoom and pan model, off-screen culling, a minimap, a ruler, segment rendering and an audio waveform, fed by `TimelineSnapshot`.
+
+Effort was 4-6d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md): about half of `editor_timeline.rs` ports with type substitution, but `TimelineModel`, `TrackLanes` and the clip track are rewritten over `TimelineSnapshot`.
 
 ## Port sources
 
