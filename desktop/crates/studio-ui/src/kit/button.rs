@@ -919,6 +919,8 @@ mod tests {
         let destructive = IconButton::editor(&theme, "c", "icons/x.svg").destructive(&theme);
         assert_eq!(destructive.bg, Some(hsla(theme.red_3)));
         assert_eq!(destructive.idle, hsla(theme.red_11));
+        // The glyph follows hover now, so the preset keeps it red rather than text_1.
+        assert_eq!(destructive.hover_color, Some(hsla(theme.red_11)));
         assert_eq!(
             destructive.hover_bg,
             Some(hsla(studio_theme::mix(theme.red_3, theme.red_11, 0.12)))

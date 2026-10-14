@@ -87,7 +87,7 @@ pub use slider::{
 };
 pub use surface::{Card, Popover, Section, SettingRow, divider, titled_group};
 pub use tab_rail::{TabRail, TabRailItem, tab_target};
-pub use text::{heading, label, muted, section_title};
+pub use text::{field_row, heading, label, muted, section_title};
 pub use text_input::{
     TextInput, TextInputEvent, TextInputState, bind_keys as bind_text_input_keys,
     text_input_has_focus,
