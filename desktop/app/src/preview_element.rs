@@ -4,6 +4,7 @@ use gpui::{
     LayoutId, Pixels, RenderImage, Style, Window, point, px, relative, size,
 };
 use std::sync::Arc;
+use studio_theme::{METRICS, Theme};
 
 /// Paints the actual image, then acknowledges it on GPUI's next frame callback.
 /// This observes GPUI presentation submission, not a physical-display GPU fence.
@@ -82,13 +83,13 @@ impl Element for PreviewElement {
             ),
             image_size,
         );
-        let radii = Corners::all(px(crate::design_system::tokens().metrics.radius_frame));
+        let radii = Corners::all(px(METRICS.radius_frame));
         // Corner radii round the clip rectangle, so the clip is the letterboxed frame.
         let painted = window.paint_image(image_bounds, radii, image.clone(), 0, false);
         if painted.is_ok() {
             let mut ring = gpui::outline(
                 image_bounds,
-                crate::design_system::tokens().palette.line,
+                Theme::for_window(window, cx).editor.line,
                 gpui::BorderStyle::Solid,
             );
             ring.corner_radii = radii;

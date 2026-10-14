@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Cap theme and component kit"
-status: in-progress
+status: completed
 priority: P1
 effort: "3-4d"
 dependencies: [1]
@@ -44,9 +44,9 @@ From [the Cap report](../reports/research-261013-1801-cap-gpui-desktop-ui.md); s
 - [x] Scout callers and component pairs
 - [x] Cap theme ported, no material tokens
 - [x] Cap kit ported
-- [ ] Call sites on Cap components; duplicates removed
-- [ ] Old `ui/` and `design_system/` deleted
-- [ ] Tests
+- [x] Call sites on Cap components; duplicates removed
+- [x] Old `ui/` and `design_system/` deleted
+- [x] Tests
 
 ## Success criteria
 
@@ -142,3 +142,22 @@ Parity tests pass; the appearance gpui test passes and switching the OS appearan
     - The CSS report uses `CollapsibleSection`.
     - A test walks the preset list from the keyboard: Tab to the row, Enter selects it, Tab to Apply, and Enter applies exactly once. The keys are sent as a key-down and key-up pair, because a focused kit control's click comes on key-up. `simulate_keystrokes("enter")` did not activate the kit button in that test.
 - **Fork.** fframes pins `khanhthanhdev/zed-cap@c32bfd3` (Cap's fork plus upstream fixes); Cap pins `wingleeio/zed@5d1f83d`. Small API drift is fixed at port time and recorded here.
+
+## Outcome (2026-10-14)
+
+- Every view, `preview_element.rs` and `main.rs` draw from `studio-theme` and the kit. `main.rs` calls `studio_theme::bind_window` and no longer sets a global appearance.
+- `desktop/app/src/design_system/` is deleted. `desktop/app/src/ui/` keeps only `probe.rs` (`BoundsProbe`, `bounds_to_record`) for qualification telemetry until phase 7. `with_probe` went with the old button, its only caller.
+- Tests that outlive the deletion:
+  - The Cap palette spec pins (`light_palette_matches_cap_spec`, `dark_palette_matches_cap_spec`) now run against `Theme` in `studio-theme`, through the role mapping above. They passed before the old module was removed.
+  - The icon asset tests moved to `app/src/assets.rs`.
+  - The bridging pin `roles_match_the_studio_theme` went with `design_system`, as planned.
+- `examples/ui_gallery.rs` shows the kit components and switches System, Light or Dark through `set_preference`. The old `FieldRow::hint` and `field_value` became a `muted` line and a `label`.
+- `docs/desktop/design-system.md` describes the theme crate, the kit and the preference.
+- Acceptance checks:
+  - no file in `studio-theme` or `studio-ui/src/kit` exceeds 1,000 lines;
+  - the criterion's grep (`fn button|fn ui_button|fn segment_button`, substring) over `desktop/app/src` and `desktop/crates/studio-ui/src` finds nothing outside `/kit/`. The positive control `fn action_button|fn segment_item|fn tab_item` matches four files. Over all of `desktop` the only hit is `fn button_centre` in `app/tests/x11_shell.rs`, a test helper that reads telemetry coordinates, not a button builder;
+  - fmt, clippy `-D warnings`, `cargo test -p fframes-studio` (parity 33/33), `cargo test -p studio-ui --lib` (132), `cargo test -p studio-theme` and the packaging tests all pass.
+- Not yet checked: the success criterion "switching the OS appearance flips the theme live on Windows" needs a hand check (the gallery on System, then flip the Windows colour mode). gpui's test window cannot change appearance, and the qualification VM's personalization was not changed.
+- Carried to phase 4:
+  - the settings-page `SegmentedControl` for the preference (task 5's UI);
+  - the native caption gap under a forced preference.

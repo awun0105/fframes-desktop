@@ -45,7 +45,7 @@ desktop/app        thin binary: runtime setup, window, bins studio-tools / studi
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
 | 1 | [Crate skeleton and service move](./phase-01-crate-skeleton.md) | 4-5d | none | Done (Linux + Windows CI) |
-| 2 | [Cap theme and component kit](./phase-02-theme-and-ui-kit.md) | 3-4d | 1 | Pending |
+| 2 | [Cap theme and component kit](./phase-02-theme-and-ui-kit.md) | 3-4d | 1 | Done (Windows) except the hand check of the live OS flip; the preference control moves to phase 4 |
 | 3 | [Engine handle and typed events](./phase-03-engine-handle-and-events.md) | 4-5d | 1 | Done (Windows) |
 | 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 6-9d | 2, 3 | Pending |
 | 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | In progress |

@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use gpui::{App, Bounds, IntoElement, ParentElement, Pixels, Styled, canvas};
+use gpui::{App, Bounds, Pixels};
 
 type Record = Rc<dyn Fn([f32; 4], &mut App)>;
 
@@ -29,27 +29,6 @@ pub fn bounds_to_record(bounds: Bounds<Pixels>) -> [f32; 4] {
         f32::from(bounds.size.width),
         f32::from(bounds.size.height),
     ]
-}
-
-/// Adds an absolute full-size canvas child that reports the element's bounds.
-/// With `None` the element is returned unchanged. The element must be
-/// positioned (`relative()`) so the canvas covers it.
-pub fn with_probe<E: ParentElement>(element: E, probe: Option<BoundsProbe>) -> E {
-    let mut element = element;
-    if let Some(BoundsProbe(record)) = probe {
-        element.extend(std::iter::once(
-            canvas(
-                move |bounds, _, cx| record(bounds_to_record(bounds), cx),
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
-            .into_any_element(),
-        ));
-    }
-    element
 }
 
 #[cfg(test)]

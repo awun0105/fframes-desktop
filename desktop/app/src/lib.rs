@@ -3,7 +3,6 @@ pub mod app;
 pub mod assets;
 pub mod canvas_view;
 pub mod conversation_panel;
-pub mod design_system;
 pub mod frame_image;
 pub mod selection_spike;
 pub mod setup_view;

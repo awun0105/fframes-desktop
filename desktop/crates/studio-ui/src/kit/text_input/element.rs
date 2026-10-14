@@ -792,7 +792,7 @@ impl Element for TextBody {
         }
 
         // Drag-select keeps tracking outside the field's own bounds, which a
-        // listener on the element cannot do -- the same reason `ui::Slider`
+        // listener on the element cannot do -- the same reason `kit::Slider`
         // needs its drag layer.
         if self.state.read(cx).drag.is_some() {
             let state = self.state.clone();

@@ -460,6 +460,71 @@ mod tests {
         byte(color.r) << 24 | byte(color.g) << 16 | byte(color.b) << 8 | byte(color.a)
     }
 
+    /// The editor's colour roles, in the order of the spec table.
+    fn roles(theme: &Theme) -> [(&'static str, Rgba); 26] {
+        let e = theme.editor;
+        [
+            ("window", e.window),
+            ("card", e.card),
+            ("card_2", e.card_2),
+            ("stage", e.stage),
+            ("line", e.line),
+            ("line_strong", e.line_strong),
+            ("text_1", e.text_1),
+            ("text_2", e.text_2),
+            ("text_3", e.text_3),
+            ("ctl", e.ctl),
+            ("ctl_hover", e.ctl_hover),
+            ("ctl_active", e.ctl_active),
+            ("accent", e.accent),
+            ("accent_2", e.accent_2),
+            ("on_accent", theme.on_accent()),
+            ("playhead", e.playhead),
+            ("thumb", e.thumb),
+            ("success", theme.green_11),
+            ("success_surface", theme.green_3),
+            ("warning", theme.amber_11),
+            ("warning_surface", theme.amber_3),
+            ("danger", theme.red_11),
+            ("danger_surface", theme.red_3),
+            ("selection", theme.selection()),
+            ("tooltip_bg", theme.tooltip_bg()),
+            ("tooltip_text", theme.tooltip_text()),
+        ]
+    }
+
+    fn assert_roles(appearance: Appearance, expected: [u32; 26]) {
+        for ((name, color), want) in roles(&Theme::new(appearance)).into_iter().zip(expected) {
+            assert_eq!(bytes(color), want, "{appearance:?} {name}");
+        }
+    }
+
+    #[test]
+    fn light_palette_matches_cap_spec() {
+        assert_roles(
+            Appearance::Light,
+            [
+                0xf1f1f3ff, 0xffffffff, 0xf6f6f7ff, 0xe9e9ecff, 0x00000013, 0x0000001f, 0x1c1c1eff,
+                0x6e6e75ff, 0xa0a0a8ff, 0x0000000b, 0x00000013, 0x0000001c, 0x007affff, 0x2b8cffff,
+                0xffffffff, 0xff3b30ff, 0xffffffff, 0x218358ff, 0xe6f6ebff, 0xab6400ff, 0xfff7c2ff,
+                0xce2c31ff, 0xfeebecff, 0x007aff40, 0x202020ff, 0xfcfcfcff,
+            ],
+        );
+    }
+
+    #[test]
+    fn dark_palette_matches_cap_spec() {
+        assert_roles(
+            Appearance::Dark,
+            [
+                0x131315ff, 0x1b1b1eff, 0x202024ff, 0x121214ff, 0xffffff14, 0xffffff21, 0xf4f4f5ff,
+                0x9a9aa3ff, 0x62626aff, 0xffffff0f, 0xffffff17, 0xffffff21, 0x0a84ffff, 0x3d9bffff,
+                0xffffffff, 0xff453aff, 0xe8e8eaff, 0x3dd68cff, 0x132d21ff, 0xffca16ff, 0x302008ff,
+                0xff9592ff, 0x3b1219ff, 0x0a84ff40, 0xeeeeeeff, 0x111111ff,
+            ],
+        );
+    }
+
     #[test]
     fn theme_preference_resolves_like_tauri() {
         assert_eq!(
