@@ -35,7 +35,7 @@ pub struct TimelineView {
     /// `[left, top, width, height]` of the Fit button, reported by its probe.
     fit_bounds: Option<[f32; 4]>,
     drag: Option<(usize, bool)>,
-    cache: ThumbnailCache,
+    cache: ThumbnailCache<gpui::RenderImage>,
     pending_thumbnail: Option<(ThumbnailKey, PreviewFrame)>,
     clear_cache: bool,
     release_failures: usize,

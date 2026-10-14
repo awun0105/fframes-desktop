@@ -1,7 +1,5 @@
 //! Bounded PNG decoding for task-owned review evidence thumbnails.
-use gpui::RenderImage;
-use image::{Frame, ImageFormat, ImageReader};
-use smallvec::SmallVec;
+use image::{ImageFormat, ImageReader, RgbaImage};
 use std::{io::Cursor, sync::Arc};
 use thiserror::Error;
 
@@ -25,12 +23,12 @@ pub(crate) enum PreviewError {
     Decode(#[from] image::ImageError),
 }
 
-/// Decodes a validated task-owned PNG into a small GPUI image. The input dimension
+/// Decodes a validated task-owned PNG into a small RGBA thumbnail. The input dimension
 /// check happens before full decode, and the returned allocation is capped at 480×270.
 pub(crate) fn decode_png(
     bytes: &[u8],
     expected_dimensions: (u32, u32),
-) -> Result<(Arc<RenderImage>, usize), PreviewError> {
+) -> Result<(Arc<RgbaImage>, usize), PreviewError> {
     if bytes.len() > MAX_ENCODED_BYTES {
         return Err(PreviewError::TooLarge);
     }
@@ -46,8 +44,7 @@ pub(crate) fn decode_png(
     let image = image::load_from_memory_with_format(bytes, ImageFormat::Png)?;
     let thumbnail = image::imageops::thumbnail(&image, MAX_THUMBNAIL_SIZE.0, MAX_THUMBNAIL_SIZE.1);
     let decoded_bytes = thumbnail.as_raw().len();
-    let render_image = RenderImage::new(SmallVec::from_const([Frame::new(thumbnail)]));
-    Ok((Arc::new(render_image), decoded_bytes))
+    Ok((Arc::new(thumbnail), decoded_bytes))
 }
 
 #[cfg(test)]

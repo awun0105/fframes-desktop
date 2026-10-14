@@ -1,6 +1,7 @@
 use fframes_studio_protocol::{
-    CURRENT_PROTOCOL_VERSION, FrameHeader, HelloRequest, HelloResponse, RenderFrameRequest,
-    TimelineRequest, TimelineResponse, WorkerRequest, WorkerResponse,
+    AlphaMode, CURRENT_PROTOCOL_VERSION, ChannelOrder, ColorSpace, FrameHeader, HelloRequest,
+    HelloResponse, RenderFrameRequest, TimelineRequest, TimelineResponse, WorkerRequest,
+    WorkerResponse,
 };
 use parking_lot::Mutex;
 use std::io::{self, Read, Write};
@@ -688,7 +689,7 @@ impl WorkerClient {
         height: u32,
     ) -> Result<FrameHeader, WorkerClientError> {
         let req_id = self.request_counter.fetch_add(1, Ordering::SeqCst);
-        let (header, payload) = crate::frame_image::generate_reference_frame(
+        let (header, payload) = generate_reference_frame(
             &self.revision,
             self.generation,
             req_id,
@@ -711,6 +712,84 @@ impl Drop for WorkerClient {
             let _ = child.lock().kill_forcefully();
         }
     }
+}
+
+/// Generates a known reference frame with exact color/alpha test quadrants:
+/// - Top-left: Opaque Red [255, 0, 0, 255]
+/// - Top-right: Opaque Green [0, 255, 0, 255]
+/// - Bottom-left: Half-transparent Blue [0, 0, 255, 128]
+/// - Bottom-right: Fully transparent [0, 0, 0, 0]
+///
+/// If `pad_stride` is true, rows are padded with extra sentinel bytes to test stride stripping.
+pub fn generate_reference_frame(
+    revision: &str,
+    generation: u64,
+    request_id: u64,
+    frame_index: usize,
+    width: u32,
+    height: u32,
+    pad_stride: bool,
+) -> (FrameHeader, Vec<u8>) {
+    let min_stride = width * 4;
+    let stride_bytes = if pad_stride {
+        // Pad to next 64-byte boundary plus extra 16 bytes
+        min_stride.div_ceil(64) * 64 + 16
+    } else {
+        min_stride
+    };
+
+    let payload_len = (stride_bytes as usize) * (height as usize);
+    let mut payload = vec![0xEEu8; payload_len]; // 0xEE is sentinel for padding
+
+    let half_w = width / 2;
+    let half_h = height / 2;
+
+    for y in 0..height {
+        let row_start = (y as usize) * (stride_bytes as usize);
+        for x in 0..width {
+            let px = row_start + (x as usize) * 4;
+            let (r, g, b, a) = if x < half_w && y < half_h {
+                (255, 0, 0, 255) // Opaque Red
+            } else if x >= half_w && y < half_h {
+                (0, 255, 0, 255) // Opaque Green
+            } else if x < half_w && y >= half_h {
+                (0, 0, 255, 128) // Half-transparent Blue
+            } else {
+                (0, 0, 0, 0) // Transparent
+            };
+
+            // Overlay moving frame index indicator in top row
+            let is_indicator = y == 0 && (x as usize) == (frame_index % (width as usize));
+            if is_indicator {
+                payload[px] = 255;
+                payload[px + 1] = 255;
+                payload[px + 2] = 255;
+                payload[px + 3] = 255;
+            } else {
+                payload[px] = r;
+                payload[px + 1] = g;
+                payload[px + 2] = b;
+                payload[px + 3] = a;
+            }
+        }
+    }
+
+    let header = FrameHeader {
+        protocol_version: fframes_studio_protocol::CURRENT_PROTOCOL_VERSION,
+        source_revision: revision.to_string(),
+        worker_generation: generation,
+        request_id,
+        frame_index,
+        width,
+        height,
+        stride_bytes,
+        channel_order: ChannelOrder::Rgba8,
+        alpha_mode: AlphaMode::Straight,
+        color_space: ColorSpace::Srgb,
+        payload_len,
+    };
+
+    (header, payload)
 }
 
 #[cfg(test)]

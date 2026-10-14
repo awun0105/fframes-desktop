@@ -2,7 +2,6 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use fframes_studio_protocol::PreviewIdentity;
-use gpui::RenderImage;
 
 pub const MAX_THUMBNAIL_ENTRIES: usize = 64;
 pub const MAX_THUMBNAIL_BYTES: usize = 16 * 1024 * 1024;
@@ -29,22 +28,34 @@ impl ThumbnailKey {
     }
 }
 
-struct CacheEntry {
-    image: Arc<RenderImage>,
+struct CacheEntry<I> {
+    image: Arc<I>,
     decoded_bytes: usize,
 }
 
-#[derive(Default)]
-pub struct ThumbnailCache {
-    entries: HashMap<ThumbnailKey, CacheEntry>,
+/// A bounded LRU of decoded thumbnails; `I` is the image type the UI draws.
+pub struct ThumbnailCache<I> {
+    entries: HashMap<ThumbnailKey, CacheEntry<I>>,
     lru: VecDeque<ThumbnailKey>,
     bytes: usize,
     high_water_entries: usize,
     high_water_bytes: usize,
 }
 
-impl ThumbnailCache {
-    pub fn get(&mut self, key: &ThumbnailKey) -> Option<Arc<RenderImage>> {
+impl<I> Default for ThumbnailCache<I> {
+    fn default() -> Self {
+        Self {
+            entries: HashMap::new(),
+            lru: VecDeque::new(),
+            bytes: 0,
+            high_water_entries: 0,
+            high_water_bytes: 0,
+        }
+    }
+}
+
+impl<I> ThumbnailCache<I> {
+    pub fn get(&mut self, key: &ThumbnailKey) -> Option<Arc<I>> {
         let image = self.entries.get(key)?.image.clone();
         self.touch(key);
         Some(image)
@@ -57,9 +68,9 @@ impl ThumbnailCache {
     pub fn insert(
         &mut self,
         key: ThumbnailKey,
-        image: Arc<RenderImage>,
+        image: Arc<I>,
         decoded_bytes: usize,
-    ) -> Vec<Arc<RenderImage>> {
+    ) -> Vec<Arc<I>> {
         if decoded_bytes > MAX_THUMBNAIL_BYTES {
             return vec![image];
         }
@@ -98,7 +109,7 @@ impl ThumbnailCache {
         retired
     }
 
-    pub fn clear(&mut self) -> Vec<Arc<RenderImage>> {
+    pub fn clear(&mut self) -> Vec<Arc<I>> {
         self.lru.clear();
         self.bytes = 0;
         self.entries.drain().map(|(_, entry)| entry.image).collect()

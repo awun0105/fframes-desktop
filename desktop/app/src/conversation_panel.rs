@@ -273,7 +273,8 @@ pub struct ConversationPanel {
     /// Current prompt input bounds, used by the native shell qualification harness.
     prompt_bounds: Option<[f32; 4]>,
     /// Current-task thumbnails are local presentation state, never workflow snapshot data.
-    evidence_images: HashMap<String, Arc<gpui::RenderImage>>,
+    /// Each entry keeps the workflow's decoded thumbnail it was converted from.
+    evidence_images: HashMap<String, (Arc<image::RgbaImage>, Arc<gpui::RenderImage>)>,
     /// Images removed from the current task; released from GPUI on the next render.
     retired_evidence_images: Vec<Arc<gpui::RenderImage>>,
     /// Reasoning rows the reader expanded (presentation state only).
@@ -616,18 +617,21 @@ impl ConversationPanel {
             .collect();
         let mut changed = false;
         for key in retired {
-            if let Some(image) = self.evidence_images.remove(&key) {
+            if let Some((_, image)) = self.evidence_images.remove(&key) {
                 self.retired_evidence_images.push(image);
                 changed = true;
             }
         }
-        for (key, image) in desired {
+        for (key, thumbnail) in desired {
             if self
                 .evidence_images
                 .get(&key)
-                .is_none_or(|current| !Arc::ptr_eq(current, &image))
+                .is_none_or(|(current, _)| !Arc::ptr_eq(current, &thumbnail))
             {
-                self.evidence_images.insert(key, image);
+                let image = Arc::new(gpui::RenderImage::new(smallvec::SmallVec::from_const([
+                    image::Frame::new(thumbnail.as_ref().clone()),
+                ])));
+                self.evidence_images.insert(key, (thumbnail, image));
                 changed = true;
             }
         }
@@ -2060,6 +2064,7 @@ impl ConversationPanel {
                     let image = selected.and_then(|artifact| {
                         self.evidence_images
                             .get(&evidence_image_key(&task.id, &artifact.id))
+                            .map(|(_, image)| image)
                     });
                     if let (Some(artifact), Some(image)) = (selected, image) {
                         has_evidence_card = true;

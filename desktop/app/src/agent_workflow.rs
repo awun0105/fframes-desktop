@@ -40,7 +40,7 @@ pub use tools::BuildSettings;
 
 use actor::{Actor, Msg};
 use fframes_studio_protocol::PreviewIdentity;
-use gpui::RenderImage;
+use image::RgbaImage;
 use jobs::Gate;
 use log::{LogError, RowLimits, RowStore};
 use parking_lot::{Condvar, Mutex};
@@ -238,7 +238,7 @@ pub(crate) struct Settings {
 struct EvidenceImageCache {
     task: Option<AgentTaskId>,
     encoded_bytes: usize,
-    images: HashMap<String, Option<Arc<RenderImage>>>,
+    images: HashMap<String, Option<Arc<RgbaImage>>>,
 }
 
 impl EvidenceImageCache {
@@ -267,7 +267,7 @@ impl EvidenceImageCache {
         Some(bytes)
     }
 
-    fn complete(&mut self, task: &AgentTaskId, id: &str, image: Arc<RenderImage>) -> bool {
+    fn complete(&mut self, task: &AgentTaskId, id: &str, image: Arc<RgbaImage>) -> bool {
         if self.task.as_ref() != Some(task) {
             return false;
         }
@@ -278,7 +278,7 @@ impl EvidenceImageCache {
         true
     }
 
-    fn image(&self, task: &AgentTaskId, id: &str) -> Option<Arc<RenderImage>> {
+    fn image(&self, task: &AgentTaskId, id: &str) -> Option<Arc<RgbaImage>> {
         (self.task.as_ref() == Some(task))
             .then(|| self.images.get(id).and_then(Clone::clone))
             .flatten()
@@ -430,13 +430,13 @@ impl AgentWorkflow {
         self.shared.snapshot.lock().clone()
     }
 
-    /// A presentation image for a task-owned evidence artifact, if its bounded decode
+    /// A decoded RGBA thumbnail for a task-owned evidence artifact, if its bounded decode
     /// has completed. PNG bytes and app-private paths never leave the workflow worker.
     pub(crate) fn evidence_image(
         &self,
         task: &AgentTaskId,
         artifact_id: &str,
-    ) -> Option<Arc<RenderImage>> {
+    ) -> Option<Arc<RgbaImage>> {
         self.shared.evidence_images.lock().image(task, artifact_id)
     }
 
