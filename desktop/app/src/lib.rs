@@ -1,9 +1,7 @@
-pub mod actions;
 pub mod app;
 pub mod assets;
-pub mod canvas_view;
 pub mod conversation_panel;
-pub use studio_ui::frame_image;
+pub use studio_ui::{actions, canvas_view, frame_image};
 pub mod selection_spike;
 pub mod setup_view;
 
