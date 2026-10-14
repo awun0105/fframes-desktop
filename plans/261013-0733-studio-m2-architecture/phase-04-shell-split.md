@@ -70,7 +70,7 @@ The decisions:
      - `preset_panel`, `setup_view` and `timeline_view`;
      - `conversation_panel/`.
 
-     The app re-exports them for its tests until the parity move. `probe.rs` lands at `studio-ui/src/probe.rs` first and is folded into `shell/qualification.rs` when the shell moves, so phase 7 still deletes one module.
+     The app re-exports them for its tests until the parity move. `probe.rs` lands at `studio-ui/src/probe.rs` first and is folded into `shell/qualification.rs` when the shell moves, so phase 7 still deletes one module. The views keep their own telemetry methods, which phase 7 removes as well: `TimelineView::qualification_metrics`, `PresetPanel::telemetry` and the conversation panel's telemetry.
   2. Move `studio_shell.rs` whole into `studio-ui/src/shell/mod.rs`, then split it section by section, one commit each.
   3. Move the parity suite to `studio-ui/tests/parity/`. Switch merge gate 3 in `desktop.yml`, `desktop-self-hosted.yml` and `desktop-release.yml`.
   4. Keymap: one `bind_keys` with key contexts, most specific first: `TextInput`, then `Composer`, then `Timeline` and `Player`, then `Workspace`. The preview surface's raw `on_key_down` (Space, arrows, Home, End, `c`, `0`, Escape) becomes actions bound in the `Player` context. The root Tab handler stays. Test first: Ctrl+Z in a focused text field does not reach timeline undo, and Space on the preview still toggles playback.

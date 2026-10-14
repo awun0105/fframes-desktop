@@ -1,5 +1,4 @@
 //! Native compiled tracks. Geometry/selection are engine-owned; textures are window-owned.
-use crate::{frame_image::create_render_image, ui::BoundsProbe};
 use gpui::{
     Bounds, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, canvas, div, px,
@@ -9,10 +8,13 @@ use studio_engine::{PreviewFrame, TaskScope, TimelineModel, TimelineSelection, T
 use studio_theme::{
     METRICS, TextStyle, Theme, TrackKind, segment_colors_for, text_style, track_color,
 };
-use studio_ui::kit::{
+
+use crate::frame_image::create_render_image;
+use crate::kit::{
     EditorButton, Icon, IconButton, IconButtonSize, Slider, SliderTrack, focus_ring, icon,
     section_title,
 };
+use crate::probe::BoundsProbe;
 
 #[derive(Debug, Clone)]
 pub enum TimelineEvent {
