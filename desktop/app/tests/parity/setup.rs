@@ -17,7 +17,7 @@ fn an_installed_sdk_is_available_to_the_agent(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
-fn sdks_are_checked_against_the_apps_version(cx: &mut gpui::TestAppContext) {
+fn the_shell_reports_the_apps_version(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::new(cx);
     assert_eq!(studio.telemetry()["app_version"], env!("CARGO_PKG_VERSION"));
 }

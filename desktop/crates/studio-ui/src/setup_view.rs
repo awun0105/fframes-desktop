@@ -64,6 +64,8 @@ pub struct SetupView {
     pub sdk_home: PathBuf,
     pub projects_root: PathBuf,
     pub process_tree: ProcessTreeManager,
+    /// The running app's version, which the SDK must be compatible with.
+    pub app_version: &'static str,
 }
 
 impl SetupView {
@@ -72,7 +74,7 @@ impl SetupView {
         studio_engine::sdk_setup::defaults_in(studio_engine::sdk_setup::default_sdk_home())
     }
 
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(app_version: &'static str, cx: &mut Context<Self>) -> Self {
         let defaults = Self::defaults();
         let (manifest, sdk_home) = defaults.as_ref().cloned().unwrap_or_else(|_| {
             (
@@ -86,6 +88,7 @@ impl SetupView {
             sdk_home,
             projects_root: default_projects_root(),
             process_tree: ProcessTreeManager::new(),
+            app_version,
         };
         if let Err(error) = defaults {
             view.fail(error);
@@ -151,6 +154,7 @@ impl SetupView {
         let sdk_home = self.sdk_home.clone();
         let projects_root = self.projects_root.clone();
         let process_tree = self.process_tree.clone();
+        let app_version = self.app_version;
 
         cx.spawn(async move |this, cx| {
             let res = cx
@@ -161,6 +165,7 @@ impl SetupView {
                         sdk_home,
                         projects_root,
                         process_tree,
+                        app_version,
                     )
                 })
                 .await;
@@ -189,12 +194,13 @@ impl SetupView {
         sdk_home: PathBuf,
         projects_root: PathBuf,
         process_tree: ProcessTreeManager,
+        app_version: &str,
     ) -> Result<(PathBuf, Duration, Duration), String> {
         let active_sdk = studio_engine::sdk_setup::install_sdk(
             &manifest,
             &sdk_home,
             &process_tree,
-            env!("CARGO_PKG_VERSION"),
+            app_version,
         )?;
         // 3. Generate template project using the managed SDK's standalone framework
         fs::create_dir_all(&projects_root).map_err(|e| e.to_string())?;
@@ -559,6 +565,7 @@ mod tests {
             sdk_home: PathBuf::new(),
             projects_root: PathBuf::new(),
             process_tree: ProcessTreeManager::new(),
+            app_version: "0.0.0",
         });
         for state in every_state() {
             view.update(cx, |view, cx| {

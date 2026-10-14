@@ -48,7 +48,7 @@ pub struct StudioSpikeApp {
 impl StudioSpikeApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let text_input = cx.new(|cx| TextInputState::single_line(window, cx));
-        let setup_view = cx.new(SetupView::new);
+        let setup_view = cx.new(|cx| SetupView::new(env!("CARGO_PKG_VERSION"), cx));
         let process_tree = ProcessTreeManager::new();
         cx.on_app_quit(|app, cx| {
             let manager = app.process_tree.clone();
