@@ -7,9 +7,10 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 #[cfg(unix)]
-use studio_agent_spike::driver::DriverOutcome;
-use studio_agent_spike::{
+use studio_harness::driver::DriverOutcome;
+use studio_harness::{
     AdapterConfig,
     discovery::{
         AdapterLaunch, AdapterStatus, ExecutableSearch, ProbeOptions, ResolveError, probe_adapter,
@@ -20,7 +21,6 @@ use studio_agent_spike::{
         OptionValue, PermissionReply, PermissionResolution, Phase, PromptImage, StopReasonKind,
     },
 };
-use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 
 const SECRET: &str = "sentinel-credential-7f3a9c";
 const MCP_SECRET: &str = "mcp-sentinel-env-5d2b81";
@@ -114,7 +114,7 @@ fn wait_for<T>(mut poll: impl FnMut() -> Option<T>) -> T {
     }
 }
 
-fn failure_of(driver: &AcpDriver) -> studio_agent_spike::driver::AgentFailure {
+fn failure_of(driver: &AcpDriver) -> studio_harness::driver::AgentFailure {
     driver
         .wait_ready(WAIT)
         .err()
@@ -553,7 +553,7 @@ fn permission_replies_are_correlated_and_duplicates_or_late_replies_are_rejected
     ));
     assert!(matches!(
         driver.reply_permission(
-            studio_agent_spike::driver::PermissionId(999),
+            studio_harness::driver::PermissionId(999),
             PermissionReply::Cancel
         ),
         Err(DriverError::UnknownPermission(_))
@@ -743,7 +743,7 @@ fn timed_turn(
     idle: Duration,
     max_turn: Duration,
 ) -> (
-    Result<studio_agent_spike::driver::PromptOutcome, studio_agent_spike::driver::AgentFailure>,
+    Result<studio_harness::driver::PromptOutcome, studio_harness::driver::AgentFailure>,
     Duration,
 ) {
     let root = tempfile::tempdir().unwrap();
@@ -1013,7 +1013,7 @@ fn only_advertised_options_can_be_set_and_adapter_rejections_are_events() {
         .unwrap();
     collect_until(&driver, |e| {
         matches!(&e.kind, AgentEventKind::Options(o)
-            if matches!(&o.config[0].kind, studio_agent_spike::driver::ConfigKind::Select { current, .. } if current == "deep"))
+            if matches!(&o.config[0].kind, studio_harness::driver::ConfigKind::Select { current, .. } if current == "deep"))
     });
     // Advertised but refused by the adapter: visible event, session unchanged.
     driver
@@ -1317,7 +1317,7 @@ const PNG: &[u8] = b"\x89PNG\r\n\x1a\n-pixels";
 struct Run {
     driver: AcpDriver,
     manager: ProcessTreeManager,
-    outcome: studio_agent_spike::driver::PromptOutcome,
+    outcome: studio_harness::driver::PromptOutcome,
     root: tempfile::TempDir,
 }
 
@@ -1330,7 +1330,7 @@ impl Run {
 }
 
 /// A clean run ends verified and contained, with the configured ownership.
-fn assert_contained(outcome: &studio_agent_spike::driver::DriverOutcome) {
+fn assert_contained(outcome: &studio_harness::driver::DriverOutcome) {
     assert!(outcome.termination.verified(), "{:?}", outcome.termination);
     assert_eq!(
         outcome.containment_unverified, None,
@@ -1495,18 +1495,16 @@ fn adapter_pushed_mode_and_config_changes_update_the_exported_options() {
         3,
         "initial + mode push + config push: {events:?}"
     );
-    let mode_name = |options: &studio_agent_spike::driver::AgentOptions| {
+    let mode_name = |options: &studio_harness::driver::AgentOptions| {
         options
             .modes
             .iter()
             .find(|m| Some(&m.id) == options.current_mode.as_ref())
             .map(|m| m.name.clone())
     };
-    let model_value = |options: &studio_agent_spike::driver::AgentOptions| {
+    let model_value = |options: &studio_harness::driver::AgentOptions| {
         options.config.iter().find_map(|c| match &c.kind {
-            studio_agent_spike::driver::ConfigKind::Select { current, values }
-                if c.name == "Model" =>
-            {
+            studio_harness::driver::ConfigKind::Select { current, values } if c.name == "Model" => {
                 values
                     .iter()
                     .find(|v| &v.value == current)

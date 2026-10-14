@@ -6,8 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use studio_agent_spike::driver::AgentCapabilityInfo;
 use studio_engine::{TaskScope, app_paths::AppPaths};
+use studio_harness::driver::AgentCapabilityInfo;
 use studio_project::ProjectId;
 
 pub const SESSION_MANIFEST_SCHEMA_VERSION: u32 = 1;

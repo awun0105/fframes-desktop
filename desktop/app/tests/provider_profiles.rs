@@ -11,12 +11,12 @@ use fframes_studio::conversation_panel::{
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use studio_agent_spike::{
+use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::app_paths::AppPaths;
+use studio_harness::{
     AdapterConfig,
     discovery::{AdapterStatus, ExecutableSearch, ProbeOptions, probe_adapter},
 };
-use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
-use studio_engine::app_paths::AppPaths;
 use tempfile::TempDir;
 
 fn setup_paths() -> (TempDir, AppPaths) {
@@ -874,7 +874,7 @@ fn registry_round_trips_and_derives_detection_specs() {
 #[test]
 fn detection_result_maps_to_row_state() {
     use fframes_studio::conversation_panel::provider_profiles::DetectionState;
-    use studio_agent_spike::Detected;
+    use studio_harness::Detected;
     let found = |cli: bool, adapter: bool| Detected {
         id: "x".into(),
         cli: cli.then(|| "/bin/x".into()),
@@ -987,8 +987,8 @@ fn fake_executable(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
 }
 
 /// A detection environment whose only search root is `bin`.
-fn only_path(bin: &std::path::Path) -> studio_agent_spike::DetectionEnv {
-    studio_agent_spike::DetectionEnv {
+fn only_path(bin: &std::path::Path) -> studio_harness::DetectionEnv {
+    studio_harness::DetectionEnv {
         path: Some(std::env::join_paths([bin]).unwrap()),
         ..Default::default()
     }
@@ -1254,7 +1254,7 @@ fn an_install_cancelled_after_npm_finished_is_not_turned_on() {
     use fframes_studio::conversation_panel::provider_setup::{
         InstallFinished, InstallOutcome as O, InstallTracker,
     };
-    use studio_agent_spike::adapter_install::{InstallError, InstalledAdapter};
+    use studio_harness::adapter_install::{InstallError, InstalledAdapter};
     let installed = || -> Result<InstalledAdapter, InstallError> {
         Ok(InstalledAdapter {
             node: "/n/node".into(),

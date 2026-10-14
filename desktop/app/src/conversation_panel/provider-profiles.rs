@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
-use studio_agent_spike::{
+use studio_harness::{
     Detected, DetectionEnv, DetectionSpec,
     adapter_install::{InstallTools, InstalledAdapter, find_installed, package_for},
     detect_agents, find_executable,

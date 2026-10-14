@@ -57,7 +57,7 @@ def checks() -> dict[str, list[list[str]]]:
         "provider_profiles": [cargo_test(*app, "--test", "provider_profiles")],
         "agent_workflow_ui": [cargo_test(*app, "--test", "agent_workflow_ui")],
         "workflow_safety": [
-            cargo_test("-p", "studio-agent-spike", "--test", "acp_v1"),
+            cargo_test("-p", "studio-harness", "--test", "acp_v1"),
             cargo_test(*app, "--test", "agent_workflow"),
             cargo_test(*app, "--test", "agent_tools"),
             cargo_test(*app, "--test", "scoped_editing"),

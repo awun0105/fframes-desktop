@@ -15,7 +15,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use studio_agent_spike::{AdapterConfig, ExecutableSearch, McpStdioSupport, driver::OptionValue};
+use studio_harness::{AdapterConfig, ExecutableSearch, McpStdioSupport, driver::OptionValue};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 use studio_engine::{
     AgentTaskId, Boundary, CanvasTaskSelection, CanvasTaskSelectionKind, CompiledScope, Controller,

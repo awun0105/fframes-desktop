@@ -10,8 +10,8 @@ use std::{
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
-use studio_agent_spike::source_revision;
 use studio_bootstrap::ProcessTreeManager;
+use studio_harness::source_revision;
 use studio_sdk::{CompatibilityManifest, ProjectManager, environment::SdkEnvironment};
 
 /// Build and launch a portable project from an isolated SDK-bound copy.

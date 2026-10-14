@@ -856,8 +856,8 @@ pub fn tool_descriptions() -> Vec<Value> {
 pub fn mcp_server_for(
     grant: &broker::ToolGrant,
     studio_mcp: &std::path::Path,
-) -> Result<studio_agent_spike::McpStdioServer, studio_agent_spike::McpConfigError> {
-    studio_agent_spike::McpStdioServer::new(
+) -> Result<studio_harness::McpStdioServer, studio_harness::McpConfigError> {
+    studio_harness::McpStdioServer::new(
         "fframes-studio",
         studio_mcp,
         vec![

@@ -7,8 +7,8 @@ use crate::agent_workflow::{
     TaskView, UndoView, WorkflowSnapshot,
 };
 use std::collections::VecDeque;
-use studio_agent_spike::AdapterStatus;
 use studio_engine::{AgentTaskId, DraftState};
+use studio_harness::AdapterStatus;
 
 // ---- setup guidance --------------------------------------------------------------------------
 
@@ -681,8 +681,8 @@ mod tests {
         ReviewView,
     };
     use std::{path::PathBuf, sync::Arc};
-    use studio_agent_spike::{DiscoveryReport, driver::PermissionChoice};
     use studio_engine::{ReviewPolicy, TaskScope, TaskState};
+    use studio_harness::{DiscoveryReport, driver::PermissionChoice};
     use studio_project::ProjectId;
 
     fn base_snapshot() -> WorkflowSnapshot {
@@ -1015,7 +1015,7 @@ mod tests {
         snapshot
             .options
             .modes
-            .push(studio_agent_spike::driver::ModeOption {
+            .push(studio_harness::driver::ModeOption {
                 id: "plan".into(),
                 name: "Plan".into(),
                 description: None,

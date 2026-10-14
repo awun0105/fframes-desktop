@@ -19,15 +19,15 @@ use std::{
     sync::{Arc, mpsc::Sender},
     time::{Duration, Instant},
 };
-use studio_agent_spike::{
-    AcpDriver, AdapterConfig, AgentFailure, DiscoveryReport, DriverOutcome, ExecutableSearch,
-    ProbeOptions, probe_adapter,
-};
 use studio_bootstrap::ProcessTreeManager;
 use studio_engine::{
     Controller, EngineError, Promotion, PromotionError, QuiescenceEvidence, TaskIdentity,
     TaskState, TurnCompletion, WriterGeneration, WriterObservation,
     candidate_validation::{CapturedCandidate, FailureContext, NextStep},
+};
+use studio_harness::{
+    AcpDriver, AdapterConfig, AgentFailure, DiscoveryReport, DriverOutcome, ExecutableSearch,
+    ProbeOptions, probe_adapter,
 };
 use studio_project::checkpoint::Checkpoints;
 

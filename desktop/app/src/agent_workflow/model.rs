@@ -11,14 +11,14 @@
 //! are paged from disk.
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
-use studio_agent_spike::{
-    DiscoveryReport, McpStdioSupport,
-    driver::{AgentCapabilityInfo, AgentOptions, PermissionChoice, ToolStatus},
-};
 use studio_engine::{
     AgentTaskId, DraftState, ReviewPolicy, TaskScope, TaskState,
     candidate_validation::{ChangedPath, FailureKind, ReportDiagnostic, ValidationStage},
     edit_transaction::RetainedVariant,
+};
+use studio_harness::{
+    DiscoveryReport, McpStdioSupport,
+    driver::{AgentCapabilityInfo, AgentOptions, PermissionChoice, ToolStatus},
 };
 use studio_project::ProjectId;
 

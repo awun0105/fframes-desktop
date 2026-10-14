@@ -32,13 +32,13 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use studio_agent_spike::{
+use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::app_paths::AppPaths;
+use studio_harness::{
     AcpDriver, AdapterLaunch, AgentEventKind, DriverConfig, DriverLimits, DriverMode,
     McpStdioSupport,
     driver::{PermissionChoice, PermissionReply},
 };
-use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
-use studio_engine::app_paths::AppPaths;
 
 pub const GATE: &str = "interruption_and_cleanup";
 pub const SCHEMA: &str = "m6-authentic/1";
@@ -365,7 +365,7 @@ pub fn run(paths: &AppPaths, options: &Options) -> Result<(Measured, PathBuf), S
     let (profile, file) = pick_profile(&registry, options.profile.as_deref())?;
     let identity = launch_identity(&file, paths)?;
     let launch = AdapterLaunch::resolve(
-        &studio_agent_spike::AdapterConfig {
+        &studio_harness::AdapterConfig {
             executable: file.executable.clone(),
             args: file.args.clone(),
             auth_env_names: file.auth_env_names.clone(),

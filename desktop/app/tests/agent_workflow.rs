@@ -34,7 +34,7 @@ fn opening_a_project_launches_no_agent_and_readiness_is_an_explicit_probe() {
         unreachable!()
     };
     assert!(
-        matches!(&report.status, studio_agent_spike::AdapterStatus::Ready { agent, .. } if agent == "scripted-agent"),
+        matches!(&report.status, studio_harness::AdapterStatus::Ready { agent, .. } if agent == "scripted-agent"),
         "{:?}",
         report.status
     );
@@ -58,7 +58,7 @@ fn a_missing_adapter_is_reported_by_the_probe_and_by_submit_without_a_task() {
     };
     assert!(matches!(
         report.status,
-        studio_agent_spike::AdapterStatus::MissingExecutable { .. }
+        studio_harness::AdapterStatus::MissingExecutable { .. }
     ));
     w.wf().submit("do something").unwrap();
     w.wait("the missing-adapter error", |s| {
@@ -164,7 +164,7 @@ fn a_brief_becomes_a_validated_candidate_is_auto_applied_and_accepted() {
         .collect();
     assert_eq!(tools.len(), 2, "tool updates must not append rows");
     assert!(tools.iter().all(|t| {
-        t.status == Some(studio_agent_spike::driver::ToolStatus::Completed) && t.updates == 2
+        t.status == Some(studio_harness::driver::ToolStatus::Completed) && t.updates == 2
     }));
     // Changed-file summary and validation coverage/diagnostics.
     let changes = task.changes.as_ref().expect("changed files");
@@ -2206,7 +2206,7 @@ fn a_check_sent_right_after_an_adapter_change_probes_the_new_adapter() {
     assert!(
         matches!(
             report.status,
-            studio_agent_spike::AdapterStatus::MissingExecutable { .. }
+            studio_harness::AdapterStatus::MissingExecutable { .. }
         ),
         "{:?}",
         report.status
@@ -2234,7 +2234,7 @@ fn a_check_still_running_when_the_adapter_changes_is_redone_for_the_new_adapter(
     assert!(
         matches!(
             report.status,
-            studio_agent_spike::AdapterStatus::MissingExecutable { .. }
+            studio_harness::AdapterStatus::MissingExecutable { .. }
         ),
         "{:?}",
         report.status
@@ -2454,7 +2454,7 @@ fn a_follow_up_task_keeps_the_pending_preview_of_the_accepted_revision() {
 #[test]
 fn a_tool_call_updated_after_its_card_left_the_window_is_one_persisted_card() {
     use fframes_studio::agent_workflow::log::RowLimits;
-    use studio_agent_spike::driver::ToolStatus;
+    use studio_harness::driver::ToolStatus;
     let w = World::with(Options {
         row_limits: Some(RowLimits {
             max_rows: 5,

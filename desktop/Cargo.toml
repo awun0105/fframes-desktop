@@ -7,7 +7,7 @@ members = [
     "crates/studio-engine",
     "crates/studio-bootstrap",
     "crates/studio-sdk",
-    "crates/studio-agent-spike",
+    "crates/studio-harness",
     "crates/studio-test-support",
 ]
 
@@ -20,7 +20,7 @@ uuid = { version = "1", features = ["v4"] }
 studio-bootstrap = { path = "crates/studio-bootstrap" }
 fframes-studio-protocol = { path = "../fframes-studio-protocol" }
 studio-sdk = { path = "crates/studio-sdk" }
-studio-agent-spike = { path = "crates/studio-agent-spike" }
+studio-harness = { path = "crates/studio-harness" }
 sha2 = "0.10"
 semver = "1.0"
 ring = "0.17"

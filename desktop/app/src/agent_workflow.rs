@@ -55,13 +55,13 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use studio_agent_spike::{
-    AdapterConfig, DriverLimits, ExecutableSearch, McpStdioSupport, driver::OptionValue,
-};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 use studio_engine::{
     AgentTaskId, Controller, ReviewPolicy, TaskScope, agent_task::validate_brief,
     app_paths::AppPaths,
+};
+use studio_harness::{
+    AdapterConfig, DriverLimits, ExecutableSearch, McpStdioSupport, driver::OptionValue,
 };
 use studio_project::ProjectId;
 

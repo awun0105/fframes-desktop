@@ -32,20 +32,20 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use studio_agent_spike::{
-    AcpDriver, AdapterLaunch, AgentFailure, DiscoveryReport, DriverConfig, DriverMode,
-    McpStdioServer, McpStdioSupport,
-    driver::{
-        AgentEvent, AgentEventKind, MessageRole, OptionValue, PermissionId, PermissionPrompt,
-        PermissionReply, PermissionResolution, PromptImage, PromptOutcome, ToolEvent,
-    },
-};
 use studio_bootstrap::ProcessTreeManager;
 use studio_engine::{
     AgentTaskContext, AgentTaskId, DraftState, EngineError, PromotionError, ReviewPolicy,
     TaskScope, TaskState, WriterGeneration, WriterGoneEvidence,
     candidate_validation::{CapturedCandidate, ChangeSet, FailureContext},
     edit_transaction::ConflictReport,
+};
+use studio_harness::{
+    AcpDriver, AdapterLaunch, AgentFailure, DiscoveryReport, DriverConfig, DriverMode,
+    McpStdioServer, McpStdioSupport,
+    driver::{
+        AgentEvent, AgentEventKind, MessageRole, OptionValue, PermissionId, PermissionPrompt,
+        PermissionReply, PermissionResolution, PromptImage, PromptOutcome, ToolEvent,
+    },
 };
 use studio_project::revision::SourceInventory;
 
@@ -232,8 +232,8 @@ pub(crate) struct Actor {
     store: RowStore,
     // ---- view state ----
     adapter: AdapterView,
-    capabilities: Option<studio_agent_spike::driver::AgentCapabilityInfo>,
-    options: studio_agent_spike::driver::AgentOptions,
+    capabilities: Option<studio_harness::driver::AgentCapabilityInfo>,
+    options: studio_harness::driver::AgentOptions,
     mcp_note: Option<String>,
     task: Option<TaskView>,
     policy: ReviewPolicy,
@@ -1895,7 +1895,7 @@ impl Actor {
         }
     }
 
-    fn on_ready(&mut self, info: studio_agent_spike::driver::SessionInfo) {
+    fn on_ready(&mut self, info: studio_harness::driver::SessionInfo) {
         let Some(active) = &self.active else {
             return;
         };
@@ -2248,10 +2248,10 @@ impl Actor {
             }
             Err(error) => {
                 let failure = match error {
-                    studio_agent_spike::driver::DriverError::Failed(f) => f,
+                    studio_harness::driver::DriverError::Failed(f) => f,
                     other => AgentFailure::new(
-                        studio_agent_spike::driver::FailureKind::PromptRejected,
-                        studio_agent_spike::driver::Phase::Prompt,
+                        studio_harness::driver::FailureKind::PromptRejected,
+                        studio_harness::driver::Phase::Prompt,
                         other.to_string(),
                     ),
                 };
@@ -2414,7 +2414,7 @@ impl Actor {
 
     fn driver_call(
         &mut self,
-        call: impl FnOnce(&AcpDriver) -> Result<(), studio_agent_spike::driver::DriverError>,
+        call: impl FnOnce(&AcpDriver) -> Result<(), studio_harness::driver::DriverError>,
     ) {
         let result = match self.active.as_ref().and_then(|a| a.driver.as_ref()) {
             Some(driver) => call(driver),
@@ -2505,8 +2505,8 @@ impl Actor {
     // ---- provider failure and stop ----------------------------------------------------------------------
 
     fn on_provider_failure(&mut self, failure: AgentFailure) {
-        if failure.phase == studio_agent_spike::driver::Phase::Session
-            || failure.kind == studio_agent_spike::driver::FailureKind::RestoreUnsupported
+        if failure.phase == studio_harness::driver::Phase::Session
+            || failure.kind == studio_harness::driver::FailureKind::RestoreUnsupported
         {
             if let Ok(Some(mut manifest)) =
                 super::session_store::SessionStore::load(&self.shared.paths, &self.shared.project)

@@ -4,12 +4,12 @@
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
-use studio_agent_spike::{
+use studio_bootstrap::ProcessTreeManager;
+use studio_engine::app_paths::AppPaths;
+use studio_harness::{
     AdapterConfig,
     discovery::{AdapterStatus, ExecutableSearch, ProbeOptions, probe_adapter},
 };
-use studio_bootstrap::ProcessTreeManager;
-use studio_engine::app_paths::AppPaths;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

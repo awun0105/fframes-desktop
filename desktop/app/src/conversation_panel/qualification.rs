@@ -32,9 +32,9 @@ use std::{
     path::{Component, Path, PathBuf},
     sync::Arc,
 };
-use studio_agent_spike::{ExecutableSearch, resolve_executable};
 use studio_bootstrap::WriterOwnership;
 use studio_engine::app_paths::AppPaths;
+use studio_harness::{ExecutableSearch, resolve_executable};
 
 /// Directory of the installed ledger bundle inside the app data directory.
 pub const LEDGER_DIR: &str = "qualification";

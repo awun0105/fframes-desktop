@@ -1,9 +1,9 @@
 [package]
-name = "studio-agent-spike"
+name = "studio-harness"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "ACP v1 adapter supervisor and qualification spike for fframes studio"
+description = "ACP v1 adapter supervisor and agent discovery for fframes studio"
 
 [lib]
 path = "src/lib.rs"

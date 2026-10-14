@@ -15,8 +15,8 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use studio_agent_spike::{AcpSession, AdapterConfig, SessionControl, copy_draft, source_revision};
 use studio_bootstrap::ProcessTreeManager;
+use studio_harness::{AcpSession, AdapterConfig, SessionControl, copy_draft, source_revision};
 use studio_sdk::CompatibilityManifest;
 
 pub struct CandidatePreview {

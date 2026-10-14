@@ -33,11 +33,11 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use studio_agent_spike::{
+use studio_engine::app_paths::AppPaths;
+use studio_harness::{
     NodeEntry,
     adapter_install::{self, InstallError, InstalledAdapter},
 };
-use studio_engine::app_paths::AppPaths;
 
 // ---- state -------------------------------------------------------------------------------------
 
@@ -271,7 +271,7 @@ pub fn detected_launch(
     adapter: &std::path::Path,
     node: Option<&std::path::Path>,
 ) -> Result<DetectedLaunch, String> {
-    match studio_agent_spike::node_entry(adapter)? {
+    match studio_harness::node_entry(adapter)? {
         NodeEntry::Script(entry) => match node {
             Some(node) => Ok(DetectedLaunch::Node {
                 node: node.to_owned(),
@@ -483,7 +483,7 @@ impl ConversationPanel {
         };
         let registry = self.registry.clone();
         let adapters = attached.paths.data.join("adapters");
-        let env = studio_agent_spike::DetectionEnv::from_process(vec![adapters.clone()]);
+        let env = studio_harness::DetectionEnv::from_process(vec![adapters.clone()]);
         let task = cx
             .background_executor()
             .spawn(async move { provider_profiles::scan_agents(&registry, &env, &adapters) });

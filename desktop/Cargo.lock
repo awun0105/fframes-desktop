@@ -2044,9 +2044,9 @@ dependencies = [
  "serde_json",
  "sha2",
  "smallvec",
- "studio-agent-spike",
  "studio-bootstrap",
  "studio-engine",
+ "studio-harness",
  "studio-presets",
  "studio-project",
  "studio-sdk",
@@ -6171,26 +6171,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "studio-agent-spike"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "base64 0.22.1",
- "futures",
- "libc",
- "parking_lot",
- "serde",
- "serde_json",
- "sha2",
- "studio-bootstrap",
- "studio-project",
- "studio-test-support",
- "tempfile",
- "thiserror 2.0.21",
- "tracing",
-]
-
-[[package]]
 name = "studio-bootstrap"
 version = "0.1.0"
 dependencies = [
@@ -6221,6 +6201,26 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 0.8.23",
  "uuid",
+]
+
+[[package]]
+name = "studio-harness"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "base64 0.22.1",
+ "futures",
+ "libc",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "sha2",
+ "studio-bootstrap",
+ "studio-project",
+ "studio-test-support",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

@@ -537,8 +537,8 @@ impl StudioSpikeApp {
                 f32::from(position.y - bounds.top()),
             )
             .ok_or("Click is outside the image")?;
-            let current = studio_agent_spike::source_revision(&frame.project_root)
-                .map_err(|e| e.to_string())?;
+            let current =
+                studio_harness::source_revision(&frame.project_root).map_err(|e| e.to_string())?;
             if current != frame.header.source_revision {
                 return Err("Project source changed; rebuild before selecting".into());
             }

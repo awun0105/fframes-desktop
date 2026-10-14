@@ -1,7 +1,7 @@
 use fframes_studio::{WorkerClient, selection_spike::DisplayedSourceFrame};
 use std::{path::PathBuf, time::Duration};
-use studio_agent_spike::source_revision;
 use studio_bootstrap::{ChildEnvironment, ProcessTreeManager};
+use studio_harness::source_revision;
 
 #[test]
 #[ignore = "requires the compiled native annotated fixture and loopback sockets"]

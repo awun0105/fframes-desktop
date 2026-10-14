@@ -19,9 +19,9 @@ use fframes_studio::{
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
-use studio_agent_spike::{AdapterConfig, driver::OptionValue};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 use studio_engine::{AgentTaskId, Controller, ReviewPolicy, app_paths::AppPaths};
+use studio_harness::{AdapterConfig, driver::OptionValue};
 
 #[path = "support/build_fixture.rs"]
 mod fixture;
@@ -625,7 +625,7 @@ fn a_long_real_conversation_pages_back_inside_the_resident_limits() {
         },
         writer_ownership: qualified(),
         ownership_probe: None,
-        mcp: studio_agent_spike::McpStdioSupport::Unsupported,
+        mcp: studio_harness::McpStdioSupport::Unsupported,
         auth_method: None,
     });
     config.limits.shutdown_grace = Duration::from_secs(1);

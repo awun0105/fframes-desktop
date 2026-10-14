@@ -33,9 +33,9 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
-use studio_agent_spike::{AdapterConfig, ExecutableSearch, McpStdioSupport, driver::DriverLimits};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 use studio_engine::{AgentTaskId, Controller, app_paths::AppPaths};
+use studio_harness::{AdapterConfig, ExecutableSearch, McpStdioSupport, driver::DriverLimits};
 
 #[path = "support/build_fixture.rs"]
 mod fixture;

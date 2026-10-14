@@ -125,8 +125,8 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use studio_agent_spike::driver::{ConfigKind, OptionValue, ToolStatus};
 use studio_engine::{DraftState, ReviewPolicy, TaskScope, app_paths::AppPaths};
+use studio_harness::driver::{ConfigKind, OptionValue, ToolStatus};
 
 /// Height of the composer container and the inset of its contents.
 const COMPOSER_H: f32 = 64.;
@@ -203,7 +203,7 @@ struct ConfigMenu {
 
 impl ConfigMenu {
     /// A menu listing the values of the select-type option `id`, the current one checked.
-    fn of(config: &[studio_agent_spike::driver::ConfigOption], id: &str) -> Option<Self> {
+    fn of(config: &[studio_harness::driver::ConfigOption], id: &str) -> Option<Self> {
         let option = config.iter().find(|o| o.id == id)?;
         let ConfigKind::Select { current, values } = &option.kind else {
             return None;
@@ -3157,7 +3157,7 @@ mod presentation_tests {
 
     #[test]
     fn a_config_menu_lists_the_values_and_commits_the_chosen_one() {
-        use studio_agent_spike::driver::{ConfigOption, ConfigValue};
+        use studio_harness::driver::{ConfigOption, ConfigValue};
         let value = |value: &str, name: &str| ConfigValue {
             value: value.into(),
             name: name.into(),
@@ -3191,7 +3191,7 @@ mod presentation_tests {
 
     #[test]
     fn a_config_menu_commits_the_value_it_showed_after_the_options_change() {
-        use studio_agent_spike::driver::{ConfigOption, ConfigValue};
+        use studio_harness::driver::{ConfigOption, ConfigValue};
         let select = |values: &[(&str, &str)]| {
             vec![ConfigOption {
                 id: "model".into(),

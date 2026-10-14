@@ -653,7 +653,7 @@ def cargo_test(package: str, tests: list[str], tail: list[str] | None = None) ->
 
 CHECKS = [
     Check(
-        "acp_transport", ["dev_acp_transport"], cargo_test("studio-agent-spike", ["acp_v1", "acp_v1_review"]),
+        "acp_transport", ["dev_acp_transport"], cargo_test("studio-harness", ["acp_v1", "acp_v1_review"]),
         ["tests/acp_v1.rs", "tests/acp_v1_review.rs"], "ACP v1 driver against the scripted peer (transport only)",
     ),
     Check(

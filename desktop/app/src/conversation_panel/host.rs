@@ -21,8 +21,8 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use studio_agent_spike::{AdapterConfig, ExecutableSearch, McpStdioSupport};
 use studio_engine::{Controller, app_paths::AppPaths};
+use studio_harness::{AdapterConfig, ExecutableSearch, McpStdioSupport};
 
 /// File name of the app-local adapter description inside the app data directory.
 pub const SETTINGS_FILE: &str = "agent-adapter.json";
@@ -578,9 +578,9 @@ pub struct HostParams {
 pub fn adapter_search(paths: &AppPaths) -> ExecutableSearch {
     let managed = paths.data.join("adapters");
     ExecutableSearch {
-        node: studio_agent_spike::find_executable(
+        node: studio_harness::find_executable(
             "node",
-            &studio_agent_spike::DetectionEnv::from_process(vec![managed.clone()]),
+            &studio_harness::DetectionEnv::from_process(vec![managed.clone()]),
         ),
         managed_dirs: vec![managed],
         gui_path: None,

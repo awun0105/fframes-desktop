@@ -15,9 +15,9 @@ use crate::{
 };
 use parking_lot::Mutex;
 use std::{path::PathBuf, sync::Arc};
-use studio_agent_spike::McpStdioServer;
 use studio_bootstrap::ProcessTreeManager;
 use studio_engine::{AgentTaskContext, CompiledScope, TaskIdentity};
+use studio_harness::McpStdioServer;
 use studio_project::{ProjectId, SourceRevision};
 use studio_sdk::CompatibilityManifest;
 

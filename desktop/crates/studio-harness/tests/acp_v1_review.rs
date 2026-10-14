@@ -9,7 +9,8 @@ use std::{
     sync::{Arc, Barrier, LazyLock},
     time::{Duration, Instant},
 };
-use studio_agent_spike::{
+use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_harness::{
     AdapterConfig,
     discovery::{AdapterLaunch, ExecutableSearch},
     driver::{
@@ -18,7 +19,6 @@ use studio_agent_spike::{
         PermissionReply, Phase, StopReasonKind,
     },
 };
-use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 
 const SECRET: &str = "sentinel-credential-7f3a9c";
 const WAIT: Duration = Duration::from_secs(20);

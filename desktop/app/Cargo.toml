@@ -30,7 +30,7 @@ studio-engine = { workspace = true }
 studio-presets = { workspace = true }
 studio-bootstrap = { workspace = true }
 studio-sdk = { workspace = true }
-studio-agent-spike = { workspace = true }
+studio-harness = { workspace = true }
 fframes-media = { path = "../../fframes-media" }
 fframes-studio-protocol = { workspace = true }
 serde = { workspace = true }

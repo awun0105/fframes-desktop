@@ -1,14 +1,12 @@
 //! Pure conversions from engine/driver values to bounded, redacted presentation values,
 //! and the deterministic prompts the workflow sends.
 use super::model::*;
-use studio_agent_spike::{
-    AgentFailure, FailureKind as ProviderFailureKind, redact_sensitive_string,
-};
 use studio_engine::{
     AgentTaskContext, EngineError, PromotionError, TaskError,
     candidate_validation::{CandidateError, ChangeSet, FailureContext, ValidationReport},
     edit_transaction::PlanError,
 };
+use studio_harness::{AgentFailure, FailureKind as ProviderFailureKind, redact_sensitive_string};
 
 /// Short form of a revision hash.
 pub fn short(revision: &str) -> String {
@@ -513,7 +511,7 @@ pub fn repair_prompt(context: &FailureContext, route: &ToolRoute) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use studio_agent_spike::driver::Phase;
+    use studio_harness::driver::Phase;
 
     fn artifact(label: &str, frames: Vec<usize>) -> EvidenceArtifact {
         EvidenceArtifact {

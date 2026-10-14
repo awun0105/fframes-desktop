@@ -63,7 +63,7 @@ fn cli_project_tools_remain_available_without_the_mcp_route() {
     for (options, why) in [
         (
             Options {
-                mcp: studio_agent_spike::McpStdioSupport::Unsupported,
+                mcp: studio_harness::McpStdioSupport::Unsupported,
                 ..Options::default()
             },
             "disabled by host policy",
@@ -124,7 +124,7 @@ fn cli_project_tools_remain_available_without_the_mcp_route() {
 #[test]
 fn cli_project_tools_report_the_unsupported_local_broker() {
     let w = World::with(Options {
-        mcp: studio_agent_spike::McpStdioSupport::Unsupported,
+        mcp: studio_harness::McpStdioSupport::Unsupported,
         ..Options::default()
     });
     w.submit(&serde_json::json!({"hang": true}));
