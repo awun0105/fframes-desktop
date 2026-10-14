@@ -9,6 +9,7 @@ mod harness;
 
 mod audio;
 mod canvas;
+mod checkpoints;
 mod services;
 mod timeline;
 mod transport;

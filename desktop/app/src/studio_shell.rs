@@ -1354,6 +1354,11 @@ impl StudioShell {
     pub fn telemetry(&self, cx: &gpui::App) -> serde_json::Value {
         let mut value = self.qualification_snapshot(cx);
         value["project_open"] = self.presentation.project.is_some().into();
+        if let Some(project) = &self.presentation.project {
+            value["accepted_revision"] = project.accepted.as_str().into();
+            value["checkpoint_path"] = project.checkpoint.to_string_lossy().into_owned().into();
+            value["job"] = project.job.clone().into();
+        }
         value["sdk"] = self.presentation.sdk.clone().into();
         value["sdk_ready_for_agent"] = self.presentation.agent_sdk.is_some().into();
         value["awaiting_preview"] = self.awaiting_preview.is_some().into();
@@ -4165,6 +4170,12 @@ impl StudioShell {
             }))
             .on_action(cx.listener(|s, _: &actions::ExportVideo, _, cx| s.pick(Picker::Export, cx)))
             .on_action(cx.listener(|s, _: &actions::CancelExport, _, cx| s.cancel_export(cx)))
+            .on_action(cx.listener(|s, _: &actions::SaveCheckpoint, _, cx| {
+                s.dispatch(Command::Checkpoint, cx)
+            }))
+            .on_action(
+                cx.listener(|s, _: &actions::RestoreCheckpoint, _, cx| s.pick(Picker::Restore, cx)),
+            )
             .on_action(cx.listener(|s, action: &actions::SelectCanvasAt, _, cx| {
                 s.pause_at_painted_frame(cx);
                 match s.video_to_canvas(action.x, action.y) {

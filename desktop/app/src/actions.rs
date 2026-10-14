@@ -44,6 +44,10 @@ actions!(
         ZoomIn,
         /// Zoom the timeline out, around the playhead.
         ZoomOut,
+        /// Save the project's current source as its checkpoint.
+        SaveCheckpoint,
+        /// Copy the last checkpoint into a new folder of the user's choice.
+        RestoreCheckpoint,
     ]
 );
 
