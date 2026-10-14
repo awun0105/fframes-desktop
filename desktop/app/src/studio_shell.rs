@@ -2174,20 +2174,34 @@ impl StudioShell {
                         Some("Start a rectangle drag inside the painted video image.".into());
                 }
             }
-            MouseButton::Left if event.modifiers.alt => {
-                if let Err(error) = self.canvas.select_at(point.0, point.1, true) {
-                    self.canvas.message = Some(error.to_string());
-                }
-            }
             MouseButton::Left => {
-                if let Err(error) = self.canvas.select_at(point.0, point.1, false) {
-                    self.canvas.message = Some(error.to_string());
-                }
+                return self.select_canvas(point, event.modifiers.alt, cx);
             }
             _ => return,
         }
         self.install_task_scope(self.timeline.read(cx).selected_scope(), cx);
         cx.notify();
+    }
+
+    /// Selects the object at canvas `point` (`cycle`: the next one under it) and makes the
+    /// selection the agent's task scope.
+    fn select_canvas(&mut self, point: (f64, f64), cycle: bool, cx: &mut Context<Self>) {
+        if let Err(error) = self.canvas.select_at(point.0, point.1, cycle) {
+            self.canvas.message = Some(error.to_string());
+        }
+        self.install_task_scope(self.timeline.read(cx).selected_scope(), cx);
+        cx.notify();
+    }
+
+    /// Where video pixel (`x`, `y`) is painted on the canvas, if the video is laid out.
+    fn video_to_canvas(&self, x: f64, y: f64) -> Option<(f64, f64)> {
+        let viewport = self.canvas.viewport.as_ref()?;
+        let image = viewport.image_bounds();
+        let (width, height) = viewport.video_dimensions();
+        Some((
+            image.x + x * image.width / f64::from(width),
+            image.y + y * image.height / f64::from(height),
+        ))
     }
 
     fn canvas_pointer_move(&mut self, event: &gpui::MouseMoveEvent, cx: &mut Context<Self>) {
@@ -4151,6 +4165,16 @@ impl StudioShell {
             }))
             .on_action(cx.listener(|s, _: &actions::ExportVideo, _, cx| s.pick(Picker::Export, cx)))
             .on_action(cx.listener(|s, _: &actions::CancelExport, _, cx| s.cancel_export(cx)))
+            .on_action(cx.listener(|s, action: &actions::SelectCanvasAt, _, cx| {
+                s.pause_at_painted_frame(cx);
+                match s.video_to_canvas(action.x, action.y) {
+                    Some(point) => s.select_canvas(point, action.cycle, cx),
+                    None => {
+                        s.canvas.message = Some("The video is not on the canvas yet.".into());
+                        cx.notify();
+                    }
+                }
+            }))
             .on_action(cx.listener(|s, _: &actions::TogglePlayback, _, cx| s.toggle_playback(cx)))
             .on_action(cx.listener(|s, _: &actions::StepForward, _, cx| s.step_preview(1, cx)))
             .on_action(cx.listener(|s, _: &actions::StepBackward, _, cx| s.step_preview(-1, cx)))

@@ -47,6 +47,16 @@ actions!(
     ]
 );
 
+/// Select the canvas object painted at video pixel (`x`, `y`) of the shown frame, as a
+/// click there does; `cycle` selects the next object under that point instead.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = studio, no_json)]
+pub struct SelectCanvasAt {
+    pub x: f64,
+    pub y: f64,
+    pub cycle: bool,
+}
+
 /// Move the playhead to `frame`.
 #[derive(Clone, PartialEq, Eq, Debug, Action)]
 #[action(namespace = studio, no_json)]

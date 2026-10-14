@@ -8,7 +8,8 @@ every revision can describe its own timeline, diagnostics and audio:
   frames, fps, width, height, scenes [[start,end]], tracks [[start_s,end_s]],
   inspect [{frame,severity,key,message}], render_fail_frame, audio
   (silent|tone|clip|misplaced), pixel (base byte), backend, fail_start, delay_ms,
-  export_hang
+  export_hang, editor_objects [{component, object, bounds: [x, y, width, height]}] (every
+  frame carries them as exact-bounds editor metadata in video pixels)
 
 With `--export-v1` it stands in for the MP4 renderer, which it cannot be: it reports the
 first frame rendered, then holds until it is killed (`export_hang`) or fails.
@@ -107,6 +108,22 @@ def effective_scale(requested):
     return min(requested, min(MAX_WIDTH / WIDTH, MAX_HEIGHT / HEIGHT, 1.0))
 
 
+def editor_metadata(index, seek_serial):
+    objects = [
+        dict(identity=dict(scene_instance_key="scene-0", component_key=o["component"],
+                           object_key=o["object"], repeat_key="primary"),
+             parent=None, style_tokens=[],
+             bounds=dict(x=o["bounds"][0], y=o["bounds"][1], width=o["bounds"][2], height=o["bounds"][3]),
+             paint_order=order, support="exact_bounds")
+        for order, o in enumerate(CONFIG["editor_objects"])
+    ]
+    keys = sorted(json.dumps(o["identity"], sort_keys=True) for o in objects)
+    return dict(frame_index=index, seek_serial=seek_serial, video_width=WIDTH, video_height=HEIGHT,
+                editor_index_digest=hashlib.sha256("\n".join(keys).encode()).hexdigest(),
+                frame_geometry_digest=hashlib.sha256(json.dumps(objects, sort_keys=True).encode()).hexdigest(),
+                status="supported", reason=None, objects=objects)
+
+
 def make_pcm(path):
     samples = -(-FRAMES * RATE // FPS)
     mode = CONFIG.get("audio", "silent")
@@ -177,8 +194,11 @@ while True:
                       alpha_mode="Straight", color_space="Srgb", payload_len=len(payload))
         record = dict(kind="frame_rgba8", identity=identity, request_id=env["request_id"], offset=0,
                       payload_len=len(payload))
-        send(dict(type="ScaledFrame", envelope=env, frame_index=index, seek_serial=request["seek_serial"],
-                  scale=scale, header=header, render_duration_micros=5, record=record))
+        response = dict(type="ScaledFrame", envelope=env, frame_index=index, seek_serial=request["seek_serial"],
+                        scale=scale, header=header, render_duration_micros=5, record=record)
+        if CONFIG.get("editor_objects"):
+            response["editor_metadata"] = editor_metadata(index, request["seek_serial"])
+        send(response)
         bulk.sendall(encoded(record) + payload)
     elif kind == "Inspect":
         env = request["envelope"]

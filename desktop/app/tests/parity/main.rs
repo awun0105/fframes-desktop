@@ -8,6 +8,7 @@ mod build_fixture;
 mod harness;
 
 mod audio;
+mod canvas;
 mod services;
 mod timeline;
 mod transport;
