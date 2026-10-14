@@ -43,6 +43,7 @@ The model choice does not affect either wire. Scratch projects were small git re
    - A bare `{"behavior":"allow"}` and `cancel_queued: true` both work.
    - `--bare` cannot be used with a claude.ai login.
    - Which user settings load needs a user decision (see the matrix).
+   - Allow rules in a project's shared `.claude/settings.json` are ignored until that directory is trusted interactively; the CLI explains this on stderr. Deny rules, `.claude/settings.local.json` allows and `--settings` allows do apply. Draft directories are untrusted, so the driver should pass any pre-approvals with `--settings`.
 7. **Fakes (phase 4).** Generate the Codex fake against `codex app-server generate-json-schema`. Replay both CLIs' background, interrupt, deny or decline, and resume transcripts saved in `spike-native-wires/`.
 
 ### Claude Code summary
@@ -256,8 +257,31 @@ Which tools produced `can_use_tool`:
 - **Allow rules:**
   - A rule passed with `--settings '{"permissions":{"allow":["Bash(ping:*)"]}}'` was honored: no `can_use_tool`, and the command ran.
   - The same rule in the project's `.claude/settings.json` was not honored with `all`, `project` or `user` sources.
-  - The most likely cause is the scratch location. The project lives under Claude Code's own `%TEMP%\claude` directory and was never trusted, and every write there also reported `blocked_path` even with `--add-dir`.
-  - This needs a recheck from a normal, trusted directory before phase 2 relies on project allow lists.
+  - Separately, every write in the `%TEMP%\claude` scratch project reported `blocked_path`, even with `--add-dir`.
+
+**Project allow rules require explicit workspace trust.** This was rechecked from a normal directory, `C:\Users\<USER>\s5-allow-check` (a git repo outside the repo and outside temp, deleted afterwards). Settings: `--model haiku --permission-prompt-tool stdio --permission-mode default --replay-user-messages --strict-mcp-config`, with no edits to any user or trust config.
+
+| Project settings | Sources | `ping -n 1 127.0.0.1` |
+| --- | --- | --- |
+| `.claude/settings.json` allow `Bash(ping:*)` (committed) | default | `can_use_tool` asked |
+| same | `--setting-sources project` | `can_use_tool` asked |
+| same rule, file untracked by git | default | `can_use_tool` asked |
+| `.claude/settings.json` deny `Bash(ping:*)` | default | blocked without asking: "Permission to use Bash with command ping -n 1 127.0.0.1 has been denied." (`permission_decision.source: "config"`) |
+| `.claude/settings.local.json` allow `Bash(ping:*)` | default | **ran without `can_use_tool`** |
+| same local rule | `--setting-sources project` | `can_use_tool` asked (the local source is not loaded) |
+
+**How it works:**
+- **Reason, in the CLI's own words.** Every run with the shared-file allow rule wrote this to **stderr** (not to the stream-json stdout) about 0.35 s after launch: "Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["<path>"].hasTrustDialogAccepted: true in ~/.claude.json." The earlier `%TEMP%\claude` runs show the same line in stderr, so their unexplained result had this cause, not the location.
+- **What the trust gate covers.** In 2.1.296 it drops *permissive* rules from the shared project file. Deny rules from that file still apply, and allow rules from `.claude/settings.local.json` apply without trust. The binary also refers to `projectGrantsGated` and to "project-scoped grants require trusting this directory explicitly". Additional directories are gated the same way.
+- **Where trust is stored.** It is `projects[<path>].hasTrustDialogAccepted` in `~/.claude.json`. On this VM three paths are trusted, among them this repo; the home directory itself is `false`. Print mode never shows the trust dialog and did not add an entry for the test path.
+- **How trust is granted.** Only by accepting the dialog in an interactive session, or by editing `~/.claude.json`. This spike did neither.
+
+**Consequence for phase 2.** Draft directories will be new, untrusted paths, so a project's shared allow list will not pre-approve anything there and every gated tool reaches the user as `can_use_tool`. That is safe. If fframes wants pre-approvals, the options are:
+- pass them with `--settings` (flag settings are honored);
+- write them to the draft's `.claude/settings.local.json`;
+- have the user trust the draft root interactively.
+
+The driver should surface the stderr "Ignoring … not been trusted" line, so users understand why their rules did not apply. The transcript is `claude-project-allow-rules.jsonl`.
 
 ### Transcripts
 
@@ -279,6 +303,7 @@ Each line has the form `{t, dir: in|out|note, frame}`.
 | `claude-background-stdin-close.jsonl` | stdin closed while a background task runs; autonomous turn with `Read`; exit timing |
 | `claude-tools-default-mode.jsonl` | all settings sources: Read and read-only Bash not asked, Write and Edit asked; `init` with MCP server statuses |
 | `claude-bare-not-logged-in.jsonl` | `--bare` with an OAuth login: initialize works, the first prompt fails "Not logged in" |
+| `claude-project-allow-rules.jsonl` | untrusted normal directory, four runs: shared-file allow (default sources, then `--setting-sources project`) asks, with the stderr "Ignoring … not been trusted" note; shared-file deny blocks; local-file allow runs without asking |
 
 ### Implications for M5a
 
@@ -449,7 +474,7 @@ These items were not exercised for Codex:
 
 ## Unresolved questions
 
-- Are project `.claude/settings.json` allow rules honored for a trusted project outside `%TEMP%\claude`? This was not provable from the scratch location.
+- Should fframes pass the user's or the project's allow list to Claude through `--settings`, or let every gated tool ask in draft directories? Shared project allow rules do not apply there, because drafts are untrusted.
 - Does `interrupt` (or `TaskStop`) end a running background task, or only the foreground turn?
 - Should M5a show the autonomous follow-up turn to the user as its own turn, or fold it into the previous one?
 - For Codex, should M5a drop the user's MCP servers and config (for example with `-c` overrides or a separate `CODEX_HOME`), as `--strict-mcp-config` does for Claude?

@@ -11,6 +11,8 @@ dependencies: [1]
 
 > **Spike S5 (2026-10-14) contradicts parts of this phase.** Read the [native-wires report, Result section](../261013-0733-studio-m1-foundations/reports/spike-native-wires.md#result) before building: neither CLI's turn-end frame means the work is done (Claude runs unprompted turns with their own `result`; Codex completes items after `turn/completed`), Codex has no `turn/aborted` and its interrupt leaves the command running, only `untrusted` asks before every command, and session stop needs interrupt, stdin close, a grace period and a containment kill.
 
+> **Decided 2026-10-14:** draft folders are untrusted, so Claude ignores allow rules in their shared `.claude/settings.json` ([spike S5](../261013-0733-studio-m1-foundations/reports/spike-native-wires.md)). The driver passes the studio-owned allow list with `--settings` on every launch, writes nothing into the project, and surfaces the CLI's stderr notice about ignored project rules.
+
 ## Goal
 
 Claude Code runs as one persistent process over its stream-json control protocol, with every tool permission answered by the user.
