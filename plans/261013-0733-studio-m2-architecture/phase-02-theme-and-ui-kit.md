@@ -135,4 +135,10 @@ Parity tests pass; the appearance gpui test passes and switching the OS appearan
     - The icon buttons gain tooltips ("Zoom out", "Zoom in", "Cycle scene (S)") and keep their old accessible names.
     - Fit is a filled `EditorButton`. A gpui test pins that it still reports the bounds native qualification clicks.
     - The view resolves its `Theme` in `render` and needs no field.
+  - **Setup and presets.**
+    - Setup's buttons are `EditorButton`s (accent or control fill). A test renders every setup state.
+    - The preset actions are full-width `EditorButton`s with a left icon.
+    - The clear-override icon button gains a "Clear" tooltip.
+    - The CSS report uses `CollapsibleSection`.
+    - A test walks the preset list from the keyboard: Tab to the row, Enter selects it, Tab to Apply, and Enter applies exactly once. The keys are sent as a key-down and key-up pair, because a focused kit control's click comes on key-up. `simulate_keystrokes("enter")` did not activate the kit button in that test.
 - **Fork.** fframes pins `khanhthanhdev/zed-cap@c32bfd3` (Cap's fork plus upstream fixes); Cap pins `wingleeio/zed@5d1f83d`. Small API drift is fixed at port time and recorded here.

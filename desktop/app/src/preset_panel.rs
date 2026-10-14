@@ -5,14 +5,6 @@
 //! [`studio_engine::presets::PresetView`] and emits [`PresetEvent`]s, and the shell runs
 //! the commands through the engine. The video preset's tokens never reach the Studio
 //! chrome: the panel uses the application design system, separate from project styling.
-use crate::{
-    design_system::{self, TextStyle, text_style},
-    ui::{
-        Button, ButtonVariant, Collapsible, Icon, IconButton, IconButtonSize, Notice, SectionTitle,
-        Tone, divider, icon,
-        interact::{Handler, focusable, on_activate, with_tooltip},
-    },
-};
 use gpui::{
     AppContext, Context, ElementId, Entity, EventEmitter, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
@@ -22,8 +14,12 @@ use studio_engine::PresetMutation;
 use studio_engine::presets::{
     CssView, MAX_CSS_LINES, Outcome, PresetCommand, PresetReport, PresetView,
 };
-use studio_theme::Theme;
-use studio_ui::kit::{TextInput, TextInputEvent, TextInputState};
+use studio_theme::{METRICS, TextStyle, Theme, text_style};
+use studio_ui::kit::{
+    CollapsibleSection, EditorButton, Handler, Icon, IconButton, IconButtonSize, Notice, TextInput,
+    TextInputEvent, TextInputState, Tone, divider, focusable, icon, on_activate, section_title,
+    with_tooltip,
+};
 
 // ---- GPUI panel ------------------------------------------------------------------------
 
@@ -171,26 +167,34 @@ impl PresetPanel {
     // ---- building blocks ---------------------------------------------------------------
 
     #[allow(clippy::too_many_arguments)]
-    /// A stacked, full-width `ui::Button` that runs `action` on this panel.
+    /// A stacked, full-width button that runs `action` on this panel: the accent fill
+    /// when `primary`, otherwise the control fill.
     fn action_button(
         &self,
         id: impl Into<ElementId>,
         label: &'static str,
         enabled: bool,
-        variant: ButtonVariant,
+        primary: bool,
         glyph: Option<Icon>,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> Button {
+    ) -> EditorButton {
+        let theme = self.theme;
         let entity = cx.entity();
-        let mut button = Button::new(id, label)
-            .variant(variant)
+        let mut button = EditorButton::plain(&theme, id)
+            .label(label)
+            .full_width()
             .disabled(!enabled)
-            .on_click(move |_, cx| {
+            .on_click(move |_, _, cx| {
                 entity.update(cx, |panel, cx| action(panel, cx));
             });
+        button = if primary {
+            button.accent(&theme)
+        } else {
+            button.filled(&theme)
+        };
         if let Some(glyph) = glyph {
-            button = button.icon(glyph);
+            button = button.left_icon(glyph.path());
         }
         button
     }
@@ -205,7 +209,8 @@ impl PresetPanel {
         selected: bool,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
+        let hover = theme.editor.ctl_hover;
         let entity = cx.entity();
         let id = format!("preset-{key}");
         let handler: Handler = Rc::new(move |_, cx| {
@@ -215,9 +220,9 @@ impl PresetPanel {
             });
         });
         let check = if selected {
-            icon(Icon::Check, tokens.metrics.icon_sm, tokens.palette.accent)
+            icon(Icon::Check, METRICS.icon_sm, theme.editor.accent)
         } else {
-            icon(Icon::Check, tokens.metrics.icon_sm, tokens.palette.text_3).opacity(0.)
+            icon(Icon::Check, METRICS.icon_sm, theme.editor.text_3).opacity(0.)
         };
         let mut row = div()
             .id(id)
@@ -226,23 +231,23 @@ impl PresetPanel {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(tokens.metrics.space_2))
+            .gap(px(METRICS.space_2))
             .h(px(PRESET_ROW_H))
-            .px(px(tokens.metrics.space_2))
+            .px(px(METRICS.space_2))
             .min_w_0()
-            .rounded(px(tokens.metrics.radius_item))
-            .hover(|style| style.bg(design_system::tokens().palette.ctl_hover))
+            .rounded(px(METRICS.radius_item))
+            .hover(move |style| style.bg(hover))
             .child(check)
             .child(
                 text_style(div().min_w_0().flex_1().truncate(), TextStyle::Body)
-                    .text_color(tokens.palette.text_1)
+                    .text_color(theme.editor.text_1)
                     .child(shown),
             );
         if selected {
-            row = row.bg(tokens.palette.ctl);
+            row = row.bg(theme.editor.ctl);
         }
-        let row = on_activate(focusable(row, false), false, Some(handler));
-        with_tooltip(row, Some(label.into()))
+        let row = on_activate(focusable(row, &theme, false), false, Some(handler));
+        with_tooltip(row, &theme, Some(label.into()))
     }
 
     fn small(text: impl Into<SharedString>, color: gpui::Rgba) -> gpui::Div {
@@ -300,19 +305,19 @@ impl PresetPanel {
 impl Render for PresetPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.theme.refresh(window, cx);
-        let tokens = design_system::tokens();
-        let palette = tokens.palette;
+        let theme = self.theme;
+        let palette = theme.editor;
         let mut root = div()
             .id("preset-panel")
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_3))
+            .gap(px(METRICS.space_3))
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(tokens.metrics.space_1))
-                    .child(SectionTitle::new("Style presets"))
+                    .gap(px(METRICS.space_1))
+                    .child(section_title(&theme, "Style presets"))
                     .child(Self::small(
                         "Presets style the video only; Studio's own interface never changes.",
                         palette.text_2,
@@ -370,7 +375,7 @@ impl Render for PresetPanel {
             ));
         }
         for skipped in &view.skipped {
-            list = list.child(Self::small(format!("Skipped: {skipped}"), palette.danger));
+            list = list.child(Self::small(format!("Skipped: {skipped}"), theme.red_11));
         }
         root = root.child(list);
         let selected = self
@@ -389,13 +394,13 @@ impl Render for PresetPanel {
         let reapply = enabled && selected.as_ref().is_some_and(|e| e.same_id_applied);
         let reset = enabled && view.applied.is_some() && key.is_some();
         // At 216 px the buttons stack; a row would not fit their labels.
-        let mut actions = div().flex().flex_col().gap(px(tokens.metrics.space_2));
+        let mut actions = div().flex().flex_col().gap(px(METRICS.space_2));
         let apply_key = key.clone();
         actions = actions.child(self.action_button(
             "preset-apply",
             "Apply",
             can_select,
-            ButtonVariant::Primary,
+            true,
             Some(Icon::Check),
             cx,
             move |this, cx| {
@@ -409,7 +414,7 @@ impl Render for PresetPanel {
             "preset-reapply",
             "Reapply (keep overrides)",
             reapply,
-            ButtonVariant::Editor,
+            false,
             Some(Icon::RefreshCw),
             cx,
             move |this, cx| {
@@ -423,7 +428,7 @@ impl Render for PresetPanel {
             "preset-reset",
             "Reset overrides",
             reset,
-            ButtonVariant::Editor,
+            false,
             Some(Icon::History),
             cx,
             move |this, cx| {
@@ -435,16 +440,16 @@ impl Render for PresetPanel {
         root = root.child(actions);
 
         let export_key = key.clone();
-        root = root.child(divider()).child(
+        root = root.child(divider(&theme)).child(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(tokens.metrics.space_2))
+                .gap(px(METRICS.space_2))
                 .child(self.action_button(
                     "preset-import",
                     "Import preset folder…",
                     true,
-                    ButtonVariant::Editor,
+                    false,
                     Some(Icon::Upload),
                     cx,
                     |_, cx| {
@@ -455,7 +460,7 @@ impl Render for PresetPanel {
                     "preset-export",
                     "Export selected…",
                     key.is_some(),
-                    ButtonVariant::Editor,
+                    false,
                     Some(Icon::Download),
                     cx,
                     move |_, cx| {
@@ -468,7 +473,7 @@ impl Render for PresetPanel {
                     "preset-css",
                     "CSS import report…",
                     true,
-                    ButtonVariant::Editor,
+                    false,
                     Some(Icon::File),
                     cx,
                     |_, cx| {
@@ -479,8 +484,8 @@ impl Render for PresetPanel {
 
         // Project overrides: the user's layer, kept across Reapply and reopen.
         root = root
-            .child(divider())
-            .child(SectionTitle::new("Project overrides"));
+            .child(divider(&theme))
+            .child(section_title(&theme, "Project overrides"));
         if let Some(applied) = &view.applied {
             let mut overrides = div().flex().flex_col();
             if applied.overridden.is_empty() {
@@ -493,8 +498,8 @@ impl Render for PresetPanel {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(tokens.metrics.space_2))
-                        .min_h(px(tokens.metrics.field_row_h))
+                        .gap(px(METRICS.space_2))
+                        .min_h(px(METRICS.field_row_h))
                         .child(
                             div()
                                 .flex()
@@ -513,11 +518,12 @@ impl Render for PresetPanel {
                                 ),
                         )
                         .child(
-                            IconButton::new(format!("clear-{token}"), Icon::X)
-                                .size(IconButtonSize::Small)
+                            IconButton::editor(&theme, format!("clear-{token}"), Icon::X.path())
+                                .editor_size(IconButtonSize::Small)
                                 .label("Clear")
+                                .tooltip(&theme, "Clear")
                                 .disabled(!enabled)
-                                .on_click(move |_, cx| {
+                                .on_click(move |_, _, cx| {
                                     entity.update(cx, |this, cx| {
                                         this.run(
                                             PresetCommand::ClearOverride {
@@ -544,14 +550,14 @@ impl Render for PresetPanel {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(tokens.metrics.space_2))
+                    .gap(px(METRICS.space_2))
                     .child(token)
                     .child(value)
                     .child(self.action_button(
                         "override-set",
                         "Set override",
                         enabled,
-                        ButtonVariant::Editor,
+                        false,
                         Some(Icon::Plus),
                         cx,
                         |this, cx| this.set_override(cx),
@@ -580,8 +586,8 @@ impl Render for PresetPanel {
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()
-                .gap(px(tokens.metrics.space_1))
-                .pt(px(tokens.metrics.space_1))
+                .gap(px(METRICS.space_1))
+                .pt(px(METRICS.space_1))
                 .child(Self::small(
                     format!(
                         "CSS report · {}: {} accepted · {} unsupported · {} rejected",
@@ -601,12 +607,12 @@ impl Render for PresetPanel {
             let entity = cx.entity();
             root = root.child(
                 div().id("css-report").child(
-                    Collapsible::new("css-report-section", self.css_open)
-                        .header(SectionTitle::new("CSS import report"))
+                    CollapsibleSection::new("css-report-section", self.css_open)
+                        .header(section_title(&theme, "CSS import report"))
                         .content(lines)
                         .on_toggle(move |open, _, cx| {
                             entity.update(cx, |panel, cx| {
-                                panel.css_open = open;
+                                panel.css_open = *open;
                                 cx.notify();
                             });
                         }),
@@ -646,6 +652,79 @@ c"
                     .into()
                 )
             )
+        );
+    }
+}
+
+/// Choosing and applying a preset from the keyboard.
+#[cfg(test)]
+mod keyboard {
+    use std::{cell::RefCell, rc::Rc};
+
+    use gpui::TestAppContext;
+    use studio_engine::PresetMutation;
+    use studio_engine::presets::{EntryView, PresetCommand, PresetView};
+
+    use super::{PresetEvent, PresetPanel};
+
+    #[gpui::test]
+    fn enter_selects_a_preset_and_applies_it_once(cx: &mut TestAppContext) {
+        let view = PresetView {
+            entries: vec![EntryView {
+                key: "k1".into(),
+                id: "studio.basic".into(),
+                name: "Basic".into(),
+                version: "1.0.0".into(),
+                description: "The basic look".into(),
+                bundled: true,
+                applied: false,
+                same_id_applied: false,
+            }],
+            skipped: Vec::new(),
+            applied: None,
+            mutation: PresetMutation::Enabled,
+        };
+        let (panel, cx) = cx.add_window_view(|window, cx| {
+            let mut panel = PresetPanel::new(window, cx);
+            panel.set_view(Some(view), cx);
+            panel
+        });
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let log = events.clone();
+        cx.update(|_, cx| {
+            cx.subscribe(&panel, move |_, event: &PresetEvent, _| {
+                log.borrow_mut().push(event.clone())
+            })
+            .detach()
+        });
+        cx.run_until_parked();
+        let tab = |cx: &mut gpui::VisualTestContext| {
+            cx.update(|window, cx| window.focus_next(cx));
+            cx.run_until_parked();
+        };
+        // A whole press: the click a focused control gets from Enter comes on key-up.
+        let enter = |cx: &mut gpui::VisualTestContext| {
+            let keystroke = gpui::Keystroke::parse("enter").unwrap();
+            cx.simulate_event(gpui::KeyDownEvent {
+                keystroke: keystroke.clone(),
+                is_held: false,
+                prefer_character_input: false,
+            });
+            cx.simulate_event(gpui::KeyUpEvent { keystroke });
+            cx.run_until_parked();
+        };
+        // The preset row is the first tab stop, Apply the next.
+        tab(cx);
+        enter(cx);
+        assert_eq!(
+            panel.read_with(cx, |panel, _| panel.selected_key().map(str::to_owned)),
+            Some("k1".into())
+        );
+        tab(cx);
+        enter(cx);
+        assert_eq!(
+            *events.borrow(),
+            [PresetEvent::Run(PresetCommand::Apply { key: "k1".into() })]
         );
     }
 }

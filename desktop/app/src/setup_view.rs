@@ -1,8 +1,3 @@
-use crate::design_system::{self, TextStyle};
-use crate::ui::{
-    Badge, Button, ButtonVariant, Icon, Notice, StatusDot, Tone, card, divider, heading, icon,
-    muted,
-};
 use gpui::{Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div, px};
 use std::fs;
 use std::path::PathBuf;
@@ -11,6 +6,10 @@ use studio_bootstrap::ProcessTreeManager;
 use studio_sdk::{
     Doctor, ProbeStatus, environment::SdkEnvironment, manifest::CompatibilityManifest,
     project::ProjectManager,
+};
+use studio_theme::{METRICS, TextStyle, Theme, text_style};
+use studio_ui::kit::{
+    Badge, Card, EditorButton, Icon, Notice, StatusDot, Tone, divider, heading, icon, muted,
 };
 
 fn default_projects_root() -> PathBuf {
@@ -232,19 +231,26 @@ impl SetupView {
         Ok((final_frame, build_time, render_time))
     }
 
-    /// Same ids and labels as before; the handler runs on this view.
+    /// Same ids and labels as before; the handler runs on this view. `primary` is the
+    /// accent fill, otherwise the control fill.
     fn action_button(
+        theme: &Theme,
         id: &'static str,
         label: &'static str,
-        variant: ButtonVariant,
+        primary: bool,
         entity: Entity<Self>,
         action: fn(&mut Self, &mut Context<Self>),
-    ) -> Button {
-        Button::new(id, label)
-            .variant(variant)
-            .on_click(move |_window, cx| {
+    ) -> EditorButton {
+        let button = EditorButton::plain(theme, id)
+            .label(label)
+            .on_click(move |_, _, cx| {
                 entity.update(cx, action);
-            })
+            });
+        if primary {
+            button.accent(theme)
+        } else {
+            button.filled(theme)
+        }
     }
 }
 
@@ -305,17 +311,17 @@ fn failing_step(previous: &SetupState) -> Option<usize> {
         .or_else(|| statuses.iter().position(|s| *s == StepStatus::Pending))
 }
 
-fn step_row(name: &'static str, status: StepStatus) -> gpui::Div {
-    let palette = design_system::tokens().palette;
-    let metrics = design_system::tokens().metrics;
+fn step_row(theme: &Theme, name: &'static str, status: StepStatus) -> gpui::Div {
+    let palette = theme.editor;
+    let metrics = METRICS;
     let marker = match status {
         StepStatus::Pending => StatusDot::new(Tone::Neutral).into_any_element(),
         StepStatus::Active => StatusDot::new(Tone::Info).into_any_element(),
         StepStatus::Done => {
-            icon(Icon::CircleCheck, metrics.icon_md, palette.success).into_any_element()
+            icon(Icon::CircleCheck, metrics.icon_md, theme.green_11).into_any_element()
         }
         StepStatus::Failed => {
-            icon(Icon::AlertTriangle, metrics.icon_md, palette.danger).into_any_element()
+            icon(Icon::AlertTriangle, metrics.icon_md, theme.red_11).into_any_element()
         }
     };
     let name_color = match status {
@@ -334,7 +340,7 @@ fn step_row(name: &'static str, status: StepStatus) -> gpui::Div {
                 .child(marker),
         )
         .child(
-            design_system::text_style(div(), TextStyle::Label)
+            text_style(div(), TextStyle::Label)
                 .text_color(name_color)
                 .child(name),
         )
@@ -343,28 +349,28 @@ fn step_row(name: &'static str, status: StepStatus) -> gpui::Div {
         )
 }
 
-fn detail_line(text: impl Into<gpui::SharedString>) -> gpui::Div {
-    muted(text)
+fn detail_line(theme: &Theme, text: impl Into<gpui::SharedString>) -> gpui::Div {
+    muted(theme, text)
 }
 
 impl SetupView {
     /// Status text and extra content for the current state.
-    fn state_detail(&self, cx: &mut Context<Self>) -> gpui::Div {
-        let palette = design_system::tokens().palette;
-        let metrics = design_system::tokens().metrics;
+    fn state_detail(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::Div {
+        let palette = theme.editor;
+        let metrics = METRICS;
         let entity = cx.entity();
         let column = || div().flex().flex_col().gap(px(metrics.space_2));
         match &self.state {
             SetupState::Checking => column()
-                .child(detail_line("Checking Host Prerequisites..."))
-                .child(detail_line(
+                .child(detail_line(theme, "Checking Host Prerequisites..."))
+                .child(detail_line(theme,
                     "Running read-only preflight probes on compiler, CMake, and graphics libraries...",
                 )),
             SetupState::PrerequisitesNeeded {
                 missing_packages, ..
             } => column()
-                .child(detail_line("System Prerequisites Needed"))
-                .child(detail_line(
+                .child(detail_line(theme, "System Prerequisites Needed"))
+                .child(detail_line(theme,
                     "The following host packages were detected as missing and require user review:",
                 ))
                 .child(
@@ -375,30 +381,32 @@ impl SetupView {
                         .border_1()
                         .border_color(palette.line_strong)
                         .child(
-                            design_system::text_style(div(), TextStyle::Small)
+                            text_style(div(), TextStyle::Small)
                                 .text_color(palette.text_1)
                                 .child(studio_sdk::install_hint(missing_packages)),
                         ),
                 )
                 .child(div().flex().child(Self::action_button(
+                    theme,
                     "btn-recheck",
                     "Re-run Preflight Check",
-                    ButtonVariant::Editor,
+                    false,
                     entity,
                     |this, cx| this.run_preflight(cx),
                 ))),
             SetupState::SdkInstallNeeded { manifest_digest } => column()
-                .child(detail_line(
+                .child(detail_line(theme,
                     "Host Preflight Passed — SDK Installation Required",
                 ))
-                .child(detail_line(
+                .child(detail_line(theme,
                     "Host environment verified. Ready to install app-managed toolchain & FFmpeg dependencies.",
                 ))
-                .child(detail_line(format!("Manifest: {:.16}...", manifest_digest)))
+                .child(detail_line(theme, format!("Manifest: {:.16}...", manifest_digest)))
                 .child(div().flex().child(Self::action_button(
+                    theme,
                     "btn-install-sdk",
                     "Install Managed SDK & Build Template",
-                    ButtonVariant::Primary,
+                    true,
                     entity,
                     |this, cx| this.start_install_and_build(cx),
                 ))),
@@ -406,31 +414,32 @@ impl SetupView {
                 progress_percent,
                 step,
             } => column()
-                .child(detail_line(format!(
+                .child(detail_line(theme, format!(
                     "Installing SDK... ({progress_percent}%)"
                 )))
-                .child(detail_line(step.clone())),
+                .child(detail_line(theme, step.clone())),
             SetupState::SdkReady {
                 active_path,
                 manifest_digest,
             } => column()
-                .child(detail_line("Managed SDK Ready"))
-                .child(detail_line(format!("Active location: {:?}", active_path)))
-                .child(detail_line(format!(
+                .child(detail_line(theme, "Managed SDK Ready"))
+                .child(detail_line(theme, format!("Active location: {:?}", active_path)))
+                .child(detail_line(theme, format!(
                     "Manifest Digest: {:.16}...",
                     manifest_digest
                 )))
                 .child(div().flex().child(Self::action_button(
+                    theme,
                     "btn-create-proj",
                     "Build and Render Template Project",
-                    ButtonVariant::Primary,
+                    true,
                     entity,
                     |this, cx| this.start_install_and_build(cx),
                 ))),
-            SetupState::CreatingProject { name } => column().child(detail_line(format!(
+            SetupState::CreatingProject { name } => column().child(detail_line(theme, format!(
                 "Generating project '{name}' outside workspace..."
             ))),
-            SetupState::Building { name } => column().child(detail_line(format!(
+            SetupState::Building { name } => column().child(detail_line(theme, format!(
                 "Building '{name}' with isolated SDK toolchain..."
             ))),
             SetupState::Rendered {
@@ -438,20 +447,21 @@ impl SetupView {
                 build_time,
                 render_time,
             } => column()
-                .child(detail_line("Project Rendered Successfully!"))
-                .child(detail_line(format!("Build duration: {:?}", build_time)))
-                .child(detail_line(format!(
+                .child(detail_line(theme, "Project Rendered Successfully!"))
+                .child(detail_line(theme, format!("Build duration: {:?}", build_time)))
+                .child(detail_line(theme, format!(
                     "Frame render duration: {:?}",
                     render_time
                 )))
-                .child(detail_line(format!("Output PNG: {:?}", frame_path))),
+                .child(detail_line(theme, format!("Output PNG: {:?}", frame_path))),
             SetupState::Failed { error, .. } => column().child(
                 Notice::new("setup-failed", Tone::Danger, "Setup / Build Failed")
                     .details(error.clone())
                     .action(Self::action_button(
+                    theme,
                         "btn-retry",
                         "Retry",
-                        ButtonVariant::Editor,
+                        false,
                         entity,
                         |this, cx| this.run_preflight(cx),
                     )),
@@ -464,14 +474,15 @@ const CARD_MAX_W: f32 = 560.;
 const CARD_PADDING: f32 = 24.;
 
 impl Render for SetupView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = design_system::tokens().palette;
-        let metrics = design_system::tokens().metrics;
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::for_window(window, cx);
+        let palette = theme.editor;
+        let metrics = METRICS;
         let steps = div().flex().flex_col().gap(px(metrics.space_2)).children(
             STEP_NAMES
                 .iter()
                 .zip(step_statuses(&self.state))
-                .map(|(name, status)| step_row(name, status)),
+                .map(|(name, status)| step_row(&theme, name, status)),
         );
 
         div()
@@ -481,20 +492,21 @@ impl Render for SetupView {
             .p(px(metrics.space_6))
             .bg(palette.window)
             .child(
-                card()
+                Card::editor(&theme)
                     .flex()
                     .flex_col()
                     .w_full()
                     .max_w(px(CARD_MAX_W))
                     .p(px(CARD_PADDING))
                     .gap(px(metrics.space_4))
-                    .child(heading("Set up fframes Studio"))
+                    .child(heading(&theme, "Set up fframes Studio"))
                     .child(muted(
+                        &theme,
                         "Get the managed SDK ready and render a template project.",
                     ))
                     .child(steps)
-                    .child(divider())
-                    .child(self.state_detail(cx)),
+                    .child(divider(&theme))
+                    .child(self.state_detail(&theme, cx)),
             )
     }
 }
@@ -536,6 +548,24 @@ mod tests {
                 step: None,
             },
         ]
+    }
+
+    #[gpui::test]
+    fn every_state_renders(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = cx.add_window_view(|_, _| SetupView {
+            state: SetupState::Checking,
+            manifest: CompatibilityManifest::default_linux_x64(),
+            sdk_home: PathBuf::new(),
+            projects_root: PathBuf::new(),
+            process_tree: ProcessTreeManager::new(),
+        });
+        for state in every_state() {
+            view.update(cx, |view, cx| {
+                view.state = state;
+                cx.notify();
+            });
+            cx.run_until_parked();
+        }
     }
 
     #[test]
