@@ -1,8 +1,8 @@
 //! The production GPUI shell as a real process on a private X server.
 //!
-//! GPUI's headless test support (`TestAppContext`) needs the `test-support` feature, which
-//! pulls git-only dependencies that are not in this workspace's lockfile, so the shell's
-//! hand-off wiring is exercised the way the M0/M2 native qualifications were: the real
+//! The headless parity suite (`tests/parity`, GPUI's `TestAppContext`) drives the shell
+//! through its actions; this test covers what a headless window cannot, exercising the
+//! hand-off wiring the way the M0/M2 native qualifications did: the real
 //! `fframes-studio qualify-m3` binary on an owned Xvfb, driven with xdotool, observed
 //! through its redacted telemetry file. It covers what pure tests cannot: the prompt's
 //! native input path, `StudioShell::adopt_promotion` adopting the staged preview on the UI
