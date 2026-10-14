@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Split the agent actor"
-status: pending
+status: in-progress
 priority: P1
 effort: "2-3d"
 dependencies: [3]
@@ -22,11 +22,29 @@ dependencies: [3]
 
 ## Todo
 
-- [ ] Scout handler groups
-- [ ] Split modules
+- [x] Scout handler groups
+- [x] Split modules
 - [ ] Snapshots through engine events
 - [ ] Agent tests green
 
 ## Success criteria
 
 All agent integration tests and parity tests pass; no file in `studio-engine/src/agent` exceeds 1,500 lines.
+
+## Progress (2026-10-14)
+
+Tasks 1 and 2 were done ahead of phase 3, since they need nothing from it. The split followed the file's own section markers rather than the planned names:
+
+| Module | Contents |
+|--------|----------|
+| `actor/mod.rs` (804) | `Msg`, `Actor` state, the run loop, message dispatch, `conflict_of_report` |
+| `actor/rows.rs` (503) | transcript rows and the published snapshot |
+| `actor/turn.rs` (543) | adapter probe, starting a task: tools, the writer process, the task phase |
+| `actor/prompt.rs` (680) | pumping the live driver, scope evidence, prompts, agent events, permissions |
+| `actor/session.rs` (770) | provider failure and stop, provider handoff, session restoration, new chats |
+| `actor/apply.rs` (773) | the validation pipeline, review and publication |
+| `actor/finish.rs` (446) | Undo, review policy and recovery, finishing a task, closing the actor |
+
+Permissions live with the turn that raises them (`prompt.rs`). Tool settings live with task start (`turn.rs`). Each child is an `impl Actor` block with `use super::*`. The only edits were `pub(super)` on methods that a sibling calls. A line-multiset diff against `HEAD` shows only module wiring and rustfmt reflows. The full workspace run matches the baseline per binary. The moved code has no `cfg` gates, so the Windows-only check covers it.
+
+Task 3 (snapshots through engine events) waits for phase 3's channels.

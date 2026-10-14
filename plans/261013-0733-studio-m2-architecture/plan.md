@@ -44,11 +44,11 @@ desktop/app        thin binary: runtime setup, window, bins studio-tools / studi
 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
-| 1 | [Crate skeleton and service move](./phase-01-crate-skeleton.md) | 4-5d | none | Done locally; CI pending |
+| 1 | [Crate skeleton and service move](./phase-01-crate-skeleton.md) | 4-5d | none | Done (Linux + Windows CI) |
 | 2 | [Cap theme and component kit](./phase-02-theme-and-ui-kit.md) | 3-4d | 1 | Pending |
 | 3 | [Engine handle and typed events](./phase-03-engine-handle-and-events.md) | 4-5d | 1 | Pending |
 | 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 6-9d | 2, 3 | Pending |
-| 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | Pending |
+| 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | In progress |
 | 6 | [Agent panel on a transcript row model](./phase-06-transcript-row-model.md) | 3-5d | 4, 5, 7 | Pending |
 | 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Pending |
 | 8 | [Split the remaining oversize files](./phase-08-split-oversize-files.md) | 3-4d | 1 | In progress |

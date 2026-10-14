@@ -65,3 +65,5 @@ Deviations from the task list, with the reason:
 - **`backend.rs` split along its own section markers** (`writer_gate`, `artifacts`, `project`); the `ToolBackend` impl stays with `ProjectToolBackend` in `project.rs` (1,313 lines) because separating them would widen the visibility of every private worker and revision type.
 - **Kebab renames:** `session-store.rs` and `provider-profiles.rs` were renamed in the move; `export-source.rs` in its own commit. `studio-sdk/src/release-manifest.rs` was not in the list and is left for M2 phase 8 or M6.
 - Updated outside Rust: CI `-p` lists (new crates, `-p studio-engine --test` for moved tests), `test-packaging.py`, `package-phase-zero.py` comment, `qualify-m3-agent.py` and `qualify-m5-selection.py` (until phase 7 deletes them), `docs/desktop/architecture.md` paths.
+
+CI (2026-10-14): the self-hosted validation run 38515074950 on `5cdf529` (phase 1 plus the stale-path fix) passed on both Linux and Windows. The Linux job compiles and runs the Unix-gated app tests. No macOS job has run on a phase 1 head: `Desktop CI` last ran on `2f527d3`, before phase 1.
