@@ -29,6 +29,27 @@ fn evidence_telemetry(view: &crate::agent_workflow::EvidenceView) -> serde_json:
     })
 }
 
+/// Redacted observation of a transcript row: its kind and size, never its text.
+fn row_telemetry(kind: &RowKind) -> serde_json::Value {
+    use serde_json::json;
+    match kind {
+        RowKind::User { text, .. } => json!({"kind": "user", "chars": text.chars().count()}),
+        RowKind::Agent {
+            text, streaming, ..
+        } => json!({"kind": "agent", "chars": text.chars().count(), "streaming": streaming}),
+        RowKind::Thought { .. } => json!({"kind": "thought"}),
+        RowKind::Tool(_) => json!({"kind": "tool"}),
+        RowKind::Permission(card) => {
+            json!({"kind": "permission", "state": format!("{:?}", card.state)})
+        }
+        RowKind::Notice { .. } => json!({"kind": "notice"}),
+        RowKind::Error(error) => json!({"kind": "error", "code": error.code}),
+        RowKind::Validation(_) => json!({"kind": "validation"}),
+        RowKind::Changes(_) => json!({"kind": "changes"}),
+        RowKind::Outcome(card) => json!({"kind": "outcome", "outcome": format!("{:?}", card.kind)}),
+    }
+}
+
 /// One line per evidence set: its state, the immutable revision it was rendered from and
 /// the actual frames rendered. Never predicted pixels.
 fn evidence_summary(name: &str, view: &crate::agent_workflow::EvidenceView) -> String {
@@ -492,6 +513,8 @@ impl ConversationPanel {
                 UndoView::InProgress { .. } => "in_progress",
             },
             "setup": self.setup_telemetry(),
+            "apply_blocked": snapshot.task.as_ref().and_then(|t| t.review.as_ref()).and_then(|r| r.apply_blocked.clone()),
+            "rows": snapshot.rows.iter().skip(snapshot.rows.len().saturating_sub(64)).map(|row| row_telemetry(&row.kind)).collect::<Vec<_>>(),
         })
     }
 
@@ -729,7 +752,7 @@ impl ConversationPanel {
         }
     }
 
-    fn submit(&mut self, cx: &mut Context<Self>) {
+    pub fn submit(&mut self, cx: &mut Context<Self>) {
         let (Some(attached), Some(snapshot)) = (&self.attached, &self.snapshot) else {
             return;
         };
@@ -764,6 +787,44 @@ impl ConversationPanel {
     fn stop(&mut self, cx: &mut Context<Self>) {
         if let Some(workflow) = self.workflow().cloned() {
             let result = workflow.stop();
+            self.command(result, cx);
+        }
+    }
+
+    /// Answers the oldest open permission request: `option` is one of the ids it offers,
+    /// `None` declines it.
+    pub fn answer_oldest_permission(&mut self, option: Option<String>, cx: &mut Context<Self>) {
+        let Some(reference) = self.snapshot.as_ref().and_then(|snapshot| {
+            snapshot
+                .open_permissions()
+                .first()
+                .map(|card| card.reference.clone())
+        }) else {
+            self.say("No permission request is open.", cx);
+            return;
+        };
+        let answer = option.map_or(PermissionAnswer::Cancel, PermissionAnswer::Select);
+        self.answer_permission(reference, answer, cx);
+    }
+
+    /// Switches later tasks between automatic Apply and review before Apply.
+    pub fn toggle_review_policy(&mut self, cx: &mut Context<Self>) {
+        let (Some(workflow), Some(snapshot)) = (self.workflow().cloned(), &self.snapshot) else {
+            return;
+        };
+        let next = match snapshot.review_policy {
+            ReviewPolicy::AutoApply => ReviewPolicy::ManualReview,
+            ReviewPolicy::ManualReview => ReviewPolicy::AutoApply,
+        };
+        let result = workflow.set_review_policy(next);
+        self.command(result, cx);
+    }
+
+    /// Manual review: publishes the candidate (refused with the reason while Apply is
+    /// blocked).
+    pub fn apply(&mut self, cx: &mut Context<Self>) {
+        if let Some(workflow) = self.workflow().cloned() {
+            let result = workflow.apply();
             self.command(result, cx);
         }
     }
@@ -1656,12 +1717,7 @@ impl ConversationPanel {
                 true,
                 Tone::Primary,
                 cx,
-                |this, _, cx| {
-                    if let Some(w) = this.workflow().cloned() {
-                        let r = w.apply();
-                        this.command(r, cx);
-                    }
-                },
+                |this, _, cx| this.apply(cx),
             ),
             self.button(
                 "agent-discard",
@@ -1852,7 +1908,9 @@ impl ConversationPanel {
         }
     }
 
-    fn focus_prompt(&self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Shows the chat and moves the keyboard focus to its prompt.
+    pub fn focus_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.tab = Tab::Chat;
         let handle = self.prompt.read(cx).focus_handle.clone();
         window.focus(&handle, cx);
     }
@@ -2320,12 +2378,7 @@ impl ConversationPanel {
                 true,
                 Tone::Normal,
                 cx,
-                move |this, _, cx| {
-                    if let Some(w) = this.workflow().cloned() {
-                        let r = w.set_review_policy(next);
-                        this.command(r, cx);
-                    }
-                },
+                |this, _, cx| this.toggle_review_policy(cx),
             ),
         ));
         column = column.child(review);

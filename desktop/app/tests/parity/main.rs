@@ -7,6 +7,7 @@
 mod build_fixture;
 mod harness;
 
+mod agent;
 mod audio;
 mod canvas;
 mod checkpoints;

@@ -1,5 +1,5 @@
-//! Preset/Style panel: apply and reset (gated: see `harness::mutation_open`).
-use crate::harness::{Studio, mutation_open};
+//! Preset/Style panel: apply and reset (gated: see `Studio::mutation_open`).
+use crate::harness::{Mutation, Studio};
 use fframes_studio::actions::{ApplyPreset, ResetPreset, SetStyleOverride};
 use serde_json::Value;
 use std::fs;
@@ -33,7 +33,7 @@ fn apply_and_reset(cx: &mut gpui::TestAppContext) {
     let source = studio.telemetry()["current_source_revision"].clone();
     let style = style_files(&studio);
     studio.dispatch(ApplyPreset { key: key.clone() });
-    if !mutation_open() {
+    if !studio.mutation_open(Mutation::Preset) {
         let refused = studio.wait("apply refused", |t| {
             t["busy"] == false && !t["presets"]["status"].is_null()
         });

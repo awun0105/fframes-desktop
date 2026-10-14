@@ -4,7 +4,10 @@
 //! only one that knows the window's root view.
 use fframes_studio::{
     build_service::{BuildLimits, BuildService},
-    conversation_panel::qualification::OwnershipPolicy,
+    conversation_panel::{
+        host::{self, AdapterFile, McpChoice},
+        qualification::OwnershipPolicy,
+    },
     studio_shell::{StudioEnvironment, StudioShell},
 };
 use gpui::{Action, AppContext, TestAppContext, WindowHandle};
@@ -18,7 +21,7 @@ use std::{
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 
 use crate::build_fixture::{FAKE_CONFIG, FakeCompiler, fake_sdk, manifest};
-use studio_engine::build_materialization::sdk_pin;
+use studio_engine::{app_paths::AppPaths, build_materialization::sdk_pin};
 use studio_sdk::CompatibilityManifest;
 
 /// Ninety frames at 30 fps in two scenes, with a one-second tone from 0 s. An export
@@ -27,11 +30,12 @@ pub const FIXTURE_CONFIG: &str = r#"{"frames":90,"fps":30,"scenes":[[0,45],[45,9
 
 const WAIT: Duration = Duration::from_secs(60);
 
-/// Whether this platform may change project source (presets, agent Apply). Only Linux
-/// x86-64 is qualified until M3 opens the gates; the gated tests assert the real outcome
-/// where this holds and "blocked, with the reason shown" elsewhere, so M3 flips them here.
-pub fn mutation_open() -> bool {
-    studio_engine::preset_state::MUTATION_QUALIFIED
+/// A change to project source that is behind a platform gate.
+pub enum Mutation {
+    /// Applying, resetting or overriding a style preset.
+    Preset,
+    /// Publishing an agent's candidate.
+    AgentApply,
 }
 
 pub struct Studio {
@@ -118,6 +122,47 @@ impl Studio {
         Self::new(cx).open_project()
     }
 
+    /// The fixture open with the scripted ACP agent (`tests/support/acp-agent.py`) as its
+    /// saved adapter. The agent records what it receives in [`Self::agent_evidence`] and
+    /// plays the turns written to `plan.json` there.
+    pub fn with_agent(cx: &mut TestAppContext) -> Self {
+        let studio = Self::new(cx);
+        let evidence = studio.agent_evidence();
+        fs::create_dir_all(&evidence).unwrap();
+        let adapter = AdapterFile {
+            provider: "scripted".into(),
+            executable: python(),
+            args: vec![
+                concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/acp-agent.py").into(),
+                evidence.to_string_lossy().into_owned(),
+            ],
+            auth_env_names: vec![],
+            auth_method: None,
+            mcp: McpChoice::Unsupported,
+        };
+        let paths = AppPaths::new(studio.app_data.clone()).unwrap();
+        host::save_settings(&paths, &adapter).unwrap();
+        studio.open_project()
+    }
+
+    pub fn agent_evidence(&self) -> PathBuf {
+        self.path("agent-evidence")
+    }
+
+    /// Whether this platform may make `mutation`. Until M3 opens the gates, presets are
+    /// qualified only on Linux x86-64 and agent Apply only where no-clobber publication is
+    /// proven (Linux). The gated tests assert the real outcome where this holds and
+    /// "blocked, with the reason shown" elsewhere, so M3 flips them here.
+    pub fn mutation_open(&self, mutation: Mutation) -> bool {
+        match mutation {
+            Mutation::Preset => studio_engine::preset_state::MUTATION_QUALIFIED,
+            Mutation::AgentApply => matches!(
+                studio_engine::edit_transaction::probe_apply_gate(&self.project),
+                studio_engine::ApplyGate::Ready(_)
+            ),
+        }
+    }
+
     pub fn open_project(self) -> Self {
         let mut studio = self;
         let project = studio.project.clone();
@@ -189,6 +234,11 @@ impl Studio {
             std::thread::sleep(Duration::from_millis(2));
         }
         self.telemetry()
+    }
+
+    /// Types `text` into the focused field.
+    pub fn type_text(&mut self, text: &str) {
+        self.cx.simulate_input(self.window.into(), text);
     }
 
     /// Answers the open dialog the last action opened.
@@ -286,6 +336,21 @@ fn install_sdk(sdk_home: &Path, folder: &str) -> (PathBuf, CompatibilityManifest
     )
     .unwrap();
     (sdk.canonicalize().unwrap(), compatibility)
+}
+
+/// The test interpreter by its absolute path: the host never consults the global `PATH`,
+/// so the adapter names it as a user's Setup would.
+fn python() -> String {
+    let python = studio_test_support::python();
+    let absolute = if python.is_absolute() {
+        python.to_path_buf()
+    } else {
+        std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+            .map(|dir| dir.join(python))
+            .find(|candidate| candidate.is_file())
+            .expect("the test interpreter on PATH")
+    };
+    absolute.to_string_lossy().into_owned()
 }
 
 /// `fake-rustc.rs` compiled once per test process. It also serves as any native executable a

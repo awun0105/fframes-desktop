@@ -54,6 +54,14 @@ actions!(
         ImportSdkBundle,
         /// Look for installed agents and their ACP adapters, without starting them.
         DetectAgents,
+        /// Move the keyboard focus to the agent prompt.
+        FocusPrompt,
+        /// Send the agent prompt as a brief (or a clarification reply, or queue it).
+        SubmitPrompt,
+        /// Publish the candidate waiting for review.
+        ApplyCandidate,
+        /// Switch later agent tasks between automatic Apply and review before Apply.
+        ToggleReviewPolicy,
     ]
 );
 
@@ -87,6 +95,14 @@ pub struct ResetPreset {
 pub struct SetStyleOverride {
     pub token: String,
     pub value: String,
+}
+
+/// Answer the oldest open permission request with `option` (one of the ids it offers),
+/// or decline it when `None`.
+#[derive(Clone, PartialEq, Eq, Debug, Action)]
+#[action(namespace = studio, no_json)]
+pub struct AnswerPermission {
+    pub option: Option<String>,
 }
 
 /// Turn on the agent `profile` with the adapter Detect agents found for it.

@@ -4196,6 +4196,25 @@ impl StudioShell {
             .on_action(cx.listener(|s, _: &actions::DetectAgents, _, cx| {
                 s.panel.update(cx, |panel, cx| panel.detect_agents(cx))
             }))
+            .on_action(cx.listener(|s, _: &actions::FocusPrompt, window, cx| {
+                s.panel
+                    .update(cx, |panel, cx| panel.focus_prompt(window, cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::SubmitPrompt, _, cx| {
+                s.panel.update(cx, |panel, cx| panel.submit(cx))
+            }))
+            .on_action(cx.listener(|s, action: &actions::AnswerPermission, _, cx| {
+                let option = action.option.clone();
+                s.panel
+                    .update(cx, |panel, cx| panel.answer_oldest_permission(option, cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::ApplyCandidate, _, cx| {
+                s.panel.update(cx, |panel, cx| panel.apply(cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::ToggleReviewPolicy, _, cx| {
+                s.panel
+                    .update(cx, |panel, cx| panel.toggle_review_policy(cx))
+            }))
             .on_action(cx.listener(|s, action: &actions::UseDetectedAgent, _, cx| {
                 s.panel
                     .update(cx, |panel, cx| panel.use_detected(&action.profile, cx))
