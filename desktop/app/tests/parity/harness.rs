@@ -149,10 +149,10 @@ impl Studio {
         self.path("agent-evidence")
     }
 
-    /// Whether this platform may make `mutation`. Until M3 opens the gates, presets are
-    /// qualified only on Linux x86-64 and agent Apply only where no-clobber publication is
-    /// proven (Linux). The gated tests assert the real outcome where this holds and
-    /// "blocked, with the reason shown" elsewhere, so M3 flips them here.
+    /// Whether this platform may make `mutation`: presets are qualified only on Linux
+    /// x86-64, agent Apply only where no-clobber publication is proven (Linux). The gated
+    /// tests assert the real outcome where this holds and "blocked, with the reason shown"
+    /// elsewhere, so qualifying another platform changes only this answer.
     pub fn mutation_open(&self, mutation: Mutation) -> bool {
         match mutation {
             Mutation::Preset => studio_engine::preset_state::MUTATION_QUALIFIED,

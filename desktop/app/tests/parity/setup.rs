@@ -81,7 +81,10 @@ fn a_detected_adapter_is_turned_on(cx: &mut gpui::TestAppContext) {
     let found = studio.wait("agents detected", scanned);
     let row = detected(&found, "antigravity");
     assert_eq!(row["state"], "Ready", "{row:#}");
-    assert_eq!(row["adapter"], adapter.to_string_lossy().as_ref());
+    assert_eq!(
+        row["adapter"],
+        adapter.file_name().unwrap().to_string_lossy().as_ref()
+    );
 
     studio.dispatch(UseDetectedAgent {
         profile: "antigravity".into(),
@@ -127,9 +130,7 @@ fn an_agent_that_was_not_detected_is_not_turned_on(cx: &mut gpui::TestAppContext
         profile: "antigravity".into(),
     });
     let refused = studio.settle(Duration::from_millis(200));
-    assert_eq!(
-        refused["panel"]["setup"]["notice"],
-        "That agent's adapter was not detected."
-    );
+    assert_eq!(refused["panel"]["setup"]["turn_on"], "Idle");
     assert_ne!(refused["panel"]["setup"]["selected_profile"], "antigravity");
+    assert!(!studio.app_data.join("provider-registry.json").exists());
 }

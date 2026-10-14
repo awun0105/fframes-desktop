@@ -547,8 +547,8 @@ impl ConversationPanel {
 
     /// Opens an install page in the default browser. Only `https://` links are handed over;
     /// anything else is refused and reported. Returns whether the link was opened.
-    /// Detect agents and turn-on state: what each profile's scan found, the selected
-    /// profile and the last notice.
+    /// Redacted Detect agents and turn-on state: what each profile's scan found (the
+    /// adapter's file name, never its folder) and the selected profile.
     pub(super) fn setup_telemetry(&self) -> serde_json::Value {
         let setup = &self.agent_setup;
         serde_json::json!({
@@ -556,11 +556,10 @@ impl ConversationPanel {
             "detected": setup.detected.found.iter().map(|found| serde_json::json!({
                 "profile": found.id,
                 "state": setup.detected.state(found).label(),
-                "adapter": found.adapter.as_ref().map(|path| path.to_string_lossy().into_owned()),
+                "adapter": found.adapter.as_ref().and_then(|path| path.file_name()).map(|name| name.to_string_lossy().into_owned()),
             })).collect::<Vec<_>>(),
             "turn_on": format!("{:?}", setup.turn_on),
             "selected_profile": self.registry.selected_profile_id,
-            "notice": self.notice,
         })
     }
 
