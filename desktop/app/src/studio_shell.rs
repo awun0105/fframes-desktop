@@ -96,6 +96,8 @@ struct PreparedInstall {
 pub struct StudioShell {
     /// The theme of the window, refreshed at the start of every render.
     theme: Theme,
+    /// The running app's version, which SDKs must be compatible with.
+    app_version: &'static str,
     engine: EngineHandle,
     app: gpui::Entity<AppState>,
     _app_subscription: gpui::Subscription,
@@ -303,12 +305,14 @@ impl StudioShell {
         outcome
     }
 
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self::with_environment(StudioEnvironment::system(), window, cx)
+    /// `app_version` is the running app's version, which SDKs must be compatible with.
+    pub fn new(app_version: &'static str, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::with_environment(StudioEnvironment::system(), app_version, window, cx)
     }
 
     pub fn with_environment(
         environment: StudioEnvironment,
+        app_version: &'static str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -353,7 +357,7 @@ impl StudioShell {
             cx.subscribe_in(&preset_panel, window, |shell, _, event, window, cx| {
                 shell.preset_event(event.clone(), window, cx)
             });
-        let (engine, events) = EngineHandle::new(environment.clone(), env!("CARGO_PKG_VERSION"));
+        let (engine, events) = EngineHandle::new(environment.clone(), app_version);
         let app = cx.new(|cx| AppState::new(engine.clone(), events, cx));
         let app_subscription = cx.subscribe(&app, |shell, _, event: &AppEvent, cx| {
             if let Some(event) = event.take() {
@@ -429,6 +433,7 @@ impl StudioShell {
         .detach();
         let mut shell = Self {
             theme: Theme::for_window(window, cx),
+            app_version,
             engine,
             app,
             _app_subscription: app_subscription,
@@ -784,6 +789,7 @@ impl StudioShell {
             value["checkpoint_path"] = project.checkpoint.to_string_lossy().into_owned().into();
             value["job"] = project.job.clone().into();
         }
+        value["app_version"] = self.app_version.into();
         value["sdk"] = self.presentation.sdk.clone().into();
         value["sdk_ready_for_agent"] = self.presentation.agent_sdk.is_some().into();
         value["awaiting_preview"] = self.awaiting_preview.is_some().into();

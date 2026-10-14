@@ -97,7 +97,14 @@ impl Studio {
         let window = cx.update(|cx| {
             studio_ui::kit::bind_text_input_keys(cx);
             cx.open_window(Default::default(), |window, cx| {
-                cx.new(|cx| StudioShell::with_environment(environment, window, cx))
+                cx.new(|cx| {
+                    StudioShell::with_environment(
+                        environment,
+                        env!("CARGO_PKG_VERSION"),
+                        window,
+                        cx,
+                    )
+                })
             })
             .unwrap()
         });
