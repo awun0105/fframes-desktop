@@ -67,7 +67,8 @@ pub use editor_button::{EditorButton, EditorButtonVariant};
 pub use field::{Field, Subfield};
 pub use icon::{Icon, icon};
 pub use interact::{
-    DISABLED_OPACITY, FOCUS_RING_PX, Nav, activates, focus_ring, focusable, nav_key, step_enabled,
+    BoundsHandler, DISABLED_OPACITY, FOCUS_RING_PX, Handler, Nav, activates, bounds_probe,
+    focus_ring, focusable, nav_key, on_activate, step_enabled, with_tooltip,
 };
 pub use kbd::{KbdChip, KbdSize, kbd_symbol};
 pub use menu::{Menu, MenuItem, MenuKey, MenuState};

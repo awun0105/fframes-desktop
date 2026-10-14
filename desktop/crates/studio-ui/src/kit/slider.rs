@@ -9,21 +9,29 @@
 //!   zero-sized [`gpui::canvas`] laid over the track writes its own painted
 //!   bounds into a shared [`SliderTrack`] cell, which the pointer maths then
 //!   reads.
-//! - **A drag that leaves the track keeps tracking.** DOM pointer capture has
-//!   no gpui equivalent, so the window paints a full-bleed transparent layer
-//!   while the button is held ([`Slider::drag_layer`]) and the move handler
-//!   lives there instead of on the 48px pill.
+//! - **A drag that leaves the track keeps tracking.** Two ways:
+//!   - [`Slider::on_change`] captures the pointer itself: a press on the row
+//!     starts the drag, and window-level mouse listeners registered while the
+//!     row paints follow it anywhere in the window until the button is
+//!     released. Nothing is needed from the owning view.
+//!   - Cap's sliders keep the drag in the window instead: it paints a
+//!     full-bleed transparent layer while the button is held
+//!     ([`Slider::drag_layer`]) and wires [`Slider::on_drag_start`].
 
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    App, Bounds, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement, Styled, Window, canvas, div, prelude::FluentBuilder, px,
+    App, Bounds, DispatchPhase, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, Role,
+    SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, prelude::FluentBuilder,
+    px,
 };
 use studio_theme::Theme;
 
-use super::interact::{Nav, focusable, nav_key};
+use super::interact::{DISABLED_OPACITY, Nav, focusable, nav_key};
+
+/// How far an arrow key moves a pointer slider whose drag does not snap.
+const DEFAULT_KEY_STEP: f32 = 0.05;
 
 /// The shared cell a slider's track writes its prepaint bounds into.
 ///
@@ -89,6 +97,15 @@ pub fn slider_key(fraction: f32, key: Nav, step: f32) -> Option<f32> {
 /// builds one directly.
 type KeyChangeHandler = Box<dyn Fn(&f32, &mut Window, &mut App) + 'static>;
 
+/// Where a pointer slider moves, by reference like the key handler.
+type ChangeHandler = Rc<dyn Fn(&f32, &mut Window, &mut App) + 'static>;
+
+/// Whether the left button went down on this slider and is still held.
+#[derive(Default)]
+struct PointerDrag {
+    active: Cell<bool>,
+}
+
 /// The press that begins a drag. Same shape as [`crate::kit::ClickHandler`]:
 /// `cx.listener(..)` builds one directly.
 type DragStartHandler = Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>;
@@ -114,6 +131,9 @@ pub struct Slider {
     /// The fraction step of an arrow key, and where the new fraction goes. A
     /// slider without one stays out of the tab order.
     on_key_change: Option<(f32, KeyChangeHandler)>,
+    /// The snap step of a pointer slider and where its values go.
+    on_change: Option<(f32, ChangeHandler)>,
+    disabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -144,7 +164,29 @@ impl Slider {
             on_drag_start: None,
             label: None,
             on_key_change: None,
+            on_change: None,
+            disabled: false,
         }
+    }
+
+    /// Makes the slider follow the pointer: a press on the row jumps there and
+    /// a drag keeps tracking anywhere in the window until release. Values snap
+    /// to `step` (a fraction of the track; zero does not snap), and the slider
+    /// becomes a tab stop whose arrows move by `step`, or by 0.05 without one.
+    pub fn on_change(
+        mut self,
+        step: f32,
+        handler: impl Fn(&f32, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_change = Some((step, Rc::new(handler)));
+        self
+    }
+
+    /// A disabled slider is dimmed, skipped by Tab, and ignores keys and the
+    /// pointer.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
     }
 
     /// The name a screen reader announces for the slider.
@@ -281,10 +323,27 @@ impl RenderOnce for Slider {
             on_drag_start,
             label,
             on_key_change,
+            on_change,
+            disabled,
         } = self;
 
+        let pointer = on_change.filter(|_| !disabled);
+        let keys: Option<(f32, ChangeHandler)> = match (&pointer, on_key_change) {
+            _ if disabled => None,
+            (Some((step, handler)), _) => Some((
+                if *step > 0. { *step } else { DEFAULT_KEY_STEP },
+                handler.clone(),
+            )),
+            (None, Some((step, handler))) => Some((step, Rc::from(handler))),
+            (None, None) => None,
+        };
+        let drag = pointer.as_ref().map(|_| {
+            window.use_keyed_state((id.clone(), "pointer-drag".to_string()), cx, |_, _| {
+                PointerDrag::default()
+            })
+        });
         let row = div().id(id).role(Role::Slider);
-        let row = match on_key_change {
+        let row = match keys {
             Some((step, handler)) => focusable(row, &Theme::for_window(window, cx), false)
                 .on_key_down(move |event, window, cx| {
                     if let Some(next) = nav_key(event.keystroke.key.as_str())
@@ -296,8 +355,75 @@ impl RenderOnce for Slider {
                 }),
             None => row,
         };
+        let row = match (pointer, drag) {
+            (Some((step, handler)), Some(drag)) => {
+                let snap = move |fraction: f32| {
+                    if step > 0. {
+                        snap_to_step(fraction, 0., 1., step)
+                    } else {
+                        fraction
+                    }
+                };
+                let press_track = track_cell.clone();
+                let press_drag = drag.clone();
+                let press = handler.clone();
+                let follow_track = track_cell.clone();
+                row.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    let Some(next) = press_track
+                        .get()
+                        .and_then(|track| fraction_from_x(event.position.x, track))
+                    else {
+                        return;
+                    };
+                    press_drag.read(cx).active.set(true);
+                    press(&snap(next), window, cx);
+                })
+                .child(
+                    canvas(
+                        |_, _, _| {},
+                        move |_, _, window, _| {
+                            let moving = drag.clone();
+                            let track = follow_track.clone();
+                            let follow = handler.clone();
+                            window.on_mouse_event(
+                                move |event: &MouseMoveEvent,
+                                      phase: DispatchPhase,
+                                      window: &mut Window,
+                                      cx: &mut App| {
+                                    if phase != DispatchPhase::Bubble
+                                        || !moving.read(cx).active.get()
+                                        || event.pressed_button != Some(MouseButton::Left)
+                                    {
+                                        return;
+                                    }
+                                    if let Some(next) = track
+                                        .get()
+                                        .and_then(|track| fraction_from_x(event.position.x, track))
+                                    {
+                                        follow(&snap(next), window, cx);
+                                    }
+                                },
+                            );
+                            let released = drag.clone();
+                            window.on_mouse_event(
+                                move |_: &MouseUpEvent,
+                                      _: DispatchPhase,
+                                      _: &mut Window,
+                                      cx: &mut App| {
+                                    released.read(cx).active.set(false);
+                                },
+                            );
+                        },
+                    )
+                    .absolute()
+                    .size_0(),
+                )
+            }
+            _ => row,
+        };
 
         row.when_some(label, |this, label| this.aria_label(label))
+            .when(disabled, |this| this.opacity(DISABLED_OPACITY))
             .flex()
             .flex_row()
             .items_center()
@@ -428,7 +554,7 @@ mod tests {
     use super::*;
     use crate::kit::interact::Nav;
     use crate::kit::test_support::{Log, log, press, tab};
-    use gpui::{Context, Render, TestAppContext, point, size};
+    use gpui::{Context, Render, TestAppContext, VisualTestContext, point, size};
 
     #[test]
     fn keys_step_and_jump() {
@@ -478,6 +604,78 @@ mod tests {
         press(cx, "right");
         press(cx, "home");
         assert_eq!(*changes.borrow(), [0.75, 0.5, 1., 0.]);
+    }
+
+    /// A slider that follows the pointer itself, 200px wide at the window origin.
+    struct Zoom {
+        fraction: f32,
+        disabled: bool,
+        changes: Log<f32>,
+    }
+
+    impl Render for Zoom {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let changes = self.changes.clone();
+            let track: SliderTrack = Rc::new(Cell::new(None));
+            Slider::new("zoom", self.fraction, track)
+                .label("Zoom")
+                .row_width(px(200.))
+                .disabled(self.disabled)
+                .on_change(
+                    0.,
+                    cx.listener(move |this, fraction: &f32, _, cx| {
+                        changes.borrow_mut().push(*fraction);
+                        this.fraction = *fraction;
+                        cx.notify();
+                    }),
+                )
+        }
+    }
+
+    fn zoom(cx: &mut TestAppContext, disabled: bool) -> (Log<f32>, &mut VisualTestContext) {
+        let changes = log();
+        let shared = changes.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Zoom {
+            fraction: 0.5,
+            disabled,
+            changes: shared,
+        });
+        cx.run_until_parked();
+        (changes, cx)
+    }
+
+    #[gpui::test]
+    fn a_drag_keeps_tracking_past_the_track_until_release(cx: &mut TestAppContext) {
+        let (changes, cx) = zoom(cx, false);
+        let none = gpui::Modifiers::none();
+        cx.simulate_mouse_down(point(px(50.), px(8.)), MouseButton::Left, none);
+        cx.simulate_mouse_move(point(px(500.), px(300.)), MouseButton::Left, none);
+        cx.simulate_mouse_up(point(px(500.), px(300.)), MouseButton::Left, none);
+        cx.simulate_mouse_move(point(px(100.), px(8.)), MouseButton::Left, none);
+        // No snapping with a zero step: the press lands at a quarter exactly.
+        assert_eq!(*changes.borrow(), [0.25, 1.]);
+    }
+
+    #[gpui::test]
+    fn arrows_move_a_pointer_slider_by_the_default_step(cx: &mut TestAppContext) {
+        let (changes, cx) = zoom(cx, false);
+        tab(cx);
+        press(cx, "right");
+        assert_eq!(*changes.borrow(), [0.55]);
+    }
+
+    #[gpui::test]
+    fn a_disabled_slider_ignores_keys_and_the_pointer(cx: &mut TestAppContext) {
+        let (changes, cx) = zoom(cx, true);
+        let none = gpui::Modifiers::none();
+        tab(cx);
+        press(cx, "right");
+        cx.simulate_mouse_down(point(px(50.), px(8.)), MouseButton::Left, none);
+        cx.simulate_mouse_move(point(px(150.), px(8.)), MouseButton::Left, none);
+        cx.simulate_mouse_up(point(px(150.), px(8.)), MouseButton::Left, none);
+        assert!(changes.borrow().is_empty(), "{:?}", changes.borrow());
+        let focused = cx.update(|window, cx| window.focused(cx).is_some());
+        assert!(!focused, "a disabled slider is not a tab stop");
     }
 
     fn track(origin_x: f32, width: f32) -> Bounds<Pixels> {

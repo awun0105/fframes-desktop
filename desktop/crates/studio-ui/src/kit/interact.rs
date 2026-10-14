@@ -7,9 +7,22 @@
 //! mean more than "activate" (arrows in a segmented control, a slider or a
 //! menu) read them through [`nav_key`].
 
-use gpui::{BoxShadow, Div, InteractiveElement, Stateful, Styled, point, px};
+use std::rc::Rc;
+
+use gpui::{
+    AnyElement, App, Bounds, BoxShadow, Div, InteractiveElement, IntoElement, Pixels, SharedString,
+    Stateful, StatefulInteractiveElement, Styled, Window, canvas, point, px,
+};
 
 use studio_theme::Theme;
+
+use super::{TOOLTIP_SHOW_DELAY, Tooltip};
+
+/// What a hand-built control runs when it is activated.
+pub type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// Receives an element's painted bounds, in window coordinates, on every prepaint.
+pub type BoundsHandler = Rc<dyn Fn(Bounds<Pixels>, &mut App)>;
 
 /// Width of the focus ring in pixels.
 pub const FOCUS_RING_PX: f32 = 2.;
@@ -67,6 +80,46 @@ pub fn focusable(element: Stateful<Div>, theme: &Theme, disabled: bool) -> State
         .tab_index(0)
         .tab_stop(!disabled)
         .focus_visible(move |style| style.shadow(ring.clone()))
+}
+
+/// Runs `handler` on click, unless `disabled`. On a [`focusable`] element gpui
+/// turns Enter and Space into that click, so the row is keyboard-activatable too.
+pub fn on_activate(
+    element: Stateful<Div>,
+    disabled: bool,
+    handler: Option<Handler>,
+) -> Stateful<Div> {
+    match handler.filter(|_| !disabled) {
+        Some(handler) => element.on_click(move |_, window, cx| handler(window, cx)),
+        None => element,
+    }
+}
+
+/// Shows `text` as a tooltip after the standard delay.
+pub fn with_tooltip(
+    element: Stateful<Div>,
+    theme: &Theme,
+    text: Option<SharedString>,
+) -> Stateful<Div> {
+    let Some(text) = text else {
+        return element;
+    };
+    let theme = *theme;
+    element
+        .tooltip_show_delay(TOOLTIP_SHOW_DELAY)
+        .tooltip(move |_, cx| Tooltip::new(&theme, text.clone()).view(cx))
+}
+
+/// An absolute, full-size canvas that reports its parent's bounds. The parent
+/// must be positioned (`relative()`), or the canvas measures the nearest
+/// positioned ancestor instead.
+pub fn bounds_probe(report: BoundsHandler) -> AnyElement {
+    canvas(move |bounds, _, cx| report(bounds, cx), |_, _, _, _| {})
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .into_any_element()
 }
 
 /// Index after moving `delta` steps from `current` over `len` items without
@@ -128,5 +181,45 @@ mod tests {
         assert_eq!(step_enabled(2, -1, 3, skip), Some(0));
         assert_eq!(step_enabled(2, 1, 3, skip), None);
         assert_eq!(step_enabled(0, -1, 3, skip), None);
+    }
+
+    mod in_a_window {
+        use std::rc::Rc;
+
+        use gpui::{Context, IntoElement, ParentElement, Render, TestAppContext, Window, div};
+
+        use super::super::*;
+        use crate::kit::test_support::{Log, log, press, tab};
+
+        /// Two hand-built rows, the first disabled, each logging its activations.
+        struct Rows {
+            hits: Log<&'static str>,
+        }
+
+        impl Render for Rows {
+            fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                let theme = Theme::for_window(window, cx);
+                let hit = |name: &'static str| -> Handler {
+                    let hits = self.hits.clone();
+                    Rc::new(move |_: &mut Window, _: &mut gpui::App| hits.borrow_mut().push(name))
+                };
+                let row = |id: &'static str, disabled: bool| {
+                    let element = focusable(div().id(id), &theme, disabled);
+                    on_activate(element, disabled, Some(hit(id)))
+                };
+                div().child(row("off", true)).child(row("on", false))
+            }
+        }
+
+        #[gpui::test]
+        fn a_hand_built_row_activates_from_the_keyboard_unless_disabled(cx: &mut TestAppContext) {
+            let hits = log();
+            let shared = hits.clone();
+            let (_, cx) = cx.add_window_view(|_, _| Rows { hits: shared });
+            tab(cx);
+            press(cx, "enter");
+            press(cx, "space");
+            assert_eq!(*hits.borrow(), ["on", "on"]);
+        }
     }
 }

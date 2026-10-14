@@ -8,15 +8,27 @@
 //! while pressed. `danger` keeps its solid red pressed state, and `text`
 //! promotes the resting label to `text-1` for the player toolbar's triggers.
 //!
+//! fframes' own buttons are the same box with a resting fill: [`filled`]
+//! (`ctl`), [`accent`] (the main action) and [`destructive`] (a soft red).
+//!
+//! [`filled`]: EditorButton::filled
+//! [`accent`]: EditorButton::accent
+//! [`destructive`]: EditorButton::destructive
+use std::rc::Rc;
+
 use gpui::{
     App, ClickEvent, ElementId, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window, div,
     prelude::FluentBuilder, px, svg,
 };
 
-use studio_theme::Theme;
+use studio_theme::{Theme, mix};
 
-use super::{ClickHandler, Tooltip, menu::OpenHandler};
+use super::{
+    ClickHandler, Tooltip,
+    interact::{BoundsHandler, DISABLED_OPACITY, bounds_probe, focusable},
+    menu::OpenHandler,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorButtonVariant {
@@ -39,6 +51,7 @@ pub struct EditorButton {
     width: Option<Pixels>,
     /// `h-7` by default; the 3D panel's group-row actions are `h-6`.
     height: Pixels,
+    full_width: bool,
     padding_x: Pixels,
     text_size: Pixels,
     variant: EditorButtonVariant,
@@ -48,6 +61,8 @@ pub struct EditorButton {
     text: Hsla,
     hover_text: Hsla,
     disabled_text: Hsla,
+    /// A fill at rest (and while disabled); the ghost has none.
+    rest_bg: Option<Hsla>,
     hover_bg: Hsla,
     active_bg: Hsla,
     pressed_bg: Hsla,
@@ -56,6 +71,7 @@ pub struct EditorButton {
     tooltip: Option<(Theme, SharedString)>,
     on_click: Option<ClickHandler>,
     on_open: Option<OpenHandler>,
+    on_bounds: Option<BoundsHandler>,
 }
 
 impl EditorButton {
@@ -70,6 +86,7 @@ impl EditorButton {
             right_icon_size: px(10.),
             width: None,
             height: px(28.),
+            full_width: false,
             padding_x: px(7.),
             text_size: px(13.),
             variant: EditorButtonVariant::Primary,
@@ -78,6 +95,7 @@ impl EditorButton {
             text: Hsla::from(theme.editor.text_2),
             hover_text: Hsla::from(theme.editor.text_1),
             disabled_text: Hsla::from(theme.editor.text_3),
+            rest_bg: None,
             hover_bg: Hsla::from(theme.editor.ctl_hover),
             active_bg: Hsla::from(theme.editor.ctl_active),
             pressed_bg: Hsla::from(theme.editor.ctl_hover),
@@ -86,7 +104,55 @@ impl EditorButton {
             tooltip: None,
             on_click: None,
             on_open: None,
+            on_bounds: None,
         }
+    }
+
+    /// A neutral control with a subtle `ctl` fill that it keeps while disabled.
+    pub fn filled(mut self, theme: &Theme) -> Self {
+        self.rest_bg = Some(Hsla::from(theme.editor.ctl));
+        self
+    }
+
+    /// The main action of a view: white on the accent, the lighter accent on
+    /// hover. Selected (`pressed`) looks like rest.
+    pub fn accent(mut self, theme: &Theme) -> Self {
+        let accent = Hsla::from(theme.editor.accent);
+        let text = Hsla::from(theme.on_accent());
+        self.rest_bg = Some(accent);
+        self.hover_bg = Hsla::from(theme.editor.accent_2);
+        self.active_bg = accent;
+        self.pressed_bg = accent;
+        self.text = text;
+        self.hover_text = text;
+        self.pressed_text = text;
+        self.disabled_text = text;
+        self.chevron = text;
+        self
+    }
+
+    /// A soft red: red text on the danger surface, deepening on hover and press.
+    pub fn destructive(mut self, theme: &Theme) -> Self {
+        let text = Hsla::from(theme.red_11);
+        self.rest_bg = Some(Hsla::from(theme.red_3));
+        self.hover_bg = Hsla::from(mix(theme.red_3, theme.red_11, 0.12));
+        self.active_bg = Hsla::from(mix(theme.red_3, theme.red_11, 0.22));
+        self.text = text;
+        self.hover_text = text;
+        self.disabled_text = text;
+        self
+    }
+
+    /// Stretches across its parent.
+    pub fn full_width(mut self) -> Self {
+        self.full_width = true;
+        self
+    }
+
+    /// Reports the painted bounds, in window coordinates, on every prepaint.
+    pub fn on_bounds(mut self, report: impl Fn(gpui::Bounds<Pixels>, &mut App) + 'static) -> Self {
+        self.on_bounds = Some(Rc::new(report));
+        self
     }
 
     /// `variant="danger"`: the pressed/expanded state is a solid `bg-red-300`
@@ -183,7 +249,8 @@ impl EditorButton {
 }
 
 impl RenderOnce for EditorButton {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = Theme::for_window(window, cx);
         let EditorButton {
             id,
             label,
@@ -194,6 +261,7 @@ impl RenderOnce for EditorButton {
             right_icon_size,
             width,
             height,
+            full_width,
             padding_x,
             text_size,
             variant: _,
@@ -202,6 +270,7 @@ impl RenderOnce for EditorButton {
             text,
             hover_text,
             disabled_text,
+            rest_bg,
             hover_bg,
             active_bg,
             pressed_bg,
@@ -210,6 +279,7 @@ impl RenderOnce for EditorButton {
             tooltip,
             on_click,
             on_open,
+            on_bounds,
         } = self;
 
         let foreground = if disabled {
@@ -226,11 +296,15 @@ impl RenderOnce for EditorButton {
             other => SharedString::from(format!("eb-{other:?}")),
         };
         let icon_hover = (!disabled && !pressed).then_some(hover_text);
+        let name = label
+            .clone()
+            .or_else(|| tooltip.as_ref().map(|(_, text)| text.clone()));
 
-        div()
-            .id(id)
+        focusable(div().id(id), &theme, disabled)
+            .role(Role::Button)
+            .when_some(name, |this, name| this.aria_label(name))
             .group(group.clone())
-            .tab_index(0)
+            .relative()
             .flex()
             .flex_row()
             .items_center()
@@ -243,10 +317,12 @@ impl RenderOnce for EditorButton {
             .flex_shrink_0()
             .when(right_icon_end, |this| this.justify_between())
             .when_some(width, |this, width| this.w(width))
+            .when(full_width, |this| this.w_full())
             .text_size(text_size)
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(foreground)
-            .when(disabled, |this| this.opacity(0.45))
+            .when(disabled, |this| this.opacity(DISABLED_OPACITY))
+            .when_some(rest_bg, |this, bg| this.bg(bg))
             .when(pressed, |this| this.bg(pressed_bg))
             .when(!disabled && !pressed, |this| {
                 this.cursor_pointer()
@@ -281,5 +357,122 @@ impl RenderOnce for EditorButton {
                 this.on_click(move |event, window, cx| handler(event, window, cx))
             })
             .when_some(on_open.filter(|_| !disabled), crate::kit::Menu::trigger)
+            .children(on_bounds.map(bounds_probe))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::Cell, rc::Rc};
+
+    use gpui::{Bounds, Context, Render, TestAppContext, VisualTestContext};
+    use studio_theme::mix;
+
+    use super::*;
+    use crate::kit::test_support::{Log, log, press, tab};
+
+    type Seen = Rc<Cell<Option<Bounds<Pixels>>>>;
+
+    /// A disabled button, an 80px one reporting its bounds, and a third, each
+    /// logging its clicks.
+    struct Row {
+        clicks: Log<&'static str>,
+        seen: Seen,
+    }
+
+    impl Render for Row {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            let click = |name: &'static str| {
+                let clicks = self.clicks.clone();
+                move |_: &ClickEvent, _: &mut Window, _: &mut App| clicks.borrow_mut().push(name)
+            };
+            let seen = self.seen.clone();
+            div()
+                .flex()
+                .w(px(400.))
+                .child(
+                    EditorButton::plain(&theme, "off")
+                        .label("Off")
+                        .disabled(true)
+                        .on_click(click("off")),
+                )
+                .child(
+                    EditorButton::plain(&theme, "on")
+                        .label("On")
+                        .width(px(80.))
+                        .on_bounds(move |bounds, _| seen.set(Some(bounds)))
+                        .on_click(click("on")),
+                )
+                .child(
+                    EditorButton::plain(&theme, "go")
+                        .label("Go")
+                        .on_click(click("go")),
+                )
+        }
+    }
+
+    fn row(cx: &mut TestAppContext) -> (Log<&'static str>, Seen, &mut VisualTestContext) {
+        let clicks = log();
+        let seen = Seen::default();
+        let (shared, bounds) = (clicks.clone(), seen.clone());
+        let (_, cx) = cx.add_window_view(|_, _| Row {
+            clicks: shared,
+            seen: bounds,
+        });
+        cx.run_until_parked();
+        (clicks, seen, cx)
+    }
+
+    #[gpui::test]
+    fn tab_skips_a_disabled_button_and_enter_or_space_activates(cx: &mut TestAppContext) {
+        let (clicks, _, cx) = row(cx);
+        tab(cx);
+        press(cx, "enter");
+        tab(cx);
+        press(cx, "space");
+        assert_eq!(*clicks.borrow(), ["on", "go"]);
+    }
+
+    #[gpui::test]
+    fn the_reported_bounds_are_the_buttons_own(cx: &mut TestAppContext) {
+        let (_, seen, _) = row(cx);
+        let bounds = seen.get().expect("painted");
+        assert_eq!(
+            (f32::from(bounds.size.width), f32::from(bounds.size.height)),
+            (80., 28.)
+        );
+    }
+
+    #[test]
+    fn fills_reproduce_the_editor_variants() {
+        let theme = Theme::light();
+        let hsla = Hsla::from;
+
+        let filled = EditorButton::plain(&theme, "a").filled(&theme);
+        assert_eq!(filled.rest_bg, Some(hsla(theme.editor.ctl)));
+        assert_eq!(filled.hover_bg, hsla(theme.editor.ctl_hover));
+
+        let accent = EditorButton::plain(&theme, "b").accent(&theme);
+        assert_eq!(accent.rest_bg, Some(hsla(theme.editor.accent)));
+        assert_eq!(accent.hover_bg, hsla(theme.editor.accent_2));
+        assert_eq!(accent.active_bg, hsla(theme.editor.accent));
+        assert_eq!(
+            (accent.text, accent.hover_text),
+            (hsla(theme.on_accent()), hsla(theme.on_accent()))
+        );
+
+        let destructive = EditorButton::plain(&theme, "c").destructive(&theme);
+        assert_eq!(destructive.rest_bg, Some(hsla(theme.red_3)));
+        assert_eq!(destructive.text, hsla(theme.red_11));
+        assert_eq!(destructive.hover_text, hsla(theme.red_11));
+        assert_eq!(
+            destructive.hover_bg,
+            hsla(mix(theme.red_3, theme.red_11, 0.12))
+        );
+        assert_eq!(
+            destructive.active_bg,
+            hsla(mix(theme.red_3, theme.red_11, 0.22))
+        );
     }
 }

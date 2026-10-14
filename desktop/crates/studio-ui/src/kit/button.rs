@@ -8,7 +8,7 @@ use gpui::{
     prelude::FluentBuilder, px, svg,
 };
 
-use super::interact::focusable;
+use super::interact::{BoundsHandler, bounds_probe, focusable};
 use super::menu::OpenHandler;
 use studio_theme::Theme;
 
@@ -517,7 +517,9 @@ pub struct IconButton {
     rounded: Option<Pixels>,
     /// The accessible name; an icon alone says nothing to a screen reader.
     label: Option<SharedString>,
+    tooltip: Option<(Theme, SharedString)>,
     on_click: Option<ClickHandler>,
+    on_bounds: Option<BoundsHandler>,
 }
 
 impl IconButton {
@@ -539,8 +541,38 @@ impl IconButton {
             occlude: false,
             rounded: None,
             label: None,
+            tooltip: None,
             on_click: None,
+            on_bounds: None,
         }
+    }
+
+    /// The editor's ghost icon button: `text-2` on nothing, `ctl-hover` and
+    /// `text-1` on hover and while active (selected).
+    pub fn editor(theme: &Theme, id: impl Into<ElementId>, icon: impl Into<SharedString>) -> Self {
+        Self {
+            idle: Hsla::from(theme.editor.text_2),
+            active_color: Hsla::from(theme.editor.text_1),
+            hover_color: Some(Hsla::from(theme.editor.text_1)),
+            hover_bg: Some(Hsla::from(theme.editor.ctl_hover)),
+            active_bg: Some(Hsla::from(theme.editor.ctl_hover)),
+            icon_size: px(16.),
+            rounded: Some(px(7.)),
+            ..Self::new(id, icon)
+        }
+    }
+
+    /// Shows `text` on hover after the standard delay; it also names the button
+    /// when no [`label`](Self::label) does.
+    pub fn tooltip(mut self, theme: &Theme, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some((*theme, text.into()));
+        self
+    }
+
+    /// Reports the painted bounds, in window coordinates, on every prepaint.
+    pub fn on_bounds(mut self, report: impl Fn(gpui::Bounds<Pixels>, &mut App) + 'static) -> Self {
+        self.on_bounds = Some(std::rc::Rc::new(report));
+        self
     }
 
     /// The name a screen reader announces for the button.
@@ -648,12 +680,16 @@ impl RenderOnce for IconButton {
             occlude,
             rounded,
             label,
+            tooltip,
             on_click,
+            on_bounds,
         } = self;
+        let name = label.or_else(|| tooltip.as_ref().map(|(_, text)| text.clone()));
 
         focusable(div().id(id), &theme, disabled)
             .role(Role::Button)
-            .when_some(label, |this, label| this.aria_label(label))
+            .when_some(name, |this, name| this.aria_label(name))
+            .relative()
             .when(occlude, |this| this.occlude())
             .flex()
             .items_center()
@@ -670,6 +706,9 @@ impl RenderOnce for IconButton {
                 this.when_some(active_bg, |this, bg| this.bg(bg))
             })
             .when(disabled, |this| this.opacity(0.45))
+            .when(!disabled && on_click.is_some(), |this| {
+                this.cursor_pointer()
+            })
             .child(svg().path(icon).size(icon_size).text_color(if active {
                 active_color
             } else {
@@ -693,6 +732,11 @@ impl RenderOnce for IconButton {
             .when_some(on_click.filter(|_| !disabled), |this, handler| {
                 this.on_click(move |event, window, cx| handler(event, window, cx))
             })
+            .when_some(tooltip, |this, (theme, text)| {
+                this.tooltip_show_delay(super::TOOLTIP_SHOW_DELAY)
+                    .tooltip(move |_, cx| super::Tooltip::new(&theme, text.clone()).view(cx))
+            })
+            .children(on_bounds.map(bounds_probe))
     }
 }
 
@@ -754,6 +798,53 @@ mod tests {
         tab(cx);
         press(cx, "space");
         assert_eq!(*clicks.borrow(), ["on", "icon"]);
+    }
+
+    #[test]
+    fn the_editor_preset_paints_from_the_editor_palette() {
+        let theme = Theme::dark();
+        let hsla = Hsla::from;
+        let button = IconButton::editor(&theme, "zoom", "icons/x.svg");
+        assert_eq!(button.idle, hsla(theme.editor.text_2));
+        assert_eq!(button.hover_color, Some(hsla(theme.editor.text_1)));
+        assert_eq!(button.hover_bg, Some(hsla(theme.editor.ctl_hover)));
+        assert_eq!(button.active_bg, Some(hsla(theme.editor.ctl_hover)));
+        assert_eq!(button.active_color, hsla(theme.editor.text_1));
+        assert_eq!(button.rounded, Some(px(7.)));
+        assert_eq!((button.size, button.icon_size), (px(28.), px(16.)));
+    }
+
+    #[test]
+    fn an_icon_button_can_carry_a_tooltip() {
+        let theme = Theme::light();
+        let button = IconButton::new("zoom", "icons/x.svg").tooltip(&theme, "Zoom in");
+        assert_eq!(button.tooltip.map(|(_, text)| text), Some("Zoom in".into()));
+    }
+
+    struct Probed {
+        seen: Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
+    }
+
+    impl Render for Probed {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            let seen = self.seen.clone();
+            div().w(px(300.)).child(
+                IconButton::editor(&theme, "probed", "icons/x.svg")
+                    .size(px(24.))
+                    .on_bounds(move |bounds, _| seen.set(Some(bounds))),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn an_icon_buttons_reported_bounds_are_its_own(cx: &mut TestAppContext) {
+        let seen = Rc::new(std::cell::Cell::new(None));
+        let shared = seen.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Probed { seen: shared });
+        cx.run_until_parked();
+        let bounds = seen.get().expect("painted");
+        assert_eq!(f32::from(bounds.size.width), 24.);
     }
 
     #[test]
