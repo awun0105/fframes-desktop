@@ -45,9 +45,9 @@ desktop/app        thin binary: runtime setup, window, bins studio-tools / studi
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
 | 1 | [Crate skeleton and service move](./phase-01-crate-skeleton.md) | 4-5d | none | Done (Linux + Windows CI) |
-| 2 | [Cap theme and component kit](./phase-02-theme-and-ui-kit.md) | 3-4d | 1 | Done (Windows) except the hand check of the live OS flip; the preference control moves to phase 4 |
+| 2 | [Cap theme and component kit](./phase-02-theme-and-ui-kit.md) | 3-4d | 1 | Done (Windows) except the hand check of the live OS flip; the preference control moved to phase 4 and is done there (the settings frame's Appearance page) |
 | 3 | [Engine handle and typed events](./phase-03-engine-handle-and-events.md) | 4-5d | 1 | Done (Windows) |
-| 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 6-9d | 2, 3 | In progress: the views and the shell are in `studio-ui` and the shell is split into section modules and the parity suite runs from `studio-ui`; the keymap, Cap layout, Windows caption and settings frame remain |
+| 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 6-9d | 2, 3 | In progress: the views and the shell are in `studio-ui`, split into sections, with the parity suite; the keymap, Cap's layout, the Windows caption and the settings frame with its Appearance page are done. Adapter setup joins the frame in phase 6, and the todo for the reference patterns (bootstrap order, native-call rule) stays open |
 | 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | In progress |
 | 6 | [Agent panel on a transcript row model](./phase-06-transcript-row-model.md) | 3-5d | 4, 5, 7 | Pending |
 | 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Pending |

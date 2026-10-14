@@ -7,6 +7,7 @@ mod overflow;
 mod player;
 mod qualification;
 mod sections;
+mod settings;
 mod status_strip;
 mod transport;
 
@@ -143,6 +144,11 @@ pub struct StudioShell {
     section_bounds: HashMap<&'static str, [f32; 4]>,
     /// The window's viewport, measured each render.
     viewport: [f32; 2],
+    /// The settings frame shows in place of the editor.
+    settings_open: bool,
+    settings_writer: Arc<settings::SettingsWriter>,
+    /// The appearance the cached header last rendered with, for the telemetry.
+    header_appearance: std::cell::Cell<Option<studio_theme::Appearance>>,
     overflow_open: bool,
     overflow_menu: MenuState,
     /// Where the overflow trigger was last painted; the menu opens against it.
@@ -404,6 +410,9 @@ impl StudioShell {
             grip_bounds: None,
             section_bounds: HashMap::new(),
             viewport: [0., 0.],
+            settings_open: false,
+            settings_writer: Arc::default(),
+            header_appearance: std::cell::Cell::new(None),
             overflow_open: false,
             overflow_menu: MenuState::new(gpui::Point::default(), &[]),
             overflow_anchor: Default::default(),

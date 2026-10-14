@@ -15,17 +15,17 @@ use studio_theme::{METRICS, TextStyle, text_style};
 
 use super::sections::{Section, section_probe};
 use super::{Picker, StudioShell};
-use crate::kit::{CAPTION_BUTTON_W, Icon, icon, with_tooltip};
+use crate::kit::{CAPTION_BUTTON_W, Icon, IconButtonSize, icon, with_tooltip};
 
 /// Room for the macOS traffic lights, inset to (20, 20) like Cap's editor.
 const TRAFFIC_LIGHTS_W: f32 = 82.;
 /// The title keeps at least this much before the actions lose their labels.
 const TITLE_MIN_W: f32 = 200.;
-/// The action cluster's width with labels, with a project open and without one: 520 and
-/// 215 px in the app on Windows, 566 and 246 px in the test platform, plus a margin for
-/// other systems' fonts.
-const ACTIONS_W: f32 = 600.;
-const ACTIONS_CLOSED_W: f32 = 260.;
+/// The action cluster's width with labels, Settings included, with a project open and
+/// without one: 556 and 251 px in the app on Windows, 602 and about 282 px in the test
+/// platform, plus a margin for other systems' fonts.
+const ACTIONS_W: f32 = 640.;
+const ACTIONS_CLOSED_W: f32 = 300.;
 
 impl StudioShell {
     pub(super) fn render_header(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -99,6 +99,23 @@ impl StudioShell {
             };
             actions = actions.child(button);
         }
+        // App-level, so it shows with or without a project; a second press returns.
+        actions = actions.child(self.action_icon_button(
+            "settings",
+            "Settings",
+            Icon::Settings,
+            IconButtonSize::Medium,
+            true,
+            cx,
+            |s, cx| {
+                if s.settings_open {
+                    s.close_settings(cx)
+                } else {
+                    s.open_settings(cx)
+                }
+            },
+        ));
+        self.header_appearance.set(Some(theme.appearance));
         let title = project
             .as_ref()
             .map(|p| p.name.clone())

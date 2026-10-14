@@ -46,6 +46,7 @@ mod radio_cards;
 mod segmented;
 mod select;
 mod selection_header;
+mod settings_frame;
 mod slider;
 mod surface;
 mod tab_rail;
@@ -82,6 +83,7 @@ pub use radio_cards::{RadioCard, RadioCards};
 pub use segmented::{SegmentOption, SegmentedControl, option_at, segment_target};
 pub use select::Select;
 pub use selection_header::{SelectionHeader, selection_label, zoom_selection_label};
+pub use settings_frame::{SETTINGS_NAV_W, SettingsFrame, SettingsNavItem};
 pub use slider::{
     Slider, SliderDrag, SliderTrack, fraction_from_x, slider_key, snap_to_step,
     value_at as slider_value_at, value_from_fraction,

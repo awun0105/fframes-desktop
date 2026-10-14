@@ -328,15 +328,18 @@ impl Render for StudioShell {
                     .gap(gutter)
                     .children(notices)
                     .children(strip)
-                    .child(
+                    .child(if self.settings_open {
+                        self.render_settings(cx)
+                    } else {
                         div()
                             .flex_1()
                             .min_h_0()
                             .flex()
                             .gap(gutter)
                             .child(editor)
-                            .child(agent),
-                    ),
+                            .child(agent)
+                            .into_any_element()
+                    }),
             )
     }
 }

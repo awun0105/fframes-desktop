@@ -19,15 +19,17 @@
 //! transform, so the selected item paints its own fill -- which is what the
 //! settings window has always done here.
 
+use std::rc::Rc;
+
 use gpui::{
-    App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    App, Bounds, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window, div,
     prelude::FluentBuilder, px, svg,
 };
 
 use studio_theme::Theme;
 
-use super::interact::{Nav, focusable, nav_key, step_enabled};
+use super::interact::{Nav, bounds_probe, focusable, nav_key, step_enabled};
 
 /// One segment. `selected` is computed by the caller so the control never has
 /// to know what the value type is.
@@ -123,7 +125,11 @@ pub struct SegmentedControl {
     selected_shadow: Vec<gpui::BoxShadow>,
     stretch: bool,
     on_select: Option<SegmentHandler>,
+    on_option_bounds: Option<OptionBoundsHandler>,
 }
+
+/// Receives an option's index and its bounds on every prepaint.
+type OptionBoundsHandler = Rc<dyn Fn(usize, Bounds<Pixels>, &mut App)>;
 
 impl SegmentedControl {
     fn base(theme: &Theme, id: impl Into<ElementId>, options: Vec<SegmentOption>) -> Self {
@@ -151,6 +157,7 @@ impl SegmentedControl {
             selected_shadow: Vec::new(),
             stretch: false,
             on_select: None,
+            on_option_bounds: None,
         }
     }
 
@@ -272,6 +279,15 @@ impl SegmentedControl {
         self.on_select = Some(Box::new(handler));
         self
     }
+
+    /// Reports each option's index and bounds, for controls that are measured.
+    pub fn on_option_bounds(
+        mut self,
+        report: impl Fn(usize, Bounds<Pixels>, &mut App) + 'static,
+    ) -> Self {
+        self.on_option_bounds = Some(Rc::new(report));
+        self
+    }
 }
 
 impl RenderOnce for SegmentedControl {
@@ -301,10 +317,11 @@ impl RenderOnce for SegmentedControl {
             selected_shadow,
             stretch,
             on_select,
+            on_option_bounds,
         } = self;
 
-        let handler: Option<std::rc::Rc<SegmentHandler>> = on_select.map(std::rc::Rc::new);
-        let keyed = std::rc::Rc::new(options.clone());
+        let handler: Option<Rc<SegmentHandler>> = on_select.map(Rc::new);
+        let keyed = Rc::new(options.clone());
         let prefix: SharedString = match &id {
             ElementId::Name(name) => name.clone(),
             other => SharedString::from(format!("{other:?}")),
@@ -336,6 +353,12 @@ impl RenderOnce for SegmentedControl {
                 )
                 .role(Role::RadioButton)
                 .aria_selected(selected)
+                .relative()
+                .children(on_option_bounds.clone().map(|report| {
+                    bounds_probe(Rc::new(move |bounds, cx: &mut App| {
+                        report(index, bounds, cx)
+                    }))
+                }))
                 .when_some(name, |this, name| this.aria_label(name))
                 .flex()
                 .flex_row()
@@ -508,6 +531,42 @@ mod tests {
         assert_eq!(*picks.borrow(), [2, 0]);
         press(cx, "enter");
         assert_eq!(*picks.borrow(), [2, 0, 0]);
+    }
+
+    struct Measured(Log<(usize, f32)>);
+
+    impl Render for Measured {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            let seen = self.0.clone();
+            let options = vec![
+                SegmentOption::new("Short", true),
+                SegmentOption::new("A much longer label", false),
+            ];
+            SegmentedControl::settings(&theme, "measured", options).on_option_bounds(
+                move |index, bounds, _| {
+                    seen.borrow_mut()
+                        .push((index, f32::from(bounds.size.width)));
+                },
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn each_option_reports_its_own_bounds(cx: &mut TestAppContext) {
+        let seen = log();
+        let shared = seen.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Measured(shared));
+        cx.run_until_parked();
+        let seen = seen.borrow();
+        let width = |index| {
+            seen.iter()
+                .rev()
+                .find(|(i, _)| *i == index)
+                .map(|(_, width)| *width)
+                .unwrap()
+        };
+        assert!(width(0) > 0. && width(1) > width(0), "{seen:?}");
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

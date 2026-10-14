@@ -149,6 +149,30 @@ The decisions:
   7. Settings frame: `setup_view` on Cap's settings shell (page rail, `::settings` components, `setting_row`). An Appearance page carries the System, Light or Dark control, persisted through `app_settings`; it is a `SegmentedControl` per the phase 2 plan, not Cap's preview tiles.
      - The pages open in the main window, not in a second window as in Cap: a header Settings icon button (`Icon::Settings`) switches the window to the settings frame, and the frame's Back returns to the editor. Setup stays the first-run page.
      - A second window would add window management and a second surface for the native harness, for no user gain here.
+
+     Done 2026-10-15:
+     - `kit::SettingsFrame` ports Cap's settings window frame:
+       - the 227 px nav column (`render_nav`: 30 px rows, the accent tint on the selected row, and an optional Back row `settings-back`);
+       - the scrolling content pane (18/16/28 px padding, sections 28 px apart).
+
+       Pages use the kit's existing `Section::settings`, `Card::settings_rows` and `SettingRow::settings`.
+     - The shell:
+       - The header ends with an icon-only Settings button (`settings`), shown with or without a project. A second press returns.
+       - The frame replaces the editor and the agent column below the header; notices and the status strip stay.
+       - Opening it pauses playback at the painted frame and ends a timeline resize, because the player and the timeline's keys leave the tree with the editor.
+       - The Appearance page's `SegmentedControl` (`theme-0` System, `theme-1` Light, `theme-2` Dark) calls `studio_theme::set_preference`, which refreshes every window, cached sections included.
+       - The choice is saved through `presentation.paths`, the engine's app data, so the parity harness's temporary directory is honoured. The save runs on the background executor; a choice overtaken by a later one is skipped, and a failure shows as the shell's error.
+     - Deviation: `setup_view` is not hosted in the shell. It runs the host preflight synchronously when it is built and has its own SDK install pipeline beside the shell's `Command::InstallSdk`, so it stays in the spike app (`app.rs`), where it is the first-run page. It now renders on the frame: a Setup nav row, the four steps as `SettingRow`s in a settings card, and the state's detail in a padded card.
+     - Task 3c is settled here as well. The frame's nav is Cap's vertical list, not `TabRail`: the kit keeps the two apart, as Cap does, because the settings sidebar is a list of icon-and-label rows, not icon tabs. Adapter setup stays in the agent panel (`provider_setup`). Phase 6 moves that panel and brings adapter setup into the frame, together with the provider profiles.
+     - Deviation: Cap's nav rows answer only the mouse. Here every row is a tab stop with the focus ring that Enter and Space open, per the design system.
+     - The header's labelled actions, Settings included, measure 556 / 251 px in the Windows app. In the test platform they measure 602 px with a project open; 282 px without one is derived (the earlier 246 px plus the 36 px button and gap), because the test platform does not report Export's bounds. `ACTIONS_W` and `ACTIONS_CLOSED_W` are now 640 and 300.
+     - `SegmentedControl::on_option_bounds` reports each option's bounds, so the theme options can be clicked by their measured bounds.
+     - Tests:
+       - The parity test `the_appearance_page_saves_the_theme_and_back_returns_to_the_editor` opens the frame and picks Dark and then System. It checks the appearance the cached header rendered with and `app-settings.json` in the harness's app data, then returns with Back.
+       - The parity test `opening_settings_pauses_playback`.
+       - Mutations caught: no save, saved but not applied, no pause on open, and Back that does not close.
+       - Unit tests: the frame's rows are keyboard-activatable, each segmented option reports its own bounds, and an overtaken save is skipped.
+     - Native check on the VM, with window messages: the Settings button answers `HTCLIENT`, a client click opens the frame and Back returns (screenshots), and every earlier caption check still passes.
 - **Guards for every move.**
   - Scripts read source by text (phase 2): before each move, Grep `desktop/scripts` and `.github` for the moved file's path and its distinctive strings, with a positive control. Also check the workflows' `paths:` filters on `desktop/app/**`. `py desktop/scripts/test-packaging.py` runs with every commit's checks.
   - Linux-only tests do not compile here. When the app's re-exports are removed at the parity move, Grep `app/tests` (including `x11_shell.rs` and `cfg(target_os = "linux")` blocks) for `fframes_studio::(studio_shell|timeline_view|preset_panel|setup_view|canvas_view|frame_image|actions|ui|conversation_panel)`.

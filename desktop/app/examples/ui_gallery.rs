@@ -16,10 +16,10 @@ use gpui::{
 use studio_theme::{AppTheme, METRICS, Theme};
 use studio_ui::kit::{
     Badge, Button, ButtonSize, ButtonVariant, Card, CollapsibleSection, EditorButton, Icon,
-    IconButton, IconButtonSize, KbdChip, Menu, MenuItem, MenuState, Notice, SegmentOption,
-    SegmentedControl, Select, Slider, SliderTrack, StatusDot, TabRail, TabRailItem, TextInput,
-    TextInputState, Toggle, Tone, bind_text_input_keys, field_row, focus_ring, heading, label,
-    muted, section_title,
+    IconButton, IconButtonSize, KbdChip, Menu, MenuItem, MenuState, Notice, Section, SegmentOption,
+    SegmentedControl, Select, SettingRow, SettingsFrame, SettingsNavItem, Slider, SliderTrack,
+    StatusDot, TabRail, TabRailItem, TextInput, TextInputState, Toggle, Tone, bind_text_input_keys,
+    field_row, focus_ring, heading, label, muted, section_title,
 };
 
 const RESOLUTIONS: [&str; 4] = ["1080p", "1440p", "2160p", "Custom"];
@@ -401,6 +401,55 @@ impl Render for Gallery {
                 .into_any_element()],
         );
 
+        let settings = row(
+            &theme,
+            "SettingsFrame",
+            [div()
+                .w(px(560.))
+                .h(px(180.))
+                .child(
+                    SettingsFrame::settings(
+                        &theme,
+                        "settings-frame",
+                        [(Icon::Palette, "Appearance"), (Icon::Package, "Setup")]
+                            .iter()
+                            .enumerate()
+                            .map(|(index, (glyph, name))| {
+                                SettingsNavItem::new(*name, *name, *glyph, index == tab)
+                            })
+                            .collect(),
+                    )
+                    .on_select(update(&this, |gallery, index: &usize, _, _| {
+                        gallery.tab = *index
+                    }))
+                    .on_back(|_, _| {})
+                    .children([Section::settings(
+                        &theme,
+                        "Appearance",
+                        Some("A section of setting rows."),
+                        None,
+                        vec![
+                            Card::settings_rows(
+                                &theme,
+                                vec![
+                                    SettingRow::settings(
+                                        &theme,
+                                        "Theme",
+                                        None,
+                                        Toggle::settings(&theme, "settings-row-toggle", true)
+                                            .into_any_element(),
+                                    )
+                                    .into_any_element(),
+                                ],
+                            )
+                            .into_any_element(),
+                        ],
+                    )
+                    .into_any_element()]),
+                )
+                .into_any_element()],
+        );
+
         let chips = row(
             &theme,
             "KbdChip, Badge, StatusDot",
@@ -544,6 +593,7 @@ impl Render for Gallery {
                     .child(select)
                     .child(slider)
                     .child(tabs)
+                    .child(settings)
                     .child(chips)
                     .child(focus_sample),
             )

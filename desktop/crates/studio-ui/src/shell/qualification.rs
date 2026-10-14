@@ -308,6 +308,12 @@ impl StudioShell {
             "resizing": self.timeline_resize.is_some(),
         });
         value["viewport"] = serde_json::json!(self.viewport);
+        value["settings_open"] = self.settings_open.into();
+        value["header_appearance"] = match self.header_appearance.get() {
+            Some(studio_theme::Appearance::Light) => "light".into(),
+            Some(studio_theme::Appearance::Dark) => "dark".into(),
+            None => serde_json::Value::Null,
+        };
         value["sections"] = serde_json::json!(self.section_bounds);
         // How often each section view rendered; a new frame should render only the player.
         value["renders"] = self
@@ -381,6 +387,8 @@ impl StudioShell {
                             | "next-frame"
                             | "close"
                             | "create"
+                            | "settings"
+                            | "settings-back"
                     ) =>
             {
                 Some(name.to_string())

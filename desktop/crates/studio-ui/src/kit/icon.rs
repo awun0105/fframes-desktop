@@ -46,6 +46,7 @@ pub enum Icon {
     Layers,
     Package,
     ArrowUp,
+    ArrowLeft,
     Search,
     Trash,
     /// Windows caption glyphs, from Cap.
@@ -56,7 +57,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 45] = [
+    pub const ALL: [Icon; 46] = [
         Icon::Play,
         Icon::Pause,
         Icon::SkipBack,
@@ -96,6 +97,7 @@ impl Icon {
         Icon::Layers,
         Icon::Package,
         Icon::ArrowUp,
+        Icon::ArrowLeft,
         Icon::Search,
         Icon::Trash,
         Icon::CaptionMinimize,
@@ -146,6 +148,7 @@ impl Icon {
             Icon::Layers => "icons/layers.svg",
             Icon::Package => "icons/package.svg",
             Icon::ArrowUp => "icons/arrow-up.svg",
+            Icon::ArrowLeft => "icons/arrow-left.svg",
             Icon::Search => "icons/search.svg",
             Icon::Trash => "icons/trash.svg",
             Icon::CaptionMinimize => "icons/caption-minimize-windows.svg",

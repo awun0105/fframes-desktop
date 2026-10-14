@@ -56,6 +56,7 @@ icon_files!(
     "layers",
     "package",
     "arrow-up",
+    "arrow-left",
     "search",
     "trash",
     "caption-minimize-windows",

@@ -14,6 +14,7 @@ mod checkpoints;
 mod keyboard;
 mod presets;
 mod services;
+mod settings;
 mod setup;
 mod timeline;
 mod transport;
