@@ -70,7 +70,7 @@ The decisions:
      - `preset_panel`, `setup_view` and `timeline_view`;
      - `conversation_panel/`.
 
-     The app re-exports them for its tests until the parity move. `probe.rs` lands at `studio-ui/src/probe.rs` and stays there (see Qualification code). The views keep their own telemetry methods, which phase 7 removes as well: `TimelineView::qualification_metrics`, `PresetPanel::telemetry` and the conversation panel's telemetry.
+     The app re-exported them for its tests until the parity move; since then the app and its tests import them from `studio-ui` and the re-exports are gone. `probe.rs` lands at `studio-ui/src/probe.rs` and stays there (see Qualification code). The views keep their own telemetry methods, which phase 7 removes as well: `TimelineView::qualification_metrics`, `PresetPanel::telemetry` and the conversation panel's telemetry.
   2. Move `studio_shell.rs` whole into `studio-ui/src/shell/mod.rs`, then split it section by section, one commit each.
      The sections, in commit order (done 2026-10-14; `mod.rs` is 484 lines and the largest section, `player.rs`, 939):
      - `transport.rs`: `render_transport`, the transport mode and clock helpers;
