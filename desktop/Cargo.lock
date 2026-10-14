@@ -2053,6 +2053,7 @@ dependencies = [
  "studio-proto",
  "studio-sdk",
  "studio-test-support",
+ "studio-theme",
  "studio-ui",
  "tempfile",
  "thiserror 2.0.21",
@@ -6267,6 +6268,10 @@ dependencies = [
 [[package]]
 name = "studio-proto"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "studio-sdk"
@@ -6295,6 +6300,11 @@ version = "0.1.0"
 [[package]]
 name = "studio-theme"
 version = "0.1.0"
+dependencies = [
+ "gpui",
+ "smallvec",
+ "studio-proto",
+]
 
 [[package]]
 name = "studio-ui"
@@ -6304,6 +6314,7 @@ dependencies = [
  "gpui",
  "studio-engine",
  "studio-proto",
+ "studio-theme",
 ]
 
 [[package]]

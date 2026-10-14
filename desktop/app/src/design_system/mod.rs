@@ -392,6 +392,90 @@ mod tests {
         assert_eq!(shadow_for(Appearance::Light, Shadow::RaisedPill).len(), 2);
     }
 
+    /// Every role resolves to the same colour through `studio_theme`, so moving a call
+    /// site from `tokens()` to the theme changes nothing on screen.
+    #[test]
+    fn roles_match_the_studio_theme() {
+        for appearance in [Appearance::Light, Appearance::Dark] {
+            let old = tokens_for(appearance).palette;
+            let theme = studio_theme::Theme::new(match appearance {
+                Appearance::Light => studio_theme::Appearance::Light,
+                Appearance::Dark => studio_theme::Appearance::Dark,
+            });
+            let e = theme.editor;
+            let new = Palette {
+                window: e.window,
+                card: e.card,
+                card_2: e.card_2,
+                stage: e.stage,
+                line: e.line,
+                line_strong: e.line_strong,
+                text_1: e.text_1,
+                text_2: e.text_2,
+                text_3: e.text_3,
+                ctl: e.ctl,
+                ctl_hover: e.ctl_hover,
+                ctl_active: e.ctl_active,
+                accent: e.accent,
+                accent_2: e.accent_2,
+                on_accent: theme.on_accent(),
+                playhead: e.playhead,
+                thumb: e.thumb,
+                success: theme.green_11,
+                success_surface: theme.green_3,
+                warning: theme.amber_11,
+                warning_surface: theme.amber_3,
+                danger: theme.red_11,
+                danger_surface: theme.red_3,
+                selection: theme.selection(),
+                tooltip_bg: theme.tooltip_bg(),
+                tooltip_text: theme.tooltip_text(),
+            };
+            for ((name, old), (_, new)) in roles(&old).into_iter().zip(roles(&new)) {
+                assert_eq!(bytes(old), bytes(new), "{appearance:?} {name}");
+            }
+            for kind in [TrackKind::Clip, TrackKind::Overlay, TrackKind::Audio] {
+                for selected in [false, true] {
+                    let old = segment_colors_for(appearance, kind, selected);
+                    let new = studio_theme::segment_colors_for(
+                        theme.appearance,
+                        match kind {
+                            TrackKind::Clip => studio_theme::TrackKind::Clip,
+                            TrackKind::Overlay => studio_theme::TrackKind::Overlay,
+                            TrackKind::Audio => studio_theme::TrackKind::Audio,
+                        },
+                        selected,
+                    );
+                    for (old, new) in [
+                        (old.fill, new.fill),
+                        (old.border, new.border),
+                        (old.label, new.label),
+                    ] {
+                        assert_eq!(bytes(old), bytes(new), "{appearance:?} {kind:?}");
+                    }
+                }
+            }
+            let shadows = [
+                (Shadow::Card, studio_theme::Shadow::Card),
+                (Shadow::Pop, studio_theme::Shadow::Pop),
+                (Shadow::Preview, studio_theme::Shadow::Preview),
+                (Shadow::RaisedPill, studio_theme::Shadow::RaisedPill),
+                (Shadow::Thumb, studio_theme::Shadow::Thumb),
+            ];
+            for (old, new) in shadows {
+                assert_eq!(
+                    shadow_for(appearance, old).to_vec(),
+                    studio_theme::shadow_for(theme.appearance, new).to_vec()
+                );
+            }
+        }
+        assert_eq!(
+            format!("{METRICS:?}"),
+            format!("{:?}", studio_theme::METRICS)
+        );
+        assert_eq!(UI_FONT, studio_theme::UI_FONT);
+    }
+
     #[test]
     fn semantic_status_surfaces_are_distinct_from_the_neutral_surface() {
         for appearance in [Appearance::Light, Appearance::Dark] {

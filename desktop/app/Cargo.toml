@@ -29,6 +29,7 @@ studio-project = { workspace = true }
 studio-engine = { workspace = true }
 studio-proto = { workspace = true }
 studio-ui = { workspace = true }
+studio-theme = { workspace = true }
 async-channel = "2"
 studio-presets = { workspace = true }
 studio-bootstrap = { workspace = true }

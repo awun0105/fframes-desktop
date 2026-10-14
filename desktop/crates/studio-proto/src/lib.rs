@@ -6,6 +6,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// One opened project, from open until it is closed or replaced. Reopening the folder that
 /// is already open keeps its id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -24,5 +26,33 @@ impl fmt::Display for SessionId {
 impl fmt::Display for CommandId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "command {}", self.0)
+    }
+}
+
+/// The appearance the user chose. `System` follows the operating system.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppTheme {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_theme_is_stored_by_lowercase_name() {
+        for (theme, name) in [
+            (AppTheme::System, "\"system\""),
+            (AppTheme::Light, "\"light\""),
+            (AppTheme::Dark, "\"dark\""),
+        ] {
+            assert_eq!(serde_json::to_string(&theme).unwrap(), name);
+            assert_eq!(serde_json::from_str::<AppTheme>(name).unwrap(), theme);
+        }
+        assert_eq!(AppTheme::default(), AppTheme::System);
     }
 }

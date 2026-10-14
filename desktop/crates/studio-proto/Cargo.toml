@@ -9,3 +9,7 @@ description = "Typed engine commands, events and snapshot types for fframes stud
 path = "src/lib.rs"
 
 [dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

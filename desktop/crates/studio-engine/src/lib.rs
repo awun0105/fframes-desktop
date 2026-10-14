@@ -3,6 +3,7 @@ pub mod agent;
 pub mod agent_task;
 pub mod agent_tools;
 pub mod app_paths;
+pub mod app_settings;
 pub mod build_materialization;
 pub mod candidate_validation;
 pub mod canvas_selection;

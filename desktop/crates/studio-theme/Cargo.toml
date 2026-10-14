@@ -9,3 +9,9 @@ description = "Theme model and design tokens for fframes studio"
 path = "src/lib.rs"
 
 [dependencies]
+gpui = { workspace = true }
+smallvec = { workspace = true }
+studio-proto = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

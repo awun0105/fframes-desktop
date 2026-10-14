@@ -286,14 +286,29 @@ enum Qualification {
     },
 }
 
+/// The appearance the chrome's tokens resolve against, from the theme's.
+fn appearance(appearance: studio_theme::Appearance) -> fframes_studio::design_system::Appearance {
+    match appearance {
+        studio_theme::Appearance::Light => fframes_studio::design_system::Appearance::Light,
+        studio_theme::Appearance::Dark => fframes_studio::design_system::Appearance::Dark,
+    }
+}
+
 fn run_studio(qualification: Option<Qualification>) {
     gpui_platform::application()
         .with_assets(fframes_studio::assets::Assets)
         .run(move |cx: &mut App| {
             fframes_studio::text_input::bind_keys(cx);
-            fframes_studio::design_system::set_appearance(
-                fframes_studio::design_system::appearance_from_window(cx.window_appearance()),
-            );
+            let settings = studio_engine::app_paths::AppPaths::system()
+                .map(|paths| studio_engine::app_settings::AppSettings::load(&paths))
+                .unwrap_or_default();
+            studio_theme::init(cx, settings.theme);
+            fframes_studio::design_system::set_appearance(appearance(
+                studio_theme::resolve_appearance(
+                    settings.theme,
+                    studio_theme::Appearance::from_window(cx.window_appearance()),
+                ),
+            ));
             let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
             let window = cx
                 .open_window(
@@ -311,11 +326,9 @@ fn run_studio(qualification: Option<Qualification>) {
                             let mut shell =
                                 fframes_studio::studio_shell::StudioShell::new(window, cx);
                             cx.observe_window_appearance(window, |_shell, window, cx| {
-                                fframes_studio::design_system::set_appearance(
-                                    fframes_studio::design_system::appearance_from_window(
-                                        window.appearance(),
-                                    ),
-                                );
+                                fframes_studio::design_system::set_appearance(appearance(
+                                    studio_theme::Theme::for_window(window, cx).appearance,
+                                ));
                                 cx.notify();
                             })
                             .detach();
