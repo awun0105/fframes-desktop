@@ -5,7 +5,8 @@
 //! which notifies only the player section, leaves them as they were.
 
 use gpui::{
-    AppContext, Context, Entity, IntoElement, Render, Subscription, WeakEntity, Window, div,
+    AppContext, Context, Entity, IntoElement, Render, Styled, Subscription, WeakEntity, Window,
+    canvas, div,
 };
 
 use super::StudioShell;
@@ -58,10 +59,37 @@ impl Render for SectionView {
         shell.update(cx, |shell, cx| match section {
             Section::Header => shell.render_header(cx),
             Section::Sidebar => shell.render_left_column(cx),
-            Section::Agent => shell.render_agent_column(),
+            Section::Agent => shell.render_agent_column(cx),
             Section::Player => shell.render_player_area(cx),
         })
     }
+}
+
+/// Records the bounds of the element it fills into the shell's `section_bounds`, so tests see
+/// the box a cached section was given: a cached view lays its content out on its own.
+pub(super) fn section_probe(
+    section: Section,
+    cx: &mut Context<StudioShell>,
+) -> impl IntoElement + use<> {
+    let shell = cx.entity();
+    canvas(
+        move |bounds, _, cx| {
+            let measured = [
+                f32::from(bounds.origin.x),
+                f32::from(bounds.origin.y),
+                f32::from(bounds.size.width),
+                f32::from(bounds.size.height),
+            ];
+            shell.update(cx, |shell, _| {
+                shell.section_bounds.insert(section.name(), measured);
+            });
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
 }
 
 /// The section views, created on the shell's first render.

@@ -17,6 +17,8 @@ use crate::kit::Card;
 
 impl Render for StudioShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let viewport = window.viewport_size();
+        self.viewport = [f32::from(viewport.width), f32::from(viewport.height)];
         if self.theme.refresh(window, cx) {
             // The cached sections paint with the theme too.
             cx.notify();

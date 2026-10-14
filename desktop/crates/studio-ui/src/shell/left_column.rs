@@ -10,6 +10,7 @@ use gpui::{
 use studio_engine::engine::backend::Command;
 use studio_theme::{METRICS, TextStyle, text_style};
 
+use super::sections::{Section, section_probe};
 use super::{Picker, StudioShell};
 use crate::kit::{
     Badge, Card, CollapsibleSection, DISABLED_OPACITY, EditorButton, Handler, Icon, IconButton,
@@ -53,8 +54,10 @@ impl StudioShell {
             .flex_col()
             .gap(px(METRICS.space_3))
             .p(px(METRICS.space_4))
+            .relative()
             .child(rail)
             .child(content)
+            .child(section_probe(Section::Sidebar, cx))
             .into_any_element()
     }
 
@@ -521,9 +524,11 @@ impl StudioShell {
             .into_any_element()
     }
 
-    pub(super) fn render_agent_column(&self) -> gpui::AnyElement {
+    pub(super) fn render_agent_column(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
         div()
+            .relative()
+            .child(section_probe(Section::Agent, cx))
             .w(px(METRICS.agent_panel_w))
             .h_full()
             .flex_none()

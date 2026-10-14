@@ -139,6 +139,10 @@ pub struct StudioShell {
     timeline_resize: Option<(f32, f32)>,
     /// Where the grip was last painted, `[left, top, width, height]`.
     grip_bounds: Option<[f32; 4]>,
+    /// The bounds each cached section was laid out in, for the qualification telemetry.
+    section_bounds: HashMap<&'static str, [f32; 4]>,
+    /// The window's viewport, measured each render.
+    viewport: [f32; 2],
     overflow_open: bool,
     overflow_menu: MenuState,
     /// Where the overflow trigger was last painted; the menu opens against it.
@@ -398,6 +402,8 @@ impl StudioShell {
             timeline_height: None,
             timeline_resize: None,
             grip_bounds: None,
+            section_bounds: HashMap::new(),
+            viewport: [0., 0.],
             overflow_open: false,
             overflow_menu: MenuState::new(gpui::Point::default(), &[]),
             overflow_anchor: Default::default(),

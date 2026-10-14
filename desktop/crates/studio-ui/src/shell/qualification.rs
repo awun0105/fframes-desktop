@@ -299,6 +299,8 @@ impl StudioShell {
             "grip_bounds": self.grip_bounds,
             "resizing": self.timeline_resize.is_some(),
         });
+        value["viewport"] = serde_json::json!(self.viewport);
+        value["sections"] = serde_json::json!(self.section_bounds);
         // How often each section view rendered; a new frame should render only the player.
         value["renders"] = self
             .sections

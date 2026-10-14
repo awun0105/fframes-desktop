@@ -4,6 +4,7 @@ use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Styled, div,
 use studio_engine::engine::backend::Command;
 use studio_theme::{METRICS, TextStyle, text_style};
 
+use super::sections::{Section, section_probe};
 use super::{Picker, StudioShell};
 use crate::kit::{Card, Icon, icon, with_tooltip};
 
@@ -86,6 +87,8 @@ impl StudioShell {
             ));
         }
         Card::editor(&self.theme)
+            .relative()
+            .w_full()
             .h(px(METRICS.header_h))
             .flex_none()
             .flex()
@@ -103,6 +106,7 @@ impl StudioShell {
                     .child(text),
             )
             .child(actions)
+            .child(section_probe(Section::Header, cx))
             .into_any_element()
     }
 }
