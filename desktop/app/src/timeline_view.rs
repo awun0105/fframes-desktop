@@ -1,18 +1,18 @@
 //! Native compiled tracks. Geometry/selection are engine-owned; textures are window-owned.
-use crate::{
-    design_system::{self, TextStyle, TrackKind, segment_colors, text_style, track_color},
-    frame_image::create_render_image,
-    ui::{
-        BoundsProbe, Button, Icon, IconButton, IconButtonSize, SectionTitle, Slider, icon,
-        interact::focus_ring, slider::ZOOM_TRACK_H,
-    },
-};
+use crate::{frame_image::create_render_image, ui::BoundsProbe};
 use gpui::{
     Bounds, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, canvas, div, px,
 };
 use studio_engine::services::thumbnail_cache::{ThumbnailCache, ThumbnailKey};
 use studio_engine::{PreviewFrame, TaskScope, TimelineModel, TimelineSelection, TimelineViewport};
+use studio_theme::{
+    METRICS, TextStyle, Theme, TrackKind, segment_colors_for, text_style, track_color,
+};
+use studio_ui::kit::{
+    EditorButton, Icon, IconButton, IconButtonSize, Slider, SliderTrack, focus_ring, icon,
+    section_title,
+};
 
 #[derive(Debug, Clone)]
 pub enum TimelineEvent {
@@ -127,7 +127,7 @@ impl TimelineView {
                 f32::from(b.left()) + axis_inset(),
                 f32::from(b.top()),
                 (f32::from(b.size.width) - axis_inset()).max(0.),
-                design_system::tokens().metrics.ruler_h,
+                METRICS.ruler_h,
             ]
         };
         serde_json::json!({
@@ -311,9 +311,27 @@ impl TimelineView {
     fn action(
         entity: &gpui::Entity<Self>,
         run: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> impl Fn(&mut Window, &mut gpui::App) + 'static {
+    ) -> impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static {
         let entity = entity.clone();
-        move |_, cx| entity.update(cx, |view, cx| run(view, cx))
+        move |_, _, cx| entity.update(cx, |view, cx| run(view, cx))
+    }
+
+    /// A small toolbar icon button: `label` names it, `tooltip` explains it.
+    fn icon_button(
+        theme: &Theme,
+        id: &'static str,
+        glyph: Icon,
+        label: &'static str,
+        tooltip: &'static str,
+        enabled: bool,
+        on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    ) -> IconButton {
+        IconButton::editor(theme, id, glyph.path())
+            .editor_size(IconButtonSize::Small)
+            .label(label)
+            .tooltip(theme, tooltip)
+            .disabled(!enabled)
+            .on_click(on_click)
     }
     /// Zoom to the slider `fraction`, keeping the playhead where it is on screen.
     fn set_zoom_fraction(&mut self, fraction: f32, cx: &mut Context<Self>) {
@@ -343,6 +361,8 @@ const MAJOR_TICK_H: f32 = 8.;
 const MINOR_TICK_H: f32 = 5.;
 const MINOR_PER_MAJOR: usize = 5;
 const ZOOM_SLIDER_W: f32 = 72.;
+const ZOOM_TRACK_H: f32 = 3.;
+const ZOOM_THUMB: f32 = 14.;
 const CARD_PAD: f32 = 11.;
 const CARD_PAD_TOP: f32 = 9.;
 
@@ -355,7 +375,7 @@ enum HitZone {
 /// Which part of the timeline a pointer at window `y` hits, given the top of the
 /// timeline area. The ruler scrubs, the lanes select.
 fn hit_zone(y: f32, top: f32) -> HitZone {
-    if y - top < design_system::tokens().metrics.ruler_h {
+    if y - top < METRICS.ruler_h {
         HitZone::Ruler
     } else {
         HitZone::Lanes
@@ -364,7 +384,7 @@ fn hit_zone(y: f32, top: f32) -> HitZone {
 
 /// Width left of the time axis: the track gutter plus its gap.
 fn axis_inset() -> f32 {
-    let metrics = design_system::tokens().metrics;
+    let metrics = METRICS;
     metrics.track_gutter_w + metrics.space_2
 }
 
@@ -423,9 +443,14 @@ fn lane_name(base: &str, index: usize, count: usize) -> String {
 }
 
 /// A track row: gutter with icon and name, then the clipped band for segments.
-fn track_row(top: f32, name: String, glyph: Icon, segments: Vec<gpui::AnyElement>) -> gpui::Div {
-    let tokens = design_system::tokens();
-    let metrics = tokens.metrics;
+fn track_row(
+    theme: &Theme,
+    top: f32,
+    name: String,
+    glyph: Icon,
+    segments: Vec<gpui::AnyElement>,
+) -> gpui::Div {
+    let metrics = METRICS;
     div()
         .absolute()
         .left_0()
@@ -444,8 +469,8 @@ fn track_row(top: f32, name: String, glyph: Icon, segments: Vec<gpui::AnyElement
                 .items_center()
                 .gap(px(6.))
                 .overflow_hidden()
-                .text_color(tokens.palette.text_2)
-                .child(icon(glyph, metrics.icon_sm, tokens.palette.text_2))
+                .text_color(theme.editor.text_2)
+                .child(icon(glyph, metrics.icon_sm, theme.editor.text_2))
                 .child(
                     div()
                         .min_w_0()
@@ -463,13 +488,14 @@ fn track_row(top: f32, name: String, glyph: Icon, segments: Vec<gpui::AnyElement
                 .h_full()
                 .overflow_hidden()
                 .rounded(px(metrics.radius_segment))
-                .bg(tokens.palette.card_2)
+                .bg(theme.editor.card_2)
                 .children(segments),
         )
 }
 
 /// Segment box with its accent bar and clipped label. The caller adds ids and handlers.
 fn segment(
+    theme: &Theme,
     kind: TrackKind,
     selected: bool,
     x: f32,
@@ -477,8 +503,8 @@ fn segment(
     view_width: f32,
     label: String,
 ) -> gpui::Div {
-    let metrics = design_system::tokens().metrics;
-    let colors = segment_colors(kind, selected);
+    let metrics = METRICS;
+    let colors = segment_colors_for(theme.appearance, kind, selected);
     let slice = label_slice(x, width, view_width);
     div()
         .absolute()
@@ -534,55 +560,77 @@ impl Render for TimelineView {
                 self.release_failures += usize::from(window.drop_image(image).is_err());
             }
         }
-        let tokens = design_system::tokens();
-        let colors = tokens.palette;
-        let metrics = tokens.metrics;
+        let theme = Theme::for_window(window, cx);
+        let colors = theme.editor;
+        let metrics = METRICS;
         let enabled = self
             .model
             .as_ref()
             .is_some_and(|m| m.report().total_frames > 0);
         let entity = cx.entity();
         let zoom_fraction = zoom_to_fraction(self.viewport.pixels_per_second);
-        let toolbar = SectionTitle::new("Timeline").trailing(
+        let toolbar = section_title(&theme, "Timeline").child(
             div()
                 .flex()
                 .items_center()
                 .gap(px(metrics.space_1))
+                .child(Self::icon_button(
+                    &theme,
+                    "timeline-zoom-out",
+                    Icon::ZoomOut,
+                    "−",
+                    "Zoom out",
+                    enabled,
+                    Self::action(&entity, |v, cx| v.zoom(0.5, cx)),
+                ))
                 .child(
-                    IconButton::new("timeline-zoom-out", Icon::ZoomOut)
-                        .size(IconButtonSize::Small)
-                        .label("−")
-                        .disabled(!enabled)
-                        .on_click(Self::action(&entity, |v, cx| v.zoom(0.5, cx))),
-                )
-                .child(
-                    div().w(px(ZOOM_SLIDER_W)).child(
-                        Slider::new("timeline-zoom-slider", zoom_fraction)
-                            .track(ZOOM_TRACK_H)
-                            .step(0.)
+                    // The old slider's half-thumb inset, so the knob stays inside the 72px.
+                    div()
+                        .flex()
+                        .w(px(ZOOM_SLIDER_W))
+                        .px(px(ZOOM_THUMB / 2.))
+                        .child(
+                            Slider::new(
+                                "timeline-zoom-slider",
+                                zoom_fraction,
+                                SliderTrack::default(),
+                            )
+                            .flex()
+                            .track(px(ZOOM_TRACK_H), colors.ctl_active.into())
+                            .fill(colors.accent.into())
+                            .thumb(px(ZOOM_THUMB), colors.thumb.into(), None)
+                            .thumb_shadow()
+                            .label("Timeline zoom")
                             .disabled(!enabled)
-                            .on_change({
+                            .on_change(0., {
                                 let entity = entity.clone();
                                 move |fraction, _, cx| {
-                                    entity.update(cx, |v, cx| v.set_zoom_fraction(fraction, cx));
+                                    entity.update(cx, |v, cx| v.set_zoom_fraction(*fraction, cx));
                                 }
                             }),
-                    ),
+                        ),
                 )
+                .child(Self::icon_button(
+                    &theme,
+                    "timeline-zoom-in",
+                    Icon::ZoomIn,
+                    "+",
+                    "Zoom in",
+                    enabled,
+                    Self::action(&entity, |v, cx| v.zoom(2., cx)),
+                ))
                 .child(
-                    IconButton::new("timeline-zoom-in", Icon::ZoomIn)
-                        .size(IconButtonSize::Small)
-                        .label("+")
+                    EditorButton::plain(&theme, "timeline-fit")
+                        .label("Fit")
+                        .filled(&theme)
                         .disabled(!enabled)
-                        .on_click(Self::action(&entity, |v, cx| v.zoom(2., cx))),
-                )
-                .child(
-                    Button::new("timeline-fit", "Fit")
-                        .disabled(!enabled)
-                        .probe(Some(BoundsProbe::new({
-                            let entity = entity.clone();
-                            move |rect, cx| entity.update(cx, |v, _| v.fit_bounds = Some(rect))
-                        })))
+                        .on_bounds(
+                            BoundsProbe::new({
+                                let entity = entity.clone();
+                                move |rect, cx| entity.update(cx, |v, _| v.fit_bounds = Some(rect))
+                            })
+                            .into_bounds_handler(),
+                        )
                         .on_click(Self::action(&entity, |v, cx| {
                             if let Some(m) = &v.model {
                                 v.viewport.fit(m);
@@ -590,19 +638,21 @@ impl Render for TimelineView {
                             }
                         })),
                 )
-                .child(
-                    IconButton::new("timeline-cycle", Icon::Layers)
-                        .size(IconButtonSize::Small)
-                        .label("Cycle scene (S)")
-                        .disabled(!enabled)
-                        .on_click(Self::action(&entity, |v, cx| {
-                            if let Some(m) = &v.model {
-                                v.selection.cycle_scene_at(v.position, m);
-                                v.emit_scope_changed(cx);
-                                cx.notify();
-                            }
-                        })),
-                ),
+                .child(Self::icon_button(
+                    &theme,
+                    "timeline-cycle",
+                    Icon::Layers,
+                    "Cycle scene (S)",
+                    "Cycle scene (S)",
+                    enabled,
+                    Self::action(&entity, |v, cx| {
+                        if let Some(m) = &v.model {
+                            v.selection.cycle_scene_at(v.position, m);
+                            v.emit_scope_changed(cx);
+                            cx.notify();
+                        }
+                    }),
+                )),
         );
         let root = div()
             .flex()
@@ -637,7 +687,7 @@ impl Render for TimelineView {
             .min_h_0()
             .overflow_hidden()
             .rounded(px(metrics.radius_segment))
-            .focus_visible(|s| s.shadow(focus_ring()))
+            .focus_visible(|s| s.shadow(focus_ring(&theme)))
             .on_key_down(cx.listener(|view, event, _, cx| view.key(event, cx)))
             .on_mouse_down(
                 MouseButton::Left,
@@ -761,6 +811,7 @@ impl Render for TimelineView {
                 TrackKind::Overlay
             };
             let element = segment(
+                &theme,
                 kind,
                 selected,
                 rect.x as f32,
@@ -772,7 +823,7 @@ impl Render for TimelineView {
             .role(gpui::Role::Button)
             .aria_label(format!("Scene {} instance {}", scene.name, scene.index))
             .tab_index(0)
-            .focus_visible(|s| s.border_color(design_system::tokens().palette.accent))
+            .focus_visible(move |s| s.border_color(colors.accent))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |v, e: &gpui::MouseDownEvent, w, cx| {
@@ -803,6 +854,7 @@ impl Render for TimelineView {
         for rect in geometry.audio {
             let audio = &model.report().audio_tracks[rect.index];
             let element = segment(
+                &theme,
                 TrackKind::Audio,
                 false,
                 rect.x as f32,
@@ -818,6 +870,7 @@ impl Render for TimelineView {
         ));
         for (lane, segments) in scene_rows.into_iter().enumerate() {
             content = content.child(track_row(
+                &theme,
                 row_top(lane),
                 lane_name("Scenes", lane, scene_lanes),
                 Icon::Layers,
@@ -826,6 +879,7 @@ impl Render for TimelineView {
         }
         for (track, segments) in audio_rows.into_iter().enumerate() {
             content = content.child(track_row(
+                &theme,
                 row_top(scene_lanes + track),
                 lane_name("Audio", track, audio_count),
                 Icon::Volume2,
@@ -860,7 +914,7 @@ impl Render for TimelineView {
                     .top(px(metrics.ruler_h))
                     .bottom_0()
                     .w(px((end - start) as f32))
-                    .bg(colors.selection)
+                    .bg(theme.selection())
                     .border_l_1()
                     .border_r_1()
                     .border_color(colors.accent),
@@ -950,7 +1004,7 @@ mod tests {
 
     #[test]
     fn ruler_click_scrubs_and_lane_click_selects() {
-        let ruler_h = design_system::tokens().metrics.ruler_h;
+        let ruler_h = METRICS.ruler_h;
         assert_eq!(ruler_h, 26.);
         assert_eq!(hit_zone(100., 100.), HitZone::Ruler);
         assert_eq!(hit_zone(100. + ruler_h - 0.5, 100.), HitZone::Ruler);
@@ -1003,6 +1057,15 @@ mod tests {
         assert!(minors.iter().all(|x| (0. ..=300.).contains(x)));
         assert!(!minors.iter().any(|x| [20., 120., 220.].contains(x)));
         assert_eq!(minors.iter().filter(|x| **x > 20. && **x < 120.).count(), 4);
+    }
+
+    #[gpui::test]
+    fn the_fit_button_reports_its_bounds_for_qualification(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = cx.add_window_view(|_, cx| TimelineView::new(cx));
+        cx.run_until_parked();
+        let fit = view.read_with(cx, |view, _| view.fit_bounds);
+        let [_, _, width, height] = fit.expect("the Fit button reports where it is");
+        assert!(width > 0. && height > 0., "{fit:?}");
     }
 
     #[test]

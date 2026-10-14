@@ -130,4 +130,9 @@ Parity tests pass; the appearance gpui test passes and switching the OS appearan
     - Space can't reach playback from a panel button: `transport_for_key` is only called by its tests, no keymap binds Space, and the root key handler handles only Tab.
     - Labelled rows use the new kit `field_row`, which keeps the old `FieldRow` look. `hint` and `field_value` have no caller outside `examples/ui_gallery.rs`, and are handled when the gallery moves.
     - Re-opening an option menu after the agent republishes its options keeps the menu where it opened (`ConfigMenu::refresh`, tested).
+  - **Timeline toolbar.**
+    - The zoom slider is the kit `Slider` with the old 3 px track, 14 px knob, thumb shadow and 7 px half-knob inset. It is named "Timeline zoom" for screen readers.
+    - The icon buttons gain tooltips ("Zoom out", "Zoom in", "Cycle scene (S)") and keep their old accessible names.
+    - Fit is a filled `EditorButton`. A gpui test pins that it still reports the bounds native qualification clicks.
+    - The view resolves its `Theme` in `render` and needs no field.
 - **Fork.** fframes pins `khanhthanhdev/zed-cap@c32bfd3` (Cap's fork plus upstream fixes); Cap pins `wingleeio/zed@5d1f83d`. Small API drift is fixed at port time and recorded here.
