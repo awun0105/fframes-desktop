@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Crate skeleton and service move"
-status: pending
+status: in-progress
 priority: P1
 effort: "4-5d"
 dependencies: []
@@ -35,16 +35,33 @@ Create the target crates, move the GPUI-free services and their tests into the e
 
 ## Todo
 
-- [ ] Complete edge list
-- [ ] Providers, containment and image helpers moved first
-- [ ] Harness rename with every consumer, grep clean
-- [ ] Empty crates
-- [ ] Services and agent modules moved
-- [ ] Engine tests moved
-- [ ] `backend.rs` split
-- [ ] Bins rewired
-- [ ] File renames
+- [x] Complete edge list
+- [x] Providers, containment and image helpers moved first
+- [x] Harness rename with every consumer, grep clean
+- [x] Empty crates
+- [x] Services and agent modules moved
+- [x] Engine tests moved
+- [x] `backend.rs` split
+- [x] Bins rewired
+- [x] File renames
 
 ## Success criteria
 
 Parity tests, `cargo test`, `just clippy` and all CI workflows pass; `cargo tree -p studio-engine -e normal` and `-p studio-harness` show no `gpui`; the harness-rename grep is clean.
+
+## Outcome (2026-10-14)
+
+Done in seven commits on `feat/studio-rewrite` (`8058fbf`..`ccc62b6`). Verified on Windows: `cargo test --workspace` 822 passed, 0 failed, 14 ignored before and after (835 tests listed per package before and after, now split engine 336 / app 244); `cargo clippy --workspace --all-targets -D warnings` clean; `cargo tree -e normal` shows no `gpui` for `studio-engine`, `studio-harness`, `studio-proto`; the rename grep is clean; `test-packaging.py`, `test-qualification-m4/m5/m6/m7.py` pass. Not verified here: the CI workflows on Linux and macOS (no push yet) and `x11_shell.rs` (Linux only; its fixture paths were rewritten).
+
+Module layout in `studio-engine`: `services::{audio_service, build_service, candidate_runner, export_service, preview_coordinator, preview_worker_client, teardown, thumbnail_cache, worker_client, worker_project}`, `agent` (with `agent::evidence_preview`), `agent_tools` (with `backend::{artifacts, project, writer_gate}`), `providers::{host, provider_profiles}`, `containment` (with `containment::qualify_writer`). No re-export layer in the app.
+
+Deviations from the task list, with the reason:
+
+- **GPUI edges cut by type, not by splitting functions.** `decode_png` returns the decoded RGBA thumbnail; the agent panel wraps it in a `RenderImage` once per new artifact. `ThumbnailCache<I>` is generic over the image type, so the whole cache moved; the timeline uses `ThumbnailCache<gpui::RenderImage>`. `generate_reference_frame` moved whole into `services::worker_client` (it has no gpui use).
+- **`teardown` moved too** (`preview_coordinator` depends on it; not in the list).
+- **Tests that stay in the app:** `agent_tools`, `agent_workflow`, `agent_workflow_apply_gate`, `candidate_runner`, `m3_development_evidence`, `provider_handoff` start the `studio-tools`/`studio-mcp` bins (`CARGO_BIN_EXE_*` exists only in the bins' own package, and the bins stay in the app per the target layout); `audio_preview` and `timeline_controls` use `frame_image` (gpui); `promotion_handoff` uses `studio_shell`. They import from `studio_engine` directly. Moved: `build_sharing`, `managed_worker`, `native-export`, `portable_managed_worker`, `preview_coordination`, `real_sdk_candidates`, `real_sdk_selection`, `selection_tools`, `provider_profiles`.
+- **`provider_profiles.rs` split:** the four `provider_setup` (gpui) tests went to `app/tests/provider_setup.rs`; the rest moved with its own `tests/fixtures/m6-results.json`.
+- **Shared fixtures** (`support/`, `stalled-worker.py`, `malformed-preview-worker.py`) live in `studio-engine/tests`; app tests include them by relative path and find them through `studio_test_support::ENGINE_TESTS_DIR`. `fixtures/pre_m4_project` stays in the app (only `real_sdk_presets` uses it).
+- **`backend.rs` split along its own section markers** (`writer_gate`, `artifacts`, `project`); the `ToolBackend` impl stays with `ProjectToolBackend` in `project.rs` (1,313 lines) because separating them would widen the visibility of every private worker and revision type.
+- **Kebab renames:** `session-store.rs` and `provider-profiles.rs` were renamed in the move; `export-source.rs` in its own commit. `studio-sdk/src/release-manifest.rs` was not in the list and is left for M2 phase 8 or M6.
+- Updated outside Rust: CI `-p` lists (new crates, `-p studio-engine --test` for moved tests), `test-packaging.py`, `package-phase-zero.py` comment, `qualify-m3-agent.py` and `qualify-m5-selection.py` (until phase 7 deletes them), `docs/desktop/architecture.md` paths.

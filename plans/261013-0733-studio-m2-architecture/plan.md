@@ -1,7 +1,7 @@
 ---
 title: "M2 Architecture: crates, engine events, Cap kit and layout, harness removal, file splits"
 description: "Move GPUI-free services into the engine, drive the UI from typed engine events instead of timers, port Cap's theme, component kit, editor layout and settings pages, split every oversize file, and delete the bounds-probe harness, keeping every behavior."
-status: pending
+status: in-progress
 priority: P1
 effort: "27-38d"
 branch: feat/studio-rewrite
@@ -44,7 +44,7 @@ desktop/app        thin binary: runtime setup, window, bins studio-tools / studi
 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
-| 1 | [Crate skeleton and service move](./phase-01-crate-skeleton.md) | 4-5d | none | Pending |
+| 1 | [Crate skeleton and service move](./phase-01-crate-skeleton.md) | 4-5d | none | Done locally; CI pending |
 | 2 | [Cap theme and component kit](./phase-02-theme-and-ui-kit.md) | 3-4d | 1 | Pending |
 | 3 | [Engine handle and typed events](./phase-03-engine-handle-and-events.md) | 4-5d | 1 | Pending |
 | 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 6-9d | 2, 3 | Pending |
