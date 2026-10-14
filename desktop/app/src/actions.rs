@@ -12,5 +12,9 @@ actions!(
         BuildPreview,
         /// Stop the preview build in flight.
         CancelPreview,
+        /// Choose a destination and export the accepted revision as MP4.
+        ExportVideo,
+        /// Stop the export in flight.
+        CancelExport,
     ]
 );

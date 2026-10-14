@@ -543,6 +543,29 @@ impl Backend {
     }
 }
 
+/// The export's state and its detail (a failure's reason, the published file's name).
+fn export_telemetry(status: Option<&ExportProgress>) -> serde_json::Value {
+    let (state, detail) = match status {
+        None => ("idle", None),
+        Some(ExportProgress::Started { .. }) => ("started", None),
+        Some(ExportProgress::Rendering { done, total }) => {
+            ("rendering", Some(format!("{done}/{total}")))
+        }
+        Some(ExportProgress::Audio) => ("audio", None),
+        Some(ExportProgress::Warning(warning)) => ("warning", Some(warning.clone())),
+        Some(ExportProgress::Verifying) => ("verifying", None),
+        Some(ExportProgress::Complete { destination, .. }) => (
+            "complete",
+            destination
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned()),
+        ),
+        Some(ExportProgress::Failed(reason)) => ("failed", Some(reason.clone())),
+        Some(ExportProgress::Cancelled) => ("cancelled", None),
+    };
+    serde_json::json!({ "state": state, "detail": detail })
+}
+
 /// Where the shell keeps its data, what compiles its workers and whom it trusts with
 /// writes. [`StudioEnvironment::system`] is the installed app; a host that runs the shell
 /// elsewhere (a harness, a sandbox) passes its own.
@@ -1334,6 +1357,7 @@ impl StudioShell {
         value["canvas"] = self.canvas_telemetry();
         value["timeline"] = self.timeline.read(cx).qualification_metrics();
         value["panel"] = self.panel.read(cx).telemetry();
+        value["export"] = export_telemetry(self.export_status.as_ref());
         value
     }
     fn qualification_snapshot(&self, cx: &gpui::App) -> serde_json::Value {
@@ -4537,6 +4561,8 @@ impl Render for StudioShell {
             .on_action(cx.listener(|s, _: &actions::CancelPreview, _, cx| {
                 s.dispatch(Command::CancelBuild, cx)
             }))
+            .on_action(cx.listener(|s, _: &actions::ExportVideo, _, cx| s.pick(Picker::Export, cx)))
+            .on_action(cx.listener(|s, _: &actions::CancelExport, _, cx| s.cancel_export(cx)))
             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, cx| {
                 if event.keystroke.key == "tab" {
                     if event.keystroke.modifiers.shift {

@@ -7,7 +7,11 @@ every revision can describe its own timeline, diagnostics and audio:
 
   frames, fps, width, height, scenes [[start,end]], tracks [[start_s,end_s]],
   inspect [{frame,severity,key,message}], render_fail_frame, audio
-  (silent|tone|clip|misplaced), pixel (base byte), backend, fail_start, delay_ms
+  (silent|tone|clip|misplaced), pixel (base byte), backend, fail_start, delay_ms,
+  export_hang
+
+With `--export-v1` it stands in for the MP4 renderer, which it cannot be: it reports the
+first frame rendered, then holds until it is killed (`export_hang`) or fails.
 """
 import hashlib
 import json
@@ -33,6 +37,15 @@ if os.path.exists("fframes-fake-worker.json"):
 if CONFIG.get("fail_start"):
     sys.stderr.write("fake worker refuses to start\n")
     sys.exit(3)
+
+if "--export-v1" in sys.argv:
+    total = int(CONFIG.get("frames", 90))
+    sys.stderr.write(json.dumps({"event": "progress", "done": 1, "total": total}) + "\n")
+    sys.stderr.flush()
+    while CONFIG.get("export_hang"):
+        time.sleep(0.05)
+    sys.stderr.write("fake worker cannot encode MP4\n")
+    sys.exit(1)
 
 identity = dict(
     project_id=arg("--project-id"),

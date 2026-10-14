@@ -21,9 +21,9 @@ use crate::build_fixture::{FAKE_CONFIG, FakeCompiler, fake_sdk, manifest};
 use studio_engine::build_materialization::sdk_pin;
 use studio_sdk::CompatibilityManifest;
 
-/// Ninety frames at 30 fps in two scenes, with a one-second tone from 0 s.
-pub const FIXTURE_CONFIG: &str =
-    r#"{"frames":90,"fps":30,"scenes":[[0,45],[45,90]],"tracks":[[0.0,1.0]],"audio":"tone"}"#;
+/// Ninety frames at 30 fps in two scenes, with a one-second tone from 0 s. An export
+/// renders its first frame and holds until it is cancelled.
+pub const FIXTURE_CONFIG: &str = r#"{"frames":90,"fps":30,"scenes":[[0,45],[45,90]],"tracks":[[0.0,1.0]],"audio":"tone","export_hang":true}"#;
 
 const WAIT: Duration = Duration::from_secs(60);
 
@@ -40,6 +40,12 @@ pub struct Studio {
 impl Studio {
     /// A window with nothing open yet.
     pub fn new(cx: &mut TestAppContext) -> Self {
+        Self::with_config(cx, FIXTURE_CONFIG)
+    }
+
+    /// [`Self::new`] with the fake worker configured by `config` (see
+    /// `fake-preview-worker.py`).
+    pub fn with_config(cx: &mut TestAppContext, config: &str) -> Self {
         cx.executor().allow_parking();
         let temp = tempfile::tempdir().unwrap();
         let sdk_home = temp.path().join("sdk-home");
@@ -53,7 +59,7 @@ impl Studio {
             "0.1.0",
         )
         .unwrap();
-        fs::write(project.join(FAKE_CONFIG), FIXTURE_CONFIG).unwrap();
+        fs::write(project.join(FAKE_CONFIG), config).unwrap();
         let app_data = temp.path().join("data");
         let compiler = FakeCompiler::new(true);
         let environment = StudioEnvironment {
@@ -92,7 +98,11 @@ impl Studio {
 
     /// A window with the fixture project open through the Open picker.
     pub fn open(cx: &mut TestAppContext) -> Self {
-        let mut studio = Self::new(cx);
+        Self::new(cx).open_project()
+    }
+
+    fn open_project(self) -> Self {
+        let mut studio = self;
         let project = studio.project.clone();
         studio.dispatch(fframes_studio::actions::OpenProject);
         studio
@@ -106,7 +116,16 @@ impl Studio {
 
     /// The fixture open with its preview built and displayed.
     pub fn displayed(cx: &mut TestAppContext) -> Self {
-        let mut studio = Self::open(cx);
+        Self::new(cx).display()
+    }
+
+    /// [`Self::displayed`] with the fake worker configured by `config`.
+    pub fn displayed_with(cx: &mut TestAppContext, config: &str) -> Self {
+        Self::with_config(cx, config).display()
+    }
+
+    fn display(self) -> Self {
+        let mut studio = self.open_project();
         studio.dispatch(fframes_studio::actions::BuildPreview);
         studio.wait("preview displayed", |t| {
             t["preview"]["status"] == "displayed" && t["total_frames"] == 90
@@ -152,6 +171,12 @@ impl Studio {
             std::thread::sleep(Duration::from_millis(2));
         }
         self.telemetry()
+    }
+
+    /// Answers the save dialog the last action opened.
+    pub fn choose_new_path(&mut self, path: &Path) {
+        let path = path.to_path_buf();
+        self.cx.simulate_new_path_selection(move |_| Some(path));
     }
 
     pub fn path(&self, relative: &str) -> PathBuf {
