@@ -55,6 +55,7 @@ mod text;
 pub mod text_input;
 mod toggle;
 mod tooltip;
+mod windows_caption;
 
 pub use badge::{Badge, StatusDot, Tone, tone_color, tone_surface};
 pub use button::{Button, ButtonSize, ButtonVariant, ClickHandler, IconButton, IconButtonSize};
@@ -94,3 +95,4 @@ pub use text_input::{
 };
 pub use toggle::{Toggle, ToggleSize, toggled};
 pub use tooltip::{TOOLTIP_SHOW_DELAY, Tooltip, TooltipStyle};
+pub use windows_caption::{CAPTION_BUTTON_W, windows_caption_controls};

@@ -3,7 +3,9 @@ use crate::harness::Studio;
 use serde_json::Value;
 
 const GUTTER: f64 = 8.;
-/// The probe fills a card inside its 1 px border.
+const HEADER_H: f64 = 52.;
+const CAPTION_BUTTON_W: f64 = 46.;
+/// The sidebar and agent probes fill a card inside its 1 px border.
 const BORDERS: f64 = 2.;
 
 fn bounds(t: &Value, section: &str) -> [f64; 4] {
@@ -24,11 +26,33 @@ fn the_sections_fill_their_boxes(cx: &mut gpui::TestAppContext) {
     let timeline = t["split"]["timeline_height"].as_f64().unwrap();
     let close = |a: f64, b: f64| (a - b).abs() < 0.5;
 
+    // The header is flush with the window's top and sides; on Windows the caption buttons
+    // take its right end.
+    let caption_width = if cfg!(target_os = "windows") {
+        3. * CAPTION_BUTTON_W
+    } else {
+        0.
+    };
     let header = bounds(&t, "header");
     assert!(
-        close(header[2] + BORDERS, viewport_width - 2. * GUTTER),
+        close(header[0], 0.)
+            && close(header[1], 0.)
+            && close(header[2], viewport_width - caption_width)
+            && close(header[3], HEADER_H),
         "header {header:?} in a {viewport_width} wide window"
     );
+    if cfg!(target_os = "windows") {
+        let caption = bounds(&t, "caption");
+        assert!(
+            close(caption[0] + caption[2], viewport_width)
+                && close(caption[1], 0.)
+                && close(caption[2], caption_width)
+                && close(caption[3], HEADER_H),
+            "caption {caption:?} in a {viewport_width} wide window"
+        );
+    } else {
+        assert!(t["sections"]["caption"].is_null());
+    }
     // The sidebar shares the row above the timeline with the player.
     let sidebar = bounds(&t, "sidebar");
     assert!(

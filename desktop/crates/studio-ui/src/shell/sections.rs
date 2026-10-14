@@ -71,6 +71,14 @@ pub(super) fn section_probe(
     section: Section,
     cx: &mut Context<StudioShell>,
 ) -> impl IntoElement + use<> {
+    box_probe(section.name(), cx)
+}
+
+/// Records the bounds of the element it fills into the shell's `section_bounds` as `name`.
+pub(super) fn box_probe(
+    name: &'static str,
+    cx: &mut Context<StudioShell>,
+) -> impl IntoElement + use<> {
     let shell = cx.entity();
     canvas(
         move |bounds, _, cx| {
@@ -81,7 +89,7 @@ pub(super) fn section_probe(
                 f32::from(bounds.size.height),
             ];
             shell.update(cx, |shell, _| {
-                shell.section_bounds.insert(section.name(), measured);
+                shell.section_bounds.insert(name, measured);
             });
         },
         |_, _, _, _| {},

@@ -48,10 +48,15 @@ pub enum Icon {
     ArrowUp,
     Search,
     Trash,
+    /// Windows caption glyphs, from Cap.
+    CaptionMinimize,
+    CaptionMaximize,
+    CaptionRestore,
+    CaptionClose,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 41] = [
+    pub const ALL: [Icon; 45] = [
         Icon::Play,
         Icon::Pause,
         Icon::SkipBack,
@@ -93,6 +98,10 @@ impl Icon {
         Icon::ArrowUp,
         Icon::Search,
         Icon::Trash,
+        Icon::CaptionMinimize,
+        Icon::CaptionMaximize,
+        Icon::CaptionRestore,
+        Icon::CaptionClose,
     ];
 
     /// Asset path, relative to the app's asset root.
@@ -139,6 +148,10 @@ impl Icon {
             Icon::ArrowUp => "icons/arrow-up.svg",
             Icon::Search => "icons/search.svg",
             Icon::Trash => "icons/trash.svg",
+            Icon::CaptionMinimize => "icons/caption-minimize-windows.svg",
+            Icon::CaptionMaximize => "icons/caption-maximize-windows.svg",
+            Icon::CaptionRestore => "icons/caption-restore-windows.svg",
+            Icon::CaptionClose => "icons/caption-close-windows.svg",
         }
     }
 }

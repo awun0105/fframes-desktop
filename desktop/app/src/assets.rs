@@ -58,9 +58,14 @@ icon_files!(
     "arrow-up",
     "search",
     "trash",
+    "caption-minimize-windows",
+    "caption-maximize-windows",
+    "caption-restore-windows",
+    "caption-close-windows",
 );
 
-/// Serves the embedded Lucide icons (ISC, see `packaging/sdk/notices`).
+/// Serves the embedded Lucide icons (ISC, see `packaging/sdk/notices`) and Cap's Windows
+/// caption glyphs.
 pub struct Assets;
 
 impl AssetSource for Assets {

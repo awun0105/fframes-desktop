@@ -3,7 +3,7 @@
 
 use clap::{Parser, Subcommand};
 use fframes_studio::StudioSpikeApp;
-use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, point, px, size};
 use std::{
     path::PathBuf,
     time::{Duration, Instant},
@@ -300,11 +300,16 @@ fn run_studio(qualification: Option<Qualification>) {
                 .open_window(
                     WindowOptions {
                         window_bounds: Some(WindowBounds::Windowed(bounds)),
+                        // The header draws the title bar, as in Cap's editor: the caption
+                        // buttons on Windows, room for the inset traffic lights on macOS.
+                        // Only the Windows and macOS backends read these; Linux keeps the
+                        // system's decorations.
                         titlebar: Some(gpui::TitlebarOptions {
                             title: Some("fframes Studio".into()),
-                            appears_transparent: false,
-                            traffic_light_position: None,
+                            appears_transparent: true,
+                            traffic_light_position: Some(point(px(20.), px(20.))),
                         }),
+                        app_owns_titlebar_drag: true,
                         ..Default::default()
                     },
                     move |window, cx| {

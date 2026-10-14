@@ -124,6 +124,26 @@ The decisions:
      - On macOS, a hidden titlebar; on Linux, client decorations.
      - Cap's editor header draws `windows_caption_controls` at its right end (`editor_window.rs:9415`), with a drag area (`window_control_area(Drag)`, `:9265`). It switches to compact header controls on narrow windows when captions are shown (`compact_header_controls`, `:232`, tested at `:12192-12203`). fframes ports that header, its compact rule and the rule's tests.
      - This step is pushed on its own and waits for the self-hosted result, because the native harness drives this window on the VM.
+
+     Done 2026-10-14:
+     - The header is a flush row on every system (no card). `main.rs` sets `appears_transparent`, Cap's (20, 20) traffic-light inset and `app_owns_titlebar_drag`. Only the Windows and macOS backends of the fork read them.
+     - Windows: the uncached row around the cached header is the `Drag` area, and `kit::windows_caption_controls` (Cap's look, glyphs and ids) sits at its right end. The header's action cluster occludes the drag area.
+     - Deviation from Cap: the caption buttons are native window control areas (`Min`, `Max`, `Close`) without click handlers, as in Zed. The fork's Windows `zoom` only maximizes and never restores, and this way Windows handles the press itself, with Snap Layouts on Windows 11.
+     - Why the row stays uncached: the fork's `reuse_prepaint` and `reuse_paint` do not copy `window_control_hitboxes`, so a control area inside a cached view stops answering once the view is reused. Cap's editor puts its drag area inside its cached header.
+     - macOS: an 82 px spacer, and the empty middle of the header starts the window move (a double click zooms). Not verified here.
+     - Linux keeps server decorations, as Cap's editor does (only Cap's main and panel windows use client decorations). This differs from "Linux client decorations" above. The phase 2 native-caption gap stays open on Linux.
+     - The compact rule is fframes' own: Cap's action widths do not apply. The actions drop their labels when the title (200 px minimum), the labelled actions (600 px with a project open, 260 px without) and the window controls do not fit. The labelled actions measure 520 / 215 px in the Windows app and 566 / 246 px in the test platform. Close project has no icon and keeps its label.
+     - Tests:
+       - unit tests for the compact rule;
+       - the parity test `the_sections_fill_their_boxes`: on Windows the header ends where the 138 px caption begins and the caption reaches the window's right edge; elsewhere the header spans the window.
+     - Native check on the VM, with window messages because the remote session was disconnected:
+       - `WM_NCHITTEST` answers `HTCAPTION` over the title and the empty middle, `HTCLIENT` over the header buttons and the body, and `HTMINBUTTON`, `HTMAXBUTTON` and `HTCLOSE` over the caption;
+       - maximize maximizes, the maximized client area starts at the work area and its top-right corner is Close;
+       - restore restores, minimize minimizes, and Close quits with exit code 0.
+     - Not checked with real input:
+       - a real drag of the title;
+       - Snap Layouts (Windows 11 only; the VM is Server 2022);
+       - the negative control (a `Drag` area inside the cached header). Synthetic `WM_MOUSEMOVE` posts a mouse-leave each time, and the fork refreshes the whole window on hover-status changes, so the cached header is never reused under message input. The control needs real input in a connected session.
   7. Settings frame: `setup_view` on Cap's settings shell (page rail, `::settings` components, `setting_row`). An Appearance page carries the System, Light or Dark control, persisted through `app_settings`; it is a `SegmentedControl` per the phase 2 plan, not Cap's preview tiles.
      - The pages open in the main window, not in a second window as in Cap: a header Settings icon button (`Icon::Settings`) switches the window to the settings frame, and the frame's Back returns to the editor. Setup stays the first-run page.
      - A second window would add window management and a second surface for the native harness, for no user gain here.

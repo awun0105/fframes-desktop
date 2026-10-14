@@ -1,19 +1,45 @@
-//! The window header: the project's name and its file, project and export actions.
+//! The window header, after Cap's editor header: the project's name and its file, project
+//! and export actions in a row flush with the window's top edge.
+//!
+//! The header is a cached section. On Windows the row around it (in `layout.rs`) is the
+//! window's drag area and holds the caption buttons, because a cached view does not replay
+//! window control areas. On macOS the header leaves room for the traffic lights and moves
+//! the window from its empty middle.
 
-use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Styled, div, px};
+use gpui::{
+    Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Styled, div,
+    prelude::FluentBuilder, px,
+};
 use studio_engine::engine::backend::Command;
 use studio_theme::{METRICS, TextStyle, text_style};
 
 use super::sections::{Section, section_probe};
 use super::{Picker, StudioShell};
-use crate::kit::{Card, Icon, icon, with_tooltip};
+use crate::kit::{CAPTION_BUTTON_W, Icon, icon, with_tooltip};
+
+/// Room for the macOS traffic lights, inset to (20, 20) like Cap's editor.
+const TRAFFIC_LIGHTS_W: f32 = 82.;
+/// The title keeps at least this much before the actions lose their labels.
+const TITLE_MIN_W: f32 = 200.;
+/// The action cluster's width with labels, with a project open and without one: 520 and
+/// 215 px in the app on Windows, 566 and 246 px in the test platform, plus a margin for
+/// other systems' fonts.
+const ACTIONS_W: f32 = 600.;
+const ACTIONS_CLOSED_W: f32 = 260.;
 
 impl StudioShell {
     pub(super) fn render_header(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
         let enabled = !self.busy;
         let project = self.presentation.project.clone();
-        let mut actions = div().flex().items_center().gap(px(METRICS.space_2));
+        let compact = compact_header_controls(self.viewport[0], chrome_width(), project.is_some());
+        let mut actions = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(METRICS.space_2))
+            // Keeps the Windows drag area behind from answering for the buttons.
+            .occlude();
         for id in header_actions(project.is_some()) {
             let button = match id {
                 "create" => self.action_button(
@@ -55,6 +81,7 @@ impl StudioShell {
                     cx,
                     |s, cx| s.pick(Picker::Export, cx),
                 ),
+                // No icon, so it keeps its label in the compact header.
                 _ => self.action_button(
                     "close",
                     "Close project",
@@ -64,6 +91,11 @@ impl StudioShell {
                     cx,
                     |s, cx| s.dispatch(Command::Close, cx),
                 ),
+            };
+            let button = if compact && id != "close" {
+                button.icon_only(&theme)
+            } else {
+                button
             };
             actions = actions.child(button);
         }
@@ -86,16 +118,20 @@ impl StudioShell {
                 Some(path.into()),
             ));
         }
-        Card::editor(&self.theme)
+        div()
             .relative()
-            .w_full()
-            .h(px(METRICS.header_h))
-            .flex_none()
+            .size_full()
             .flex()
             .items_center()
-            .justify_between()
             .gap(px(METRICS.space_4))
-            .px(px(METRICS.space_4))
+            .px(px(if compact {
+                METRICS.space_2
+            } else {
+                METRICS.space_4
+            }))
+            .when(cfg!(target_os = "macos"), |header| {
+                header.child(div().h_full().w(px(TRAFFIC_LIGHTS_W)).flex_none())
+            })
             .child(
                 div()
                     .flex()
@@ -105,10 +141,47 @@ impl StudioShell {
                     .child(icon(Icon::Layers, 20., theme.editor.accent))
                     .child(text),
             )
+            .child(
+                div()
+                    .flex_1()
+                    .h_full()
+                    .when(cfg!(target_os = "macos"), |area| {
+                        area.on_mouse_down(MouseButton::Left, |event, window, _| {
+                            if event.click_count == 2 {
+                                window.titlebar_double_click();
+                            } else {
+                                window.start_window_move();
+                            }
+                        })
+                    }),
+            )
             .child(actions)
             .child(section_probe(Section::Header, cx))
             .into_any_element()
     }
+}
+
+/// Width the window's own controls take from the header: the caption buttons on Windows,
+/// the traffic lights on macOS.
+pub(super) fn chrome_width() -> f32 {
+    if cfg!(target_os = "windows") {
+        3. * CAPTION_BUTTON_W
+    } else if cfg!(target_os = "macos") {
+        TRAFFIC_LIGHTS_W
+    } else {
+        0.
+    }
+}
+
+/// Whether the header actions drop their labels, after Cap's `compact_header_controls`:
+/// when the title, the labelled actions and the window controls do not fit side by side.
+fn compact_header_controls(viewport_width: f32, chrome_width: f32, project_open: bool) -> bool {
+    let actions = if project_open {
+        ACTIONS_W
+    } else {
+        ACTIONS_CLOSED_W
+    };
+    viewport_width < TITLE_MIN_W + actions + chrome_width + 2. * METRICS.space_4
 }
 
 /// Ids of the header actions. Create, open and import live in the empty state while
@@ -132,5 +205,23 @@ mod tests {
             header_actions(true),
             ["create", "open", "import", "export-mp4", "close"]
         );
+    }
+
+    #[test]
+    fn the_default_window_keeps_the_labels() {
+        for chrome in [0., TRAFFIC_LIGHTS_W, 3. * CAPTION_BUTTON_W] {
+            for project_open in [false, true] {
+                assert!(!compact_header_controls(1275., chrome, project_open));
+            }
+        }
+    }
+
+    #[test]
+    fn the_window_controls_and_an_open_project_need_room() {
+        let caption = 3. * CAPTION_BUTTON_W;
+        assert!(compact_header_controls(900., caption, true));
+        assert!(!compact_header_controls(900., 0., true));
+        assert!(!compact_header_controls(900., caption, false));
+        assert!(compact_header_controls(400., 0., false));
     }
 }

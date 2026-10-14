@@ -226,6 +226,15 @@ impl EditorButton {
         self
     }
 
+    /// Shows only the icon; the label becomes the tooltip (unless one is set), which also
+    /// names the button.
+    pub fn icon_only(mut self, theme: &Theme) -> Self {
+        if let Some(label) = self.label.take() {
+            self.tooltip.get_or_insert((*theme, label));
+        }
+        self
+    }
+
     pub fn tooltip(mut self, theme: &Theme, label: impl Into<SharedString>) -> Self {
         self.tooltip = Some((*theme, label.into()));
         self

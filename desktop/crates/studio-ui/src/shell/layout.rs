@@ -5,15 +5,15 @@
 use gpui::{
     Context, CursorStyle, DispatchPhase, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render, StyleRefinement, Styled,
-    Window, canvas, div, px,
+    Window, WindowControlArea, canvas, div, prelude::FluentBuilder, px,
 };
 use studio_theme::METRICS;
 
 use super::StudioShell;
 use super::keymap::WORKSPACE;
-use super::sections::Sections;
+use super::sections::{Sections, box_probe};
 use crate::frame_image::create_render_image;
-use crate::kit::Card;
+use crate::kit::{Card, windows_caption_controls};
 
 impl Render for StudioShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -181,12 +181,39 @@ impl Render for StudioShell {
             .clone();
         // The cached sections keep their boxes here: a cached view is laid out by this
         // style alone.
-        let header = sections.header.clone().cached(
-            StyleRefinement::default()
-                .w_full()
-                .h(px(METRICS.header_h))
-                .flex_none(),
-        );
+        let windows = cfg!(target_os = "windows");
+        // The header row is flush with the window's edges and stays uncached: on Windows it
+        // is the drag area and holds the caption buttons, and a cached view does not replay
+        // window control areas.
+        let header = div()
+            .flex()
+            .flex_none()
+            .w_full()
+            .h(px(METRICS.header_h))
+            .when(windows, |row| {
+                row.window_control_area(WindowControlArea::Drag)
+            })
+            .child(
+                sections.header.clone().cached(
+                    StyleRefinement::default()
+                        .flex_1()
+                        .min_w_0()
+                        .h(px(METRICS.header_h)),
+                ),
+            )
+            .when(windows, |row| {
+                row.child(
+                    windows_caption_controls(
+                        &theme,
+                        window.is_window_active(),
+                        window.is_maximized(),
+                        true,
+                        true,
+                    )
+                    .relative()
+                    .child(box_probe("caption", cx)),
+                )
+            });
         let notices = self.render_notices(cx);
         let strip = self.render_status_strip(cx);
         let sidebar = sections.sidebar.clone().cached(
@@ -289,19 +316,27 @@ impl Render for StudioShell {
             .text_color(theme.editor.text_1)
             .flex()
             .flex_col()
-            .p(gutter)
-            .gap(gutter)
             .child(header)
-            .children(notices)
-            .children(strip)
             .child(
                 div()
                     .flex_1()
                     .min_h_0()
                     .flex()
+                    .flex_col()
+                    .px(gutter)
+                    .pb(gutter)
                     .gap(gutter)
-                    .child(editor)
-                    .child(agent),
+                    .children(notices)
+                    .children(strip)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .flex()
+                            .gap(gutter)
+                            .child(editor)
+                            .child(agent),
+                    ),
             )
     }
 }
