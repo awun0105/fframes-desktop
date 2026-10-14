@@ -163,6 +163,10 @@ impl TimelineView {
             cx.notify();
         }
     }
+    /// Moves the keyboard focus to the tracks, as a click on them does.
+    pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx);
+    }
     /// Moves the playhead to `frame` (as a click on the ruler does).
     pub fn seek(&mut self, frame: usize, cx: &mut Context<Self>) {
         if self

@@ -50,6 +50,12 @@ impl StudioShell {
                 s.panel
                     .update(cx, |panel, cx| panel.focus_prompt(window, cx))
             }))
+            .on_action(cx.listener(|s, _: &actions::FocusPreview, window, cx| {
+                window.focus(&s.preview_focus, cx)
+            }))
+            .on_action(cx.listener(|s, _: &actions::FocusTimeline, window, cx| {
+                s.timeline.update(cx, |t, cx| t.focus(window, cx))
+            }))
             .on_action(cx.listener(|s, _: &actions::SubmitPrompt, _, cx| {
                 s.panel.update(cx, |panel, cx| panel.submit(cx))
             }))

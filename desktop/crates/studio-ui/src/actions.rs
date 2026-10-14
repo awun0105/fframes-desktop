@@ -56,6 +56,10 @@ actions!(
         DetectAgents,
         /// Move the keyboard focus to the agent prompt.
         FocusPrompt,
+        /// Move the keyboard focus to the preview.
+        FocusPreview,
+        /// Move the keyboard focus to the timeline's tracks.
+        FocusTimeline,
         /// Send the agent prompt as a brief (or a clarification reply, or queue it).
         SubmitPrompt,
         /// Publish the candidate waiting for review.

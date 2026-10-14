@@ -704,6 +704,7 @@ impl StudioShell {
         let mut preview_surface = div()
             .id("preview-surface")
             .relative()
+            .track_focus(&self.preview_focus)
             .tab_index(0)
             .role(gpui::Role::Group)
             .aria_label("Compiled preview")

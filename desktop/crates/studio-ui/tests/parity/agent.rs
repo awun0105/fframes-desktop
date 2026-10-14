@@ -7,7 +7,8 @@ use crate::{
 use serde_json::{Value, json};
 use std::{fs, time::Duration};
 use studio_ui::actions::{
-    AnswerPermission, ApplyCandidate, FocusPrompt, OpenProject, SubmitPrompt, ToggleReviewPolicy,
+    AnswerPermission, ApplyCandidate, BuildPreview, FocusPrompt, OpenProject, Seek, SubmitPrompt,
+    ToggleReviewPolicy,
 };
 
 const BRIEF: &str = "Make the title red";
@@ -70,6 +71,37 @@ fn space_types_in_the_prompt_and_enter_sends_it(cx: &mut gpui::TestAppContext) {
     });
     assert_eq!(rows(&asking, "user")[0]["chars"], BRIEF.len());
     assert_eq!(asking["playing"], false);
+    let prompts = fs::read_to_string(studio.agent_evidence().join("prompts.jsonl")).unwrap();
+    assert!(prompts.contains(BRIEF), "{prompts}");
+}
+
+/// Undo in a focused field undoes the field's own edit and nothing outside it: the brief
+/// sent is the restored text, and the playhead and the timeline selection stay put.
+#[gpui::test]
+fn undo_in_the_prompt_undoes_the_typing_there(cx: &mut gpui::TestAppContext) {
+    let mut studio = studio_with_agent(cx);
+    studio.dispatch(BuildPreview);
+    studio.wait("preview displayed", |t| {
+        t["preview"]["status"] == "displayed"
+    });
+    studio.dispatch(Seek { frame: 30 });
+    studio.wait("at 30", |t| t["position"] == 30);
+    studio.dispatch(FocusPrompt);
+    studio.settle(Duration::from_millis(50));
+    studio.type_text(BRIEF);
+    studio.press("backspace backspace backspace");
+    studio.press(if cfg!(target_os = "macos") {
+        "cmd-z"
+    } else {
+        "ctrl-z"
+    });
+    studio.press("enter");
+    let asking = studio.wait("the permission request", |t| {
+        phase(t) == "Waiting for your permission"
+    });
+    assert_eq!(rows(&asking, "user")[0]["chars"], BRIEF.len());
+    assert_eq!(asking["position"], 30);
+    assert_eq!(asking["timeline"]["selection"]["range"], Value::Null);
     let prompts = fs::read_to_string(studio.agent_evidence().join("prompts.jsonl")).unwrap();
     assert!(prompts.contains(BRIEF), "{prompts}");
 }

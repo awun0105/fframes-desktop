@@ -98,6 +98,8 @@ pub struct StudioShell {
     pending_ready: Option<PreparedInstall>,
     pending_frame: Option<studio_engine::PreviewFrame>,
     canvas: CanvasViewState,
+    /// The preview surface's focus, which its keys need.
+    preview_focus: gpui::FocusHandle,
     canvas_origin: (f64, f64),
     canvas_extent: (f64, f64),
     canvas_pan_position: Option<(f64, f64)>,
@@ -342,6 +344,7 @@ impl StudioShell {
             pending_ready: None,
             pending_frame: None,
             canvas: CanvasViewState::default(),
+            preview_focus: cx.focus_handle().tab_index(0).tab_stop(true),
             canvas_origin: (0.0, 0.0),
             canvas_extent: (0.0, 0.0),
             canvas_pan_position: None,

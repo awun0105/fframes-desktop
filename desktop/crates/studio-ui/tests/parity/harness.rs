@@ -273,6 +273,24 @@ impl Studio {
         self.cx.simulate_keystrokes(self.window.into(), keystrokes);
     }
 
+    /// Turns the mouse wheel by `delta_y` pixels at window point (`x`, `y`), with Ctrl (Cmd
+    /// on macOS) held when `zoom`.
+    pub fn scroll(&mut self, x: f32, y: f32, delta_y: f32, zoom: bool) {
+        let modifiers = gpui::Modifiers {
+            control: zoom && !cfg!(target_os = "macos"),
+            platform: zoom && cfg!(target_os = "macos"),
+            ..Default::default()
+        };
+        gpui::VisualTestContext::from_window(self.window.into(), &self.cx).simulate_event(
+            gpui::ScrollWheelEvent {
+                position: gpui::point(gpui::px(x), gpui::px(y)),
+                delta: gpui::ScrollDelta::Pixels(gpui::point(gpui::px(0.), gpui::px(delta_y))),
+                modifiers,
+                touch_phase: gpui::TouchPhase::Moved,
+            },
+        );
+    }
+
     /// Answers the open dialog the last action opened.
     pub fn choose_path(&mut self, path: &Path) {
         let path = path.to_path_buf();
