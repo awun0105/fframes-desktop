@@ -8,7 +8,8 @@ use studio_sdk::{
     project::ProjectManager,
 };
 use studio_theme::{METRICS, TextStyle, Theme, text_style};
-use studio_ui::kit::{
+
+use crate::kit::{
     Badge, Card, EditorButton, Icon, Notice, StatusDot, Tone, divider, heading, icon, muted,
 };
 

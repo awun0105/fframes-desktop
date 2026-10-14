@@ -6,4 +6,5 @@ pub mod frame_image;
 pub mod kit;
 pub mod preset_panel;
 pub mod probe;
+pub mod setup_view;
 pub mod timeline_view;
