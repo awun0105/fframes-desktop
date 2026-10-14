@@ -10,7 +10,6 @@ pub mod containment;
 pub mod controller;
 pub mod diagnostics;
 pub mod edit_transaction;
-#[path = "export-source.rs"]
 pub mod export_source;
 pub mod journal;
 pub mod playback_clock;
