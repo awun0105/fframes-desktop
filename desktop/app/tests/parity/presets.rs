@@ -55,8 +55,10 @@ fn apply_and_reset(cx: &mut gpui::TestAppContext) {
         token: "color.accent".into(),
         value: "#ff0000".into(),
     });
+    // The committed override asks for a matching preview; the shell takes no command
+    // until that build is sent and answered.
     studio.wait("override set", |t| {
-        t["presets"]["applied"]["overrides"] == 1
+        t["presets"]["applied"]["overrides"] == 1 && t["busy"] == false
     });
     let overrides = studio.project_file("style/overrides.json");
     assert!(

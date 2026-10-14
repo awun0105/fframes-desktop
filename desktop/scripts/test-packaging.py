@@ -157,8 +157,8 @@ class ArtifactTests(unittest.TestCase):
             self.assertIn(r'Filename: "{app}\bin\fframes-studio.exe"', line)
         self.assertTrue((windows_installer.SCRIPT.parent / "fframes-studio.ico").is_file())
         # The installed shortcut passes no SDK variable, so the app must find sdk\ beside bin\.
-        setup_view = (assembly.ROOT / "desktop/app/src/setup_view.rs").read_text()
-        self.assertIn('p.parent()?.parent()?.join("sdk")', setup_view)
+        sdk_setup = (assembly.ROOT / "desktop/crates/studio-engine/src/sdk_setup.rs").read_text()
+        self.assertIn('p.parent()?.parent()?.join("sdk")', sdk_setup)
         main = (assembly.ROOT / "desktop/app/src/main.rs").read_text()
         self.assertIn('#![cfg_attr(windows, windows_subsystem = "windows")]', main)
         self.assertIn(".unwrap_or(Command::Studio {", main)
