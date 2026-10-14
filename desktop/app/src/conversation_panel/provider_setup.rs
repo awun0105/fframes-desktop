@@ -467,7 +467,7 @@ impl ConversationPanel {
 
     /// Looks for installed agents on a background thread. Detection only checks that files
     /// exist; nothing is started. Refused while an adapter installs.
-    fn detect_agents(&mut self, cx: &mut Context<Self>) {
+    pub fn detect_agents(&mut self, cx: &mut Context<Self>) {
         let Some(attached) = &self.attached else {
             return;
         };
@@ -504,7 +504,7 @@ impl ConversationPanel {
     /// Fills the Setup fields with a profile whose adapter was detected or installed, using
     /// the absolute path that was found, and saves them through the normal save path as a
     /// turn-on of that profile.
-    fn use_detected(&mut self, profile_id: &str, cx: &mut Context<Self>) {
+    pub fn use_detected(&mut self, profile_id: &str, cx: &mut Context<Self>) {
         let Some(profile) = self.registry.profiles.iter().find(|p| p.id == profile_id) else {
             self.say("That provider profile is no longer available.", cx);
             return;
@@ -547,6 +547,23 @@ impl ConversationPanel {
 
     /// Opens an install page in the default browser. Only `https://` links are handed over;
     /// anything else is refused and reported. Returns whether the link was opened.
+    /// Detect agents and turn-on state: what each profile's scan found, the selected
+    /// profile and the last notice.
+    pub(super) fn setup_telemetry(&self) -> serde_json::Value {
+        let setup = &self.agent_setup;
+        serde_json::json!({
+            "scanning": setup.scans.is_running(),
+            "detected": setup.detected.found.iter().map(|found| serde_json::json!({
+                "profile": found.id,
+                "state": setup.detected.state(found).label(),
+                "adapter": found.adapter.as_ref().map(|path| path.to_string_lossy().into_owned()),
+            })).collect::<Vec<_>>(),
+            "turn_on": format!("{:?}", setup.turn_on),
+            "selected_profile": self.registry.selected_profile_id,
+            "notice": self.notice,
+        })
+    }
+
     fn open_link(&mut self, url: &str, cx: &mut Context<Self>) -> bool {
         if !provider_profiles::is_openable(url) {
             self.say(

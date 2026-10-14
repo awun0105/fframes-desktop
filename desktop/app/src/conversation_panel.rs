@@ -445,7 +445,7 @@ impl ConversationPanel {
     /// never prompt, brief or message text.
     pub fn telemetry(&self) -> serde_json::Value {
         let Some(snapshot) = &self.snapshot else {
-            return serde_json::json!({"attached": false});
+            return serde_json::json!({"attached": false, "setup": self.setup_telemetry()});
         };
         // Unique `Arc<Row>` allocations the panel itself holds (paged history plus what it
         // lays out); the workflow's own live window is shared with it and bounded by the
@@ -491,6 +491,7 @@ impl ConversationPanel {
                 UndoView::Unavailable { .. } => "unavailable",
                 UndoView::InProgress { .. } => "in_progress",
             },
+            "setup": self.setup_telemetry(),
         })
     }
 

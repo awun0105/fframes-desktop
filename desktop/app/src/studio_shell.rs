@@ -4189,6 +4189,17 @@ impl StudioShell {
             .on_action(
                 cx.listener(|s, _: &actions::RestoreCheckpoint, _, cx| s.pick(Picker::Restore, cx)),
             )
+            .on_action(cx.listener(|s, _: &actions::SelectSdk, _, cx| s.pick(Picker::Sdk, cx)))
+            .on_action(
+                cx.listener(|s, _: &actions::ImportSdkBundle, _, cx| s.pick(Picker::SdkBundle, cx)),
+            )
+            .on_action(cx.listener(|s, _: &actions::DetectAgents, _, cx| {
+                s.panel.update(cx, |panel, cx| panel.detect_agents(cx))
+            }))
+            .on_action(cx.listener(|s, action: &actions::UseDetectedAgent, _, cx| {
+                s.panel
+                    .update(cx, |panel, cx| panel.use_detected(&action.profile, cx))
+            }))
             .on_action(cx.listener(|s, action: &actions::SelectCanvasAt, _, cx| {
                 s.pause_at_painted_frame(cx);
                 match s.video_to_canvas(action.x, action.y) {

@@ -12,5 +12,6 @@ mod canvas;
 mod checkpoints;
 mod presets;
 mod services;
+mod setup;
 mod timeline;
 mod transport;

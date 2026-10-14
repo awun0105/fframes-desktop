@@ -48,6 +48,12 @@ actions!(
         SaveCheckpoint,
         /// Copy the last checkpoint into a new folder of the user's choice.
         RestoreCheckpoint,
+        /// Choose an installed SDK folder for the open project.
+        SelectSdk,
+        /// Choose an offline SDK bundle folder and install it as the managed SDK.
+        ImportSdkBundle,
+        /// Look for installed agents and their ACP adapters, without starting them.
+        DetectAgents,
     ]
 );
 
@@ -81,6 +87,13 @@ pub struct ResetPreset {
 pub struct SetStyleOverride {
     pub token: String,
     pub value: String,
+}
+
+/// Turn on the agent `profile` with the adapter Detect agents found for it.
+#[derive(Clone, PartialEq, Eq, Debug, Action)]
+#[action(namespace = studio, no_json)]
+pub struct UseDetectedAgent {
+    pub profile: String,
 }
 
 /// Move the playhead to `frame`.

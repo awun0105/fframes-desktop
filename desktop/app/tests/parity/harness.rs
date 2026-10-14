@@ -53,10 +53,20 @@ impl Studio {
     /// [`Self::new`] with the fake worker configured by `config` (see
     /// `fake-preview-worker.py`).
     pub fn with_config(cx: &mut TestAppContext, config: &str) -> Self {
+        Self::build(cx, config, "active")
+    }
+
+    /// A window whose managed SDK home is empty: the fixture's SDK is installed in
+    /// `<sdk_home>/elsewhere` ([`Self::sdk`]), for the user to select.
+    pub fn without_managed_sdk(cx: &mut TestAppContext) -> Self {
+        Self::build(cx, FIXTURE_CONFIG, "elsewhere")
+    }
+
+    fn build(cx: &mut TestAppContext, config: &str, sdk_folder: &str) -> Self {
         cx.executor().allow_parking();
         let temp = tempfile::tempdir().unwrap();
         let sdk_home = temp.path().join("sdk-home");
-        let (sdk, compatibility) = install_sdk(&sdk_home);
+        let (sdk, compatibility) = install_sdk(&sdk_home, sdk_folder);
         let project = temp.path().join("video");
         studio_project::create(
             &project,
@@ -108,13 +118,11 @@ impl Studio {
         Self::new(cx).open_project()
     }
 
-    fn open_project(self) -> Self {
+    pub fn open_project(self) -> Self {
         let mut studio = self;
         let project = studio.project.clone();
         studio.dispatch(fframes_studio::actions::OpenProject);
-        studio
-            .cx
-            .simulate_path_prompt_response(move |_| Some(vec![project]));
+        studio.choose_path(&project);
         studio.wait("project open", |t| {
             t["project_open"] == true && t["busy"] == false
         });
@@ -183,6 +191,13 @@ impl Studio {
         self.telemetry()
     }
 
+    /// Answers the open dialog the last action opened.
+    pub fn choose_path(&mut self, path: &Path) {
+        let path = path.to_path_buf();
+        self.cx
+            .simulate_path_prompt_response(move |_| Some(vec![path]));
+    }
+
     /// Answers the save dialog the last action opened.
     pub fn choose_new_path(&mut self, path: &Path) {
         let path = path.to_path_buf();
@@ -211,7 +226,10 @@ impl Drop for Studio {
 /// blocks on a lock) cannot be interrupted by a deadline check, so a watchdog thread ends
 /// the test process, naming what never finished, if the guard is still armed long after
 /// the deadline.
-struct Watchdog(std::sync::mpsc::Sender<()>);
+struct Watchdog(
+    #[expect(dead_code, reason = "dropping the sender disarms the watchdog")]
+    std::sync::mpsc::Sender<()>,
+);
 
 impl Watchdog {
     fn arm(what: &str) -> Self {
@@ -230,16 +248,16 @@ impl Watchdog {
     }
 }
 
-/// Installs a fake SDK as `<sdk_home>/active` that passes the app's SDK verification: it
+/// Installs a fake SDK as `<sdk_home>/<folder>` that passes the app's SDK verification: it
 /// serves the preview contract, asks nothing of the host, and carries a stand-in compiler
 /// that reports the manifest's channel and host, and empty FFmpeg folders. Nothing is ever
 /// compiled with it; the fake compiler builds every worker.
-fn install_sdk(sdk_home: &Path) -> (PathBuf, CompatibilityManifest) {
+fn install_sdk(sdk_home: &Path, folder: &str) -> (PathBuf, CompatibilityManifest) {
     let mut compatibility = manifest();
     compatibility.preview_contract_versions =
         vec![fframes_studio_protocol::PREVIEW_CONTRACT_VERSION];
     compatibility.host_prerequisites.clear();
-    let sdk = sdk_home.join("active");
+    let sdk = sdk_home.join(folder);
     fs::rename(fake_sdk(sdk_home), &sdk).unwrap();
     fs::write(
         sdk.join("compatibility.json"),
@@ -270,8 +288,9 @@ fn install_sdk(sdk_home: &Path) -> (PathBuf, CompatibilityManifest) {
     (sdk.canonicalize().unwrap(), compatibility)
 }
 
-/// `fake-rustc.rs` compiled once per test process.
-fn fake_rustc() -> &'static Path {
+/// `fake-rustc.rs` compiled once per test process. It also serves as any native executable a
+/// test needs on disk, such as an adapter for Detect agents to find.
+pub fn fake_rustc() -> &'static Path {
     static BINARY: OnceLock<(tempfile::TempDir, PathBuf)> = OnceLock::new();
     &BINARY
         .get_or_init(|| {
