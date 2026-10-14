@@ -1,10 +1,12 @@
-//! The left column and the empty state: the Project, Assets and Style tabs, recent projects and the agent column.
+//! The left column and the empty state: the Project, Assets and Style tabs, recent projects
+//! and the agent column.
+
+use std::path::PathBuf;
 
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
     div, px,
 };
-use std::path::PathBuf;
 use studio_engine::engine::backend::Command;
 use studio_theme::{METRICS, TextStyle, text_style};
 
