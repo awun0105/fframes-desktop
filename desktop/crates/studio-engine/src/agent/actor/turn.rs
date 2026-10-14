@@ -5,7 +5,9 @@ use super::*;
 impl Actor {
     // ---- adapter probe ----------------------------------------------------------------------------
 
-    pub(super) fn check_adapter(&mut self) {
+    /// Probes the configured adapter. An explicit check always launches it; the automatic
+    /// re-check reuses a remembered report of the same executable.
+    pub(super) fn check_adapter(&mut self, explicit: bool) {
         let Some(adapter) = self.shared.settings.lock().adapter.clone() else {
             return;
         };
@@ -37,7 +39,14 @@ impl Actor {
             JobKind::Probe,
             payload,
             move |(config, search, method, scratch, timeout, processes)| {
-                let report = run_probe(config, search, method, scratch, timeout, processes);
+                let key = ProbeKey::of(&config, &search, method.as_deref());
+                let probe = || run_probe(config, search, method, scratch, timeout, processes);
+                let cache = AdapterProbeCache::global();
+                let report = if explicit {
+                    cache.refresh(key, probe)
+                } else {
+                    cache.get_or_probe(key, probe)
+                };
                 let _ = tx.send(Msg::Probe { generation, report });
             },
         );

@@ -31,6 +31,7 @@ mod jobs;
 pub mod log;
 pub mod model;
 mod present;
+pub mod probe_cache;
 pub mod session_store;
 mod tools;
 

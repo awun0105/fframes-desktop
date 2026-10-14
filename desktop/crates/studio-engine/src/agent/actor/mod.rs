@@ -22,6 +22,7 @@ use super::{
     log::RowStore,
     model::*,
     present::{self, CliRoute, ToolRoute},
+    probe_cache::{AdapterProbeCache, ProbeKey},
     session_store::{self, SessionManifest, SessionManifestState, SessionStore},
     tools::{BuildSettings, ToolPlacement, ToolRuntime, render_scope_evidence},
 };
@@ -615,7 +616,7 @@ impl Actor {
             message if Self::needs_controller(&message) && self.controller_busy() => {
                 self.defer(message)
             }
-            Msg::CheckAdapter => self.check_adapter(),
+            Msg::CheckAdapter => self.check_adapter(true),
             Msg::SettingsChanged => self.settings_changed(),
             Msg::Submit { id, brief, scope } => self.submit(id, brief, scope.map(|scope| *scope)),
             Msg::SetDisplayedPreviewIdentity(identity) => {
@@ -687,7 +688,7 @@ impl Actor {
                 } else {
                     // The settings changed while it ran: the result describes another
                     // adapter. Check the current one instead.
-                    self.check_adapter();
+                    self.check_adapter(false);
                 }
             }
             Msg::Pipeline(end) => self.on_pipeline(end),
