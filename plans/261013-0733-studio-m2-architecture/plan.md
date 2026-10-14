@@ -51,7 +51,7 @@ desktop/app        thin binary: runtime setup, window, bins studio-tools / studi
 | 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | Pending |
 | 6 | [Agent panel on a transcript row model](./phase-06-transcript-row-model.md) | 3-5d | 4, 5, 7 | Pending |
 | 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Pending |
-| 8 | [Split the remaining oversize files](./phase-08-split-oversize-files.md) | 3-4d | 1 | Pending |
+| 8 | [Split the remaining oversize files](./phase-08-split-oversize-files.md) | 3-4d | 1 | In progress |
 
 Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) re-checked phases 2, 4 and 6: the kit and theme port verbatim, but the layout and the transcript are rewrites against snapshots, so phases 4 and 6 grew.
 
