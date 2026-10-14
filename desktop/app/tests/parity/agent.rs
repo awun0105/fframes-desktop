@@ -54,6 +54,26 @@ fn send_brief(studio: &mut Studio) -> Value {
     })
 }
 
+/// Keys pressed in the prompt are text, and a real Enter sends it: the keyboard path,
+/// next to the `SubmitPrompt` action [`send_brief`] uses.
+#[gpui::test]
+fn space_types_in_the_prompt_and_enter_sends_it(cx: &mut gpui::TestAppContext) {
+    let mut studio = studio_with_agent(cx);
+    studio.dispatch(FocusPrompt);
+    studio.settle(Duration::from_millis(50));
+    studio.type_text("Make");
+    studio.press("space");
+    studio.type_text("the title red");
+    studio.press("enter");
+    let asking = studio.wait("the permission request", |t| {
+        phase(t) == "Waiting for your permission"
+    });
+    assert_eq!(rows(&asking, "user")[0]["chars"], BRIEF.len());
+    assert_eq!(asking["playing"], false);
+    let prompts = fs::read_to_string(studio.agent_evidence().join("prompts.jsonl")).unwrap();
+    assert!(prompts.contains(BRIEF), "{prompts}");
+}
+
 fn source(studio: &Studio) -> String {
     fs::read_to_string(studio.project_file("src/lib.rs")).unwrap()
 }

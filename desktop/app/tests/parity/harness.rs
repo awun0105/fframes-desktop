@@ -260,6 +260,12 @@ impl Studio {
         self.cx.simulate_input(self.window.into(), text);
     }
 
+    /// Presses real keys (`"enter"`, `"space"`, `"shift-tab"`) on the focused element,
+    /// through the keymap like a keyboard does.
+    pub fn press(&mut self, keystrokes: &str) {
+        self.cx.simulate_keystrokes(self.window.into(), keystrokes);
+    }
+
     /// Answers the open dialog the last action opened.
     pub fn choose_path(&mut self, path: &Path) {
         let path = path.to_path_buf();

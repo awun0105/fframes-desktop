@@ -638,3 +638,95 @@ c"
         );
     }
 }
+
+/// The override fields' keyboard contract: Tab walks from token to value, Enter sets
+/// the override, Escape leaves, and an IME composition keeps Enter and Escape.
+#[cfg(test)]
+mod field_keys {
+    use std::{cell::RefCell, rc::Rc};
+
+    use gpui::{Entity, EntityInputHandler, Focusable, TestAppContext, VisualTestContext};
+    use studio_engine::PresetMutation;
+    use studio_engine::presets::{AppliedView, PresetCommand, PresetView};
+
+    use super::{PresetEvent, PresetPanel};
+
+    type Events = Rc<RefCell<Vec<PresetEvent>>>;
+
+    fn applied() -> PresetView {
+        PresetView {
+            entries: Vec::new(),
+            skipped: Vec::new(),
+            applied: Some(AppliedView {
+                id: "studio.basic".into(),
+                name: "Basic".into(),
+                version: "1.0.0".into(),
+                hash: "0123456789abcdef".repeat(4),
+                overridden: Vec::new(),
+                diagnostics: Vec::new(),
+            }),
+            mutation: PresetMutation::Enabled,
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (Entity<PresetPanel>, Events, &mut VisualTestContext) {
+        cx.update(crate::text_input::bind_keys);
+        let (panel, cx) = cx.add_window_view(|_, cx| {
+            let mut panel = PresetPanel::new(cx);
+            panel.set_view(Some(applied()), cx);
+            panel
+        });
+        let events = Events::default();
+        let log = events.clone();
+        cx.update(|_, cx| {
+            cx.subscribe(&panel, move |_, event: &PresetEvent, _| {
+                log.borrow_mut().push(event.clone())
+            })
+            .detach()
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let token = panel.read(cx).token.focus_handle(cx);
+            window.focus(&token, cx);
+        });
+        (panel, events, cx)
+    }
+
+    #[gpui::test]
+    fn tab_then_enter_sets_the_override(cx: &mut TestAppContext) {
+        let (_, events, cx) = open(cx);
+        cx.simulate_input("color.accent");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("#ff5533");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(
+            *events.borrow(),
+            [PresetEvent::Run(PresetCommand::SetOverride {
+                token: "color.accent".into(),
+                value: "#ff5533".into(),
+            })]
+        );
+    }
+
+    #[gpui::test]
+    fn escape_leaves_the_field(cx: &mut TestAppContext) {
+        let (_, events, cx) = open(cx);
+        cx.simulate_keystrokes("escape");
+        assert_eq!(*events.borrow(), [PresetEvent::Leave]);
+    }
+
+    #[gpui::test]
+    fn a_composition_keeps_enter_and_escape(cx: &mut TestAppContext) {
+        let (panel, events, cx) = open(cx);
+        cx.simulate_input("color.accent");
+        cx.update(|window, cx| {
+            let token = panel.read(cx).token.clone();
+            token.update(cx, |input, cx| {
+                input.replace_and_mark_text_in_range(None, "\u{304b}", None, window, cx)
+            });
+        });
+        cx.simulate_keystrokes("enter");
+        cx.simulate_keystrokes("escape");
+        assert!(events.borrow().is_empty(), "{:?}", events.borrow());
+    }
+}
