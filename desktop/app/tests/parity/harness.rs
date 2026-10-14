@@ -134,6 +134,7 @@ impl Studio {
     }
 
     pub fn dispatch(&mut self, action: impl Action) {
+        let _watchdog = Watchdog::arm(action.name());
         self.cx.dispatch_action(self.window.into(), action);
     }
 
@@ -146,6 +147,7 @@ impl Studio {
     /// Lets the shell's frame loop and the real worker threads run until `done` holds,
     /// and returns the telemetry that satisfied it.
     pub fn wait(&mut self, what: &str, done: impl Fn(&Value) -> bool) -> Value {
+        let _watchdog = Watchdog::arm(what);
         let deadline = Instant::now() + WAIT;
         loop {
             self.cx.executor().advance_clock(Duration::from_millis(16));
@@ -164,6 +166,7 @@ impl Studio {
 
     /// Runs the frame loop for `duration` of app time without a condition.
     pub fn settle(&mut self, duration: Duration) -> Value {
+        let _watchdog = Watchdog::arm("the frame loop to settle");
         let steps = duration.as_millis() / 16;
         for _ in 0..steps {
             self.cx.executor().advance_clock(Duration::from_millis(16));
@@ -191,8 +194,32 @@ impl Studio {
 impl Drop for Studio {
     /// Quitting runs the shell's quit hook, which reaps workers and closes the project.
     fn drop(&mut self) {
+        let _watchdog = Watchdog::arm("the app to quit");
         self.cx.update(|cx| cx.quit());
         self.cx.run_until_parked();
+    }
+}
+
+/// Turns a hang into a failure. Work the test thread runs inline (a background task that
+/// blocks on a lock) cannot be interrupted by a deadline check, so a watchdog thread ends
+/// the test process, naming what never finished, if the guard is still armed long after
+/// the deadline.
+struct Watchdog(std::sync::mpsc::Sender<()>);
+
+impl Watchdog {
+    fn arm(what: &str) -> Self {
+        let (disarm, armed) = std::sync::mpsc::channel::<()>();
+        let what = what.to_owned();
+        let test = std::thread::current().name().unwrap_or("parity").to_owned();
+        std::thread::spawn(move || {
+            if let Err(std::sync::mpsc::RecvTimeoutError::Timeout) =
+                armed.recv_timeout(WAIT + Duration::from_secs(30))
+            {
+                eprintln!("{test}: hung waiting for {what}; ending the test process");
+                std::process::exit(101);
+            }
+        });
+        Self(disarm)
     }
 }
 
