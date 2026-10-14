@@ -100,9 +100,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --manifest-path desktop/Cargo.toml --all --check
       - name: Test desktop workspace
-        run: cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p fframes-studio
+        run: cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p fframes-studio
       - name: Lint desktop workspace
-        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p fframes-studio --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p fframes-studio --all-targets -- -D warnings
       - name: Test studio protocol and runtime
         run: cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
       - name: Packaging tests and qualification ledgers
@@ -274,9 +274,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --manifest-path desktop/Cargo.toml --all --check
       - name: Test desktop workspace
-        run: cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p fframes-studio
+        run: cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p fframes-studio
       - name: Lint desktop workspace
-        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p fframes-studio --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p fframes-studio --all-targets -- -D warnings
       - name: Test studio protocol and runtime
         run: cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
       - name: Packaging tests and qualification ledgers

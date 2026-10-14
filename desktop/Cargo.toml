@@ -8,6 +8,9 @@ members = [
     "crates/studio-bootstrap",
     "crates/studio-sdk",
     "crates/studio-harness",
+    "crates/studio-proto",
+    "crates/studio-theme",
+    "crates/studio-ui",
     "crates/studio-test-support",
 ]
 
@@ -21,6 +24,9 @@ studio-bootstrap = { path = "crates/studio-bootstrap" }
 fframes-studio-protocol = { path = "../fframes-studio-protocol" }
 studio-sdk = { path = "crates/studio-sdk" }
 studio-harness = { path = "crates/studio-harness" }
+studio-proto = { path = "crates/studio-proto" }
+studio-theme = { path = "crates/studio-theme" }
+studio-ui = { path = "crates/studio-ui" }
 sha2 = "0.10"
 semver = "1.0"
 ring = "0.17"

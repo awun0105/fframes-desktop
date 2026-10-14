@@ -6254,6 +6254,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "studio-proto"
+version = "0.1.0"
+
+[[package]]
 name = "studio-sdk"
 version = "0.1.0"
 dependencies = [
@@ -6275,6 +6279,14 @@ dependencies = [
 
 [[package]]
 name = "studio-test-support"
+version = "0.1.0"
+
+[[package]]
+name = "studio-theme"
+version = "0.1.0"
+
+[[package]]
+name = "studio-ui"
 version = "0.1.0"
 
 [[package]]
