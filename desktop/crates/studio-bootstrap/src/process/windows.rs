@@ -379,7 +379,9 @@ pub(super) fn windows_process_snapshot() -> Option<Vec<WinProcess>> {
 /// Pids currently assigned to `job`. A list that does not fit is asked for again with a
 /// buffer sized from the reported count; `Err` when it cannot be read in full.
 #[cfg(windows)]
-pub(super) fn job_member_pids(job: windows_sys::Win32::Foundation::HANDLE) -> Result<Vec<u32>, String> {
+pub(super) fn job_member_pids(
+    job: windows_sys::Win32::Foundation::HANDLE,
+) -> Result<Vec<u32>, String> {
     use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, GetLastError};
     use windows_sys::Win32::System::JobObjects::{
         JOBOBJECT_BASIC_PROCESS_ID_LIST, JobObjectBasicProcessIdList, QueryInformationJobObject,
