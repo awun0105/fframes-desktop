@@ -21,6 +21,14 @@ Part of [the studio rewrite roadmap](../261013-0733-studio-rewrite-roadmap/plan.
 - Projects pin `fframes =1.2.0` and the studio runtime and protocol `=0.1.0`, enforced by `build_materialization.rs`, and own their worker and export code (`templates/src/bin/studio_worker.rs`, copied at creation). So the hook ships in an SDK release with a project migration.
 - The studio template has no scenes. The migration and new projects get a multi-scene `Duration::Auto` template.
 
+Accepted design from [spike S2](../261013-0733-studio-m1-foundations/reports/spike-timing-hook.md) (decided 2026-10-14), which phases 1 and 2 build on:
+
+- Trims and splits live on the resolved timeline entries, not in wrapper scenes, so `get_scene_info`'s pointer lookup keeps working. It answers with a scene's first clip and keeps the scene's own `duration_in_frames`.
+- Timing keys are `editor_instance_key()` or `name()`. Later repeats get `#2`, `#3`, … in code order.
+- A clip's editor key is the scene's key for its first clip, and `key#n` for later clips of a split.
+- A trimmed edge is a hard cut: the overlap applies only on untrimmed edges, and an overlap reaching before frame 0 is clamped.
+- Scene audio moves and is trimmed with its clip. Top-level `Video::audio()` music stays on video time when scenes are reordered.
+
 Cap sources (pinned `a32e4806b`, `apps/desktop-gpui/src`; on the same patched GPUI fork as the app, so ports map Cap's project types to fframes types but need no GPUI API changes):
 
 | Source | Lines | What to take |

@@ -50,7 +50,7 @@ Syntax highlighting is written as a small module with five tree-sitter grammars 
 | 4 | [Diff review](./phase-04-diff-review.md) | 4-6d | 1 | Pending |
 | 5 | [Session history](./phase-05-session-history.md) | 3-4d | none | Pending |
 
-Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) compiled the todo panel and `ComposerInput` on the Cap fork with one GPUI API change. Phase 3 shrinks; phase 2 holds at 5-7d only if it keeps `ComposerInput` rather than building on the kit `TextInput` (8-10d).
+Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) compiled the todo panel and `ComposerInput` on the Cap fork with one GPUI API change. Phase 3 shrinks; phase 2 holds at 5-7d because it keeps `ComposerInput` (decided 2026-10-14) rather than building on the kit `TextInput` (8-10d).
 
 ## Success criteria
 

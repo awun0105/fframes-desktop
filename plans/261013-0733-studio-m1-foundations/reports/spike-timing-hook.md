@@ -157,4 +157,4 @@ The other seven scenes are appended, which brings the timeline from 6528 to 6488
 
 ## Unresolved questions
 
-- Should top-level `Video::audio()` music follow a reordered timeline, or stay anchored to video time as now?
+- None. Decided 2026-10-14: top-level music stays on video time, and the design choices above are accepted.

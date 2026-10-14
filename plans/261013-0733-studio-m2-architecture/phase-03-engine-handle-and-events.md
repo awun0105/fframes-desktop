@@ -20,7 +20,7 @@ Zeron's `crates/ui/src/state.rs` (`AppState` 751, `EngineHandle` 275, `spawn_wat
 ## Tasks
 
 1. Scout: every `Controller` field the shell reads, every mutation it calls, what `poll_agent`, `poll_preview` and `poll_audio` read (around `studio_shell.rs:1604,1807,2191`), and every holder of the `Arc<Mutex<Controller>>` (`studio_shell.rs:66,120`, `agent_workflow.rs:290,334,903`, `agent_workflow/jobs.rs:143,262,521`, `conversation_panel/host.rs:612`, `preset_panel.rs:409`).
-2. Define in `studio-proto`: `EngineCommand` (one variant per mutation found), `EngineEvent`, and snapshots (`ProjectSnapshot`, `PreviewSnapshot`, `AudioSnapshot`, `BuildSnapshot`, `WorkflowSnapshot`), every event tagged with the project session id.
+2. Define in `studio-proto`: `EngineCommand` (one variant per mutation found), `EngineEvent`, and snapshots (`ProjectSnapshot`, `PreviewSnapshot`, `AudioSnapshot`, `BuildSnapshot`, `WorkflowSnapshot`, and `SetupSnapshot` for the setup and settings screens: adapter detection from the cache in pattern 2, provider profiles and app settings such as theme and preview quality; named 2026-10-14 after spike S4), every event tagged with the project session id.
 3. In `studio-engine`, add `EngineHandle` and `ProjectSession` with the lifetimes in [the plan](./plan.md#state-lifetimes). The agent actor's job threads keep their existing locked access to the controller inside the engine; the UI gets commands only.
 4. In `studio-ui`, add `AppState` fed by watch tasks; it ignores events whose session id is not current and resets on project switch.
 5. Replace `poll_agent`, `poll_preview` and the UI's controller mutex with `AppState` reads and commands.
