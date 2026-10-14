@@ -63,15 +63,27 @@ The decisions:
   - The success criterion's "`conversation_panel*`, which phase 6 moves" is an allowance. Phase 6 starts from the new path.
   - Injecting the panel from the app as an `AnyView` with an event bridge was rejected: it rewrites the shell's agent code in a phase that only moves code.
 - **The shell stays one entity in this phase.** `StudioShell` keeps its state. Its methods are split across `impl StudioShell` blocks in section modules: `studio-ui/src/shell/{mod,header,status_strip,left_column,player,transport,keymap,layout,engine_events,qualification}.rs`. This is a pure move, with no change in behaviour, and every file stays under 1,500 lines. The free helpers and their 11 unit tests move with their sections.
-- **Qualification code.** The qualification code and `BoundsProbe` move into `studio-ui/src/shell/qualification.rs`, alone in one file, so phase 7 deletes a single module. The success criterion's "app holds the qualification code" is an allowance, not a requirement.
+- **Qualification code.** The shell's qualification code moves into `studio-ui/src/shell/qualification.rs`, alone in one file. `BoundsProbe` stays in `studio-ui/src/probe.rs`: the conversation panel and the timeline use it too, and folding it into the shell would make them import from the shell. Phase 7 deletes both modules. The success criterion's "app holds the qualification code" is an allowance, not a requirement.
 - **Order of commits.** Each is behaviour-preserving, with parity green:
   1. Add the crate dependencies, and move into `studio-ui`, one commit each:
      - `frame_image` (the gpui half), `canvas_view`, `actions` and `ui/probe.rs`;
      - `preset_panel`, `setup_view` and `timeline_view`;
      - `conversation_panel/`.
 
-     The app re-exports them for its tests until the parity move. `probe.rs` lands at `studio-ui/src/probe.rs` first and is folded into `shell/qualification.rs` when the shell moves, so phase 7 still deletes one module. The views keep their own telemetry methods, which phase 7 removes as well: `TimelineView::qualification_metrics`, `PresetPanel::telemetry` and the conversation panel's telemetry.
+     The app re-exports them for its tests until the parity move. `probe.rs` lands at `studio-ui/src/probe.rs` and stays there (see Qualification code). The views keep their own telemetry methods, which phase 7 removes as well: `TimelineView::qualification_metrics`, `PresetPanel::telemetry` and the conversation panel's telemetry.
   2. Move `studio_shell.rs` whole into `studio-ui/src/shell/mod.rs`, then split it section by section, one commit each.
+     The sections, in commit order:
+     - `transport.rs`: `render_transport`, the transport mode and clock helpers;
+     - `header.rs`: the header, the overflow menu and `OverflowAction`;
+     - `status_strip.rs`: notices, the status strip and its helpers;
+     - `left_column.rs`: the tabs, project files, recents, the empty state and the agent column;
+     - `keymap.rs`: `on_actions`;
+     - `qualification.rs`: telemetry, `start_qualification`, `start_agent_telemetry` and `bounds_probe`;
+     - `player.rs`: preview, canvas pointer, audio and playback, the player area, toolbar and stage;
+     - `engine_events.rs`: dispatch, engine events, presets, agent sync, opening, pickers and export;
+     - `layout.rs`: `impl Render`.
+
+     `mod.rs` keeps the struct, the constructors and what two or more sections share. Unit tests move with the code they test.
   3. Move the parity suite to `studio-ui/tests/parity/`. Switch merge gate 3 in `desktop.yml`, `desktop-self-hosted.yml` and `desktop-release.yml`.
   4. Keymap: one `bind_keys` with key contexts, most specific first: `TextInput`, then `Composer`, then `Timeline` and `Player`, then `Workspace`. The preview surface's raw `on_key_down` (Space, arrows, Home, End, `c`, `0`, Escape) becomes actions bound in the `Player` context. The root Tab handler stays. Test first: Ctrl+Z in a focused text field does not reach timeline undo, and Space on the preview still toggles playback.
   5. Cap's layout, a visible change:
