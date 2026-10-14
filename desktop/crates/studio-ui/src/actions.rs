@@ -44,6 +44,16 @@ actions!(
         ZoomIn,
         /// Zoom the timeline out, around the playhead.
         ZoomOut,
+        /// Scroll the timeline back by three quarters of its width.
+        PageTimelineBack,
+        /// Scroll the timeline forward by three quarters of its width.
+        PageTimelineForward,
+        /// Select the next object under the last canvas click.
+        CycleCanvasSelection,
+        /// Clear the canvas selection; the next task takes the timeline's selection.
+        ClearCanvasSelection,
+        /// Fit the video in the preview again.
+        ResetCanvasView,
         /// Save the project's current source as its checkpoint.
         SaveCheckpoint,
         /// Copy the last checkpoint into a new folder of the user's choice.

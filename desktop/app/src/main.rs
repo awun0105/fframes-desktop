@@ -290,7 +290,7 @@ fn run_studio(qualification: Option<Qualification>) {
     gpui_platform::application()
         .with_assets(fframes_studio::assets::Assets)
         .run(move |cx: &mut App| {
-            studio_ui::kit::bind_text_input_keys(cx);
+            studio_ui::shell::bind_keys(cx);
             let settings = studio_engine::app_paths::AppPaths::system()
                 .map(|paths| studio_engine::app_settings::AppSettings::load(&paths))
                 .unwrap_or_default();

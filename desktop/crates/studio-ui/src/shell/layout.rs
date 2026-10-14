@@ -6,6 +6,7 @@ use gpui::{
 use studio_theme::METRICS;
 
 use super::StudioShell;
+use super::keymap::WORKSPACE;
 use crate::frame_image::create_render_image;
 use crate::kit::Card;
 
@@ -186,6 +187,7 @@ impl Render for StudioShell {
         let agent = self.render_agent_column();
         Self::on_actions(div(), cx)
             .size_full()
+            .key_context(WORKSPACE)
             .track_focus(&self.focus)
             .tab_group()
             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, cx| {

@@ -9,6 +9,8 @@ mod qualification;
 mod status_strip;
 mod transport;
 
+pub use keymap::bind_keys;
+
 use gpui::{AppContext, Context, Window};
 use std::{
     collections::HashMap,
@@ -210,9 +212,6 @@ impl StudioShell {
         let timeline_subscription =
             cx.subscribe(&timeline, |shell, _, event, cx| match event.clone() {
                 TimelineEvent::Seek(frame) => shell.seek_preview(frame, cx),
-                TimelineEvent::Step(delta) => shell.step_preview(delta, cx),
-                TimelineEvent::TogglePlayback => shell.toggle_playback(cx),
-                TimelineEvent::ToggleMute => shell.toggle_mute(cx),
                 TimelineEvent::BeginScrub => {
                     shell.resume_scrub = shell.transport.playing() || shell.resume_install;
                     shell.resume_install = false;

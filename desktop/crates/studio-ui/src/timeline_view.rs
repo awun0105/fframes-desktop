@@ -16,12 +16,12 @@ use crate::kit::{
 };
 use crate::probe::BoundsProbe;
 
+/// The tracks' key context: the shell binds the timeline's keys in it.
+pub const KEY_CONTEXT: &str = "Timeline";
+
 #[derive(Debug, Clone)]
 pub enum TimelineEvent {
     Seek(usize),
-    Step(isize),
-    TogglePlayback,
-    ToggleMute,
     BeginScrub,
     EndScrub,
     ScopeChanged(Result<Option<Box<TaskScope>>, String>),
@@ -286,33 +286,13 @@ impl TimelineView {
             cx.notify();
         }
     }
-    fn key(&mut self, event: &gpui::KeyDownEvent, cx: &mut Context<Self>) {
-        let Some(model) = &self.model else {
-            return;
-        };
-        match event.keystroke.key.as_str() {
-            "space" => cx.emit(TimelineEvent::TogglePlayback),
-            "m" => cx.emit(TimelineEvent::ToggleMute),
-            "left" => cx.emit(TimelineEvent::Step(-1)),
-            "right" => cx.emit(TimelineEvent::Step(1)),
-            "home" => self.seek(0, cx),
-            "end" => self.seek_to_end(cx),
-            "+" | "=" => self.zoom(2., cx),
-            "-" => self.zoom(0.5, cx),
-            "pageup" => {
-                self.viewport.scroll_by(-self.viewport.width * 0.75, model);
-                cx.notify();
-            }
-            "pagedown" => {
-                self.viewport.scroll_by(self.viewport.width * 0.75, model);
-                cx.notify();
-            }
-            "s" => self.cycle_scene(cx),
-            "[" => self.mark_range_start(cx),
-            "]" => self.mark_range_end(cx),
-            _ => return,
+    /// Scrolls the tracks by three quarters of their width, back (`-1.`) or forward (`1.`).
+    pub fn page(&mut self, direction: f64, cx: &mut Context<Self>) {
+        if let Some(model) = &self.model {
+            self.viewport
+                .scroll_by(direction * self.viewport.width * 0.75, model);
+            cx.notify();
         }
-        cx.stop_propagation();
     }
     fn action(
         entity: &gpui::Entity<Self>,
@@ -694,7 +674,7 @@ impl Render for TimelineView {
             .overflow_hidden()
             .rounded(px(metrics.radius_segment))
             .focus_visible(|s| s.shadow(focus_ring(&theme)))
-            .on_key_down(cx.listener(|view, event, _, cx| view.key(event, cx)))
+            .key_context(KEY_CONTEXT)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|v, e, w, cx| v.pointer_down(e, w, cx)),

@@ -41,7 +41,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 - [x] Scout sections
 - [x] Shell modules
-- [ ] Actions and keymap
+- [x] Actions and keymap
 - [x] Remaining views moved
 - [x] Parity suite moved and CI updated
 
@@ -87,6 +87,11 @@ The decisions:
      `mod.rs` keeps the struct, the constructors and what two or more sections share: `Picker`, `PreparedInstall`, `AgentHost` and the `action_button`/`action_icon_button` pair. Unit tests move with the code they test. Methods called across sections are `pub(super)`; everything else stays private to its file.
   3. Move the parity suite to `studio-ui/tests/parity/`. Done 2026-10-14: the same 34 tests by name, now run by `cargo test -p studio-ui --test parity`. The workflows needed no change: `desktop.yml`, `desktop-self-hosted.yml` and `desktop-release.yml` run every test of `-p studio-ui`, which includes the suite.
   4. Keymap: one `bind_keys` with key contexts, most specific first: `TextInput`, then `Composer`, then `Timeline` and `Player`, then `Workspace`. The preview surface's raw `on_key_down` (Space, arrows, Home, End, `c`, `0`, Escape) becomes actions bound in the `Player` context. The root Tab handler stays. Test first: Ctrl+Z in a focused text field does not reach timeline undo, and Space on the preview still toggles playback.
+     Done 2026-10-14. `shell::bind_keys` binds the text fields' keys and then the `Player` and `Timeline` keys; the harness and `main.rs` call it. Parity tests press every preview and timeline key as a real keystroke; they were written against the raw handlers first and fail when a binding is dropped. Recorded differences from the step as written:
+     - There is no timeline undo, so the Ctrl+Z test pins that undo in the agent prompt undoes the prompt's own typing and leaves the playhead and the timeline selection alone.
+     - `Composer` gets no context: the prompt's and the setup fields' Enter, Tab and Escape stay in their composition-aware key handlers, since an action binding would fire during an IME composition. `Workspace` is set on the window root with no bindings; a keymap unit test fails if a shell binding leaves `Player` or `Timeline`.
+     - The timeline's keys now answer only without modifiers (and Shift+= for +); the raw handler ignored modifiers. Home and End on the preview still seek the shown preview: the preview surface handles `SeekToStart` and `SeekToEnd` itself, the window root sends them through the timeline.
+     - New actions: `FocusPreview`, `FocusTimeline`, `CycleCanvasSelection`, `ClearCanvasSelection`, `ResetCanvasView`, `PageTimelineBack` and `PageTimelineForward`, all handled at the window root like the others.
   5. Cap's layout, a visible change:
      - a 52 px header;
      - a player card (44 px toolbar, stage, 48 px transport) beside a fixed sidebar;

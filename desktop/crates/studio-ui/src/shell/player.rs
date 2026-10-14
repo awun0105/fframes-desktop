@@ -11,8 +11,10 @@ use studio_engine::services::audio_service::{AudioEvent, OutputDevice};
 use studio_engine::services::preview_coordinator::SeekIntent;
 use studio_theme::{METRICS, Shadow, TextStyle, shadow_for, text_style};
 
+use super::keymap::PLAYER;
 use super::transport::{show_total_time, transport_mode};
 use super::{PreparedInstall, StudioShell};
+use crate::actions;
 use crate::canvas_view::StageLayout;
 use crate::kit::{Badge, Card, Icon, Tone, focus_ring, icon, with_tooltip};
 
@@ -391,14 +393,20 @@ impl StudioShell {
         cx.notify();
     }
 
-    fn cycle_canvas_selection(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn cycle_canvas_selection(&mut self, cx: &mut Context<Self>) {
         if let Err(error) = self.canvas.cycle_last_hit() {
             self.canvas.message = Some(error.to_string());
         }
         cx.notify();
     }
 
-    fn reset_canvas_view(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn clear_canvas_selection(&mut self, cx: &mut Context<Self>) {
+        self.canvas.clear_selection();
+        self.install_task_scope(self.timeline.read(cx).selected_scope(), cx);
+        cx.notify();
+    }
+
+    pub(super) fn reset_canvas_view(&mut self, cx: &mut Context<Self>) {
         if let Some(viewport) = &mut self.canvas.viewport {
             viewport.reset_to_fit();
         }
@@ -709,34 +717,16 @@ impl StudioShell {
             .role(gpui::Role::Group)
             .aria_label("Compiled preview")
             .focus_visible(|s| s.shadow(focus_ring(&theme)))
-            .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
-                if event.keystroke.modifiers.alt
-                    || event.keystroke.modifiers.control
-                    || event.keystroke.modifiers.platform
-                    || event.keystroke.modifiers.shift
-                {
-                    return;
+            .key_context(PLAYER)
+            // Home and End on the preview seek the shown preview itself; from anywhere
+            // else they go through the timeline (see the window's handlers).
+            .on_action(
+                cx.listener(|shell, _: &actions::SeekToStart, _, cx| shell.seek_preview(0, cx)),
+            )
+            .on_action(cx.listener(|shell, _: &actions::SeekToEnd, _, cx| {
+                if let Some(d) = &shell.displayed {
+                    shell.seek_preview(d.timeline.total_frames, cx);
                 }
-                match event.keystroke.key.as_str() {
-                    "space" => shell.toggle_playback(cx),
-                    "left" => shell.step_preview(-1, cx),
-                    "right" => shell.step_preview(1, cx),
-                    "home" => shell.seek_preview(0, cx),
-                    "c" => shell.cycle_canvas_selection(cx),
-                    "0" => shell.reset_canvas_view(cx),
-                    "escape" => {
-                        shell.canvas.clear_selection();
-                        shell.install_task_scope(shell.timeline.read(cx).selected_scope(), cx);
-                        cx.notify();
-                    }
-                    "end" => {
-                        if let Some(d) = &shell.displayed {
-                            shell.seek_preview(d.timeline.total_frames, cx);
-                        }
-                    }
-                    _ => return,
-                }
-                cx.stop_propagation();
             }))
             .on_mouse_down(
                 MouseButton::Left,
