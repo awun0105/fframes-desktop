@@ -44,7 +44,6 @@ use crate::{
     timeline_view::{TimelineEvent, TimelineView},
 };
 use left_column::LeftTab;
-use transport::{show_total_time, transport_mode};
 
 enum Picker {
     Create,

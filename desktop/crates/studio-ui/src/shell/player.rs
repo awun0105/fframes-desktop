@@ -11,7 +11,8 @@ use studio_engine::services::audio_service::{AudioEvent, OutputDevice};
 use studio_engine::services::preview_coordinator::SeekIntent;
 use studio_theme::{METRICS, Shadow, TextStyle, shadow_for, text_style};
 
-use super::{PreparedInstall, StudioShell, show_total_time, transport_mode};
+use super::transport::{show_total_time, transport_mode};
+use super::{PreparedInstall, StudioShell};
 use crate::canvas_view::StageLayout;
 use crate::kit::{Badge, Card, Icon, Tone, focus_ring, icon, with_tooltip};
 
