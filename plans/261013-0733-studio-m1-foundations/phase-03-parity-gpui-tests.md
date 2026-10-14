@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Parity gpui tests"
-status: in-progress
+status: complete
 priority: P1
 effort: "3-5d"
 dependencies: [2]
@@ -37,7 +37,7 @@ Every item on the [parity list](./plan.md#parity-list) has a `#[gpui::test]` tha
 - [x] services, checkpoints, audio
 - [x] timeline, transport, agent
 - [x] Mutation check, one per module (results below)
-- [ ] Green on three CI platforms (passes locally on Windows; Linux and macOS run in `desktop.yml` and the self-hosted jobs, not observed yet)
+- [x] Green on three CI platforms: self-hosted Windows and Linux (run 38503744645) and macos-15 (run 38503812288, with the dependency check), all at `2f527d3`
 
 ## Success criteria
 
@@ -50,7 +50,7 @@ Every item on the [parity list](./plan.md#parity-list) has a `#[gpui::test]` tha
 
 ## Progress
 
-**State (2026-10-14):** 30 tests in `desktop/app/tests/parity/` pass on Windows (this VM, about 20 s). The rest of `cargo test -p fframes-studio`, clippy with `-D warnings` and `cargo fmt --check` pass too. Linux and macOS CI have not run yet.
+**State (2026-10-14):** 30 tests in `desktop/app/tests/parity/` pass on Windows (this VM, about 20 s). The rest of `cargo test -p fframes-studio`, clippy with `-D warnings` and `cargo fmt --check` pass too. CI passed on self-hosted Windows and Linux x86-64 and on macos-15 at `2f527d3`. On Linux x86-64 the preset and agent Apply tests take the branch where mutation is allowed.
 
 ### How the tests reach the app
 
