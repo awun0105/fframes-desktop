@@ -13,10 +13,6 @@ use super::{
     ConversationPanel, Tone,
     controls::{self, derive_controls},
 };
-use crate::{
-    design_system,
-    ui::{self, Badge, Tone as UiTone},
-};
 use gpui::{
     Context, ElementId, InteractiveElement, ParentElement, StatefulInteractiveElement, Styled,
     Window, div, px,
@@ -40,6 +36,8 @@ use studio_harness::{
     NodeEntry,
     adapter_install::{self, InstallError, InstalledAdapter},
 };
+use studio_theme::METRICS;
+use studio_ui::kit::{Badge, Tone as UiTone, focusable, label, on_activate};
 
 // ---- state -------------------------------------------------------------------------------------
 
@@ -694,13 +692,14 @@ impl ConversationPanel {
                 "The M6 ledger is invalid. No provider recommendation is shown; writer containment remains independently checked for the selected launch.".to_owned()
             }
         };
-        let mut providers = Self::section("Providers")
-            .child(Self::line(
-                "Select a configured ACP provider, or start a stopped-writer handoff.",
-            ))
-            .child(Self::line(ranking_note));
+        let mut providers = self
+            .section("Providers")
+            .child(
+                self.line("Select a configured ACP provider, or start a stopped-writer handoff."),
+            )
+            .child(self.line(ranking_note));
         if let Some(notice) = &self.qualification.notice {
-            providers = providers.child(Self::line(notice.clone()));
+            providers = providers.child(self.line(notice.clone()));
         }
         for profile in &self.registry.profiles {
             let selected =
@@ -751,7 +750,8 @@ impl ConversationPanel {
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> gpui::Stateful<gpui::Div> {
-        let palette = design_system::tokens().palette;
+        let theme = self.theme;
+        let palette = theme.editor;
         let radio = div()
             .flex_none()
             .size(px(14.))
@@ -774,7 +774,7 @@ impl ConversationPanel {
             .items_center()
             .gap(px(8.))
             .p(px(8.))
-            .rounded(px(design_system::tokens().metrics.radius_control))
+            .rounded(px(METRICS.radius_control))
             .bg(if selected {
                 palette.ctl
             } else {
@@ -787,16 +787,16 @@ impl ConversationPanel {
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .child(ui::label(name.to_owned()))
-                    .child(Self::line(description)),
+                    .child(label(&self.theme, name.to_owned()))
+                    .child(self.line(description)),
             )
             .child(Badge::new(action_label).tone(if selected {
                 UiTone::Info
             } else {
                 UiTone::Neutral
             }));
-        let row = ui::interact::focusable(row, !enabled);
-        ui::interact::on_activate(row, !enabled, Some(Rc::new(Self::activate(cx, action))))
+        let row = focusable(row, &theme, !enabled);
+        on_activate(row, !enabled, Some(Rc::new(Self::activate(cx, action))))
     }
 
     /// The "Detect agents" section: the Detect button and one row per profile it found.
@@ -808,10 +808,10 @@ impl ConversationPanel {
     ) -> gpui::Div {
         let setup = &self.agent_setup;
         let installing = setup.install.is_running();
-        let mut detect = Self::section("Detect agents").child(Self::line(
+        let mut detect = self.section("Detect agents").child(self.line(
             "Looks for installed agents without starting them. No API key is needed; each agent uses its own sign-in.",
         ));
-        detect = detect.child(self.button(
+        detect = detect.child(self.action_button(
             "agent-detect",
             if setup.scans.is_running() {
                 "Detecting…"
@@ -865,7 +865,7 @@ impl ConversationPanel {
             let (select_id, install_id) = (profile.id.clone(), profile.id.clone());
             let mut actions = div().flex().gap_1();
             if installing_this {
-                actions = actions.child(self.button(
+                actions = actions.child(self.action_button(
                     format!("agent-install-cancel-{}", profile.id),
                     "Cancel install",
                     true,
@@ -879,7 +879,7 @@ impl ConversationPanel {
             } else {
                 match action {
                     DetectRowAction::TurnOn => {
-                        actions = actions.child(self.button(
+                        actions = actions.child(self.action_button(
                             format!("agent-detected-{}", profile.id),
                             "Select",
                             settings_editable && !self.saves.is_pending(),
@@ -889,7 +889,7 @@ impl ConversationPanel {
                         ));
                     }
                     DetectRowAction::InstallAdapter => {
-                        actions = actions.child(self.button(
+                        actions = actions.child(self.action_button(
                             format!("agent-install-{}", profile.id),
                             "Install adapter",
                             !installing && !setup.scans.is_running(),
@@ -899,7 +899,7 @@ impl ConversationPanel {
                         ));
                     }
                     DetectRowAction::GetNode => {
-                        actions = actions.child(self.button(
+                        actions = actions.child(self.action_button(
                             format!("agent-get-node-{}", profile.id),
                             "Get Node.js",
                             true,
@@ -911,7 +911,7 @@ impl ConversationPanel {
                         ));
                     }
                     DetectRowAction::InstallGuide(url) => {
-                        actions = actions.child(self.button(
+                        actions = actions.child(self.action_button(
                             format!("agent-install-guide-{}", profile.id),
                             "Install guide",
                             true,
@@ -936,8 +936,8 @@ impl ConversationPanel {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .child(ui::label(profile.label.clone()))
-                            .child(Self::line(format!("{status}{location}{hint}"))),
+                            .child(label(&self.theme, profile.label.clone()))
+                            .child(self.line(format!("{status}{location}{hint}"))),
                     )
                     .child(actions),
             );

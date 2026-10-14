@@ -85,13 +85,7 @@ fn evidence_image_key(task: &studio_engine::AgentTaskId, artifact_id: &str) -> S
     format!("{}:{artifact_id}", task.0)
 }
 
-use crate::{
-    design_system::{self, TextStyle, text_style},
-    ui::{
-        self, Badge, BoundsProbe, Button, ButtonVariant, Collapsible, FieldRow, Icon, IconButton,
-        IconButtonSize, Menu, MenuState, Notice, Select, Toggle, Tone as UiTone, icon,
-    },
-};
+use crate::ui::{self, BoundsProbe};
 use controls::{
     Controls, InputKey, KeyMods, ReplyTracker, ReviewControls, SaveTracker, SubmitKind,
     UndoControl, derive_controls, guidance, route_input_key,
@@ -123,8 +117,12 @@ use studio_engine::providers::host::{self, AdapterFields, AdapterFile, McpChoice
 use studio_engine::providers::provider_profiles;
 use studio_engine::{DraftState, ReviewPolicy, TaskScope, app_paths::AppPaths};
 use studio_harness::driver::{ConfigKind, OptionValue, ToolStatus};
-use studio_theme::Theme;
-use studio_ui::kit::{TextInput, TextInputEvent, TextInputState};
+use studio_theme::{METRICS, TextStyle, Theme, text_style};
+use studio_ui::kit::{
+    Badge, Card, CollapsibleSection, EditorButton, Icon, IconButton, IconButtonSize, Menu,
+    MenuItem, MenuState, Notice, Select, TextInput, TextInputEvent, TextInputState, Toggle,
+    Tone as UiTone, field_row, heading, icon, label,
+};
 
 /// Height of the composer container and the inset of its contents.
 const COMPOSER_H: f32 = 64.;
@@ -191,32 +189,42 @@ pub struct Attachment {
 /// (attachment serial, chat generation at request time, the page).
 type PageResult = (u64, u64, Result<Vec<Arc<Row>>, String>);
 
-/// The open menu of a select-type agent option: the names it shows and, row for row, the
+/// The open menu of a select-type agent option: the rows it shows and, row for row, the
 /// values they commit. Both are built together, so a click commits the value whose name the
 /// reader saw even when the agent changed its options since.
 struct ConfigMenu {
+    items: Vec<MenuItem>,
     state: MenuState,
     values: Vec<String>,
 }
 
 impl ConfigMenu {
     /// A menu listing the values of the select-type option `id`, the current one checked.
+    /// It opens at the window origin until [`MenuState::anchored`] places it at its trigger.
     fn of(config: &[studio_harness::driver::ConfigOption], id: &str) -> Option<Self> {
         let option = config.iter().find(|o| o.id == id)?;
         let ConfigKind::Select { current, values } = &option.kind else {
             return None;
         };
-        let names = values.iter().map(|v| v.name.clone().into()).collect();
+        let items: Vec<MenuItem> = values
+            .iter()
+            .map(|v| MenuItem::new(v.name.clone(), &v.value == current))
+            .collect();
         Some(Self {
-            state: MenuState::new(names, values.iter().position(|v| &v.value == current)),
+            state: MenuState::new(gpui::point(px(0.), px(0.)), &items),
+            items,
             values: values.iter().map(|v| v.value.clone()).collect(),
         })
     }
 
-    fn empty() -> Self {
-        Self {
-            state: MenuState::new(Vec::new(), None),
-            values: Vec::new(),
+    /// Takes the rows of `fresh` when they changed (`items` carries the check mark, so a new
+    /// current value counts), keeping the place the menu opened at. Unchanged rows keep
+    /// everything, including a highlight moved with the keys.
+    fn refresh(&mut self, mut fresh: ConfigMenu) {
+        if self.values != fresh.values || self.items != fresh.items {
+            fresh.state.origin = self.state.origin;
+            fresh.state.trigger_bounds = self.state.trigger_bounds;
+            *self = fresh;
         }
     }
 }
@@ -1155,7 +1163,16 @@ impl ConversationPanel {
         }))
     }
 
-    fn button(
+    /// [`Self::activate`] in the shape of a click handler.
+    fn click(
+        cx: &mut Context<Self>,
+        action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static {
+        let activate = Self::activate(cx, action);
+        move |_, window, app| activate(window, app)
+    }
+
+    fn action_button(
         &self,
         id: impl Into<ElementId>,
         label: impl Into<SharedString>,
@@ -1163,79 +1180,86 @@ impl ConversationPanel {
         tone: Tone,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
-    ) -> Button {
+    ) -> EditorButton {
+        let theme = self.theme;
         let id: ElementId = id.into();
         let probe = Self::bounds_probe(&id, cx);
-        Button::new(id, label)
-            .variant(match tone {
-                Tone::Normal => ButtonVariant::Editor,
-                Tone::Primary => ButtonVariant::Primary,
-                Tone::Danger => ButtonVariant::Destructive,
-            })
+        let button = EditorButton::plain(&theme, id)
+            .label(label)
             .disabled(!enabled)
-            .probe(probe)
-            .on_click(Self::activate(cx, action))
+            .on_click(Self::click(cx, action));
+        let button = match tone {
+            Tone::Normal => button.filled(&theme),
+            Tone::Primary => button.accent(&theme),
+            Tone::Danger => button.destructive(&theme),
+        };
+        match probe {
+            Some(probe) => button.on_bounds(probe.into_bounds_handler()),
+            None => button,
+        }
     }
 
-    /// An icon-only button; `label` is its tooltip and accessible name.
+    /// An icon-only button; `label` is its tooltip and accessible name. `Normal` has no fill.
     fn icon_button(
         &self,
         id: impl Into<ElementId>,
         glyph: Icon,
         label: &'static str,
-        variant: ButtonVariant,
+        tone: Tone,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> IconButton {
-        IconButton::new(id, glyph)
-            .size(IconButtonSize::Small)
-            .variant(variant)
+        let theme = self.theme;
+        let button = IconButton::editor(&theme, id, glyph.path())
+            .editor_size(IconButtonSize::Small)
             .label(label)
-            .on_click(Self::activate(cx, action))
+            .tooltip(&theme, label)
+            .on_click(Self::click(cx, action));
+        match tone {
+            Tone::Normal => button,
+            Tone::Primary => button.accent(&theme),
+            Tone::Danger => button.destructive(&theme),
+        }
     }
 
     /// One item of a segmented rail: the selected item is highlighted and inert.
-    fn segment_button(
+    fn segment_item(
         &self,
         id: impl Into<ElementId>,
         label: impl Into<SharedString>,
         selected: bool,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
-    ) -> Button {
+    ) -> EditorButton {
         let id: ElementId = id.into();
         let probe = Self::bounds_probe(&id, cx);
-        let button = Button::new(id, label)
-            .variant(ButtonVariant::Ghost)
-            .selected(selected)
-            .probe(probe);
+        let mut button = EditorButton::plain(&self.theme, id)
+            .label(label)
+            .pressed(selected);
+        if let Some(probe) = probe {
+            button = button.on_bounds(probe.into_bounds_handler());
+        }
         if selected {
             button
         } else {
-            button.on_click(Self::activate(cx, action))
+            button.on_click(Self::click(cx, action))
         }
     }
 
-    fn segment_rail() -> gpui::Div {
-        let tokens = design_system::tokens();
+    fn segment_rail(&self) -> gpui::Div {
         div()
             .flex()
             .flex_wrap()
             .items_center()
             .gap(px(2.))
             .p(px(2.))
-            .rounded(px(tokens.metrics.radius_control + 2.))
-            .bg(tokens.palette.ctl)
+            .rounded(px(METRICS.radius_control + 2.))
+            .bg(self.theme.editor.ctl)
     }
 
-    fn tab_button(
-        &self,
-        tab: Tab,
-        label: &'static str,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn tab_item(&self, tab: Tab, label: &'static str, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.tab == tab;
-        self.segment_button(
+        self.segment_item(
             format!("agent-tab-{label}"),
             label,
             active,
@@ -1248,24 +1272,22 @@ impl ConversationPanel {
     }
 
     /// A titled group on a nested card.
-    fn section(title: &str) -> gpui::Div {
-        let tokens = design_system::tokens();
-        ui::card_2()
+    fn section(&self, title: &str) -> gpui::Div {
+        let theme = self.theme;
+        Card::editor_nested(&theme)
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_2))
-            .p(px(tokens.metrics.space_3))
+            .gap(px(METRICS.space_2))
+            .p(px(METRICS.space_3))
             .child(
                 text_style(div(), TextStyle::Label)
-                    .text_color(tokens.palette.text_1)
+                    .text_color(theme.editor.text_1)
                     .child(title.to_owned()),
             )
     }
 
-    fn line(text: impl Into<SharedString>) -> gpui::Div {
-        text_style(div(), TextStyle::Small)
-            .text_color(design_system::tokens().palette.text_2)
-            .child(text.into())
+    fn line(&self, text: impl Into<SharedString>) -> gpui::Div {
+        line(&self.theme, text)
     }
 
     // ---- rows ------------------------------------------------------------------------------------
@@ -1273,14 +1295,12 @@ impl ConversationPanel {
     /// Rows get their spacing as padding inside the measured element, so the list's
     /// height measurement includes it and stays stable while a row streams.
     fn row_shell() -> gpui::Div {
-        div()
-            .w_full()
-            .pb(px(design_system::tokens().metrics.space_2))
+        div().w_full().pb(px(METRICS.space_2))
     }
 
-    fn caption(text: &str) -> gpui::Div {
+    fn caption(&self, text: &str) -> gpui::Div {
         text_style(div(), TextStyle::Small)
-            .text_color(design_system::tokens().palette.text_3)
+            .text_color(self.theme.editor.text_3)
             .child(text.to_owned())
     }
 
@@ -1289,16 +1309,17 @@ impl ConversationPanel {
     }
 
     fn row_element(&mut self, row: &Arc<Row>, cx: &mut Context<Self>) -> AnyElement {
-        let palette = design_system::tokens().palette;
+        let theme = self.theme;
+        let palette = theme.editor;
         match &row.kind {
             RowKind::User { text, source } => Self::row_shell()
                 .child(
-                    ui::card_2()
+                    Card::editor_nested(&self.theme)
                         .flex()
                         .flex_col()
                         .gap(px(4.))
                         .p(px(10.))
-                        .child(Self::caption(match source {
+                        .child(self.caption(match source {
                             UserSource::Brief => "You",
                             UserSource::Clarification => "You (answer)",
                             UserSource::Repair => "Automatic repair context (sent by Studio)",
@@ -1319,7 +1340,7 @@ impl ConversationPanel {
                         .flex_col()
                         .gap(px(4.))
                         .px(px(2.))
-                        .child(Self::caption(if *streaming {
+                        .child(self.caption(if *streaming {
                             "Agent · writing…"
                         } else {
                             "Agent"
@@ -1339,7 +1360,7 @@ impl ConversationPanel {
                 let entity = cx.entity();
                 Self::row_shell()
                     .child(
-                        Collapsible::new(("agent-thought", id), open)
+                        CollapsibleSection::new(("agent-thought", id), open)
                             // A fixed header height: the badge appears and goes without
                             // changing the row's measured height.
                             .header(
@@ -1368,7 +1389,7 @@ impl ConversationPanel {
                             )
                             .on_toggle(move |next, _, cx| {
                                 entity.update(cx, |this, cx| {
-                                    this.toggle_thought(id, next);
+                                    this.toggle_thought(id, *next);
                                     cx.notify();
                                 });
                             }),
@@ -1419,11 +1440,12 @@ impl ConversationPanel {
     }
 
     fn tool_card(&self, card: &ToolCard) -> AnyElement {
-        let palette = design_system::tokens().palette;
+        let theme = self.theme;
+        let palette = theme.editor;
         let (status, tone) = tool_badge(card.status);
         Self::row_shell()
             .child(
-                ui::card_2()
+                Card::editor_nested(&self.theme)
                     .flex()
                     .flex_col()
                     .gap(px(4.))
@@ -1435,10 +1457,10 @@ impl ConversationPanel {
                             .gap(px(8.))
                             .child(icon(Icon::Hammer, 14., palette.text_2))
                             .child(
-                                ui::label(format!(
-                                    "Tool · {}",
-                                    card.kind.as_deref().unwrap_or("call")
-                                ))
+                                label(
+                                    &self.theme,
+                                    format!("Tool · {}", card.kind.as_deref().unwrap_or("call")),
+                                )
                                 .flex_1()
                                 .min_w_0(),
                             )
@@ -1450,7 +1472,7 @@ impl ConversationPanel {
                             .child(card.title.clone().unwrap_or_else(|| card.call_id.clone())),
                     )
                     .children(
-                        (card.updates > 1).then(|| Self::line(format!("{} updates", card.updates))),
+                        (card.updates > 1).then(|| self.line(format!("{} updates", card.updates))),
                     ),
             )
             .into_any_element()
@@ -1491,7 +1513,7 @@ impl ConversationPanel {
             for option in &card.options {
                 let reference = card.reference.clone();
                 let id = option.option_id.clone();
-                notice = notice.action(self.button(
+                notice = notice.action(self.action_button(
                     format!("perm-{key}-{}", option.option_id),
                     option.name.clone(),
                     true,
@@ -1511,7 +1533,7 @@ impl ConversationPanel {
                 ));
             }
             let reference = card.reference.clone();
-            notice = notice.action(self.button(
+            notice = notice.action(self.action_button(
                 format!("perm-{key}-decline"),
                 "Decline",
                 true,
@@ -1638,22 +1660,26 @@ impl ConversationPanel {
 
     fn changes_card(&self, card: &ChangeCard) -> AnyElement {
         use studio_engine::candidate_validation::ChangeKind;
-        let palette = design_system::tokens().palette;
-        let mut body = ui::card_2()
+        let theme = self.theme;
+        let palette = theme.editor;
+        let mut body = Card::editor_nested(&self.theme)
             .flex()
             .flex_col()
             .gap(px(4.))
             .p(px(10.))
-            .child(ui::label(format!(
-                "{} changed file{}",
-                card.total,
-                if card.total == 1 { "" } else { "s" }
-            )));
+            .child(label(
+                &self.theme,
+                format!(
+                    "{} changed file{}",
+                    card.total,
+                    if card.total == 1 { "" } else { "s" }
+                ),
+            ));
         for entry in &card.entries {
             let (mark, color) = match entry.change {
-                ChangeKind::Added => ("A", palette.success),
+                ChangeKind::Added => ("A", theme.green_11),
                 ChangeKind::Modified => ("M", palette.text_2),
-                ChangeKind::Deleted => ("D", palette.danger),
+                ChangeKind::Deleted => ("D", theme.red_11),
                 ChangeKind::Mode => ("X", palette.text_3),
             };
             body = body.child(
@@ -1666,7 +1692,7 @@ impl ConversationPanel {
             );
         }
         if card.truncated || card.total > card.entries.len() {
-            body = body.child(Self::line(format!(
+            body = body.child(self.line(format!(
                 "…and {} more",
                 card.total.saturating_sub(card.entries.len())
             )));
@@ -1744,9 +1770,13 @@ impl ConversationPanel {
         Some(banner)
     }
 
-    fn review_buttons(&mut self, review: &ReviewControls, cx: &mut Context<Self>) -> Vec<Button> {
+    fn review_buttons(
+        &mut self,
+        review: &ReviewControls,
+        cx: &mut Context<Self>,
+    ) -> Vec<EditorButton> {
         vec![
-            self.button(
+            self.action_button(
                 "agent-apply",
                 if review.apply_note.is_some() {
                     "Retry Apply"
@@ -1758,7 +1788,7 @@ impl ConversationPanel {
                 cx,
                 |this, _, cx| this.apply(cx),
             ),
-            self.button(
+            self.action_button(
                 "agent-discard",
                 "Discard",
                 true,
@@ -1771,7 +1801,7 @@ impl ConversationPanel {
                     }
                 },
             ),
-            self.button(
+            self.action_button(
                 "agent-export-candidate",
                 "Export candidate…",
                 true,
@@ -1786,22 +1816,22 @@ impl ConversationPanel {
         let list = |title: &str, paths: &[String]| {
             let mut block = div().flex().flex_col();
             if !paths.is_empty() {
-                block = block.child(Self::line(title.to_owned()));
+                block = block.child(self.line(title.to_owned()));
                 for path in paths.iter().take(8) {
-                    block = block.child(Self::line(format!("  {path}")));
+                    block = block.child(self.line(format!("  {path}")));
                 }
                 if paths.len() > 8 {
-                    block = block.child(Self::line(format!("  …and {} more", paths.len() - 8)));
+                    block = block.child(self.line(format!("  …and {} more", paths.len() - 8)));
                 }
             }
             block
         };
-        ui::card_2()
+        Card::editor_nested(&self.theme)
             .flex()
             .flex_col()
             .gap(px(4.))
             .p(px(10.))
-            .child(ui::label(format!("Conflict: {}", conflict.reason)))
+            .child(label(&self.theme, format!("Conflict: {}", conflict.reason)))
             .child(list(
                 "Changed in the project meanwhile:",
                 &conflict.external_paths,
@@ -1810,10 +1840,10 @@ impl ConversationPanel {
             .child(list("Changed on both sides:", &conflict.overlapping))
             .children((!conflict.retained_variants.is_empty()).then(|| {
                 let mut block = div().flex().flex_col();
-                block = block.child(Self::line("Preserved variants (nothing was overwritten):"));
+                block = block.child(self.line("Preserved variants (nothing was overwritten):"));
                 for variant in conflict.retained_variants.iter().take(8) {
                     block =
-                        block.child(Self::line(format!("  {} · {}", variant.path, variant.role)));
+                        block.child(self.line(format!("  {} · {}", variant.path, variant.role)));
                 }
                 block
             }))
@@ -1829,15 +1859,15 @@ impl ConversationPanel {
             return controls
                 .options_note
                 .as_ref()
-                .map(|note| div().child(Self::line(note.clone())));
+                .map(|note| div().child(self.line(note.clone())));
         }
         let mut bar = div().flex().flex_col().items_start().gap(px(8.));
         if controls.modes {
-            let mut rail = Self::segment_rail();
+            let mut rail = self.segment_rail();
             for mode in &snapshot.options.modes {
                 let selected = snapshot.options.current_mode.as_deref() == Some(mode.id.as_str());
                 let id = mode.id.clone();
-                rail = rail.child(self.segment_button(
+                rail = rail.child(self.segment_item(
                     format!("mode-{}", mode.id),
                     if selected {
                         format!("● {}", mode.name)
@@ -1860,7 +1890,7 @@ impl ConversationPanel {
                     .flex_wrap()
                     .gap(px(8.))
                     .items_center()
-                    .child(Self::line("Mode"))
+                    .child(self.line("Mode"))
                     .child(rail),
             );
         }
@@ -1874,11 +1904,13 @@ impl ConversationPanel {
                         let label =
                             format!("{}: {}", option.name, if *current { "on" } else { "off" });
                         let entity = cx.entity();
-                        bar =
-                            bar.child(div().w_full().child(FieldRow::new(
+                        bar = bar.child(
+                            div().w_full().child(field_row(
+                                &self.theme,
                                 label.clone(),
-                                Toggle::new(id, *current).label(label).on_change(
-                                    move |_, _, app| {
+                                Toggle::plain(&self.theme, id, *current)
+                                    .label(label)
+                                    .on_change(move |_, _, app| {
                                         entity.update(app, |this, cx| {
                                             if let Some(w) = this.workflow().cloned() {
                                                 let r =
@@ -1886,32 +1918,33 @@ impl ConversationPanel {
                                                 this.command(r, cx);
                                             }
                                         });
-                                    },
-                                ),
-                            )));
+                                    }),
+                            )),
+                        );
                     }
                     ConfigKind::Select { current, values } => {
                         let name = values
                             .iter()
                             .find(|v| &v.value == current)
                             .map_or(current.as_str(), |v| v.name.as_str());
-                        let menu = self
-                            .config_menus
-                            .entry(option.id.clone())
-                            .or_insert_with(ConfigMenu::empty);
                         let entity = cx.entity();
-                        bar = bar.child(div().w_full().child(FieldRow::new(
-                            option.name.clone(),
-                            div().min_w(px(160.)).child(
-                                Select::new(id, name.to_owned()).menu(&menu.state).on_open(
-                                    move |window, app| {
-                                        entity.update(app, |this, cx| {
-                                            this.toggle_config_menu(&option_id, window, cx);
-                                        });
-                                    },
+                        bar = bar.child(
+                            div().w_full().child(field_row(
+                                &self.theme,
+                                option.name.clone(),
+                                div().min_w(px(160.)).child(
+                                    Select::plain(&self.theme, id, name.to_owned())
+                                        .stretch_label()
+                                        .on_open(move |bounds, window, app| {
+                                            entity.update(app, |this, cx| {
+                                                this.toggle_config_menu(
+                                                    &option_id, *bounds, window, cx,
+                                                );
+                                            });
+                                        }),
                                 ),
-                            ),
-                        )));
+                            )),
+                        );
                     }
                 }
             }
@@ -1919,7 +1952,13 @@ impl ConversationPanel {
         Some(bar)
     }
 
-    fn toggle_config_menu(&mut self, option_id: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn toggle_config_menu(
+        &mut self,
+        option_id: &str,
+        trigger: gpui::Bounds<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.open_config.as_deref() == Some(option_id) {
             self.close_config_menu(window, cx);
             return;
@@ -1927,13 +1966,10 @@ impl ConversationPanel {
         let Some(snapshot) = &self.snapshot else {
             return;
         };
-        let Some(menu) = ConfigMenu::of(&snapshot.options.config, option_id) else {
+        let Some(mut menu) = ConfigMenu::of(&snapshot.options.config, option_id) else {
             return;
         };
-        // The trigger reports into the old state's anchor until its next paint.
-        if let Some(old) = self.config_menus.get(option_id) {
-            menu.state.anchor_cell().set(old.state.anchor_cell().get());
-        }
+        menu.state = MenuState::anchored(trigger, &menu.items);
         self.config_menus.insert(option_id.to_owned(), menu);
         self.open_config = Some(option_id.to_owned());
         window.focus(&self.config_focus, cx);
@@ -1993,16 +2029,7 @@ impl ConversationPanel {
             self.open_config = None;
             return;
         };
-        if menu.values != fresh.values
-            || menu.state.items() != fresh.state.items()
-            || menu.state.selected() != fresh.state.selected()
-        {
-            fresh
-                .state
-                .anchor_cell()
-                .set(menu.state.anchor_cell().get());
-            *menu = fresh;
-        }
+        menu.refresh(fresh);
     }
 
     fn render_config_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -2016,25 +2043,31 @@ impl ConversationPanel {
         // The values of the rows as painted now: a click commits the one it hit.
         let shown = menu.values.clone();
         Some(
-            Menu::new("agent-config-menu", &menu.state, &self.config_focus)
-                .on_highlight(move |index, _, cx| {
-                    highlight.update(cx, |this, cx| {
-                        if let Some(menu) = this.config_menus.get_mut(&key) {
-                            menu.state.set_highlighted(index);
-                        }
-                        cx.notify();
-                    });
-                })
-                .on_select(move |index, window, cx| {
-                    let value = shown.get(index).cloned().map(OptionValue::Value);
-                    select.update(cx, |this, cx| {
-                        this.commit_config(&chosen, value, window, cx)
-                    });
-                })
-                .on_dismiss(move |window, cx| {
-                    dismiss.update(cx, |this, cx| this.close_config_menu(window, cx));
-                })
-                .into_any_element(),
+            Menu::editor(
+                &self.theme,
+                "agent-config-menu",
+                menu.items.clone(),
+                &menu.state,
+            )
+            .focus(&self.config_focus)
+            .on_highlight(move |index, _, cx| {
+                highlight.update(cx, |this, cx| {
+                    if let Some(menu) = this.config_menus.get_mut(&key) {
+                        menu.state.set_highlighted(*index);
+                    }
+                    cx.notify();
+                });
+            })
+            .on_select(move |index, window, cx| {
+                let value = shown.get(*index).cloned().map(OptionValue::Value);
+                select.update(cx, |this, cx| {
+                    this.commit_config(&chosen, value, window, cx)
+                });
+            })
+            .on_dismiss(move |window, cx| {
+                dismiss.update(cx, |this, cx| this.close_config_menu(window, cx));
+            })
+            .into_any_element(),
         )
     }
 
@@ -2059,15 +2092,15 @@ impl ConversationPanel {
             column = column.child(banner);
         } else if !g.usable || snapshot.rows.is_empty() {
             column = column.child(
-                Self::section(&g.headline)
-                    .children(g.steps.iter().take(3).map(|s| Self::line(s.clone()))),
+                self.section(&g.headline)
+                    .children(g.steps.iter().take(3).map(|s| self.line(s.clone()))),
             );
         }
         if let Some(bar) = self.options_bar(&snapshot, controls, cx) {
             column = column.child(bar);
         }
         if let Some(error) = &self.scope_error {
-            column = column.child(Self::line(format!("Timeline scope unavailable: {error}")));
+            column = column.child(self.line(format!("Timeline scope unavailable: {error}")));
         } else if let Some(scope) = &self.task_scope {
             let same_as_task = snapshot
                 .task
@@ -2075,7 +2108,7 @@ impl ConversationPanel {
                 .filter(|task| !task.phase.is_terminal())
                 .is_some_and(|task| task.scope.label() == scope.label());
             if !same_as_task {
-                column = column.child(Self::line(format!("Submit scope: {}", scope.label())));
+                column = column.child(self.line(format!("Submit scope: {}", scope.label())));
             }
         }
         if let Some(task) = &snapshot.task {
@@ -2084,7 +2117,7 @@ impl ConversationPanel {
             } else {
                 "Frozen task scope"
             };
-            column = column.child(Self::line(format!("{label}: {}", task.scope.label())));
+            column = column.child(self.line(format!("{label}: {}", task.scope.label())));
         }
         if let Some(task) = &snapshot.task {
             let mut evidence_cards = div().flex().gap_1();
@@ -2125,7 +2158,7 @@ impl ConversationPanel {
                                 .child(gpui::img(image.clone()).w(px(128.)).h(px(72.)))
                                 .child(
                                     text_style(div(), TextStyle::Label)
-                                        .text_color(design_system::tokens().palette.text_2)
+                                        .text_color(self.theme.editor.text_2)
                                         .child(format!(
                                             "{} · {} frames{}",
                                             artifact.label,
@@ -2139,7 +2172,7 @@ impl ConversationPanel {
                                 ),
                         );
                     } else {
-                        column = column.child(Self::line(evidence_summary(name, view)));
+                        column = column.child(self.line(evidence_summary(name, view)));
                     }
                 }
             }
@@ -2156,12 +2189,12 @@ impl ConversationPanel {
                 } else {
                     limit
                 };
-                column = column.child(Self::line(summary.to_owned()));
+                column = column.child(self.line(summary.to_owned()));
             }
         }
         if self.log_has_older() {
             let loading = self.page.loading.load(Ordering::Acquire);
-            column = column.child(self.button(
+            column = column.child(self.action_button(
                 "agent-load-earlier",
                 if loading {
                     "Loading earlier messages…"
@@ -2210,9 +2243,9 @@ impl ConversationPanel {
                     .justify_center()
                     .child(
                         div()
-                            .rounded(px(design_system::tokens().metrics.radius_control))
-                            .bg(design_system::tokens().palette.card)
-                            .child(self.button(
+                            .rounded(px(METRICS.radius_control))
+                            .bg(self.theme.editor.card)
+                            .child(self.action_button(
                                 "agent-jump-latest",
                                 if self.hidden_newer > 0 {
                                     format!(
@@ -2232,7 +2265,7 @@ impl ConversationPanel {
         }
         column = column.child(transcript);
         if !snapshot.queue.is_empty() {
-            let mut queue = Self::section(&format!("Queued ({})", snapshot.queue.len()));
+            let mut queue = self.section(&format!("Queued ({})", snapshot.queue.len()));
             for item in &snapshot.queue {
                 let id = item.id;
                 queue = queue.child(
@@ -2248,7 +2281,7 @@ impl ConversationPanel {
                                     text_style(div(), TextStyle::Label).child(item.summary.clone()),
                                 )
                                 .children(item.scope.as_ref().map(|scope| {
-                                    Self::line(format!(
+                                    self.line(format!(
                                         "{scope}{}",
                                         if item.stale_scope {
                                             " · stale — will be refused"
@@ -2262,7 +2295,7 @@ impl ConversationPanel {
                             format!("queue-remove-{id}"),
                             Icon::X,
                             "Remove",
-                            ButtonVariant::Ghost,
+                            Tone::Normal,
                             cx,
                             move |this, _, cx| {
                                 if let Some(w) = this.workflow().cloned() {
@@ -2281,19 +2314,20 @@ impl ConversationPanel {
     }
 
     fn prompt_form(&mut self, controls: &Controls, cx: &mut Context<Self>) -> gpui::Div {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let enabled = controls.submit.blocked.is_none();
         let label = controls.submit.label();
         let hint = controls.submit.blocked.clone();
         let entity = cx.entity();
         // An icon button: the submit label is its tooltip and accessible name.
-        let send = IconButton::new("agent-send", Icon::ArrowUp)
-            .size(IconButtonSize::Small)
-            .variant(ButtonVariant::Primary)
-            .round(true)
+        let send = IconButton::editor(&theme, "agent-send", Icon::ArrowUp.path())
+            .editor_size(IconButtonSize::Small)
+            .accent(&theme)
+            .rounded(px(999.))
             .label(label)
+            .tooltip(&theme, label)
             .disabled(!enabled)
-            .on_click(Self::activate(cx, |this, _, cx| this.submit(cx)))
+            .on_click(Self::click(cx, |this, _, cx| this.submit(cx)))
             .into_any_element();
         let stop = controls
             .stop
@@ -2306,8 +2340,8 @@ impl ConversationPanel {
             .flex_none()
             .w_full()
             .h(px(COMPOSER_H))
-            .rounded(px(tokens.metrics.radius_card))
-            .bg(tokens.palette.ctl)
+            .rounded(px(METRICS.radius_card))
+            .bg(theme.editor.ctl)
             .child(
                 div()
                     .id("agent-prompt")
@@ -2356,7 +2390,7 @@ impl ConversationPanel {
             .flex_none()
             .gap(px(4.))
             .child(composer)
-            .children(hint.map(Self::line))
+            .children(hint.map(|text| self.line(text)))
     }
 
     fn stop_button(&mut self, cx: &mut Context<Self>) -> IconButton {
@@ -2364,11 +2398,11 @@ impl ConversationPanel {
             "agent-stop",
             Icon::Square,
             "Stop",
-            ButtonVariant::Destructive,
+            Tone::Danger,
             cx,
             |this, _, cx| this.stop(cx),
         )
-        .round(true)
+        .rounded(px(999.))
     }
 
     fn project_tab(
@@ -2393,17 +2427,17 @@ impl ConversationPanel {
             ReviewPolicy::AutoApply => ReviewPolicy::ManualReview,
             ReviewPolicy::ManualReview => ReviewPolicy::AutoApply,
         };
-        let mut review = Self::section("Review")
+        let mut review = self.section("Review")
             .child(text_style(div(), TextStyle::Label).child(match policy {
                 ReviewPolicy::AutoApply => "Validated changes are applied automatically.",
                 ReviewPolicy::ManualReview => "Validated changes wait for your Apply or Discard.",
             }))
-            .child(Self::line(WorkflowSnapshot::REVIEW_POLICY_NOTICE))
-            .child(Self::line(
+            .child(self.line(WorkflowSnapshot::REVIEW_POLICY_NOTICE))
+            .child(self.line(
                 "A change affects tasks started afterwards; a running task keeps the policy it started with.",
             ));
         if let Some(task) = snapshot.task.as_ref().filter(|t| !t.phase.is_terminal()) {
-            review = review.child(Self::line(format!(
+            review = review.child(self.line(format!(
                 "The running task uses: {}",
                 match task.review_policy {
                     ReviewPolicy::AutoApply => "automatic Apply",
@@ -2411,9 +2445,10 @@ impl ConversationPanel {
                 }
             )));
         }
-        review = review.child(FieldRow::new(
+        review = review.child(field_row(
+            &self.theme,
             "Later tasks",
-            self.button(
+            self.action_button(
                 "agent-policy",
                 match next {
                     ReviewPolicy::AutoApply => "Apply automatically (later tasks)",
@@ -2428,14 +2463,15 @@ impl ConversationPanel {
         column = column.child(review);
 
         // Undo and the accepted-awaiting-preview state.
-        let mut undo = Self::section("Undo");
+        let mut undo = self.section("Undo");
         match &controls.undo {
             UndoControl::Enabled { summary, .. } => {
                 undo = undo
-                    .child(Self::line(format!("Newest agent edit: {summary}")))
-                    .child(FieldRow::new(
+                    .child(self.line(format!("Newest agent edit: {summary}")))
+                    .child(field_row(
+                        &self.theme,
                         "Undo",
-                        self.button(
+                        self.action_button(
                             "agent-undo",
                             "Undo last agent edit",
                             true,
@@ -2451,9 +2487,10 @@ impl ConversationPanel {
                     ));
             }
             UndoControl::Disabled(reason) => {
-                undo = undo.child(Self::line(reason.clone())).child(FieldRow::new(
+                undo = undo.child(self.line(reason.clone())).child(field_row(
+                    &self.theme,
                     "Undo",
-                    self.button(
+                    self.action_button(
                         "agent-undo",
                         "Undo last agent edit",
                         false,
@@ -2492,17 +2529,17 @@ impl ConversationPanel {
             || recovery.notice.is_some()
             || controls.export_draft
         {
-            let mut section = Self::section("Recovery");
+            let mut section = self.section("Recovery");
             if let Some(reason) = &recovery.suspended {
                 section = section.child(text_style(div(), TextStyle::Label).child(format!(
                     "Source changes are suspended until the project is reopened: {reason}"
                 )));
             }
             if let Some(notice) = &recovery.notice {
-                section = section.child(Self::line(notice.clone()));
+                section = section.child(self.line(notice.clone()));
             }
             for id in recovery.rolled_back.iter().take(5) {
-                section = section.child(Self::line(format!(
+                section = section.child(self.line(format!(
                     "An unfinished edit ({}) was rolled back when the project opened; your files are as they were.",
                     &id[..id.len().min(8)]
                 )));
@@ -2523,15 +2560,16 @@ impl ConversationPanel {
                     ),
                     _ => "The agent's working copy is retained.".to_owned(),
                 }));
-                section = section.child(Self::line(draft.draft.display().to_string()));
+                section = section.child(self.line(draft.draft.display().to_string()));
                 if controls.acknowledge_writer_gone {
                     section = section
-                        .child(Self::line(
+                        .child(self.line(
                             "Confirm only if you are sure no agent process is still writing there.",
                         ))
-                        .child(FieldRow::new(
+                        .child(field_row(
+                            &self.theme,
                             "Writer",
-                            self.button(
+                            self.action_button(
                                 "agent-ack-writer",
                                 "Nothing is writing; unlock the working copy",
                                 true,
@@ -2548,7 +2586,7 @@ impl ConversationPanel {
                 }
             }
             if controls.export_draft {
-                section = section.child(self.button(
+                section = section.child(self.action_button(
                     "agent-export-draft",
                     "Export the retained draft…",
                     true,
@@ -2561,23 +2599,22 @@ impl ConversationPanel {
         }
 
         // History.
-        let mut history = Self::section(&format!(
+        let mut history = self.section(&format!(
             "Accepted agent edits ({})",
             snapshot.history.len()
         ));
         if snapshot.history.is_empty() {
-            history = history.child(Self::line(
-                "No agent edit has been accepted in this project yet.",
-            ));
+            history =
+                history.child(self.line("No agent edit has been accepted in this project yet."));
         }
         for entry in snapshot.history.iter().rev().take(10) {
-            history = history.child(history_line(entry));
+            history = history.child(history_line(&self.theme, entry));
         }
         column = column.child(history);
 
         // Resources.
         let r = snapshot.resources;
-        column = column.child(Self::line(format!(
+        column = column.child(self.line(format!(
             "Resident messages {}/{} · {} KiB of {} KiB · {} processes · {} tool grants · {} tool workers",
             r.resident_rows,
             r.max_resident_rows,
@@ -2608,7 +2645,8 @@ impl ConversationPanel {
             .gap(px(8.))
             .p(px(12.));
         column = column.child(
-            Self::section(&g.headline).children(g.steps.iter().map(|s| Self::line(s.clone()))),
+            self.section(&g.headline)
+                .children(g.steps.iter().map(|s| self.line(s.clone()))),
         );
         if let Some(error) = &self.settings_error {
             column = column.child(Notice::new(
@@ -2631,9 +2669,10 @@ impl ConversationPanel {
         ));
 
         if let Some(choice) = &controls.switch_choice {
-            let mut handoff = Self::section("Stopped-writer handoff")
-                .child(Self::line(choice.note.clone()))
-                .child(Self::line(format!(
+            let mut handoff = self
+                .section("Stopped-writer handoff")
+                .child(self.line(choice.note.clone()))
+                .child(self.line(format!(
                     "Outgoing task: {}",
                     snapshot
                         .task
@@ -2641,14 +2680,14 @@ impl ConversationPanel {
                         .map(|task| task.brief.as_str())
                         .unwrap_or("no active task")
                 )))
-                .child(Self::line(format!(
+                .child(self.line(format!(
                     "Draft revision: {} · current source: {} · accepted: {}",
                     choice.draft_revision.as_deref().unwrap_or("unavailable"),
                     choice.source_revision,
                     choice.accepted_revision
                 )));
             if choice.retained_queue_count > 0 {
-                handoff = handoff.child(Self::line(format!(
+                handoff = handoff.child(self.line(format!(
                     "{} queued brief(s) remain with the outgoing provider until you explicitly transfer or clear them.",
                     choice.retained_queue_count
                 )));
@@ -2658,7 +2697,7 @@ impl ConversationPanel {
                     .flex()
                     .flex_wrap()
                     .gap_1()
-                    .child(self.button(
+                    .child(self.action_button(
                         "agent-handoff-continue-draft",
                         "Continue captured draft",
                         true,
@@ -2675,7 +2714,7 @@ impl ConversationPanel {
                             }
                         },
                     ))
-                    .child(self.button(
+                    .child(self.action_button(
                         "agent-handoff-restart-accepted",
                         "Restart from accepted",
                         true,
@@ -2692,7 +2731,7 @@ impl ConversationPanel {
                             }
                         },
                     ))
-                    .child(self.button(
+                    .child(self.action_button(
                         "agent-handoff-cancel",
                         "Cancel switch",
                         true,
@@ -2708,16 +2747,16 @@ impl ConversationPanel {
             column = column.child(handoff);
         }
         if controls.retained_queue.is_some() {
-            let mut retained = Self::section("Queued work held for the previous provider");
+            let mut retained = self.section("Queued work held for the previous provider");
             for brief in &snapshot.retained_queue {
-                retained = retained.child(Self::line(format!("• {}", brief.summary)));
+                retained = retained.child(self.line(format!("• {}", brief.summary)));
             }
             retained = retained.child(
                 div()
                     .flex()
                     .flex_wrap()
                     .gap_1()
-                    .child(self.button(
+                    .child(self.action_button(
                         "agent-transfer-retained-queue",
                         "Explicitly transfer queued briefs",
                         !selection_busy && !switch_pending,
@@ -2729,7 +2768,7 @@ impl ConversationPanel {
                             }
                         },
                     ))
-                    .child(self.button(
+                    .child(self.action_button(
                         "agent-clear-retained-queue",
                         "Clear held briefs",
                         !selection_busy && !switch_pending,
@@ -2745,8 +2784,9 @@ impl ConversationPanel {
             column = column.child(retained);
         }
         if let Some(restore) = &controls.session_restore {
-            let mut session =
-                Self::section("Previous provider session").child(Self::line(format!(
+            let mut session = self
+                .section("Previous provider session")
+                .child(self.line(format!(
                     "{} · session {} · {}",
                     restore.provider_id,
                     restore.redacted_session_id,
@@ -2756,7 +2796,7 @@ impl ConversationPanel {
                         .unwrap_or("Native conversation memory stays with its provider.")
                 )));
             if restore.is_resumable {
-                session = session.child(self.button(
+                session = session.child(self.action_button(
                     "agent-restore-session",
                     "Use restored session for next task",
                     !selection_busy && !switch_pending,
@@ -2769,7 +2809,7 @@ impl ConversationPanel {
                     },
                 ));
             }
-            session = session.child(self.button(
+            session = session.child(self.action_button(
                 "agent-dismiss-session",
                 "Dismiss saved session",
                 !selection_busy && !switch_pending,
@@ -2794,7 +2834,7 @@ impl ConversationPanel {
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(Self::line(label))
+                .child(self.line(label))
                 .child(
                     div()
                         .on_key_down(cx.listener(
@@ -2810,7 +2850,7 @@ impl ConversationPanel {
                 )
         };
         let editable = controls.settings_editable;
-        let mut form = Self::section("Adapter");
+        let mut form = self.section("Adapter");
         form = form
             .child(field(self, "Label", &self.setup.provider.clone(), cx))
             .child(field(
@@ -2827,10 +2867,10 @@ impl ConversationPanel {
                 cx,
             ));
         form = form
-            .child(Self::line(
+            .child(self.line(
                 "Writer containment is not a setting: it is derived from the qualification ledger installed in the app data folder, and only for this exact adapter and platform.",
             ))
-            .child(Self::line(
+            .child(self.line(
                 self.containment.as_ref().map_or_else(
                     || "Writer containment: no adapter configured.".to_owned(),
                     Resolution::summary,
@@ -2842,11 +2882,11 @@ impl ConversationPanel {
                     McpChoice::Baseline => "Project tools: MCP and command line",
                     McpChoice::Unsupported => "Project tools: command line only",
                 };
-                FieldRow::new(
+                field_row(&self.theme,
                     label,
-                    Toggle::new("agent-mcp-toggle", self.mcp_choice == McpChoice::Baseline)
+                    Toggle::plain(&self.theme, "agent-mcp-toggle", self.mcp_choice == McpChoice::Baseline)
                         .label(label)
-                        .disabled(!editable)
+                        .disabled(&self.theme, !editable)
                         .on_change(move |_, _, app| {
                             entity.update(app, |this, cx| {
                                 this.mcp_choice = match this.mcp_choice {
@@ -2863,7 +2903,7 @@ impl ConversationPanel {
                     .flex()
                     .flex_wrap()
                     .gap_1()
-                    .child(self.button(
+                    .child(self.action_button(
                         "agent-save-adapter",
                         "Save",
                         editable && !self.saves.is_pending(),
@@ -2871,7 +2911,7 @@ impl ConversationPanel {
                         cx,
                         |this, _, cx| this.save_adapter(cx),
                     ))
-                    .child(self.button(
+                    .child(self.action_button(
                         "agent-check-adapter",
                         "Check adapter",
                         controls.check_adapter,
@@ -2886,15 +2926,15 @@ impl ConversationPanel {
                     )),
             );
         if !editable {
-            form = form.child(Self::line(
-                "Settings can change after the running task finishes or is stopped.",
-            ));
+            form = form.child(
+                self.line("Settings can change after the running task finishes or is stopped."),
+            );
         }
         column = column.child(form);
 
-        let mut status = Self::section("Status");
+        let mut status = self.section("Status");
         status = status
-            .child(Self::line(format!(
+            .child(self.line(format!(
                 "Adapter: {}",
                 snapshot
                     .adapter
@@ -2902,7 +2942,7 @@ impl ConversationPanel {
                     .clone()
                     .unwrap_or_else(|| "not configured".into())
             )))
-            .child(Self::line(format!(
+            .child(self.line(format!(
                 "Writer process model: {}",
                 snapshot
                     .adapter
@@ -2916,14 +2956,14 @@ impl ConversationPanel {
             .as_deref()
             .is_some_and(|label| label != "process-group-contained")
         {
-            status = status.child(Self::line(
+            status = status.child(self.line(
                 "This adapter is not qualified for this exact launch and platform, so its candidates cannot be captured or applied until a passed writer-containment qualification of it is installed.",
             ));
         }
         if let AdapterReadiness::Checked { report, .. } = &snapshot.adapter.readiness
             && let Some(info) = &report.initialized
         {
-            status = status.child(Self::line(format!(
+            status = status.child(self.line(format!(
                 "Adapter reports {} {} · ACP v{}",
                 info.agent_name, info.agent_version, info.protocol_version
             )));
@@ -2940,14 +2980,14 @@ impl ConversationPanel {
                 unsupported.push("resuming a session");
             }
             if !unsupported.is_empty() {
-                status = status.child(Self::line(format!(
+                status = status.child(self.line(format!(
                     "Not supported by this agent (prompts are text only): {}",
                     unsupported.join(", ")
                 )));
             }
         }
         let mcp = &snapshot.mcp;
-        status = status.child(Self::line(format!(
+        status = status.child(self.line(format!(
             "Project tools: MCP {} · command line {}{}",
             if mcp.policy_enabled && mcp.binary_available {
                 "offered"
@@ -3033,7 +3073,13 @@ fn draft_needs_attention(draft: &studio_engine::agent::DraftNotice) -> bool {
     )
 }
 
-fn history_line(entry: &HistoryEntry) -> gpui::Div {
+fn line(theme: &Theme, text: impl Into<SharedString>) -> gpui::Div {
+    text_style(div(), TextStyle::Small)
+        .text_color(theme.editor.text_2)
+        .child(text.into())
+}
+
+fn history_line(theme: &Theme, entry: &HistoryEntry) -> gpui::Div {
     div()
         .flex()
         .flex_col()
@@ -3049,7 +3095,7 @@ fn history_line(entry: &HistoryEntry) -> gpui::Div {
                 .map(|u| format!(" · undoes {}", &u[..u.len().min(8)]))
                 .unwrap_or_default()
         )))
-        .child(ConversationPanel::line(entry.summary.clone()))
+        .child(line(theme, entry.summary.clone()))
 }
 
 impl Render for ConversationPanel {
@@ -3059,7 +3105,7 @@ impl Render for ConversationPanel {
         for image in self.retired_evidence_images.drain(..) {
             let _ = window.drop_image(image);
         }
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let mut root = div()
             .id("agent-panel")
             .role(gpui::Role::Group)
@@ -3067,16 +3113,14 @@ impl Render for ConversationPanel {
             .size_full()
             .flex()
             .flex_col()
-            .text_color(tokens.palette.text_1);
+            .text_color(theme.editor.text_1);
         let Some(snapshot) = self.snapshot.clone() else {
             return root
-                .p(px(tokens.metrics.space_4))
-                .gap(px(tokens.metrics.space_2))
-                .child(ui::heading("Agent"))
-                .child(Self::line(
-                    "Open or create a project to work with an agent.",
-                ))
-                .child(Self::line(controls::NO_AGENT_LAUNCHED))
+                .p(px(METRICS.space_4))
+                .gap(px(METRICS.space_2))
+                .child(heading(&self.theme, "Agent"))
+                .child(self.line("Open or create a project to work with an agent."))
+                .child(self.line(controls::NO_AGENT_LAUNCHED))
                 .into_any_element();
         };
         let controls = derive_controls(&snapshot, self.prompt_is_empty(cx), self.sdk_ready);
@@ -3085,16 +3129,17 @@ impl Render for ConversationPanel {
             snapshot.adapter.provider.is_some(),
         );
         self.sync_config_menu();
-        let rail = Self::segment_rail()
-            .child(self.tab_button(Tab::Chat, "Chat", cx))
-            .child(self.tab_button(Tab::Project, "Project", cx))
-            .child(self.tab_button(Tab::Setup, "Setup", cx));
+        let rail = self
+            .segment_rail()
+            .child(self.tab_item(Tab::Chat, "Chat", cx))
+            .child(self.tab_item(Tab::Project, "Project", cx))
+            .child(self.tab_item(Tab::Setup, "Setup", cx));
         let new_chat = self
             .icon_button(
                 "agent-new-chat",
                 Icon::Plus,
                 "New chat",
-                ButtonVariant::Ghost,
+                Tone::Normal,
                 cx,
                 |this, _, cx| {
                     if let Some(w) = this.workflow().cloned() {
@@ -3111,7 +3156,7 @@ impl Render for ConversationPanel {
             .flex_col()
             .flex_none()
             .border_b_1()
-            .border_color(tokens.palette.line)
+            .border_color(theme.editor.line)
             .child(
                 div()
                     .h(px(HEADER_H))
@@ -3121,7 +3166,7 @@ impl Render for ConversationPanel {
                     .px(px(12.))
                     .child(
                         text_style(div(), TextStyle::Title)
-                            .text_color(tokens.palette.text_1)
+                            .text_color(theme.editor.text_1)
                             .child("Agent"),
                     )
                     .child(
@@ -3138,9 +3183,9 @@ impl Render for ConversationPanel {
                     .px(px(12.))
                     .pb(px(8.))
                     .text_color(if g.usable {
-                        tokens.palette.text_2
+                        theme.editor.text_2
                     } else {
-                        tokens.palette.accent
+                        theme.editor.accent
                     })
                     .child(g.headline.clone()),
             );
@@ -3161,7 +3206,7 @@ impl Render for ConversationPanel {
                         "agent-dismiss-notice",
                         Icon::X,
                         "×",
-                        ButtonVariant::Ghost,
+                        Tone::Normal,
                         cx,
                         |this, _, cx| {
                             this.notice = None;
@@ -3229,12 +3274,55 @@ mod presentation_tests {
             },
         ];
         let menu = ConfigMenu::of(&config, "model").unwrap();
-        let items: Vec<&str> = menu.state.items().iter().map(|s| s.as_ref()).collect();
+        let items: Vec<&str> = menu.items.iter().map(|i| i.label.as_ref()).collect();
         assert_eq!(items, ["Opus", "Sonnet"]);
-        assert_eq!(menu.state.selected(), Some(1));
+        // The current value carries the check mark and starts highlighted.
+        let checked: Vec<bool> = menu.items.iter().map(|i| i.checked).collect();
+        assert_eq!(checked, [false, true]);
+        assert_eq!(menu.state.highlighted, Some(1));
         assert_eq!(menu.values, ["opus", "sonnet"]);
         assert!(ConfigMenu::of(&config, "fast").is_none());
         assert!(ConfigMenu::of(&config, "gone").is_none());
+    }
+
+    #[test]
+    fn a_refreshed_config_menu_stays_where_it_opened() {
+        use studio_harness::driver::{ConfigOption, ConfigValue};
+        let config = |current: &str| {
+            vec![ConfigOption {
+                id: "model".into(),
+                name: "Model".into(),
+                description: None,
+                kind: ConfigKind::Select {
+                    current: current.into(),
+                    values: [("opus", "Opus"), ("sonnet", "Sonnet")]
+                        .iter()
+                        .map(|(value, name)| ConfigValue {
+                            value: (*value).into(),
+                            name: (*name).into(),
+                            group: None,
+                        })
+                        .collect(),
+                },
+            }]
+        };
+        let trigger = gpui::Bounds::new(
+            gpui::point(px(40.), px(300.)),
+            gpui::size(px(160.), px(30.)),
+        );
+        let mut open = ConfigMenu::of(&config("opus"), "model").unwrap();
+        open.state = MenuState::anchored(trigger, &open.items);
+        // The agent switched the current value: the check mark moves, the menu stays put.
+        open.refresh(ConfigMenu::of(&config("sonnet"), "model").unwrap());
+        let checked: Vec<bool> = open.items.iter().map(|i| i.checked).collect();
+        assert_eq!(checked, [false, true]);
+        assert_eq!(open.state.trigger_bounds, Some(trigger));
+        assert_eq!(open.state.origin, trigger.bottom_left());
+        // The same options again: nothing is rebuilt, so a keyboard highlight survives.
+        open.state.set_highlighted(0);
+        open.refresh(ConfigMenu::of(&config("sonnet"), "model").unwrap());
+        assert_eq!(open.state.highlighted, Some(0));
+        assert!(open.state.highlight_visible);
     }
 
     #[test]
@@ -3265,9 +3353,9 @@ mod presentation_tests {
             ConfigMenu::of(&select(&[("sonnet", "Sonnet"), ("opus", "Opus")]), "model").unwrap();
         // Each menu pairs its names with their values row for row, so the row the reader
         // clicked commits the value they saw.
-        assert_eq!(shown.state.items()[1].as_ref(), "Sonnet");
+        assert_eq!(shown.items[1].label.as_ref(), "Sonnet");
         assert_eq!(shown.values[1], "sonnet");
-        assert_eq!(now.state.items()[1].as_ref(), "Opus");
+        assert_eq!(now.items[1].label.as_ref(), "Opus");
         assert_eq!(now.values[1], "opus");
     }
 

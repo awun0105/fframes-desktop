@@ -122,4 +122,12 @@ Parity tests pass; the appearance gpui test passes and switching the OS appearan
     - The menu is 2 px taller.
     - It is deferred at window coordinates, so it paints above, and dismisses across, the whole window instead of only the player card.
   - **Notice dismiss.** The button is 28 px, up from 24 px.
+  - **Conversation panel.**
+    - Its helpers are now `action_button`, `segment_item` and `tab_item`, thin wrappers that bind the panel's action and bounds probe onto `EditorButton`.
+    - Selected segments keep the old `ctl_hover`/`text_1` look.
+    - The send and stop buttons are fully rounded `IconButton::editor`s.
+    - The agent-option menu is the kit `Menu::editor`. Its rows carry the check mark, it is anchored at the `Select` bounds passed to `on_open`, and it is at least 180 px wide.
+    - Space can't reach playback from a panel button: `transport_for_key` is only called by its tests, no keymap binds Space, and the root key handler handles only Tab.
+    - Labelled rows use the new kit `field_row`, which keeps the old `FieldRow` look. `hint` and `field_value` have no caller outside `examples/ui_gallery.rs`, and are handled when the gallery moves.
+    - Re-opening an option menu after the agent republishes its options keeps the menu where it opened (`ConfigMenu::refresh`, tested).
 - **Fork.** fframes pins `khanhthanhdev/zed-cap@c32bfd3` (Cap's fork plus upstream fixes); Cap pins `wingleeio/zed@5d1f83d`. Small API drift is fixed at port time and recorded here.
