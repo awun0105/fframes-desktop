@@ -24,6 +24,5 @@ pub mod timeline_view;
 pub mod ui;
 
 pub mod agent_spike;
-pub mod project_view;
 pub mod stress_metrics;
 pub mod studio_shell;

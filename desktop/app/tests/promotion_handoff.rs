@@ -4,7 +4,6 @@
 //! These publication and promotion integration cases run only on Linux, where Apply is
 //! enabled after the no-clobber source publication primitives are qualified.
 #![cfg(target_os = "linux")]
-use fframes_studio::studio_shell::{PresentationVerdict, install_fence, presentation_verdict};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -13,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{ProcessTreeManager, SpawnOptions, WriterOwnership};
+use studio_engine::engine::fence::{PresentationVerdict, install_fence, presentation_verdict};
 use studio_engine::services::build_service::{BuildLimits, BuildService};
 use studio_engine::services::candidate_runner::{
     CandidateRunConfig, RunScopes, run_candidate_validation,

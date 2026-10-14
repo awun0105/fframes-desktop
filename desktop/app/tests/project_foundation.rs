@@ -1,5 +1,5 @@
-use fframes_studio::project_view::ProjectPresentation;
 use std::fs;
+use studio_engine::project_presentation::ProjectPresentation;
 use studio_engine::{
     Controller, JobKind, JobResult, app_paths::AppPaths, build_materialization::sdk_pin,
 };

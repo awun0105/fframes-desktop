@@ -1,5 +1,5 @@
+use crate::{Controller, JobState};
 use std::path::PathBuf;
-use studio_engine::{Controller, JobState};
 use studio_project::{ProjectId, SourceRevision};
 
 /// Bounded immutable presentation; rendering never scans files or queries the database.

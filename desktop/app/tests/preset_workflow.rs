@@ -5,9 +5,6 @@
 //! of the reports and snapshots proven here (the GPUI process is exercised by `x11_shell`).
 #![cfg(target_os = "linux")]
 
-use fframes_studio::preset_panel::{
-    Catalog, Outcome, PresetCommand, PresetReport, PresetView, Refusal, execute,
-};
 use parking_lot::Mutex;
 use std::{
     fs,
@@ -16,6 +13,9 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::ProcessTreeManager;
+use studio_engine::presets::{
+    Catalog, Outcome, PresetCommand, PresetReport, PresetView, Refusal, execute,
+};
 use studio_engine::services::build_service::{BuildLimits, BuildService};
 use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
 use studio_engine::{
