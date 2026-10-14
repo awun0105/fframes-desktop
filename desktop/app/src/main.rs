@@ -295,7 +295,7 @@ fn run_studio(qualification: Option<Qualification>) {
                 .map(|paths| studio_engine::app_settings::AppSettings::load(&paths))
                 .unwrap_or_default();
             studio_theme::init(cx, settings.theme);
-            let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
+            let bounds = Bounds::centered(None, size(px(1275.), px(800.)), cx);
             let window = cx
                 .open_window(
                     WindowOptions {

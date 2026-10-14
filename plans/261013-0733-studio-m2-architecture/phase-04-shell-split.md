@@ -101,6 +101,18 @@ The decisions:
      - the player is the only view notified per frame.
 
      Cap's sidebar is 416 px. fframes keeps the agent column, which moves into the sidebar in phase 6, so the sidebar width is decided against the 1,275 x 800 default window when this step starts. Element ids that qualification and parity read are kept.
+
+     Geometry done 2026-10-14:
+     - The body is the editor column beside the agent column, which stays at full height. The editor column holds the player beside the sidebar (the left column, moved to the player's right), above the timeline.
+     - The grip `timeline-resize-handle` drags the timeline height. `vertical_split` clamps it like Cap's `EditorVerticalLayout`: 260 px default, 240 px timeline minimum, 320 px player minimum, both minimums scaled down together when they do not fit. The editor column measures its own height, so the clamp does not depend on Cap's header arithmetic.
+     - The split lives in memory only.
+     - While the grip is held, window-level mouse listeners follow the pointer past the window edge, where element listeners stop firing.
+     - `main.rs` opens the window at 1,275 x 800.
+     - The parity test `the_grip_resizes_the_timeline_within_its_limits` drags the grip by its reported bounds.
+
+     Decided: the sidebar stays at 248 px until the agent column moves into it in phase 6, and switches to Cap's 416 px then. The left column keeps its tabs until then.
+
+     Still open in this step: the player becomes its own entity (it notifies the shell from 21 places today), and then the sections are mounted with `.cached(..)`. That is a separate series of pure moves.
   6. Window chrome:
      - On Windows, a custom frame with Cap's `windows_caption_controls` (114 lines, ported into the kit) and an opaque background. It closes the phase 2 native-caption gap, because the painted caption follows the theme.
      - On macOS, a hidden titlebar; on Linux, client decorations.

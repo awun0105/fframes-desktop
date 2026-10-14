@@ -66,7 +66,7 @@ While qualifying, the agent panel's `buttons` telemetry also reports `agent-tab-
 - A visible focus ring and Enter or Space activation on every control; Cap's widgets mostly have neither.
 - The system UI font on every platform; no bundled font.
 - A 16 px `Heading` size for empty-state titles, and the `Notice`, `Badge` and `StatusDot` components, which Cap does not have.
-- Zoom controls stay in the timeline header, and the left column keeps a fixed 248 px width.
+- Zoom controls stay in the timeline header. The layout follows Cap's editor: the player and the sidebar sit above a full-width timeline, and the grip above the timeline (`timeline-resize-handle`) drags the split between them. The split uses Cap's limits and is not saved between launches. The sidebar keeps a fixed 248 px width rather than Cap's 416 px until the agent column moves into it, and the agent column stays at full height to the right of the editor.
 - Exact Cap colours, including the contrast shortfalls recorded in the `studio-theme` tests (white on `accent` 4.02 light and 3.65 dark, light `text_2` on `window` 4.49, light `text_3` on `card` 2.60).
 
 ## Licensing

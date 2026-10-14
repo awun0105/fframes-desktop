@@ -1,7 +1,11 @@
-//! The window's root layout: header, notices, the left column, the player and the agent column.
+//! The window's root layout, after Cap's editor: header, notices, then the editor column
+//! (the player beside the sidebar, above the timeline and its resize grip) and the agent
+//! column.
 
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window, div, px,
+    Context, CursorStyle, DispatchPhase, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render, Styled, Window, canvas,
+    div, px,
 };
 use studio_theme::METRICS;
 
@@ -163,27 +167,72 @@ impl Render for StudioShell {
         let header = self.render_header(cx);
         let notices = self.render_notices(cx);
         let strip = self.render_status_strip(cx);
-        let left = self.render_left_column(cx);
-        let main = if project_open {
+        let sidebar = self.render_left_column(cx);
+        let entity = cx.entity();
+        // The editor column measures itself so the split can clamp against its height.
+        let measure = canvas(
+            move |bounds, _, cx| {
+                let height = f32::from(bounds.size.height);
+                entity.update(cx, |shell, cx| {
+                    if shell.editor_height != height {
+                        shell.editor_height = height;
+                        cx.notify();
+                    }
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full();
+        let mut editor = div()
+            .relative()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .gap(gutter)
+            .child(measure);
+        if project_open {
+            let split = self.split();
             let player = self.render_player_area(cx);
-            div()
-                .flex_1()
-                .min_w_0()
-                .min_h_0()
-                .flex()
-                .flex_col()
-                .gap(gutter)
-                .child(player)
+            editor = editor
                 .child(
-                    Card::editor(&self.theme)
-                        .flex_none()
-                        .overflow_hidden()
-                        .child(self.timeline.clone()),
+                    div()
+                        .flex_1()
+                        .min_h(px(split.player_min_height))
+                        .flex()
+                        .gap(gutter)
+                        .child(player)
+                        .child(sidebar),
                 )
-                .into_any_element()
+                .child(
+                    div()
+                        .relative()
+                        .flex_none()
+                        .w_full()
+                        .h(px(split.timeline_height))
+                        .child(
+                            Card::editor(&self.theme)
+                                .size_full()
+                                .overflow_hidden()
+                                .child(self.timeline.clone()),
+                        )
+                        .child(self.render_resize_grip(split.timeline_height, cx)),
+                );
         } else {
-            self.render_empty_state(cx)
-        };
+            editor = editor.child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .gap(gutter)
+                    .child(self.render_empty_state(cx))
+                    .child(sidebar),
+            );
+        }
         let agent = self.render_agent_column();
         Self::on_actions(div(), cx)
             .size_full()
@@ -200,6 +249,10 @@ impl Render for StudioShell {
                     cx.stop_propagation();
                 }
             }))
+            .children(
+                self.timeline_resize
+                    .map(|_| self.render_resize_tracking(cx)),
+            )
             .bg(theme.editor.window)
             .text_color(theme.editor.text_1)
             .flex()
@@ -215,9 +268,172 @@ impl Render for StudioShell {
                     .min_h_0()
                     .flex()
                     .gap(gutter)
-                    .child(left)
-                    .child(main)
+                    .child(editor)
                     .child(agent),
             )
+    }
+}
+
+impl StudioShell {
+    /// The split for the timeline height the grip last asked for, or the default.
+    pub(super) fn split(&self) -> VerticalSplit {
+        self.split_for(self.timeline_height.unwrap_or(METRICS.timeline_default_h))
+    }
+
+    fn split_for(&self, preferred: f32) -> VerticalSplit {
+        vertical_split(self.editor_height - METRICS.gutter, preferred)
+    }
+
+    /// While the grip is held, follows the pointer through the whole window, including past
+    /// its edges, where element listeners stop firing.
+    fn render_resize_tracking(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let entity = cx.entity();
+        canvas(
+            |_, _, _| {},
+            move |_, _, window, _| {
+                let moved = entity.clone();
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                    if phase != DispatchPhase::Capture {
+                        return;
+                    }
+                    moved.update(cx, |shell, cx| {
+                        // A release outside the window never arrives; a move without the
+                        // button ends the drag instead.
+                        if event.pressed_button != Some(MouseButton::Left) {
+                            shell.timeline_resize = None;
+                            cx.notify();
+                        } else if let Some((start_y, start_height)) = shell.timeline_resize {
+                            let preferred = start_height - (f32::from(event.position.y) - start_y);
+                            let height = shell.split_for(preferred).timeline_height;
+                            if shell.timeline_height != Some(height) {
+                                shell.timeline_height = Some(height);
+                                cx.notify();
+                            }
+                        }
+                    });
+                });
+                let released = entity.clone();
+                window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Capture && event.button == MouseButton::Left {
+                        released.update(cx, |shell, cx| {
+                            shell.timeline_resize = None;
+                            cx.notify();
+                        });
+                    }
+                });
+            },
+        )
+        .absolute()
+        .size_0()
+        .into_any_element()
+    }
+
+    /// The handle above the timeline that drags its height, as in Cap's editor.
+    fn render_resize_grip(&self, timeline_height: f32, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let entity = cx.entity();
+        div()
+            .id("timeline-resize-handle")
+            .absolute()
+            .left_0()
+            .right_0()
+            .top(px(-11.))
+            .h(px(14.))
+            .cursor(CursorStyle::ResizeRow)
+            .flex()
+            .justify_center()
+            .pt(px(5.))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |shell, event: &MouseDownEvent, _, cx| {
+                    shell.timeline_resize = Some((f32::from(event.position.y), timeline_height));
+                    // Paints the tracker that listens for the release.
+                    cx.notify();
+                    cx.stop_propagation();
+                }),
+            )
+            .child(
+                div()
+                    .w(px(36.))
+                    .h(px(4.))
+                    .rounded(px(2.))
+                    .bg(self.theme.editor.line),
+            )
+            .child(
+                canvas(
+                    move |bounds, _, cx| {
+                        let measured = [
+                            f32::from(bounds.origin.x),
+                            f32::from(bounds.origin.y),
+                            f32::from(bounds.size.width),
+                            f32::from(bounds.size.height),
+                        ];
+                        entity.update(cx, |shell, _| shell.grip_bounds = Some(measured));
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full(),
+            )
+            .into_any_element()
+    }
+}
+
+/// The player's height below which the timeline gives way, as in Cap's editor.
+const PLAYER_MIN_H: f32 = 320.;
+
+/// How the editor column splits between the player row and the timeline.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct VerticalSplit {
+    pub player_min_height: f32,
+    pub timeline_height: f32,
+}
+
+/// Splits `available` (the editor column's height less the gap between player and
+/// timeline) the way Cap's `EditorVerticalLayout` does: the timeline takes `preferred`,
+/// clamped so neither side drops below its minimum; when both minimums do not fit,
+/// they shrink in proportion.
+pub(super) fn vertical_split(available: f32, preferred: f32) -> VerticalSplit {
+    let available = available.max(0.);
+    let scale = (available / (PLAYER_MIN_H + METRICS.timeline_min_h)).min(1.);
+    let player_min_height = PLAYER_MIN_H * scale;
+    let timeline_min_height = METRICS.timeline_min_h * scale;
+    let timeline_max_height = (available - player_min_height).max(timeline_min_height);
+    VerticalSplit {
+        player_min_height,
+        timeline_height: preferred.clamp(timeline_min_height, timeline_max_height),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_timeline_fits_a_full_height_window() {
+        let split = vertical_split(700., METRICS.timeline_default_h);
+        assert_eq!(split.timeline_height, 260.);
+        assert_eq!(split.player_min_height, 320.);
+    }
+
+    #[test]
+    fn the_timeline_is_clamped_between_its_minimum_and_the_players() {
+        assert_eq!(vertical_split(700., 100.).timeline_height, 240.);
+        assert_eq!(vertical_split(700., 600.).timeline_height, 380.);
+    }
+
+    #[test]
+    fn both_minimums_shrink_together_when_they_do_not_fit() {
+        let split = vertical_split(280., 260.);
+        assert_eq!(split.player_min_height, 160.);
+        assert_eq!(split.timeline_height, 120.);
+    }
+
+    #[test]
+    fn no_space_leaves_no_timeline() {
+        let split = vertical_split(-10., 260.);
+        assert_eq!(split.player_min_height, 0.);
+        assert_eq!(split.timeline_height, 0.);
     }
 }

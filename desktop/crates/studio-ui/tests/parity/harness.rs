@@ -291,6 +291,44 @@ impl Studio {
         );
     }
 
+    /// Moves the pointer to window point `at` with no button held.
+    pub fn hover(&mut self, (x, y): (f32, f32)) {
+        let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);
+        window.simulate_mouse_move(
+            gpui::point(gpui::px(x), gpui::px(y)),
+            None,
+            gpui::Modifiers::default(),
+        );
+    }
+
+    /// Presses the left button at window point `at` and holds it, then lets a frame paint,
+    /// as one always does between real input events.
+    pub fn mouse_down(&mut self, (x, y): (f32, f32)) {
+        let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);
+        let at = gpui::point(gpui::px(x), gpui::px(y));
+        window.simulate_mouse_down(at, gpui::MouseButton::Left, gpui::Modifiers::default());
+        self.settle(Duration::from_millis(32));
+    }
+
+    /// Presses and releases the left button at window point `at` without moving.
+    pub fn click(&mut self, (x, y): (f32, f32)) {
+        self.mouse_down((x, y));
+        let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);
+        let at = gpui::point(gpui::px(x), gpui::px(y));
+        window.simulate_mouse_up(at, gpui::MouseButton::Left, gpui::Modifiers::default());
+    }
+
+    /// Hovers window point `from`, presses the left button there, moves to `to` and releases.
+    pub fn drag(&mut self, from: (f32, f32), to: (f32, f32)) {
+        self.hover(from);
+        self.mouse_down(from);
+        let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);
+        let point = |(x, y): (f32, f32)| gpui::point(gpui::px(x), gpui::px(y));
+        let left = gpui::MouseButton::Left;
+        window.simulate_mouse_move(point(to), left, gpui::Modifiers::default());
+        window.simulate_mouse_up(point(to), left, gpui::Modifiers::default());
+    }
+
     /// Answers the open dialog the last action opened.
     pub fn choose_path(&mut self, path: &Path) {
         let path = path.to_path_buf();

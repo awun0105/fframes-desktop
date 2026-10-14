@@ -646,7 +646,7 @@ impl Render for TimelineView {
             .gap(px(metrics.space_1 + 2.))
             .min_w_0()
             .flex_shrink_0()
-            .h(px(metrics.timeline_default_h - 2.))
+            .h_full()
             .pl(px(CARD_PAD))
             .pr(px(CARD_PAD))
             .pt(px(CARD_PAD_TOP))

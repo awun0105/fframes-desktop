@@ -287,6 +287,14 @@ impl StudioShell {
         value["preview"] = self.preview_telemetry();
         value["canvas"] = self.canvas_telemetry();
         value["timeline"] = self.timeline.read(cx).qualification_metrics();
+        let split = self.split();
+        value["split"] = serde_json::json!({
+            "available": self.editor_height - studio_theme::METRICS.gutter,
+            "timeline_height": split.timeline_height,
+            "player_min_height": split.player_min_height,
+            "grip_bounds": self.grip_bounds,
+            "resizing": self.timeline_resize.is_some(),
+        });
         value["panel"] = self.panel.read(cx).telemetry();
         value["export"] = export_telemetry(self.export_status.as_ref());
         value["presets"] = self.preset_panel.read(cx).telemetry();

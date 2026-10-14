@@ -57,6 +57,88 @@ fn marking_a_range_selects_it(cx: &mut gpui::TestAppContext) {
     );
 }
 
+fn timeline_height(t: &Value) -> f64 {
+    t["split"]["timeline_height"].as_f64().unwrap()
+}
+
+fn grip_centre(t: &Value) -> (f32, f32) {
+    let grip = &t["split"]["grip_bounds"];
+    let at = |i: usize| grip[i].as_f64().unwrap() as f32;
+    (at(0) + at(2) / 2., at(1) + at(3) / 2.)
+}
+
+/// Drags the resize grip above the timeline by `dy` (negative is up) from its centre.
+fn drag_grip(studio: &mut Studio, dy: f32) {
+    let (x, y) = grip_centre(&studio.telemetry());
+    studio.drag((x, y), (x, y + dy));
+}
+
+#[gpui::test]
+fn the_grip_lets_go_when_the_button_is_released(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed(cx);
+    let start = studio.wait("the grip painted", |t| t["split"]["grip_bounds"].is_array());
+    let height = timeline_height(&start);
+    let (x, y) = grip_centre(&start);
+
+    // A click that never moves releases the grip at once.
+    studio.hover((x, y));
+    studio.click((x, y));
+    assert_eq!(studio.telemetry()["split"]["resizing"], false);
+    studio.hover((x, y - 100.));
+    studio.dispatch(Seek { frame: 30 });
+    let after_click = studio.wait("at 30", |t| selection(t)["position"] == 30);
+    assert_eq!(
+        timeline_height(&after_click),
+        height,
+        "{:#}",
+        after_click["split"]
+    );
+
+    // A release the window never saw (outside it) ends the drag at the next plain move.
+    studio.mouse_down((x, y));
+    studio.hover((x, y - 100.));
+    studio.dispatch(Seek { frame: 40 });
+    let after_lost_release = studio.wait("at 40", |t| selection(t)["position"] == 40);
+    assert_eq!(after_lost_release["split"]["resizing"], false);
+    assert_eq!(
+        timeline_height(&after_lost_release),
+        height,
+        "{:#}",
+        after_lost_release["split"]
+    );
+}
+
+#[gpui::test]
+fn the_grip_resizes_the_timeline_within_its_limits(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed(cx);
+    let start = studio.wait("the grip painted", |t| t["split"]["grip_bounds"].is_array());
+    let height = timeline_height(&start);
+    let available = start["split"]["available"].as_f64().unwrap();
+    let player_min = start["split"]["player_min_height"].as_f64().unwrap();
+    let timeline_min = player_min / 320. * 240.;
+    assert!(height >= timeline_min, "{:#}", start["split"]);
+
+    drag_grip(&mut studio, -30.);
+    let taller = studio.wait("a taller timeline", |t| timeline_height(t) != height);
+    let expected = (height + 30.).min(available - player_min);
+    assert!(
+        (timeline_height(&taller) - expected).abs() < 0.5,
+        "{:#}",
+        taller["split"]
+    );
+
+    drag_grip(&mut studio, -5000.);
+    let tallest = studio.wait("the tallest timeline", |t| {
+        (timeline_height(t) - (available - player_min)).abs() < 0.5
+    });
+    assert_eq!(tallest["split"]["available"], start["split"]["available"]);
+
+    drag_grip(&mut studio, 5000.);
+    studio.wait("the shortest timeline", |t| {
+        (timeline_height(t) - timeline_min).abs() < 0.5
+    });
+}
+
 #[gpui::test]
 fn zoom_doubles_and_halves(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed(cx);

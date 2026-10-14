@@ -130,6 +130,14 @@ pub struct StudioShell {
     qualifying: bool,
     button_bounds: HashMap<String, [f32; 4]>,
     player_width: f32,
+    /// The editor column's height (player row, gap and timeline), measured at paint.
+    editor_height: f32,
+    /// The timeline height the grip asked for; `None` keeps the default.
+    timeline_height: Option<f32>,
+    /// While the grip is dragged: the pointer's y and the timeline height at the press.
+    timeline_resize: Option<(f32, f32)>,
+    /// Where the grip was last painted, `[left, top, width, height]`.
+    grip_bounds: Option<[f32; 4]>,
     overflow_open: bool,
     overflow_menu: MenuState,
     /// Where the overflow trigger was last painted; the menu opens against it.
@@ -383,6 +391,10 @@ impl StudioShell {
             qualifying: false,
             button_bounds: HashMap::new(),
             player_width: f32::INFINITY,
+            editor_height: 0.,
+            timeline_height: None,
+            timeline_resize: None,
+            grip_bounds: None,
             overflow_open: false,
             overflow_menu: MenuState::new(gpui::Point::default(), &[]),
             overflow_anchor: Default::default(),
