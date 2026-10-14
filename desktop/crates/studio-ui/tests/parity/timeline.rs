@@ -113,14 +113,13 @@ fn the_grip_resizes_the_timeline_within_its_limits(cx: &mut gpui::TestAppContext
     let mut studio = Studio::displayed(cx);
     let start = studio.wait("the grip painted", |t| t["split"]["grip_bounds"].is_array());
     let height = timeline_height(&start);
-    let available = start["split"]["available"].as_f64().unwrap();
-    let player_min = start["split"]["player_min_height"].as_f64().unwrap();
-    let timeline_min = player_min / 320. * 240.;
-    assert!(height >= timeline_min, "{:#}", start["split"]);
+    assert!(height >= timeline_min(&start), "{:#}", start["split"]);
 
+    // The editor column can settle after the grip first paints (a notice or the status
+    // strip arriving), so each limit is read from the same telemetry as the height.
     drag_grip(&mut studio, -30.);
     let taller = studio.wait("a taller timeline", |t| timeline_height(t) != height);
-    let expected = (height + 30.).min(available - player_min);
+    let expected = (height + 30.).min(timeline_max(&taller));
     assert!(
         (timeline_height(&taller) - expected).abs() < 0.5,
         "{:#}",
@@ -128,15 +127,28 @@ fn the_grip_resizes_the_timeline_within_its_limits(cx: &mut gpui::TestAppContext
     );
 
     drag_grip(&mut studio, -5000.);
-    let tallest = studio.wait("the tallest timeline", |t| {
-        (timeline_height(t) - (available - player_min)).abs() < 0.5
+    // The player row keeps its minimum: a taller timeline never pushes the column.
+    studio.wait("the tallest timeline", |t| {
+        let player_row = t["sections"]["sidebar"][3].as_f64().unwrap_or(0.) + 2.;
+        (timeline_height(t) - timeline_max(t)).abs() < 0.5
+            && (player_row - t["split"]["player_min_height"].as_f64().unwrap()).abs() < 0.5
     });
-    assert_eq!(tallest["split"]["available"], start["split"]["available"]);
 
     drag_grip(&mut studio, 5000.);
     studio.wait("the shortest timeline", |t| {
-        (timeline_height(t) - timeline_min).abs() < 0.5
+        (timeline_height(t) - timeline_min(t)).abs() < 0.5
     });
+}
+
+/// The tallest timeline the split allows: the player keeps its minimum.
+fn timeline_max(t: &serde_json::Value) -> f64 {
+    let split = &t["split"];
+    split["available"].as_f64().unwrap() - split["player_min_height"].as_f64().unwrap()
+}
+
+/// The shortest timeline: its minimum, scaled with the player's when both do not fit.
+fn timeline_min(t: &serde_json::Value) -> f64 {
+    t["split"]["player_min_height"].as_f64().unwrap() / 320. * 240.
 }
 
 #[gpui::test]
