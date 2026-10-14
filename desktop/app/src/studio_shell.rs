@@ -1,15 +1,7 @@
 use crate::{
-    agent_workflow::{AgentWorkflow, BuildSettings},
-    conversation_panel::{
-        Attachment, ConversationPanel, PanelEvent,
-        host::{HostInbox, open_workflow},
-        qualification::OwnershipPolicy,
-    },
-    project_view::ProjectPresentation,
-    setup_view::SetupView,
-};
-use crate::{
+    actions,
     audio_service::{AudioEvent, AudioService, OutputDevice, OutputHandle},
+    build_service::BuildService,
     canvas_view::{CanvasViewState, StageLayout},
     design_system::{self, Shadow, TextStyle, shadow, text_style},
     export_service::{ExportControl, ExportProgress, export_mp4},
@@ -26,6 +18,16 @@ use crate::{
         interact::{DISABLED_OPACITY, Handler, focusable, on_activate, with_tooltip},
         muted,
     },
+};
+use crate::{
+    agent_workflow::{AgentWorkflow, BuildSettings},
+    conversation_panel::{
+        Attachment, ConversationPanel, PanelEvent,
+        host::{HostInbox, open_workflow},
+        qualification::OwnershipPolicy,
+    },
+    project_view::ProjectPresentation,
+    setup_view::SetupView,
 };
 use gpui::{
     AppContext, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
@@ -131,11 +133,18 @@ struct Backend {
     catalog: Catalog,
     /// The outcome of the last preset command, taken by the dispatch that ran it.
     preset_report: Option<PresetReport>,
+    environment: StudioEnvironment,
 }
 impl Backend {
     fn command(&mut self, command: Command) -> Result<(), String> {
         if matches!(command, Command::Initialize) {
-            self.paths = Some(AppPaths::system().map_err(|e| e.to_string())?);
+            self.paths = Some(
+                match &self.environment.app_data {
+                    Some(data) => AppPaths::new(data),
+                    None => AppPaths::system(),
+                }
+                .map_err(|e| e.to_string())?,
+            );
             self.catalog = Catalog::load(self.paths.as_ref().expect("just set"));
             self.refresh_compatibility();
             return Ok(());
@@ -291,7 +300,7 @@ impl Backend {
                     tag,
                     compiler: controller.operation_processes(),
                     worker: controller.processes.sub_manager(),
-                    service: crate::worker_project::shared_build_service(),
+                    service: self.environment.builds.clone(),
                 });
             }
             Command::CancelBuild => {
@@ -305,7 +314,7 @@ impl Backend {
                 if let Some(controller) = &self.controller {
                     let mut controller = controller.lock();
                     // Compiles for this project stop; leases held by live workers survive.
-                    crate::worker_project::shared_build_service().close_project(&String::from(
+                    self.environment.builds.close_project(&String::from(
                         controller.project.manifest.project_id.clone(),
                     ));
                     controller.close().map_err(|e| e.to_string())?;
@@ -396,7 +405,8 @@ impl Backend {
         let candidate = Controller::open(path, paths).map_err(|e| e.to_string())?;
         if let Some(previous) = &self.controller {
             let mut previous = previous.lock();
-            crate::worker_project::shared_build_service()
+            self.environment
+                .builds
                 .close_project(&String::from(previous.project.manifest.project_id.clone()));
             previous.close().map_err(|e| e.to_string())?;
         }
@@ -406,14 +416,14 @@ impl Backend {
     }
     /// Resolves the SDK manifest for this host; without one the reason becomes the SDK status.
     fn refresh_compatibility(&mut self) {
-        match SetupView::defaults() {
+        match SetupView::defaults_in(self.environment.sdk_home()) {
             Ok((compatibility, sdk_home)) => {
                 self.compatibility = Some(compatibility);
                 self.sdk_home = Some(sdk_home);
             }
             Err(error) => {
                 self.compatibility = None;
-                self.sdk_home = Some(crate::setup_view::default_sdk_home());
+                self.sdk_home = Some(self.environment.sdk_home());
                 self.compatibility_error = error;
             }
         }
@@ -533,6 +543,39 @@ impl Backend {
     }
 }
 
+/// Where the shell keeps its data, what compiles its workers and whom it trusts with
+/// writes. [`StudioEnvironment::system`] is the installed app; a host that runs the shell
+/// elsewhere (a harness, a sandbox) passes its own.
+#[derive(Clone)]
+pub struct StudioEnvironment {
+    /// App data folder; `None` takes the platform's.
+    pub app_data: Option<PathBuf>,
+    /// Folder of installed SDKs (`active` is the default selection); `None` takes
+    /// `~/.fframes/sdk`.
+    pub sdk_home: Option<PathBuf>,
+    /// Compiles preview, agent and export workers; equal build keys compile once.
+    pub builds: BuildService,
+    /// Who may say an agent adapter's writers are contained.
+    pub ownership: OwnershipPolicy,
+}
+
+impl StudioEnvironment {
+    pub fn system() -> Self {
+        Self {
+            app_data: None,
+            sdk_home: None,
+            builds: crate::worker_project::shared_build_service(),
+            ownership: OwnershipPolicy::Validated,
+        }
+    }
+
+    fn sdk_home(&self) -> PathBuf {
+        self.sdk_home
+            .clone()
+            .unwrap_or_else(crate::setup_view::default_sdk_home)
+    }
+}
+
 struct PreparedInstall {
     ready: Arc<studio_engine::ReadyPreview>,
     clock: studio_engine::PlaybackClock,
@@ -632,7 +675,7 @@ struct AgentHost {
 }
 
 impl AgentHost {
-    fn new() -> Self {
+    fn new(ownership: OwnershipPolicy) -> Self {
         Self {
             inbox: Arc::new(HostInbox::default()),
             workflow: None,
@@ -644,14 +687,14 @@ impl AgentHost {
             playhead: 0,
             displayed: None,
             last_sync: Instant::now(),
-            ownership: OwnershipPolicy::Validated,
+            ownership,
         }
     }
 }
 
-fn agent_build(sdk: &AgentSdk) -> BuildSettings {
+fn agent_build(sdk: &AgentSdk, service: &BuildService) -> BuildSettings {
     BuildSettings {
-        service: crate::worker_project::shared_build_service(),
+        service: service.clone(),
         sdk: sdk.dir.clone(),
         compatibility: sdk.compatibility.clone(),
     }
@@ -790,6 +833,14 @@ impl StudioShell {
     }
 
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::with_environment(StudioEnvironment::system(), window, cx)
+    }
+
+    pub fn with_environment(
+        environment: StudioEnvironment,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus = cx.focus_handle().tab_stop(false);
         window.focus(&focus, cx);
         let timeline = cx.new(TimelineView::new);
@@ -846,12 +897,14 @@ impl StudioShell {
             build_spec: None,
             catalog: Catalog::default(),
             preset_report: None,
+            environment: environment.clone(),
         }));
         let owner = backend.clone();
         let shutdown = closed.clone();
         let clock_start = Instant::now();
         let audio = Arc::new(AudioService::new(clock_start));
         let quit_audio = audio.clone();
+        let builds = environment.builds.clone();
         cx.on_app_quit(move |shell, cx| {
             shutdown.store(true, Ordering::Release);
             shell.cancel_export(cx);
@@ -866,13 +919,14 @@ impl StudioShell {
             shell.output = None;
             let owner = owner.clone();
             let processes = processes.clone();
+            let builds = builds.clone();
             cx.background_executor().spawn(async move {
                 if let Some(workflow) = workflow {
                     workflow.close();
                 }
                 processes.shutdown(Duration::ZERO);
-                // Compiles are owned by the shared service, not the app process scope.
-                crate::worker_project::shared_build_service().close();
+                // Compiles are owned by the build service, not the app process scope.
+                builds.close();
                 audio.join();
                 if let Some(preview) = preview {
                     preview.close();
@@ -930,7 +984,7 @@ impl StudioShell {
             _panel_subscription: panel_subscription,
             preset_panel,
             _preset_subscription: preset_subscription,
-            agent: AgentHost::new(),
+            agent: AgentHost::new(environment.ownership.clone()),
             refresh_wanted: false,
             presentation_refresh_pending: false,
             awaiting_since: None,
@@ -1267,7 +1321,22 @@ impl StudioShell {
             "message": self.canvas.message,
         })
     }
-    fn qualification_snapshot(&self, cx: &Context<Self>) -> serde_json::Value {
+    /// The shell's redacted state for hosts that observe the app (native qualification,
+    /// harnesses): the qualification snapshot plus the preview, canvas, timeline, agent
+    /// panel and job state. Revisions are prefixes; no project text or image bytes.
+    pub fn telemetry(&self, cx: &gpui::App) -> serde_json::Value {
+        let mut value = self.qualification_snapshot(cx);
+        value["project_open"] = self.presentation.project.is_some().into();
+        value["sdk"] = self.presentation.sdk.clone().into();
+        value["sdk_ready_for_agent"] = self.presentation.agent_sdk.is_some().into();
+        value["awaiting_preview"] = self.awaiting_preview.is_some().into();
+        value["preview"] = self.preview_telemetry();
+        value["canvas"] = self.canvas_telemetry();
+        value["timeline"] = self.timeline.read(cx).qualification_metrics();
+        value["panel"] = self.panel.read(cx).telemetry();
+        value
+    }
+    fn qualification_snapshot(&self, cx: &gpui::App) -> serde_json::Value {
         let thumbnails = self.timeline.read(cx).qualification_metrics();
         let mut buttons = serde_json::to_value(&self.button_bounds).expect("finite geometry");
         buttons["timeline-fit"] = thumbnails["fit_bounds"].clone();
@@ -1555,7 +1624,12 @@ impl StudioShell {
         self.agent.serial += 1;
         let serial = self.agent.serial;
         self.agent.opening = Some(serial);
-        let build = self.presentation.agent_sdk.as_ref().map(agent_build);
+        let service = self.backend.lock().environment.builds.clone();
+        let build = self
+            .presentation
+            .agent_sdk
+            .as_ref()
+            .map(|sdk| agent_build(sdk, &service));
         self.agent.applied_sdk = self.presentation.agent_sdk.as_ref().map(|s| s.dir.clone());
         let inbox = self.agent.inbox.clone();
         let policy = self.agent.ownership.clone();
@@ -1590,8 +1664,14 @@ impl StudioShell {
         if desired == self.agent.applied_sdk {
             return;
         }
+        let service = self.backend.lock().environment.builds.clone();
         if workflow
-            .set_build(self.presentation.agent_sdk.as_ref().map(agent_build))
+            .set_build(
+                self.presentation
+                    .agent_sdk
+                    .as_ref()
+                    .map(|sdk| agent_build(sdk, &service)),
+            )
             .is_ok()
         {
             self.agent.applied_sdk = desired;
@@ -2436,7 +2516,7 @@ impl StudioShell {
             revision: "capturing validated revision".into(),
             label: "Preparing immutable project snapshot".into(),
         });
-        let service = crate::worker_project::shared_build_service();
+        let service = self.backend.lock().environment.builds.clone();
         let spawn = std::thread::Builder::new()
             .name("studio-mp4-export".into())
             .spawn(move || {
@@ -4450,6 +4530,13 @@ impl Render for StudioShell {
             .size_full()
             .track_focus(&self.focus)
             .tab_group()
+            .on_action(cx.listener(|s, _: &actions::OpenProject, _, cx| s.pick(Picker::Open, cx)))
+            .on_action(
+                cx.listener(|s, _: &actions::BuildPreview, _, cx| s.dispatch(Command::Build, cx)),
+            )
+            .on_action(cx.listener(|s, _: &actions::CancelPreview, _, cx| {
+                s.dispatch(Command::CancelBuild, cx)
+            }))
             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, cx| {
                 if event.keystroke.key == "tab" {
                     if event.keystroke.modifiers.shift {
@@ -4615,6 +4702,7 @@ mod tests {
             build_spec: None,
             catalog: Catalog::default(),
             preset_report: None,
+            environment: StudioEnvironment::system(),
         };
         let destination = temp.path().join("restored");
         backend

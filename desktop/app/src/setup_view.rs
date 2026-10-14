@@ -92,7 +92,11 @@ pub struct SetupView {
 impl SetupView {
     /// Shared discovery for the spike and product shell; callers run this off the UI thread.
     pub fn defaults() -> Result<(CompatibilityManifest, PathBuf), String> {
-        let sdk_home = default_sdk_home();
+        Self::defaults_in(default_sdk_home())
+    }
+
+    /// [`Self::defaults`] for SDKs installed under `sdk_home`.
+    pub fn defaults_in(sdk_home: PathBuf) -> Result<(CompatibilityManifest, PathBuf), String> {
         let packaged = std::env::var_os("FFRAMES_SDK_BUNDLE")
             .map(PathBuf::from)
             .or_else(|| {
