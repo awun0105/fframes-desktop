@@ -387,3 +387,22 @@ fn downsample_attenuates_analytic_out_of_band_alias_and_eof_does_not_restart() {
         [0.0; 2]
     );
 }
+
+#[test]
+fn next_output_walks_default_devices_none() {
+    let devices = ["Speakers".to_owned(), "Headphones".to_owned()];
+    let named = |name: &str| OutputDevice::Named(name.into());
+    assert_eq!(OutputDevice::Default.next(&devices), named("Speakers"));
+    assert_eq!(named("Speakers").next(&devices), named("Headphones"));
+    assert_eq!(
+        named("Headphones").next(&devices),
+        OutputDevice::Unavailable
+    );
+    assert_eq!(
+        OutputDevice::Unavailable.next(&devices),
+        OutputDevice::Default
+    );
+    // A device that disappeared, and a host without any.
+    assert_eq!(named("USB").next(&devices), OutputDevice::Unavailable);
+    assert_eq!(OutputDevice::Default.next(&[]), OutputDevice::Unavailable);
+}

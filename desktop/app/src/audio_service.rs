@@ -30,6 +30,25 @@ pub enum OutputDevice {
     Unavailable,
 }
 
+impl OutputDevice {
+    /// The output after this one: the system default, then each of `devices` in order,
+    /// then none, then the default again. A named device that disappeared means none.
+    pub fn next(&self, devices: &[String]) -> Self {
+        let named =
+            |device: Option<&String>| device.cloned().map_or(Self::Unavailable, Self::Named);
+        match self {
+            Self::Default => named(devices.first()),
+            Self::Named(name) => named(
+                devices
+                    .iter()
+                    .position(|device| device == name)
+                    .and_then(|index| devices.get(index + 1)),
+            ),
+            Self::Unavailable => Self::Default,
+        }
+    }
+}
+
 struct Request {
     ready: Arc<ReadyPreview>,
     epoch: u64,

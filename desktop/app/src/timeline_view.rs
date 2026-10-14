@@ -161,7 +161,8 @@ impl TimelineView {
             cx.notify();
         }
     }
-    fn seek(&mut self, frame: usize, cx: &mut Context<Self>) {
+    /// Moves the playhead to `frame` (as a click on the ruler does).
+    pub fn seek(&mut self, frame: usize, cx: &mut Context<Self>) {
         if self
             .model
             .as_ref()
@@ -225,7 +226,51 @@ impl TimelineView {
             cx.emit(TimelineEvent::EndScrub);
         }
     }
-    fn zoom(&mut self, factor: f64, cx: &mut Context<Self>) {
+    /// Moves the playhead past the last frame.
+    pub fn seek_to_end(&mut self, cx: &mut Context<Self>) {
+        if let Some(total) = self.model.as_ref().map(|m| m.report().total_frames) {
+            self.seek(total, cx);
+        }
+    }
+    /// Selects the next scene under the playhead.
+    pub fn cycle_scene(&mut self, cx: &mut Context<Self>) {
+        let Some(model) = &self.model else {
+            return;
+        };
+        self.selection.cycle_scene_at(self.position, model);
+        self.emit_scope_changed(cx);
+        cx.notify();
+    }
+    /// Starts the selected range at the playhead (keeping its end, if any).
+    pub fn mark_range_start(&mut self, cx: &mut Context<Self>) {
+        let Some(model) = &self.model else {
+            return;
+        };
+        let end = self
+            .selection
+            .range
+            .as_ref()
+            .map_or(self.position, |r| r.end);
+        self.selection.select_range(self.position, end, model);
+        self.emit_scope_changed(cx);
+        cx.notify();
+    }
+    /// Ends the selected range at the playhead (keeping its start, if any).
+    pub fn mark_range_end(&mut self, cx: &mut Context<Self>) {
+        let Some(model) = &self.model else {
+            return;
+        };
+        let start = self
+            .selection
+            .range
+            .as_ref()
+            .map_or(self.position, |r| r.start);
+        self.selection.select_range(start, self.position, model);
+        self.emit_scope_changed(cx);
+        cx.notify();
+    }
+    /// Zooms by `factor`, keeping the playhead where it is on screen.
+    pub fn zoom(&mut self, factor: f64, cx: &mut Context<Self>) {
         if let Some(model) = &self.model {
             self.viewport.zoom(
                 factor,
@@ -245,7 +290,7 @@ impl TimelineView {
             "left" => cx.emit(TimelineEvent::Step(-1)),
             "right" => cx.emit(TimelineEvent::Step(1)),
             "home" => self.seek(0, cx),
-            "end" => self.seek(model.report().total_frames, cx),
+            "end" => self.seek_to_end(cx),
             "+" | "=" => self.zoom(2., cx),
             "-" => self.zoom(0.5, cx),
             "pageup" => {
@@ -256,35 +301,9 @@ impl TimelineView {
                 self.viewport.scroll_by(self.viewport.width * 0.75, model);
                 cx.notify();
             }
-            "s" => {
-                self.selection.cycle_scene_at(self.position, model);
-                self.emit_scope_changed(cx);
-                cx.notify();
-            }
-            "[" => {
-                self.selection.select_range(
-                    self.position,
-                    self.selection
-                        .range
-                        .as_ref()
-                        .map_or(self.position, |r| r.end),
-                    model,
-                );
-                self.emit_scope_changed(cx);
-                cx.notify();
-            }
-            "]" => {
-                self.selection.select_range(
-                    self.selection
-                        .range
-                        .as_ref()
-                        .map_or(self.position, |r| r.start),
-                    self.position,
-                    model,
-                );
-                self.emit_scope_changed(cx);
-                cx.notify();
-            }
+            "s" => self.cycle_scene(cx),
+            "[" => self.mark_range_start(cx),
+            "]" => self.mark_range_end(cx),
             _ => return,
         }
         cx.stop_propagation();

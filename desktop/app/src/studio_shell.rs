@@ -1362,6 +1362,7 @@ impl StudioShell {
         value["timeline"] = self.timeline.read(cx).qualification_metrics();
         value["panel"] = self.panel.read(cx).telemetry();
         value["export"] = export_telemetry(self.export_status.as_ref());
+        value["output_devices"] = self.audio.devices().into();
         value
     }
     fn qualification_snapshot(&self, cx: &gpui::App) -> serde_json::Value {
@@ -2280,20 +2281,7 @@ impl StudioShell {
         }
     }
     fn cycle_output(&mut self, cx: &mut Context<Self>) {
-        let devices = self.audio.devices();
-        let next = match &self.output_device {
-            OutputDevice::Default => devices
-                .first()
-                .cloned()
-                .map_or(OutputDevice::Unavailable, OutputDevice::Named),
-            OutputDevice::Named(name) => devices
-                .iter()
-                .position(|d| d == name)
-                .and_then(|i| devices.get(i + 1))
-                .cloned()
-                .map_or(OutputDevice::Unavailable, OutputDevice::Named),
-            OutputDevice::Unavailable => OutputDevice::Default,
-        };
+        let next = self.output_device.next(&self.audio.devices());
         self.change_output(next, cx);
     }
     fn poll_audio(&mut self, cx: &mut Context<Self>) {
@@ -4151,6 +4139,55 @@ impl StudioShell {
         }
     }
 
+    /// Every studio action, handled at the root so it reaches the shell from anywhere in
+    /// the window.
+    fn on_actions(root: gpui::Div, cx: &mut Context<Self>) -> gpui::Div {
+        root.on_action(cx.listener(|s, _: &actions::OpenProject, _, cx| s.pick(Picker::Open, cx)))
+            .on_action(
+                cx.listener(|s, _: &actions::BuildPreview, _, cx| s.dispatch(Command::Build, cx)),
+            )
+            .on_action(cx.listener(|s, _: &actions::CancelPreview, _, cx| {
+                s.dispatch(Command::CancelBuild, cx)
+            }))
+            .on_action(cx.listener(|s, _: &actions::ExportVideo, _, cx| s.pick(Picker::Export, cx)))
+            .on_action(cx.listener(|s, _: &actions::CancelExport, _, cx| s.cancel_export(cx)))
+            .on_action(cx.listener(|s, _: &actions::TogglePlayback, _, cx| s.toggle_playback(cx)))
+            .on_action(cx.listener(|s, _: &actions::StepForward, _, cx| s.step_preview(1, cx)))
+            .on_action(cx.listener(|s, _: &actions::StepBackward, _, cx| s.step_preview(-1, cx)))
+            .on_action(cx.listener(|s, _: &actions::ToggleMute, _, cx| s.toggle_mute(cx)))
+            .on_action(cx.listener(|s, _: &actions::NextAudioOutput, _, cx| s.cycle_output(cx)))
+            .on_action(cx.listener(|s, _: &actions::RetryAudioOutput, _, cx| {
+                s.change_output(OutputDevice::Default, cx)
+            }))
+            .on_action(cx.listener(|s, _: &actions::DisableAudioOutput, _, cx| {
+                s.change_output(OutputDevice::Unavailable, cx)
+            }))
+            .on_action(cx.listener(|s, action: &actions::Seek, _, cx| {
+                s.timeline.update(cx, |t, cx| t.seek(action.frame, cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::SeekToStart, _, cx| {
+                s.timeline.update(cx, |t, cx| t.seek(0, cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::SeekToEnd, _, cx| {
+                s.timeline.update(cx, |t, cx| t.seek_to_end(cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::CycleScene, _, cx| {
+                s.timeline.update(cx, |t, cx| t.cycle_scene(cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::MarkRangeStart, _, cx| {
+                s.timeline.update(cx, |t, cx| t.mark_range_start(cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::MarkRangeEnd, _, cx| {
+                s.timeline.update(cx, |t, cx| t.mark_range_end(cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::ZoomIn, _, cx| {
+                s.timeline.update(cx, |t, cx| t.zoom(2., cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::ZoomOut, _, cx| {
+                s.timeline.update(cx, |t, cx| t.zoom(0.5, cx))
+            }))
+    }
+
     fn render_overflow_menu(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         if !self.overflow_open {
             return None;
@@ -4555,19 +4592,10 @@ impl Render for StudioShell {
             self.render_empty_state(cx)
         };
         let agent = self.render_agent_column();
-        div()
+        Self::on_actions(div(), cx)
             .size_full()
             .track_focus(&self.focus)
             .tab_group()
-            .on_action(cx.listener(|s, _: &actions::OpenProject, _, cx| s.pick(Picker::Open, cx)))
-            .on_action(
-                cx.listener(|s, _: &actions::BuildPreview, _, cx| s.dispatch(Command::Build, cx)),
-            )
-            .on_action(cx.listener(|s, _: &actions::CancelPreview, _, cx| {
-                s.dispatch(Command::CancelBuild, cx)
-            }))
-            .on_action(cx.listener(|s, _: &actions::ExportVideo, _, cx| s.pick(Picker::Export, cx)))
-            .on_action(cx.listener(|s, _: &actions::CancelExport, _, cx| s.cancel_export(cx)))
             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, cx| {
                 if event.keystroke.key == "tab" {
                     if event.keystroke.modifiers.shift {
