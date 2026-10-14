@@ -68,7 +68,7 @@ impl StudioShell {
             && self.requested_clock_epoch == self.transport.epoch()
         {
             self.pending_frame = Some(frame);
-            cx.notify();
+            self.notify_player(cx);
         }
         if events.compiled.is_none() && events.ready.is_none() && events.error.is_none() {
             return;
@@ -196,8 +196,25 @@ impl StudioShell {
     }
 
     fn request_frame(&mut self, position: usize, cx: &mut Context<Self>) {
+        if self.send_frame_request(position, cx) {
+            cx.notify();
+        }
+    }
+
+    /// A new frame or playhead during playback: only the player section renders again, the
+    /// cached sections stay as they are.
+    fn notify_player(&mut self, cx: &mut Context<Self>) {
+        match &self.sections {
+            Some(sections) => sections.player.update(cx, |_, cx| cx.notify()),
+            None => cx.notify(),
+        }
+    }
+
+    /// Asks the coordinator for the frame at `position`; false when nothing is shown or
+    /// the seek was refused.
+    fn send_frame_request(&mut self, position: usize, cx: &mut Context<Self>) -> bool {
         let Some(id) = self.preview_state.displayed().cloned() else {
-            return;
+            return false;
         };
         let scale = self.displayed.as_ref().map_or(1., |d| {
             crate::frame_image::preview_scale(
@@ -207,7 +224,7 @@ impl StudioShell {
             )
         });
         let Ok(serial) = self.preview_state.seek(position, scale) else {
-            return;
+            return false;
         };
         self.requested_clock_epoch = self.transport.epoch();
         if let Some(preview) = &self.preview {
@@ -221,7 +238,7 @@ impl StudioShell {
         self.timeline.update(cx, |v, cx| {
             v.set_position(self.preview_state.position(), cx)
         });
-        cx.notify();
+        true
     }
 
     pub(super) fn toggle_playback(&mut self, cx: &mut Context<Self>) {
@@ -549,8 +566,8 @@ impl StudioShell {
         let position = self
             .transport
             .tick(self.clock_start.elapsed().as_secs_f64());
-        if position != self.preview_state.position() {
-            self.request_frame(position, cx);
+        if position != self.preview_state.position() && self.send_frame_request(position, cx) {
+            self.notify_player(cx);
         }
         if was_playing != self.transport.playing() {
             if !self.transport.playing() {

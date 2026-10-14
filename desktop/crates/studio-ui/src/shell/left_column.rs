@@ -46,6 +46,7 @@ impl StudioShell {
         };
         Card::editor(&self.theme)
             .w(px(METRICS.left_column_w))
+            .h_full()
             .flex_none()
             .min_h_0()
             .flex()
@@ -524,6 +525,7 @@ impl StudioShell {
         let theme = self.theme;
         div()
             .w(px(METRICS.agent_panel_w))
+            .h_full()
             .flex_none()
             .min_h_0()
             .overflow_hidden()

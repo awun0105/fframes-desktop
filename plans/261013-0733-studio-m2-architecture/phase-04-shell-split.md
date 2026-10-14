@@ -33,7 +33,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 1. App bootstrap in `desktop/app/src/main.rs`, in Cap's order (`main.rs:242-560`): `gpui_platform::application().with_assets(..)` with icons and fonts embedded through an `AssetSource` and fonts registered with `text_system().add_fonts` (if fframes loads them from disk today, embed them this way); inside `run`, `gpui_tokio::init_from_handle`, the text-input key bindings and the theme global; then `open_window` with per-OS options; native window work only after the handle exists, from `cx.spawn`.
 2. Never change native window state inside a gpui update: AppKit and Win32 callbacks re-enter `App` and panic with "RefCell already borrowed". Take the window handle in the update and act from a spawned task.
 3. Keymap by key context, most specific first: text input, composer, timeline and player, workspace. Every editing chord (Backspace, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+A, clipboard) is bound in the text-input context (`key_context` already exists in `text_input.rs`), so a focused field consumes them before timeline shortcuts. Test: Ctrl+Z in a focused text field does not reach timeline undo.
-4. Player hosting: the preview is its own child entity in `studio-ui/src/player/`, painting through `canvas`, and the only view notified per frame. Header, left column, status strip and timeline are separate entities mounted with `.cached(..)`. No per-frame `window.refresh()` (Cap measured 224 of 298 frames dropped with it, `editor_window.rs:6354`). Keep releasing replaced frames with `drop_image` (`frame_image.rs` does this today). Cap's fork provides `.cached(..)` (Cap mounts its editor sections this way).
+4. Player hosting: the preview is its own child entity in `studio-ui/src/player/`, painting through `canvas`, and the only view notified per frame (done as a player section view whose state stays in the shell; see the design decisions). Header, left column, status strip and timeline are separate entities mounted with `.cached(..)`. No per-frame `window.refresh()` (Cap measured 224 of 298 frames dropped with it, `editor_window.rs:6354`). Keep releasing replaced frames with `drop_image` (`frame_image.rs` does this today). Cap's fork provides `.cached(..)` (Cap mounts its editor sections this way).
 
 ## Todo
 
@@ -112,7 +112,13 @@ The decisions:
 
      Decided: the sidebar stays at 248 px until the agent column moves into it in phase 6, and switches to Cap's 416 px then. The left column keeps its tabs until then.
 
-     Still open in this step: the player becomes its own entity (it notifies the shell from 21 places today), and then the sections are mounted with `.cached(..)`. That is a separate series of pure moves.
+     Sections done 2026-10-14, as Cap does it, not by moving the player's state:
+     - `shell/sections.rs` holds `SectionView`, after Cap's `EditorSectionView`. Each section observes the shell and renders the shell's own `render_*` method.
+     - The header, sidebar and agent column are mounted `.cached(..)` with their fixed boxes. A cached view is laid out by its cached style alone, so the auto-height notices and status strip stay uncached in the root.
+     - The player area (toolbar, stage, transport) is the uncached player section. The playback tick and arriving frames notify only that section, not the shell. Seeks, pauses and errors still notify the shell.
+     - The conversation panel renders again only when its task scope changes; the scope is set with every presented frame.
+     - The parity test `playback_renders_the_player_and_leaves_the_other_sections` reads per-section render counts from the telemetry. It fails if the tick, the frame news or the scope update notifies more than the player.
+     - Deviation from the step as written: the player's state stays in `StudioShell`, and there is no `studio-ui/src/player/` module. The gain is in what is notified per frame, and moving the state (about 35 fields, shared with the engine events) is not needed for it.
   6. Window chrome:
      - On Windows, a custom frame with Cap's `windows_caption_controls` (114 lines, ported into the kit) and an opaque background. It closes the phase 2 native-caption gap, because the painted caption follows the theme.
      - On macOS, a hidden titlebar; on Linux, client decorations.

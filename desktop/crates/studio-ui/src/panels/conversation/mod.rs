@@ -474,17 +474,16 @@ impl ConversationPanel {
         scope: Result<Option<TaskScope>, String>,
         cx: &mut Context<Self>,
     ) {
-        match scope {
-            Ok(scope) => {
-                self.task_scope = scope;
-                self.scope_error = None;
-            }
-            Err(error) => {
-                self.task_scope = None;
-                self.scope_error = Some(error);
-            }
+        let (task_scope, scope_error) = match scope {
+            Ok(scope) => (scope, None),
+            Err(error) => (None, Some(error)),
+        };
+        // Set again with every presented frame; only a change renders the panel.
+        if self.task_scope != task_scope || self.scope_error != scope_error {
+            self.task_scope = task_scope;
+            self.scope_error = scope_error;
+            cx.notify();
         }
-        cx.notify();
     }
 
     /// True while the prompt (or a setup field) holds keyboard focus.

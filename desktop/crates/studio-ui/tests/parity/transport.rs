@@ -19,6 +19,34 @@ fn play_advances_the_playhead_and_pause_holds_it(cx: &mut gpui::TestAppContext) 
     assert_eq!(later["position"].as_u64(), Some(held));
 }
 
+fn renders(t: &serde_json::Value, section: &str) -> u64 {
+    t["renders"][section].as_u64().unwrap()
+}
+
+#[gpui::test]
+fn playback_renders_the_player_and_leaves_the_other_sections(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed(cx);
+    studio.dispatch(TogglePlayback);
+    let before = studio.wait("playback under way", |t| {
+        t["playing"] == true && t["paint_frame"].as_u64() >= Some(5)
+    });
+    let from = before["paint_frame"].as_u64().unwrap();
+    let after = studio.wait("twenty more frames painted", |t| {
+        t["paint_frame"].as_u64() >= Some(from + 20)
+    });
+    assert_eq!(after["playing"], true);
+    let grew = |section| renders(&after, section) - renders(&before, section);
+    assert!(grew("player") >= 10, "{:#}", after["renders"]);
+    for section in ["header", "sidebar", "agent"] {
+        assert!(
+            grew(section) <= 1,
+            "{section}: {:#} -> {:#}",
+            before["renders"],
+            after["renders"]
+        );
+    }
+}
+
 #[gpui::test]
 fn stepping_moves_one_frame_and_shows_it(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed(cx);

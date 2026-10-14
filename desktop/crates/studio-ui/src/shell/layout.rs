@@ -4,19 +4,23 @@
 
 use gpui::{
     Context, CursorStyle, DispatchPhase, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render, Styled, Window, canvas,
-    div, px,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render, StyleRefinement, Styled,
+    Window, canvas, div, px,
 };
 use studio_theme::METRICS;
 
 use super::StudioShell;
 use super::keymap::WORKSPACE;
+use super::sections::Sections;
 use crate::frame_image::create_render_image;
 use crate::kit::Card;
 
 impl Render for StudioShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.theme.refresh(window, cx);
+        if self.theme.refresh(window, cx) {
+            // The cached sections paint with the theme too.
+            cx.notify();
+        }
         if self.overflow_open {
             self.sync_overflow();
         }
@@ -126,7 +130,12 @@ impl Render for StudioShell {
             match outcome.flatten() {
                 // Deferred, not rejected.
                 None => self.pending_ready = slot,
-                Some(true) => self.report_displayed(),
+                Some(true) => {
+                    self.report_displayed();
+                    // A render the player alone asked for can commit the install; the
+                    // cached sections render again with what it changed.
+                    cx.notify();
+                }
                 Some(false) => {
                     self.audio.stop(self.transport.epoch());
                     self.discard_install(cx);
@@ -164,10 +173,26 @@ impl Render for StudioShell {
         let theme = self.theme;
         let gutter = px(METRICS.gutter);
         let project_open = self.presentation.project.is_some();
-        let header = self.render_header(cx);
+        let sections = self
+            .sections
+            .get_or_insert_with(|| Sections::new(cx))
+            .clone();
+        // The cached sections keep their boxes here: a cached view is laid out by this
+        // style alone.
+        let header = sections.header.clone().cached(
+            StyleRefinement::default()
+                .w_full()
+                .h(px(METRICS.header_h))
+                .flex_none(),
+        );
         let notices = self.render_notices(cx);
         let strip = self.render_status_strip(cx);
-        let sidebar = self.render_left_column(cx);
+        let sidebar = sections.sidebar.clone().cached(
+            StyleRefinement::default()
+                .w(px(METRICS.left_column_w))
+                .flex_none()
+                .min_h_0(),
+        );
         let entity = cx.entity();
         // The editor column measures itself so the split can clamp against its height.
         let measure = canvas(
@@ -197,7 +222,7 @@ impl Render for StudioShell {
             .child(measure);
         if project_open {
             let split = self.split();
-            let player = self.render_player_area(cx);
+            let player = sections.player.clone();
             editor = editor
                 .child(
                     div()
@@ -233,7 +258,12 @@ impl Render for StudioShell {
                     .child(sidebar),
             );
         }
-        let agent = self.render_agent_column();
+        let agent = sections.agent.clone().cached(
+            StyleRefinement::default()
+                .w(px(METRICS.agent_panel_w))
+                .flex_none()
+                .min_h_0(),
+        );
         Self::on_actions(div(), cx)
             .size_full()
             .key_context(WORKSPACE)

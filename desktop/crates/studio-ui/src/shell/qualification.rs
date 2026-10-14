@@ -23,6 +23,8 @@ impl StudioShell {
         cx: &mut Context<Self>,
     ) {
         self.qualifying = true;
+        // The cached sections render again with their bounds probes.
+        cx.notify();
         cx.spawn(async move |this, cx| {
             let mut stage = 0;
             loop {
@@ -86,6 +88,8 @@ impl StudioShell {
         // Observation only: measured bounds of the named transport buttons go to the
         // telemetry so a driver clicks what the shell actually laid out.
         self.qualifying = true;
+        // The cached sections render again with their bounds probes.
+        cx.notify();
         cx.spawn(async move |this, cx| {
             let mut opened = false;
             loop {
@@ -295,6 +299,20 @@ impl StudioShell {
             "grip_bounds": self.grip_bounds,
             "resizing": self.timeline_resize.is_some(),
         });
+        // How often each section view rendered; a new frame should render only the player.
+        value["renders"] = self
+            .sections
+            .iter()
+            .flat_map(|sections| sections.all())
+            .map(|view| {
+                let view = view.read(cx);
+                (
+                    view.section.name().to_owned(),
+                    serde_json::Value::from(view.renders),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>()
+            .into();
         value["panel"] = self.panel.read(cx).telemetry();
         value["export"] = export_telemetry(self.export_status.as_ref());
         value["presets"] = self.preset_panel.read(cx).telemetry();

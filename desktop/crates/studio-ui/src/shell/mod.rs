@@ -6,6 +6,7 @@ mod left_column;
 mod overflow;
 mod player;
 mod qualification;
+mod sections;
 mod status_strip;
 mod transport;
 
@@ -144,6 +145,8 @@ pub struct StudioShell {
     overflow_anchor: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     overflow_focus: gpui::FocusHandle,
     painted_frame: Option<usize>,
+    /// The window's section views, created on the first render.
+    sections: Option<sections::Sections>,
     /// Set while the accepted source is ahead of what the preview shows: a handoff that
     /// failed (or has not finished) keeps the old preview playing under this label.
     awaiting_preview: Option<String>,
@@ -400,6 +403,7 @@ impl StudioShell {
             overflow_anchor: Default::default(),
             overflow_focus: cx.focus_handle(),
             painted_frame: None,
+            sections: None,
         };
         shell.dispatch(Command::Initialize, cx);
         cx.spawn(async move |this, cx| {
