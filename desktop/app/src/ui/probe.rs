@@ -13,6 +13,12 @@ impl BoundsProbe {
     pub fn new(record: impl Fn([f32; 4], &mut App) + 'static) -> Self {
         Self(Rc::new(record))
     }
+
+    /// The same report as a kit component's `on_bounds` handler.
+    pub fn into_bounds_handler(self) -> impl Fn(Bounds<Pixels>, &mut App) + 'static {
+        let record = self.0;
+        move |bounds, cx| record(bounds_to_record(bounds), cx)
+    }
 }
 
 /// `[left, top, width, height]`, the format telemetry consumers read.

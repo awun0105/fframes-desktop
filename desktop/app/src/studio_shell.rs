@@ -2,17 +2,10 @@ use crate::conversation_panel::{Attachment, ConversationPanel, PanelEvent};
 use crate::{
     actions,
     canvas_view::{CanvasViewState, StageLayout},
-    design_system::{self, Shadow, TextStyle, shadow, text_style},
     frame_image::{ImagePresentationManager, create_render_image},
     preset_panel::{PresetEvent, PresetPanel, PresetPick},
     timeline_view::{TimelineEvent, TimelineView},
-    ui::{
-        Badge, BoundsProbe, Button, ButtonVariant, Collapsible, Icon, IconButton, IconButtonSize,
-        Menu, MenuState, Notice, SectionTitle, StatusDot, TabItem, TabRail, Tone, card, divider,
-        heading, icon,
-        interact::{DISABLED_OPACITY, Handler, focusable, on_activate, with_tooltip},
-        muted,
-    },
+    ui::BoundsProbe,
 };
 use gpui::{
     AppContext, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
@@ -47,7 +40,13 @@ use studio_engine::services::preview_coordinator::{PreviewCoordinator, SeekInten
 use studio_engine::services::thumbnail_cache::ThumbnailKey;
 use studio_project::ProjectId;
 use studio_proto::CommandId;
+use studio_theme::{METRICS, Shadow, TextStyle, Theme, shadow_for, text_style};
 use studio_ui::app_state::{AppEvent, AppState};
+use studio_ui::kit::{
+    Badge, Card, CollapsibleSection, DISABLED_OPACITY, EditorButton, Handler, Icon, IconButton,
+    IconButtonSize, Menu, MenuItem, MenuState, Notice, StatusDot, TabRail, TabRailItem, Tone,
+    divider, focus_ring, focusable, heading, icon, muted, on_activate, section_title, with_tooltip,
+};
 
 enum Picker {
     Create,
@@ -95,6 +94,8 @@ struct PreparedInstall {
 }
 
 pub struct StudioShell {
+    /// The theme of the window, refreshed at the start of every render.
+    theme: Theme,
     engine: EngineHandle,
     app: gpui::Entity<AppState>,
     _app_subscription: gpui::Subscription,
@@ -151,6 +152,8 @@ pub struct StudioShell {
     player_width: f32,
     overflow_open: bool,
     overflow_menu: MenuState,
+    /// Where the overflow trigger was last painted; the menu opens against it.
+    overflow_anchor: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     overflow_focus: gpui::FocusHandle,
     painted_frame: Option<usize>,
     /// Set while the accepted source is ahead of what the preview shows: a handoff that
@@ -425,6 +428,7 @@ impl StudioShell {
         })
         .detach();
         let mut shell = Self {
+            theme: Theme::for_window(window, cx),
             engine,
             app,
             _app_subscription: app_subscription,
@@ -487,7 +491,8 @@ impl StudioShell {
             button_bounds: HashMap::new(),
             player_width: f32::INFINITY,
             overflow_open: false,
-            overflow_menu: MenuState::new(Vec::new(), None),
+            overflow_menu: MenuState::new(gpui::Point::default(), &[]),
+            overflow_anchor: Default::default(),
             overflow_focus: cx.focus_handle(),
             painted_frame: None,
         };
@@ -2095,84 +2100,93 @@ impl StudioShell {
 }
 
 impl StudioShell {
-    /// A `ui::Button` wired to a shell action, with the qualification bounds probe.
+    /// An editor button wired to a shell action, with the qualification bounds probe.
+    /// `primary` paints it as the view's main action.
     #[allow(clippy::too_many_arguments)]
-    fn ui_button(
+    fn action_button(
         &self,
         id: &'static str,
         label: &'static str,
         enabled: bool,
-        variant: ButtonVariant,
+        primary: bool,
         glyph: Option<Icon>,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> Button {
+    ) -> EditorButton {
+        let theme = self.theme;
         let entity = cx.entity();
         let probe = self.bounds_probe(&gpui::ElementId::Name(id.into()), cx);
-        let mut button = Button::new(id, label)
-            .variant(variant)
+        let mut button = EditorButton::plain(&theme, id)
+            .label(label)
             .disabled(!enabled)
-            .probe(probe)
-            .on_click(move |_, cx| {
+            .on_click(move |_, _, cx| {
                 entity.update(cx, |shell, cx| action(shell, cx));
             });
+        button = if primary {
+            button.accent(&theme)
+        } else {
+            button.filled(&theme)
+        };
         if let Some(glyph) = glyph {
-            button = button.icon(glyph);
+            button = button.left_icon(glyph.path());
+        }
+        if let Some(probe) = probe {
+            button = button.on_bounds(probe.into_bounds_handler());
         }
         button
     }
 
     fn render_header(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let enabled = !self.busy;
         let project = self.presentation.project.clone();
-        let mut actions = div().flex().items_center().gap(px(tokens.metrics.space_2));
+        let mut actions = div().flex().items_center().gap(px(METRICS.space_2));
         for id in header_actions(project.is_some()) {
             let button = match id {
-                "create" => self.ui_button(
+                "create" => self.action_button(
                     "create",
                     "Create…",
                     enabled,
-                    ButtonVariant::Editor,
+                    false,
                     Some(Icon::Plus),
                     cx,
                     |s, cx| s.pick(Picker::Create, cx),
                 ),
-                "open" => self.ui_button(
+                "open" => self.action_button(
                     "open",
                     "Open…",
                     enabled,
-                    ButtonVariant::Editor,
+                    false,
                     Some(Icon::FolderOpen),
                     cx,
                     |s, cx| s.pick(Picker::Open, cx),
                 ),
-                "import" => self.ui_button(
+                "import" => self.action_button(
                     "import",
                     "Import Rust…",
                     enabled,
-                    ButtonVariant::Editor,
+                    false,
                     Some(Icon::Upload),
                     cx,
                     |s, cx| s.pick(Picker::Import, cx),
                 ),
-                "export-mp4" => self.ui_button(
+                "export-mp4" => self.action_button(
                     "export-mp4",
                     "Export MP4…",
                     enabled
                         && project.is_some()
                         && self.presentation.agent_sdk.is_some()
                         && self.export_cancelled.is_none(),
-                    ButtonVariant::Primary,
+                    true,
                     Some(Icon::Download),
                     cx,
                     |s, cx| s.pick(Picker::Export, cx),
                 ),
-                _ => self.ui_button(
+                _ => self.action_button(
                     "close",
                     "Close project",
                     enabled && project.is_some(),
-                    ButtonVariant::Editor,
+                    false,
                     None,
                     cx,
                     |s, cx| s.dispatch(Command::Close, cx),
@@ -2193,26 +2207,27 @@ impl StudioShell {
             let path = p.root.display().to_string();
             text = text.child(with_tooltip(
                 text_style(div().id("project-path").truncate(), TextStyle::Small)
-                    .text_color(tokens.palette.text_2)
+                    .text_color(theme.editor.text_2)
                     .child(path.clone()),
+                &theme,
                 Some(path.into()),
             ));
         }
-        card()
-            .h(px(tokens.metrics.header_h))
+        Card::editor(&self.theme)
+            .h(px(METRICS.header_h))
             .flex_none()
             .flex()
             .items_center()
             .justify_between()
-            .gap(px(tokens.metrics.space_4))
-            .px(px(tokens.metrics.space_4))
+            .gap(px(METRICS.space_4))
+            .px(px(METRICS.space_4))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .min_w_0()
-                    .gap(px(tokens.metrics.space_3))
-                    .child(icon(Icon::Layers, 20., tokens.palette.accent))
+                    .gap(px(METRICS.space_3))
+                    .child(icon(Icon::Layers, 20., theme.editor.accent))
                     .child(text),
             )
             .child(actions)
@@ -2238,11 +2253,11 @@ impl StudioShell {
                 error.contains("Duplicate project ID")
                     || error.contains("Relocated project content differs")
             }) {
-                notice = notice.action(self.ui_button(
+                notice = notice.action(self.action_button(
                     "independent",
                     "Use this folder as an independent project",
                     enabled,
-                    ButtonVariant::Editor,
+                    false,
                     None,
                     cx,
                     move |s, cx| s.dispatch(Command::Independent(path.clone()), cx),
@@ -2286,11 +2301,11 @@ impl StudioShell {
             };
             let mut notice = Notice::new("export-status", tone, message);
             if self.export_cancelled.is_some() {
-                notice = notice.action(self.ui_button(
+                notice = notice.action(self.action_button(
                     "cancel-export",
                     "Cancel export",
                     true,
-                    ButtonVariant::Editor,
+                    false,
                     None,
                     cx,
                     |shell, cx| shell.cancel_export(cx),
@@ -2323,7 +2338,7 @@ impl StudioShell {
     /// Source, checkpoint and job on one line; the other status lines when expanded.
     fn render_status_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let p = self.presentation.project.as_ref()?;
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let expanded = status_strip_expanded(&p.job, self.error.is_some(), self.status_open);
         let tone = if p.source == p.accepted {
             Tone::Success
@@ -2338,14 +2353,14 @@ impl StudioShell {
         );
         let line = |text: &'static str| {
             text_style(div(), TextStyle::Small)
-                .text_color(tokens.palette.text_2)
+                .text_color(theme.editor.text_2)
                 .child(text)
         };
         let lines = div()
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_1))
-            .pt(px(tokens.metrics.space_1))
+            .gap(px(METRICS.space_1))
+            .pt(px(METRICS.space_1))
             .child(line(if p.source == p.accepted {
                 "Current source matches the saved checkpoint"
             } else {
@@ -2363,29 +2378,29 @@ impl StudioShell {
             }));
         let entity = cx.entity();
         Some(
-            card()
+            Card::editor(&self.theme)
                 .id("status-strip")
                 .flex_none()
-                .px(px(tokens.metrics.space_3))
-                .py(px(tokens.metrics.space_2))
+                .px(px(METRICS.space_3))
+                .py(px(METRICS.space_2))
                 .child(
-                    Collapsible::new("status-details", expanded)
+                    CollapsibleSection::new("status-details", expanded)
                         .header(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(tokens.metrics.space_2))
+                                .gap(px(METRICS.space_2))
                                 .child(StatusDot::new(tone))
                                 .child(
                                     text_style(div(), TextStyle::Small)
-                                        .text_color(tokens.palette.text_2)
+                                        .text_color(theme.editor.text_2)
                                         .child(summary),
                                 ),
                         )
                         .content(lines)
                         .on_toggle(move |open, _, cx| {
                             entity.update(cx, |shell, cx| {
-                                shell.status_open = open;
+                                shell.status_open = *open;
                                 cx.notify();
                             });
                         }),
@@ -2396,19 +2411,22 @@ impl StudioShell {
 
     /// Tab rail and the open tab's content.
     fn render_left_column(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let entity = cx.entity();
-        let rail = TabRail::new(
+        let rail = TabRail::editor(
+            &theme,
             "left-tabs",
+            theme.editor.card.into(),
             LeftTab::ALL
                 .iter()
-                .map(|tab| TabItem::new(tab.icon(), tab.name()).id(tab.name()))
+                .map(|tab| {
+                    TabRailItem::new(tab.icon().path(), tab.name(), *tab == self.left_tab, false)
+                })
                 .collect(),
-            self.left_tab.index(),
         )
         .on_select(move |index, _, cx| {
             entity.update(cx, |shell, cx| {
-                shell.left_tab = LeftTab::from_index(index);
+                shell.left_tab = LeftTab::from_index(*index);
                 cx.notify();
             });
         });
@@ -2417,14 +2435,14 @@ impl StudioShell {
             LeftContent::Assets => self.render_assets_tab(cx),
             LeftContent::Presets => self.render_style_tab(cx),
         };
-        card()
-            .w(px(tokens.metrics.left_column_w))
+        Card::editor(&self.theme)
+            .w(px(METRICS.left_column_w))
             .flex_none()
             .min_h_0()
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_3))
-            .p(px(tokens.metrics.space_4))
+            .gap(px(METRICS.space_3))
+            .p(px(METRICS.space_4))
             .child(rail)
             .child(content)
             .into_any_element()
@@ -2439,7 +2457,7 @@ impl StudioShell {
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> gpui::Stateful<gpui::Div> {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let entity = cx.entity();
         let handler: Handler = std::rc::Rc::new(move |_, cx| {
             entity.update(cx, |shell, cx| action(shell, cx));
@@ -2451,20 +2469,24 @@ impl StudioShell {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(tokens.metrics.space_2))
+            .gap(px(METRICS.space_2))
             .h(px(LIST_ROW_H))
-            .px(px(tokens.metrics.space_2))
+            .px(px(METRICS.space_2))
             .min_w_0()
-            .rounded(px(tokens.metrics.radius_item))
-            .hover(|style| style.bg(design_system::tokens().palette.ctl_hover))
-            .child(icon(glyph, tokens.metrics.icon_sm, tokens.palette.text_2))
+            .rounded(px(METRICS.radius_item))
+            .hover(move |style| style.bg(theme.editor.ctl_hover))
+            .child(icon(glyph, METRICS.icon_sm, theme.editor.text_2))
             .child(
                 text_style(div().min_w_0().flex_1().truncate(), TextStyle::Body)
-                    .text_color(tokens.palette.text_1)
+                    .text_color(theme.editor.text_1)
                     .child(label.clone()),
             );
-        let row = on_activate(focusable(row, false), false, Some(handler));
-        with_tooltip(row, Some(label.into()))
+        let row = on_activate(
+            focusable(row, &theme, false).cursor_pointer(),
+            false,
+            Some(handler),
+        );
+        with_tooltip(row, &theme, Some(label.into()))
     }
 
     /// The file list of a project tab, or the hint shown while no project is open.
@@ -2476,7 +2498,7 @@ impl StudioShell {
         empty: &'static str,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let mut list = div()
             .id("inventory")
             .flex_1()
@@ -2487,14 +2509,14 @@ impl StudioShell {
         let (Some(files), Some(root)) = (files, root) else {
             return list.child(
                 text_style(div(), TextStyle::Body)
-                    .text_color(tokens.palette.text_2)
+                    .text_color(theme.editor.text_2)
                     .child("Create or open a project to browse its files."),
             );
         };
         if files.is_empty() {
             list = list.child(
                 text_style(div(), TextStyle::Body)
-                    .text_color(tokens.palette.text_2)
+                    .text_color(theme.editor.text_2)
                     .child(empty),
             );
         }
@@ -2512,12 +2534,12 @@ impl StudioShell {
     }
 
     fn render_project_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let enabled = !self.busy;
         let project = self.presentation.project.clone();
-        let mut title = SectionTitle::new("Files");
+        let mut title = section_title(&theme, "Files");
         if let Some(p) = &project {
-            title = title.trailing(Badge::new(p.file_count.to_string()));
+            title = title.child(Badge::new(p.file_count.to_string()));
         }
         let files = self.file_list(
             project.as_ref().map(|p| p.files.as_slice()),
@@ -2531,7 +2553,7 @@ impl StudioShell {
             .min_h_0()
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_2))
+            .gap(px(METRICS.space_2))
             .child(title)
             .child(files);
         if let Some(p) = &project
@@ -2540,7 +2562,7 @@ impl StudioShell {
             tab = tab.child(
                 text_style(div(), TextStyle::Small)
                     .flex_none()
-                    .text_color(tokens.palette.text_3)
+                    .text_color(theme.editor.text_3)
                     .child(format!(
                         "Showing {} of {} files",
                         p.files.len(),
@@ -2556,19 +2578,19 @@ impl StudioShell {
             self.presentation.sdk.clone()
         };
         let entity = cx.entity();
-        let sdk = Collapsible::new("sdk-section", self.sdk_open)
-            .header(SectionTitle::new("Managed SDK"))
+        let sdk = CollapsibleSection::new("sdk-section", self.sdk_open)
+            .header(section_title(&self.theme, "Managed SDK"))
             .content(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(tokens.metrics.space_2))
-                    .pt(px(tokens.metrics.space_2))
+                    .gap(px(METRICS.space_2))
+                    .pt(px(METRICS.space_2))
                     .child(
                         div()
                             .flex()
                             .items_start()
-                            .gap(px(tokens.metrics.space_2))
+                            .gap(px(METRICS.space_2))
                             .child(
                                 div()
                                     .pt(px(5.))
@@ -2576,33 +2598,33 @@ impl StudioShell {
                             )
                             .child(
                                 text_style(div().min_w_0().flex_1(), TextStyle::Small)
-                                    .text_color(tokens.palette.text_2)
+                                    .text_color(theme.editor.text_2)
                                     .child(status),
                             ),
                     )
-                    .child(self.ui_button(
+                    .child(self.action_button(
                         "install",
                         "Install managed SDK",
                         enabled,
-                        ButtonVariant::Editor,
+                        false,
                         None,
                         cx,
                         |s, cx| s.dispatch(Command::InstallSdk, cx),
                     ))
-                    .child(self.ui_button(
+                    .child(self.action_button(
                         "import-sdk-bundle",
                         "Import offline SDK bundle…",
                         enabled,
-                        ButtonVariant::Editor,
+                        false,
                         None,
                         cx,
                         |s, cx| s.pick(Picker::SdkBundle, cx),
                     ))
-                    .child(self.ui_button(
+                    .child(self.action_button(
                         "sdk",
                         "Select installed SDK…",
                         enabled && project.is_some(),
-                        ButtonVariant::Editor,
+                        false,
                         None,
                         cx,
                         |s, cx| s.pick(Picker::Sdk, cx),
@@ -2610,7 +2632,7 @@ impl StudioShell {
             )
             .on_toggle(move |open, _, cx| {
                 entity.update(cx, |shell, cx| {
-                    shell.sdk_open = open;
+                    shell.sdk_open = *open;
                     cx.notify();
                 });
             });
@@ -2621,22 +2643,18 @@ impl StudioShell {
             .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_3))
-            .child(divider())
+            .gap(px(METRICS.space_3))
+            .child(divider(&self.theme))
             .child(sdk);
         if project.is_some() {
             let entity = cx.entity();
             library = library.child(
-                Collapsible::new("recents-section", self.recents_open)
-                    .header(SectionTitle::new("Recent projects"))
-                    .content(
-                        div()
-                            .pt(px(tokens.metrics.space_2))
-                            .child(self.render_recents(cx)),
-                    )
+                CollapsibleSection::new("recents-section", self.recents_open)
+                    .header(section_title(&self.theme, "Recent projects"))
+                    .content(div().pt(px(METRICS.space_2)).child(self.render_recents(cx)))
                     .on_toggle(move |open, _, cx| {
                         entity.update(cx, |shell, cx| {
-                            shell.recents_open = open;
+                            shell.recents_open = *open;
                             cx.notify();
                         });
                     }),
@@ -2646,7 +2664,6 @@ impl StudioShell {
     }
 
     fn render_assets_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
         let project = self.presentation.project.clone();
         let files = self.file_list(
             project.as_ref().map(|p| p.assets.as_slice()),
@@ -2660,14 +2677,14 @@ impl StudioShell {
             .min_h_0()
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_2))
-            .child(SectionTitle::new("Assets"))
+            .gap(px(METRICS.space_2))
+            .child(section_title(&self.theme, "Assets"))
             .child(files)
-            .child(self.ui_button(
+            .child(self.action_button(
                 "asset",
                 "Copy asset…",
                 !self.busy && project.is_some(),
-                ButtonVariant::Editor,
+                false,
                 Some(Icon::Plus),
                 cx,
                 |s, cx| s.pick(Picker::Asset, cx),
@@ -2676,18 +2693,18 @@ impl StudioShell {
     }
 
     fn render_style_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let mut tab = div()
             .flex_1()
             .min_h_0()
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_2));
+            .gap(px(METRICS.space_2));
         if let Some(p) = &self.presentation.project {
             if p.styles.is_empty() {
                 tab = tab.child(
                     text_style(div(), TextStyle::Small)
-                        .text_color(tokens.palette.text_3)
+                        .text_color(theme.editor.text_3)
                         .child("No style preset configured"),
                 );
             }
@@ -2716,17 +2733,17 @@ impl StudioShell {
     /// The recent-projects list. Rendered once: in the left column while a project is
     /// open, in the empty state otherwise, so its element ids stay unique.
     fn render_recents(&self, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         let enabled = !self.busy;
         let mut recents = div()
             .id("recents")
             .flex()
             .flex_col()
-            .gap(px(tokens.metrics.space_1));
+            .gap(px(METRICS.space_1));
         if self.presentation.recents.is_empty() {
             recents = recents.child(
                 text_style(div(), TextStyle::Body)
-                    .text_color(tokens.palette.text_2)
+                    .text_color(theme.editor.text_2)
                     .child("No recent projects"),
             );
         }
@@ -2747,15 +2764,11 @@ impl StudioShell {
                     shell.dispatch(Command::Open(path.clone()), cx)
                 });
             });
-            let mut name_line = div()
-                .flex()
-                .items_center()
-                .gap(px(tokens.metrics.space_2))
-                .child(
-                    text_style(div().min_w_0().flex_1().truncate(), TextStyle::Body)
-                        .text_color(tokens.palette.text_1)
-                        .child(recent.name.clone()),
-                );
+            let mut name_line = div().flex().items_center().gap(px(METRICS.space_2)).child(
+                text_style(div().min_w_0().flex_1().truncate(), TextStyle::Body)
+                    .text_color(theme.editor.text_1)
+                    .child(recent.name.clone()),
+            );
             if recent.missing {
                 name_line = name_line.child(Badge::new("Missing").tone(Tone::Warning));
             }
@@ -2767,35 +2780,40 @@ impl StudioShell {
                 .flex_col()
                 .w_full()
                 .min_w_0()
-                .px(px(tokens.metrics.space_2))
-                .py(px(tokens.metrics.space_1))
-                .rounded(px(tokens.metrics.radius_item))
+                .px(px(METRICS.space_2))
+                .py(px(METRICS.space_1))
+                .rounded(px(METRICS.radius_item))
                 .child(name_line)
                 .child(
                     text_style(div().truncate(), TextStyle::Small)
-                        .text_color(tokens.palette.text_3)
+                        .text_color(theme.editor.text_3)
                         .child(recent.path.display().to_string()),
                 );
             let main = if open_enabled {
-                main.hover(|style| style.bg(design_system::tokens().palette.ctl_hover))
+                main.hover(move |style| style.bg(theme.editor.ctl_hover))
+                    .cursor_pointer()
             } else {
                 main.opacity(DISABLED_OPACITY)
             };
-            let main = on_activate(focusable(main, !open_enabled), !open_enabled, Some(open));
-            let main = with_tooltip(main, Some(recent.path.display().to_string().into()));
+            let main = on_activate(
+                focusable(main, &theme, !open_enabled),
+                !open_enabled,
+                Some(open),
+            );
+            let main = with_tooltip(main, &theme, Some(recent.path.display().to_string().into()));
 
             // Row actions appear on pointer hover and while keyboard focus is inside.
             let mut actions = div()
                 .id(format!("recent-actions-{id}"))
                 .focusable()
                 .absolute()
-                .top(px(tokens.metrics.space_1))
-                .right(px(tokens.metrics.space_1))
+                .top(px(METRICS.space_1))
+                .right(px(METRICS.space_1))
                 .flex()
                 .items_center()
-                .gap(px(tokens.metrics.space_1))
-                .rounded(px(tokens.metrics.radius_item))
-                .bg(tokens.palette.ctl_hover)
+                .gap(px(METRICS.space_1))
+                .rounded(px(METRICS.radius_item))
+                .bg(theme.editor.ctl_hover)
                 .opacity(0.)
                 .group_hover(group.clone(), |style| style.opacity(1.))
                 .in_focus(|style| style.opacity(1.));
@@ -2803,19 +2821,22 @@ impl StudioShell {
                 let entity = cx.entity();
                 let target = project_id.clone();
                 actions = actions.child(match action {
-                    "locate" => Button::new(format!("locate-{id}"), "Locate…")
+                    "locate" => EditorButton::plain(&theme, format!("locate-{id}"))
+                        .label("Locate…")
+                        .filled(&theme)
                         .disabled(!enabled)
-                        .on_click(move |_, cx| {
+                        .on_click(move |_, _, cx| {
                             entity.update(cx, |shell, cx| {
                                 shell.pick(Picker::Locate(target.clone()), cx)
                             });
                         })
                         .into_any_element(),
-                    _ => IconButton::new(format!("remove-{id}"), Icon::X)
-                        .size(IconButtonSize::Small)
+                    _ => IconButton::editor(&theme, format!("remove-{id}"), Icon::X.path())
+                        .editor_size(IconButtonSize::Small)
                         .label("Remove recent")
+                        .tooltip(&theme, "Remove recent")
                         .disabled(!enabled)
-                        .on_click(move |_, cx| {
+                        .on_click(move |_, _, cx| {
                             entity.update(cx, |shell, cx| {
                                 shell.dispatch(Command::RemoveRecent(target.clone()), cx)
                             });
@@ -2829,35 +2850,34 @@ impl StudioShell {
     }
 
     fn render_empty_state(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
         let enabled = !self.busy;
         let actions = div()
             .flex()
             .flex_wrap()
-            .gap(px(tokens.metrics.space_2))
-            .child(self.ui_button(
+            .gap(px(METRICS.space_2))
+            .child(self.action_button(
                 "create",
                 "Create…",
                 enabled,
-                ButtonVariant::Primary,
+                true,
                 Some(Icon::Plus),
                 cx,
                 |s, cx| s.pick(Picker::Create, cx),
             ))
-            .child(self.ui_button(
+            .child(self.action_button(
                 "open",
                 "Open…",
                 enabled,
-                ButtonVariant::Editor,
+                false,
                 Some(Icon::FolderOpen),
                 cx,
                 |s, cx| s.pick(Picker::Open, cx),
             ))
-            .child(self.ui_button(
+            .child(self.action_button(
                 "import",
                 "Import Rust…",
                 enabled,
-                ButtonVariant::Editor,
+                false,
                 Some(Icon::Upload),
                 cx,
                 |s, cx| s.pick(Picker::Import, cx),
@@ -2871,27 +2891,30 @@ impl StudioShell {
             .items_center()
             .justify_center()
             .child(
-                card()
+                Card::editor(&self.theme)
                     .w_full()
                     .max_w(px(520.))
                     .max_h_full()
                     .flex()
                     .flex_col()
-                    .gap(px(tokens.metrics.space_4))
-                    .p(px(tokens.metrics.space_6))
-                    .child(heading("fframes Studio"))
-                    .child(muted("A native workspace for your video projects"))
+                    .gap(px(METRICS.space_4))
+                    .p(px(METRICS.space_6))
+                    .child(heading(&self.theme, "fframes Studio"))
+                    .child(muted(
+                        &self.theme,
+                        "A native workspace for your video projects",
+                    ))
                     .child(actions)
-                    .child(SectionTitle::new("Recent projects"))
+                    .child(section_title(&self.theme, "Recent projects"))
                     .child(self.render_recents(cx).max_h(px(260.)).overflow_y_scroll()),
             )
             .into_any_element()
     }
 
-    /// A `ui::IconButton` wired to a shell action, with the qualification bounds
-    /// probe. The label is the accessible name and the tooltip.
+    /// An icon button wired to a shell action, with the qualification bounds probe.
+    /// The label is the accessible name and the tooltip.
     #[allow(clippy::too_many_arguments)]
-    fn ui_icon_button(
+    fn action_icon_button(
         &self,
         id: &'static str,
         label: &'static str,
@@ -2901,23 +2924,28 @@ impl StudioShell {
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> IconButton {
+        let theme = self.theme;
         let entity = cx.entity();
         let probe = self.bounds_probe(&gpui::ElementId::Name(id.into()), cx);
-        IconButton::new(id, glyph)
-            .size(size)
+        let button = IconButton::editor(&theme, id, glyph.path())
+            .editor_size(size)
             .label(label)
+            .tooltip(&theme, label)
             .disabled(!enabled)
-            .probe(probe)
-            .on_click(move |_, cx| {
+            .on_click(move |_, _, cx| {
                 entity.update(cx, |shell, cx| action(shell, cx));
-            })
+            });
+        match probe {
+            Some(probe) => button.on_bounds(probe.into_bounds_handler()),
+            None => button,
+        }
     }
 
     /// The preview, transport and history controls: toolbar, stage and transport
     /// inside one card. The timeline card is placed by `render`.
     fn render_player_area(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let entity = cx.entity();
-        let mut player = card()
+        let mut player = Card::editor(&self.theme)
             .relative()
             .flex_1()
             .min_w_0()
@@ -2956,8 +2984,8 @@ impl StudioShell {
     }
 
     fn render_player_toolbar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
-        let palette = tokens.palette;
+        let theme = self.theme;
+        let palette = theme.editor;
         let (label, tone) = match &self.preview_state.status {
             studio_engine::PreviewStatus::Building => {
                 ("Building/preparing · prior preview retained", Tone::Info)
@@ -2994,9 +3022,9 @@ impl StudioShell {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(tokens.metrics.space_2))
-            .h(px(tokens.metrics.toolbar_h))
-            .px(px(tokens.metrics.space_3))
+            .gap(px(METRICS.space_2))
+            .h(px(METRICS.toolbar_h))
+            .px(px(METRICS.space_3))
             .border_b_1()
             .border_color(palette.line)
             .overflow_hidden()
@@ -3009,9 +3037,10 @@ impl StudioShell {
             .child(with_tooltip(
                 div().id("canvas-hint").flex_none().child(icon(
                     Icon::Info,
-                    tokens.metrics.icon_md,
+                    METRICS.icon_md,
                     palette.text_3,
                 )),
+                &theme,
                 Some(CANVAS_HINT.into()),
             ))
             .child(
@@ -3023,29 +3052,29 @@ impl StudioShell {
                     .text_color(palette.text_2)
                     .child(audio_label),
             )
-            .child(self.ui_button(
+            .child(self.action_button(
                 "next-audio-output",
                 "Next output",
                 audio_ready,
-                ButtonVariant::Editor,
+                false,
                 None,
                 cx,
                 |s, cx| s.cycle_output(cx),
             ))
-            .child(self.ui_button(
+            .child(self.action_button(
                 "retry-audio-output",
                 "Retry audio",
                 audio_ready,
-                ButtonVariant::Editor,
+                false,
                 None,
                 cx,
                 |s, cx| s.change_output(OutputDevice::Default, cx),
             ))
-            .child(self.ui_button(
+            .child(self.action_button(
                 "no-audio-output",
                 "No audio",
                 audio_ready,
-                ButtonVariant::Editor,
+                false,
                 None,
                 cx,
                 |s, cx| s.change_output(OutputDevice::Unavailable, cx),
@@ -3056,16 +3085,16 @@ impl StudioShell {
     /// The stage: the letterboxed frame with its ring, shadow and overlays inside
     /// the `preview-surface` that owns pointer, keyboard and telemetry.
     fn render_stage(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
-        let palette = tokens.palette;
-        let radius = px(tokens.metrics.radius_frame);
+        let theme = self.theme;
+        let palette = theme.editor;
+        let radius = px(METRICS.radius_frame);
         let mut preview_surface = div()
             .id("preview-surface")
             .relative()
             .tab_index(0)
             .role(gpui::Role::Group)
             .aria_label("Compiled preview")
-            .focus_visible(|s| s.shadow(crate::ui::interact::focus_ring()))
+            .focus_visible(|s| s.shadow(focus_ring(&theme)))
             .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.modifiers.alt
                     || event.keystroke.modifiers.control
@@ -3210,7 +3239,7 @@ impl StudioShell {
                         placed(div(), layout.to_frame_space(bounds))
                             .border_2()
                             .border_color(palette.accent)
-                            .bg(palette.selection),
+                            .bg(theme.selection()),
                     );
                 }
                 if let (Some(viewport), Some(rect)) =
@@ -3222,14 +3251,14 @@ impl StudioShell {
                             layout.to_frame_space(viewport.video_scope_bounds(rect)),
                         )
                         .border_2()
-                        .border_color(palette.warning),
+                        .border_color(theme.amber_11),
                     );
                 }
                 preview_surface
                     .child(
                         placed(div(), frame)
                             .rounded(radius)
-                            .shadow(shadow(Shadow::Preview).into_vec()),
+                            .shadow(shadow_for(theme.appearance, Shadow::Preview).into_vec()),
                     )
                     .child(content)
                     .child(
@@ -3266,7 +3295,7 @@ impl StudioShell {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .p(px(tokens.metrics.space_4))
+            .p(px(METRICS.space_4))
             .bg(palette.stage)
             .child(preview_surface);
         if let Some(message) = &self.canvas.message {
@@ -3275,14 +3304,14 @@ impl StudioShell {
                     .absolute()
                     .left_0()
                     .right_0()
-                    .bottom(px(tokens.metrics.space_4))
+                    .bottom(px(METRICS.space_4))
                     .flex()
                     .justify_center()
                     .child(
                         text_style(div(), TextStyle::Small)
-                            .px(px(tokens.metrics.space_3))
-                            .py(px(tokens.metrics.space_1))
-                            .rounded(px(tokens.metrics.radius_control))
+                            .px(px(METRICS.space_3))
+                            .py(px(METRICS.space_1))
+                            .rounded(px(METRICS.radius_control))
                             .border_1()
                             .border_color(palette.line)
                             .bg(palette.card)
@@ -3295,8 +3324,8 @@ impl StudioShell {
     }
 
     fn render_transport(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
-        let palette = tokens.palette;
+        let theme = self.theme;
+        let palette = theme.editor;
         let enabled = !self.busy;
         let project = self.presentation.project.clone();
         let mode = transport_mode(self.player_width);
@@ -3345,21 +3374,21 @@ impl StudioShell {
         let can_cancel = self.preview.is_some();
         let (build, cancel) = match mode {
             TransportMode::Full => (
-                self.ui_button(
+                self.action_button(
                     "build-preview",
                     "Build preview",
                     can_build,
-                    ButtonVariant::Primary,
+                    true,
                     Some(Icon::Hammer),
                     cx,
                     |s, cx| s.dispatch(Command::Build, cx),
                 )
                 .into_any_element(),
-                self.ui_button(
+                self.action_button(
                     "cancel-preview",
                     "Cancel build",
                     can_cancel,
-                    ButtonVariant::Editor,
+                    false,
                     Some(Icon::Square),
                     cx,
                     |s, cx| s.dispatch(Command::CancelBuild, cx),
@@ -3367,7 +3396,7 @@ impl StudioShell {
                 .into_any_element(),
             ),
             TransportMode::Compact => (
-                self.ui_icon_button(
+                self.action_icon_button(
                     "build-preview",
                     "Build preview",
                     Icon::Hammer,
@@ -3376,9 +3405,9 @@ impl StudioShell {
                     cx,
                     |s, cx| s.dispatch(Command::Build, cx),
                 )
-                .variant(ButtonVariant::Primary)
+                .accent(&self.theme)
                 .into_any_element(),
-                self.ui_icon_button(
+                self.action_icon_button(
                     "cancel-preview",
                     "Cancel build",
                     Icon::Square,
@@ -3387,7 +3416,7 @@ impl StudioShell {
                     cx,
                     |s, cx| s.dispatch(Command::CancelBuild, cx),
                 )
-                .variant(ButtonVariant::Editor)
+                .ctl_fill(&self.theme)
                 .into_any_element(),
             ),
         };
@@ -3396,9 +3425,9 @@ impl StudioShell {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(tokens.metrics.space_2))
-            .h(px(tokens.metrics.transport_h))
-            .px(px(tokens.metrics.space_3))
+            .gap(px(METRICS.space_2))
+            .h(px(METRICS.transport_h))
+            .px(px(METRICS.space_3))
             .border_t_1()
             .border_color(palette.line)
             .overflow_hidden()
@@ -3412,10 +3441,11 @@ impl StudioShell {
                     }))
                     .text_color(palette.text_1)
                     .child(readout.0),
+                &theme,
                 readout.1.map(Into::into),
             ))
             .child(div().flex_1())
-            .child(self.ui_icon_button(
+            .child(self.action_icon_button(
                 "previous-frame",
                 "Previous frame",
                 Icon::StepBack,
@@ -3424,7 +3454,7 @@ impl StudioShell {
                 cx,
                 |s, cx| s.step_preview(-1, cx),
             ))
-            .child(self.ui_icon_button(
+            .child(self.action_icon_button(
                 "play-pause",
                 if playing { "Pause" } else { "Play" },
                 if playing { Icon::Pause } else { Icon::Play },
@@ -3433,7 +3463,7 @@ impl StudioShell {
                 cx,
                 |s, cx| s.toggle_playback(cx),
             ))
-            .child(self.ui_icon_button(
+            .child(self.action_icon_button(
                 "next-frame",
                 "Next frame",
                 Icon::StepForward,
@@ -3442,7 +3472,7 @@ impl StudioShell {
                 cx,
                 |s, cx| s.step_preview(1, cx),
             ))
-            .child(self.ui_icon_button(
+            .child(self.action_icon_button(
                 "mute-audio",
                 if self.muted { "Unmute (M)" } else { "Mute (M)" },
                 if self.muted {
@@ -3462,6 +3492,21 @@ impl StudioShell {
             .into_any_element()
     }
 
+    /// The overflow menu's rows: the action ids identify them, unavailable ones are
+    /// disabled.
+    fn overflow_items(&self) -> Vec<MenuItem> {
+        let actions = self.current_overflow_actions();
+        actions
+            .iter()
+            .zip(disabled_rows(&actions))
+            .map(|((action, _), disabled)| {
+                MenuItem::new(action.label(), false)
+                    .id(action.id())
+                    .disabled(disabled)
+            })
+            .collect()
+    }
+
     /// Actions behind the overflow button, in menu order.
     fn current_overflow_actions(&self) -> Vec<(OverflowAction, bool)> {
         let project = self.presentation.project.as_ref();
@@ -3473,43 +3518,32 @@ impl StudioShell {
     }
 
     fn overflow_trigger(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
         let entity = cx.entity();
-        let anchor = self.overflow_menu.anchor_cell();
-        div()
-            .relative()
-            .flex_none()
-            .child(
-                IconButton::new("overflow-actions", Icon::MoreHorizontal)
-                    .size(IconButtonSize::Medium)
-                    .label("More actions")
-                    .on_click(move |window, cx| {
-                        entity.update(cx, |shell, cx| {
-                            if shell.overflow_open {
-                                shell.close_overflow(window, cx);
-                            } else {
-                                shell.open_overflow(window, cx);
-                            }
-                        });
-                    }),
-            )
-            .child(
-                canvas(move |bounds, _, _| anchor.set(bounds), |_, _, _, _| {})
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full(),
-            )
+        let anchor = self.overflow_anchor.clone();
+        IconButton::editor(&theme, "overflow-actions", Icon::MoreHorizontal.path())
+            .editor_size(IconButtonSize::Medium)
+            .label("More actions")
+            .tooltip(&theme, "More actions")
+            .on_bounds(move |bounds, _| anchor.set(Some(bounds)))
+            .on_click(move |_, window, cx| {
+                entity.update(cx, |shell, cx| {
+                    if shell.overflow_open {
+                        shell.close_overflow(window, cx);
+                    } else {
+                        shell.open_overflow(window, cx);
+                    }
+                });
+            })
             .into_any_element()
     }
 
     fn open_overflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let actions = self.current_overflow_actions();
-        // The trigger keeps reporting into the old anchor cell until its next paint,
-        // so carry the bounds over to the rebuilt state.
-        let bounds = self.overflow_menu.anchor_cell().get();
-        let labels = actions.iter().map(|(a, _)| a.label().into()).collect();
-        self.overflow_menu = MenuState::new(labels, None).with_disabled(disabled_rows(&actions));
-        self.overflow_menu.anchor_cell().set(bounds);
+        let items = self.overflow_items();
+        self.overflow_menu = match self.overflow_anchor.get() {
+            Some(trigger) => MenuState::anchored(trigger, &items),
+            None => MenuState::new(gpui::Point::default(), &items),
+        };
         self.overflow_open = true;
         window.focus(&self.overflow_focus, cx);
         cx.notify();
@@ -3668,40 +3702,40 @@ impl StudioShell {
         let highlight = cx.entity();
         let dismiss = cx.entity();
         Some(
-            Menu::new("overflow-menu", &self.overflow_menu, &self.overflow_focus)
-                .row_ids(
-                    self.current_overflow_actions()
-                        .iter()
-                        .map(|(a, _)| a.id().into())
-                        .collect(),
-                )
-                .on_highlight(move |index, _, cx| {
-                    highlight.update(cx, |shell, cx| {
-                        shell.overflow_menu.set_highlighted(index);
-                        cx.notify();
-                    });
-                })
-                .on_select(move |index, window, cx| {
-                    select.update(cx, |shell, cx| shell.run_overflow(index, window, cx));
-                })
-                .on_dismiss(move |window, cx| {
-                    dismiss.update(cx, |shell, cx| shell.close_overflow(window, cx));
-                })
-                .into_any_element(),
+            Menu::editor(
+                &self.theme,
+                "overflow-menu",
+                self.overflow_items(),
+                &self.overflow_menu,
+            )
+            .focus(&self.overflow_focus)
+            .on_highlight(move |index, _, cx| {
+                highlight.update(cx, |shell, cx| {
+                    shell.overflow_menu.set_highlighted(*index);
+                    cx.notify();
+                });
+            })
+            .on_select(move |index, window, cx| {
+                select.update(cx, |shell, cx| shell.run_overflow(*index, window, cx));
+            })
+            .on_dismiss(move |window, cx| {
+                dismiss.update(cx, |shell, cx| shell.close_overflow(window, cx));
+            })
+            .into_any_element(),
         )
     }
 
     fn render_agent_column(&self) -> gpui::AnyElement {
-        let tokens = design_system::tokens();
+        let theme = self.theme;
         div()
-            .w(px(tokens.metrics.agent_panel_w))
+            .w(px(METRICS.agent_panel_w))
             .flex_none()
             .min_h_0()
             .overflow_hidden()
-            .rounded(px(tokens.metrics.radius_card))
+            .rounded(px(METRICS.radius_card))
             .border_1()
-            .border_color(tokens.palette.line)
-            .bg(tokens.palette.card)
+            .border_color(theme.editor.line)
+            .bg(theme.editor.card)
             .child(self.panel.clone())
             .into_any_element()
     }
@@ -3779,10 +3813,6 @@ impl LeftTab {
             LeftTab::Assets => Icon::Image,
             LeftTab::Style => Icon::Palette,
         }
-    }
-
-    fn index(self) -> usize {
-        Self::ALL.iter().position(|tab| *tab == self).unwrap_or(0)
     }
 
     fn from_index(index: usize) -> Self {
@@ -3912,6 +3942,7 @@ fn enabled_overflow_action(
 
 impl Render for StudioShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.theme.refresh(window, cx);
         if self.overflow_open {
             self.sync_overflow();
         }
@@ -4056,8 +4087,8 @@ impl Render for StudioShell {
             }
         }
         self.activate_audio(cx);
-        let tokens = design_system::tokens();
-        let gutter = px(tokens.metrics.gutter);
+        let theme = self.theme;
+        let gutter = px(METRICS.gutter);
         let project_open = self.presentation.project.is_some();
         let header = self.render_header(cx);
         let notices = self.render_notices(cx);
@@ -4074,7 +4105,7 @@ impl Render for StudioShell {
                 .gap(gutter)
                 .child(player)
                 .child(
-                    card()
+                    Card::editor(&self.theme)
                         .flex_none()
                         .overflow_hidden()
                         .child(self.timeline.clone()),
@@ -4098,8 +4129,8 @@ impl Render for StudioShell {
                     cx.stop_propagation();
                 }
             }))
-            .bg(tokens.palette.window)
-            .text_color(tokens.palette.text_1)
+            .bg(theme.editor.window)
+            .text_color(theme.editor.text_1)
             .flex()
             .flex_col()
             .p(gutter)
@@ -4274,8 +4305,8 @@ mod layout_tests {
     fn left_tabs_keep_their_element_ids() {
         let names: Vec<_> = LeftTab::ALL.iter().map(|t| t.name()).collect();
         assert_eq!(names, ["Project", "Assets", "Style"]);
-        for tab in LeftTab::ALL {
-            assert_eq!(LeftTab::from_index(tab.index()), tab);
+        for (index, tab) in LeftTab::ALL.into_iter().enumerate() {
+            assert_eq!(LeftTab::from_index(index), tab);
         }
         assert_eq!(LeftTab::from_index(9), LeftTab::Project);
     }

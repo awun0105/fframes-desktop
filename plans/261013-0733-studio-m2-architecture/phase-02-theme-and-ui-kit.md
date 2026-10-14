@@ -111,4 +111,15 @@ Parity tests pass; the appearance gpui test passes and switching the OS appearan
   Parity, clippy and fmt pass after each.
 - **Scripts read source by text.** `desktop/scripts/test-packaging.py` asserts strings in `app/src` files (it broke when the SDK lookup moved to the engine). `grep -rn "app/src\|design_system\|text_input" desktop/scripts .github` is checked before each move, and `py desktop/scripts/test-packaging.py` runs with every commit's checks.
 - **Native caption.** Without Cap's `apply_native`, a forced Dark preference does not darken the native Windows caption; only the painted surfaces follow it. The default is System and there is no control for it until the phase 4 settings page, which must either apply the native theme or record the gap.
+- **Accepted differences at the call sites.** These are visible or behavioural changes that were checked and kept:
+  - **Activation.** The old app activation helper fired twice per Enter or Space press: a key-down handler, then the click gpui synthesises on key-up. Two presses produced four activations. Kit buttons activate once, through the click only, and the interact test pins it. The shell's Space-to-play handlers sit on `preview-surface` and `compiled-timeline`, which hold no buttons.
+  - **Icon button hover.** gpui svgs don't inherit a parent's text colour, so the kit glyph takes its hover colour through a group. A gpui test window can't observe hover paint, so no test covers it.
+  - **Disclosure header.** The chevron is 12 px text_3 with a 6 px gap (Cap). It was 14 px text_2 with an 8 px gap.
+  - **Left tab rail.** It uses Cap's look (`justify_around` rather than 4 px gaps). Ids are `left-tabs-{index}`; no test or script read the old name-based ids.
+  - **Overflow menu.**
+    - The highlight stays hidden until an arrow key is pressed.
+    - Clicking the trigger while the menu is open closes it through the backdrop.
+    - The menu is 2 px taller.
+    - It is deferred at window coordinates, so it paints above, and dismisses across, the whole window instead of only the player card.
+  - **Notice dismiss.** The button is 28 px, up from 24 px.
 - **Fork.** fframes pins `khanhthanhdev/zed-cap@c32bfd3` (Cap's fork plus upstream fixes); Cap pins `wingleeio/zed@5d1f83d`. Small API drift is fixed at port time and recorded here.
