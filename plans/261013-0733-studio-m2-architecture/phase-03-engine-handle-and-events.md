@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Engine handle and typed events"
-status: in-progress
+status: done
 priority: P1
 effort: "4-5d"
 dependencies: [1]
@@ -36,14 +36,13 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Engine work off the main thread; adapter probe cache with test
-
-- [ ] Scout controller surface, poll reads and mutex holders
-- [ ] Proto types with session ids
-- [ ] `EngineHandle` and `ProjectSession`
-- [ ] `AppState` with session filtering
-- [ ] Agent and preview polls and UI mutex removed
-- [ ] Playback tick and epoch path preserved
+- [x] Engine work off the main thread; adapter probe cache with test
+- [x] Scout controller surface, poll reads and mutex holders
+- [x] Proto types with session ids (ids only; payload types live in the engine, see the design decisions)
+- [x] `EngineHandle` (no separate `ProjectSession` type, see the outcome)
+- [x] `AppState` with session filtering
+- [x] Agent and preview polls and UI mutex removed
+- [x] Playback tick and epoch path preserved
 
 ## Success criteria
 
@@ -73,7 +72,8 @@ Parity tests pass, including a new test that switches projects mid-turn and asse
   - Automatic paths read through the cache: the stale-generation re-check and the setup snapshot, which only peeks and never probes.
   - An explicit check always probes and replaces the entry, because sign-in state is not in the key.
   - The 30 s init timeout stays, because real adapters start through `npx`.
-- **`AppState`** (studio-ui, one gpui entity per window) is fed by a `cx.spawn` task awaiting the event receiver. It holds the current `SessionId`, the project snapshot and the command in flight. It drops events from any other session and re-emits the rest to the shell.- **Session filtering.**
+- **`AppState`** (studio-ui, one gpui entity per window) is fed by a `cx.spawn` task awaiting the event receiver. It holds the current `SessionId`, the project snapshot and the command in flight. It drops events from any other session and re-emits the rest to the shell.
+- **Session filtering.**
   - Every session-scoped event is stamped where it is created, not where it is forwarded. That covers handoffs, `Opened`, workflow wakes, preview wakes and teardown reports. `HostInbox` entries carry the session of the workflow that queued them.
   - `CommandFinished` is never filtered, because it is what moves `AppState` to a new session.
   - At dispatch of a command that replaces the project, the UI marks the outgoing session as leaving and detaches the panel synchronously, as `take_workflow_for` does today. From then on, events from that session are dropped, even before the command completes.
@@ -87,3 +87,39 @@ Parity tests pass, including a new test that switches projects mid-turn and asse
   - The monitor holds a `Weak` to the engine, uses `try_lock` on the backend, and exits when the handle is gone.
   - The coordinator calls its listener after releasing the mailbox lock.
 - **Spike.** Under `TestAppContext`, with the parity harness's `advance_clock` plus `run_until_parked` loop, a `std::thread` sending on an `async_channel` wakes an entity's `cx.spawn` task, and the values arrive in order. So `AppState` can be fed by awaiting the channel.
+
+## Outcome (2026-10-14)
+
+Done on Windows; Linux and macOS run in CI on the next push.
+
+- **What the window does now.**
+  - `studio_engine::engine::handle::EngineHandle` owns the backend on its own `studio-engine` thread. Commands, presentation refreshes, preview news and agent-workflow opens run there one at a time, in the order sent. Each answer is one `EngineEvent` on one ordered `async_channel`.
+  - `studio_ui::app_state::AppState` (one gpui entity per window) awaits that channel, tracks the current `SessionId` (taken from each `CommandFinished`, which carries the session even when its presentation failed) and the command in flight, drops session-scoped events of any other session or of the session being left, and passes the rest to the shell. `CommandFinished` and `CleanupProblem` are never filtered.
+  - The shell no longer holds the backend, a controller, or an epoch counter. `dispatch` sends and returns; `CommandFinished` replaces the epoch check. `Presentation.controller` is gone.
+  - The install commit in `render()` goes through `EngineHandle::with_install_fence`, which never blocks.
+  - The export runs behind `EngineHandle::start_export`. Its progress arrives on an awaited channel; `poll_export` is gone. The project is held only while the source is frozen.
+  - Agent-workflow opens go through `EngineHandle::open_workflow`. The engine opens only for the session still open and replays the log on its own thread.
+  - `grep -rn "Mutex<Controller>\|poll_agent\|poll_preview" desktop/crates/studio-ui/src desktop/app/src` is empty.
+- **Wakes instead of ticks.**
+  - Preview: `PreviewCoordinator::set_listener` is called once per drain when news (compiled, ready, frame, thumbnail, error) waits. The shell drains on that wake. News is held back while a command, the preview gate or a native dialog is in flight, so the shell drains again when any of them finishes; a dialog closed without a command used to strand it. The gate itself (`complete`/`reconcile` on the controller) runs on the engine thread (`EngineHandle::preview_news` answered by `PreviewGated`).
+  - Agent: `HostInbox::set_listener` hears the first wake after each `take_wake`. The workflow already calls the inbox's `notify` on every snapshot publish and evidence image, so no separate `wait_changed` thread was needed. A finished history page wakes the panel through `ConversationPanel::set_wake`, and scrolling asks for the next page from the list's scroll handler.
+  - Source changes and cleanup problems: a `studio-engine-monitor` thread (`Weak`, `try_lock` only) sends `SourceChanged` every 750 ms while `changed_hint` is set; the shell dispatches `Refresh` when not busy. It also sends the newest teardown problem.
+  - A refused `set_build` is retried on the next agent wake (a task ending publishes a snapshot) instead of every 500 ms.
+  - Still on the 16 ms tick, by design: playback, the playhead forwarded to the workflow, thumbnail requests (sent only when they changed, and re-sent after a thumbnail arrives, a coordinator is replaced or an install commits), and the 8 s stranded-acceptance safety net.
+- **Where this differs from the design above.**
+  - There is no `ProjectSession` type and no snapshot structs. The session is a `SessionId` on the backend, `Presentation` remains the project snapshot, and the existing `Command` is the command type. The shell still holds the agent workflow handle for the panel until phase 6; the engine closes it, before the command that leaves its session runs.
+  - `HostInbox` entries are not stamped with a `SessionId`. They keep the existing per-open serial check (`agent.attached`). They never travel on the engine channel.
+  - No `gpui_tokio` runtime: engine work runs on plain threads, and results reach the UI over `async_channel`.
+  - The audio output read in the tick (`accept_output`) did not move behind the handle. The audio service is owned by the window, and M4 phase 6 replaces the tick.
+- **Tests.** 13 new tests:
+  - six `AppState` tests (stale session dropped, a finished command never dropped and moving the window, one without a presentation still moving it, the session being left says nothing more, a refused switch keeps the session, ordered delivery);
+  - four engine-handle tests (preview news answered with the open session, an external source change reported, a workflow opened only for the session still open, an export of a session no longer open failing with a reason);
+  - the coordinator listener test;
+  - the inbox listener test;
+  - the parity test `frames_keep_arriving_after_a_cancelled_dialog`, which failed before the drain after a dialog closes.
+  The parity test `switching_projects_mid_turn_shows_nothing_of_the_old_turn` stays green.
+- **Verification.**
+  - `cargo test --workspace`: 841 passed, 0 failed, 14 ignored, up from 828.
+  - `cargo clippy --workspace --tests -D warnings` is clean on Windows. Cross-target clippy cannot build ring/sqlite here.
+  - The Unix-gated app tests type-check with their gates stripped, with only Unix-API errors (`gated_check.sh`). They do not run here; the Linux CI run is the first execution of the rewired handoff, gate and preset paths in those suites.
+  - `candidates_above_the_preview_cap_validate_and_stage_at_the_effective_scale` failed once under full-suite load with a fake-worker audio read error ("failed to fill whole buffer"), then passed 3/3 alone. That code is untouched here.
