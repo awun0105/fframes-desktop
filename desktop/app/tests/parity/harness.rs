@@ -162,6 +162,25 @@ impl Studio {
         }
     }
 
+    /// Another project next to the fixture, pinned to the same SDK and worker config.
+    pub fn another_project(&self, name: &str) -> PathBuf {
+        let compatibility = CompatibilityManifest::from_json_str(
+            &fs::read_to_string(self.sdk.join("compatibility.json")).unwrap(),
+        )
+        .unwrap();
+        let project = self.path(name);
+        studio_project::create(
+            &project,
+            name,
+            sdk_pin(&compatibility),
+            &compatibility.fframes_version,
+            "0.1.0",
+        )
+        .unwrap();
+        fs::copy(self.project.join(FAKE_CONFIG), project.join(FAKE_CONFIG)).unwrap();
+        project
+    }
+
     pub fn open_project(self) -> Self {
         let mut studio = self;
         let project = studio.project.clone();

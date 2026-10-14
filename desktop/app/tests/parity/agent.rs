@@ -5,7 +5,7 @@ use crate::{
     harness::{FIXTURE_CONFIG, Mutation, Studio},
 };
 use fframes_studio::actions::{
-    AnswerPermission, ApplyCandidate, FocusPrompt, SubmitPrompt, ToggleReviewPolicy,
+    AnswerPermission, ApplyCandidate, FocusPrompt, OpenProject, SubmitPrompt, ToggleReviewPolicy,
 };
 use serde_json::{Value, json};
 use std::{fs, time::Duration};
@@ -135,5 +135,33 @@ fn a_declined_permission_writes_nothing(cx: &mut gpui::TestAppContext) {
     assert_eq!(permission.len(), 1);
     assert_eq!(permission[0]["state"], "Cancelled", "{:#}", ended["panel"]);
     assert_ne!(phase(&ended), "Accepted");
+    assert_eq!(source(&studio), original);
+}
+
+/// Opening another project while a turn waits for permission ends that project's agent: the
+/// new project's panel shows nothing of the old turn, then or later.
+#[gpui::test]
+fn switching_projects_mid_turn_shows_nothing_of_the_old_turn(cx: &mut gpui::TestAppContext) {
+    let mut studio = studio_with_agent(cx);
+    let original = source(&studio);
+    send_brief(&mut studio);
+    let other = studio.another_project("other");
+    studio.dispatch(OpenProject);
+    studio.choose_path(&other);
+    let switched = studio.wait("the other project with its own agent", |t| {
+        t["busy"] == false
+            && t["project_path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("other"))
+            && t["panel"]["attached"] == true
+    });
+    let after = studio.settle(Duration::from_secs(2));
+    for t in [&switched, &after] {
+        assert!(rows(t, "user").is_empty(), "{:#}", t["panel"]);
+        assert!(rows(t, "agent").is_empty(), "{:#}", t["panel"]);
+        assert!(rows(t, "permission").is_empty(), "{:#}", t["panel"]);
+        assert_eq!(t["panel"]["open_permissions"], 0, "{:#}", t["panel"]);
+        assert_eq!(t["panel"]["phase"], Value::Null, "{:#}", t["panel"]);
+    }
     assert_eq!(source(&studio), original);
 }
