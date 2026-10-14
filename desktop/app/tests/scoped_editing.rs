@@ -5,7 +5,7 @@
 //! These end-to-end cases require successful Apply, which is currently qualified only on Linux.
 #![cfg(target_os = "linux")]
 #![allow(dead_code, unused_imports)]
-include!("support/workflow_world.rs");
+include!("../../crates/studio-engine/tests/support/workflow_world.rs");
 
 fn identity(w: &World) -> fframes_studio_protocol::PreviewIdentity {
     let controller = w.ctl();

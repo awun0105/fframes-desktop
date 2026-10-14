@@ -1,18 +1,18 @@
 //! Integration tests for provider profiles, migration, and qualification resolution.
 
-use fframes_studio::conversation_panel::{
+use serde_json::json;
+use sha2::{Digest, Sha256};
+use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::app_paths::AppPaths;
+use studio_engine::containment::{self, Containment, Platform};
+use studio_engine::providers::{
     host::{self, AdapterFile, McpChoice, REGISTRY_BACKUP_SUFFIX, REGISTRY_FILE, SETTINGS_FILE},
     provider_profiles::{
         BUILTIN_ANTIGRAVITY_ID, BUILTIN_CLAUDE_ID, BUILTIN_CODEX_ID, BUILTIN_PI_ID,
         ProviderProfile, ProviderQualificationStatus, ProviderRegistry, QualificationRankingStatus,
         QualificationSnapshot, REGISTRY_SCHEMA_VERSION,
     },
-    qualification::{self, Containment, Platform},
 };
-use serde_json::json;
-use sha2::{Digest, Sha256};
-use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
-use studio_engine::app_paths::AppPaths;
 use studio_harness::{
     AdapterConfig,
     discovery::{AdapterStatus, ExecutableSearch, ProbeOptions, probe_adapter},
@@ -413,7 +413,7 @@ fn scratch_probe_records_authentic_prerequisites_for_all_four_providers() {
 #[test]
 fn qualification_resolution_grants_m6_containment_with_authentic_evidence() {
     let (_temp, paths) = setup_paths();
-    let ledger_dir = paths.data.join(qualification::LEDGER_DIR);
+    let ledger_dir = paths.data.join(containment::LEDGER_DIR);
     std::fs::create_dir_all(&ledger_dir).unwrap();
 
     let digest = "44".repeat(32);
@@ -481,12 +481,12 @@ fn qualification_resolution_grants_m6_containment_with_authentic_evidence() {
         }
     });
     std::fs::write(
-        ledger_dir.join(qualification::LEDGER_FILE_M6),
+        ledger_dir.join(containment::LEDGER_FILE_M6),
         m6_content.to_string(),
     )
     .unwrap();
 
-    let resolution = qualification::resolve_with(&ledger_dir, &digest, &platform);
+    let resolution = containment::resolve_with(&ledger_dir, &digest, &platform);
     match resolution.ownership {
         WriterOwnership::ProcessGroupContained { qualification } => {
             assert!(qualification.starts_with("m6-ledger:interruption_and_cleanup:"));
@@ -507,7 +507,7 @@ fn qualification_resolution_grants_m6_containment_with_authentic_evidence() {
 #[test]
 fn qualification_resolution_strictly_refuses_unqualified_m6_launch_without_m3_fallback() {
     let (_temp, paths) = setup_paths();
-    let ledger_dir = paths.data.join(qualification::LEDGER_DIR);
+    let ledger_dir = paths.data.join(containment::LEDGER_DIR);
     std::fs::create_dir_all(&ledger_dir).unwrap();
 
     let digest = "55".repeat(32);
@@ -552,7 +552,7 @@ fn qualification_resolution_strictly_refuses_unqualified_m6_launch_without_m3_fa
         }
     });
     std::fs::write(
-        ledger_dir.join(qualification::LEDGER_FILE),
+        ledger_dir.join(containment::LEDGER_FILE),
         m3_content.to_string(),
     )
     .unwrap();
@@ -601,13 +601,13 @@ fn qualification_resolution_strictly_refuses_unqualified_m6_launch_without_m3_fa
         }
     });
     std::fs::write(
-        ledger_dir.join(qualification::LEDGER_FILE_M6),
+        ledger_dir.join(containment::LEDGER_FILE_M6),
         m6_content.to_string(),
     )
     .unwrap();
 
     // The resolution MUST be Unknown: M6 strictly refuses and MUST NEVER fall back to the passing M3 ledger!
-    let resolution = qualification::resolve_with(&ledger_dir, &digest, &platform);
+    let resolution = containment::resolve_with(&ledger_dir, &digest, &platform);
     assert_eq!(
         resolution.ownership,
         WriterOwnership::Unknown,
@@ -624,7 +624,7 @@ fn qualification_resolution_strictly_refuses_unqualified_m6_launch_without_m3_fa
 #[test]
 fn qualification_resolution_falls_back_to_m3_when_launch_not_in_m6() {
     let (_temp, paths) = setup_paths();
-    let ledger_dir = paths.data.join(qualification::LEDGER_DIR);
+    let ledger_dir = paths.data.join(containment::LEDGER_DIR);
     std::fs::create_dir_all(&ledger_dir).unwrap();
 
     let digest = "66".repeat(32);
@@ -670,7 +670,7 @@ fn qualification_resolution_falls_back_to_m3_when_launch_not_in_m6() {
         }
     });
     std::fs::write(
-        ledger_dir.join(qualification::LEDGER_FILE),
+        ledger_dir.join(containment::LEDGER_FILE),
         m3_content.to_string(),
     )
     .unwrap();
@@ -711,13 +711,13 @@ fn qualification_resolution_falls_back_to_m3_when_launch_not_in_m6() {
         }
     });
     std::fs::write(
-        ledger_dir.join(qualification::LEDGER_FILE_M6),
+        ledger_dir.join(containment::LEDGER_FILE_M6),
         m6_content.to_string(),
     )
     .unwrap();
 
     // Because this launch is NOT in M6, it legitimately falls back to M3 and qualifies via M3!
-    let resolution = qualification::resolve_with(&ledger_dir, &digest, &platform);
+    let resolution = containment::resolve_with(&ledger_dir, &digest, &platform);
     match resolution.ownership {
         WriterOwnership::ProcessGroupContained { qualification } => {
             assert!(qualification.starts_with("m3-ledger:auth_writer_process_group:"));
@@ -732,7 +732,7 @@ fn qualification_resolution_falls_back_to_m3_when_launch_not_in_m6() {
 #[test]
 fn qualification_resolution_refuses_when_second_cited_file_is_tampered() {
     let (_temp, paths) = setup_paths();
-    let ledger_dir = paths.data.join(qualification::LEDGER_DIR);
+    let ledger_dir = paths.data.join(containment::LEDGER_DIR);
     std::fs::create_dir_all(&ledger_dir).unwrap();
 
     let digest = "88".repeat(32);
@@ -819,12 +819,12 @@ fn qualification_resolution_refuses_when_second_cited_file_is_tampered() {
         }
     });
     std::fs::write(
-        ledger_dir.join(qualification::LEDGER_FILE_M6),
+        ledger_dir.join(containment::LEDGER_FILE_M6),
         m6_content.to_string(),
     )
     .unwrap();
 
-    let resolution = qualification::resolve_with(&ledger_dir, &digest, &platform);
+    let resolution = containment::resolve_with(&ledger_dir, &digest, &platform);
     assert_eq!(
         resolution.ownership,
         WriterOwnership::Unknown,
@@ -873,7 +873,7 @@ fn registry_round_trips_and_derives_detection_specs() {
 
 #[test]
 fn detection_result_maps_to_row_state() {
-    use fframes_studio::conversation_panel::provider_profiles::DetectionState;
+    use studio_engine::providers::provider_profiles::DetectionState;
     use studio_harness::Detected;
     let found = |cli: bool, adapter: bool| Detected {
         id: "x".into(),
@@ -917,7 +917,7 @@ fn node_launch_of_a_selected_adapter_survives_the_setup_fields() {
 
 #[test]
 fn detect_rows_offer_the_action_their_state_allows() {
-    use fframes_studio::conversation_panel::provider_profiles::{
+    use studio_engine::providers::provider_profiles::{
         DetectRowAction as A, DetectionState as S, row_action,
     };
     let guide = Some("https://example.com/install");
@@ -944,7 +944,7 @@ fn detect_rows_offer_the_action_their_state_allows() {
 
 #[test]
 fn only_https_install_guides_are_opened() {
-    use fframes_studio::conversation_panel::provider_profiles::{
+    use studio_engine::providers::provider_profiles::{
         NODE_DOWNLOAD_URL, install_guide_url, is_openable,
     };
     for refused in [
@@ -1007,7 +1007,7 @@ fn node_launch(node: &std::path::Path, entry: &std::path::Path) -> AdapterFile {
 
 #[test]
 fn a_saved_node_launch_never_makes_a_deleted_builtin_adapter_look_ready() {
-    use fframes_studio::conversation_panel::provider_profiles::{DetectionState, scan_agents};
+    use studio_engine::providers::provider_profiles::{DetectionState, scan_agents};
     let (temp, paths) = setup_paths();
     let bin = temp.path().join("bin");
     let node = fake_executable(&bin, "node");
@@ -1095,7 +1095,7 @@ fn a_turn_on_save_creates_the_registry_when_none_exists() {
 
 #[test]
 fn a_custom_node_launch_is_detected_by_its_entry() {
-    use fframes_studio::conversation_panel::provider_profiles::{
+    use studio_engine::providers::provider_profiles::{
         AdapterIdentity, DetectionState, scan_agents,
     };
     let (temp, paths) = setup_paths();
@@ -1139,7 +1139,7 @@ fn a_custom_node_launch_is_detected_by_its_entry() {
 
 #[test]
 fn builtins_are_detected_by_their_own_adapter_name_whatever_launch_is_saved() {
-    use fframes_studio::conversation_panel::provider_profiles::{AdapterIdentity, builtin_adapter};
+    use studio_engine::providers::provider_profiles::{AdapterIdentity, builtin_adapter};
     let mut registry = ProviderRegistry::default();
     for profile in &mut registry.profiles {
         profile.adapter.executable = "/usr/bin/node".into();
@@ -1189,7 +1189,7 @@ fn a_detected_adapter_file_maps_to_its_launch_and_names_what_is_missing() {
 
 #[test]
 fn a_missing_install_tool_is_named() {
-    use fframes_studio::conversation_panel::provider_profiles::DetectionScan;
+    use studio_engine::providers::provider_profiles::DetectionScan;
     let scan = |node: bool, npm: bool| DetectionScan {
         node: node.then(|| "/n/node".into()),
         npm: npm.then(|| "/n/npm".into()),
@@ -1205,10 +1205,8 @@ fn a_missing_install_tool_is_named() {
 
 #[test]
 fn turn_on_shows_readiness_only_on_the_row_it_turned_on() {
-    use fframes_studio::conversation_panel::{
-        provider_profiles::DetectionState as D,
-        provider_setup::{RowStatus as R, TurnOn},
-    };
+    use fframes_studio::conversation_panel::provider_setup::{RowStatus as R, TurnOn};
+    use studio_engine::providers::provider_profiles::DetectionState as D;
     let mut turn_on = TurnOn::default();
     assert_eq!(turn_on.row_status("a", D::Ready), R::Detected(D::Ready));
 

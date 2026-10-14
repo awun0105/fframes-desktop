@@ -12,10 +12,6 @@
 //! then moved to another folder; the token/font/resource files and the rendered pixels are
 //! recorded at every stage. A legacy project without styles must open, build and render,
 //! and only change `style/` once a preset is applied.
-use fframes_studio::{
-    build_service::{CompileEnvironment, CompileRequest, Compiler},
-    worker_project::{CargoCompiler, acquire_build_lock},
-};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -24,6 +20,8 @@ use std::{
     time::Duration,
 };
 use studio_bootstrap::ProcessTreeManager;
+use studio_engine::services::build_service::{CompileEnvironment, CompileRequest, Compiler};
+use studio_engine::services::worker_project::{CargoCompiler, acquire_build_lock};
 use studio_engine::{
     Controller, PresetAction, PresetRequest, app_paths::AppPaths, build_materialization::sdk_pin,
 };

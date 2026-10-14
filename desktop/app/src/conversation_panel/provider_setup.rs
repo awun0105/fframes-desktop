@@ -12,12 +12,8 @@
 use super::{
     ConversationPanel, Tone,
     controls::{self, derive_controls},
-    host::{self, AdapterFile},
-    provider_profiles::{self, DetectRowAction, DetectionScan, DetectionState},
-    qualification::Resolution,
 };
 use crate::{
-    agent_workflow::{AdapterReadiness, UndoView},
     design_system,
     ui::{self, Badge, Tone as UiTone},
 };
@@ -33,7 +29,13 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+use studio_engine::agent::{AdapterReadiness, UndoView};
 use studio_engine::app_paths::AppPaths;
+use studio_engine::containment::Resolution;
+use studio_engine::providers::{
+    host::{self, AdapterFile},
+    provider_profiles::{self, DetectRowAction, DetectionScan, DetectionState},
+};
 use studio_harness::{
     NodeEntry,
     adapter_install::{self, InstallError, InstalledAdapter},
@@ -394,7 +396,7 @@ impl ConversationPanel {
         ticket: u64,
         registry: provider_profiles::ProviderRegistry,
         adapter: AdapterFile,
-        resolved: (crate::agent_workflow::AdapterSettings, Resolution),
+        resolved: (studio_engine::agent::AdapterSettings, Resolution),
         paths: AppPaths,
         cx: &mut Context<Self>,
     ) {

@@ -4,13 +4,7 @@
 //! These publication and promotion integration cases run only on Linux, where Apply is
 //! enabled after the no-clobber source publication primitives are qualified.
 #![cfg(target_os = "linux")]
-use fframes_studio::{
-    build_service::{BuildLimits, BuildService},
-    candidate_runner::{CandidateRunConfig, RunScopes, run_candidate_validation},
-    preview_coordinator::{AdoptError, BuildSpec, PreviewCoordinator, SeekIntent},
-    studio_shell::{PresentationVerdict, install_fence, presentation_verdict},
-    teardown::Teardown,
-};
+use fframes_studio::studio_shell::{PresentationVerdict, install_fence, presentation_verdict};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -19,6 +13,14 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{ProcessTreeManager, SpawnOptions, WriterOwnership};
+use studio_engine::services::build_service::{BuildLimits, BuildService};
+use studio_engine::services::candidate_runner::{
+    CandidateRunConfig, RunScopes, run_candidate_validation,
+};
+use studio_engine::services::preview_coordinator::{
+    AdoptError, BuildSpec, PreviewCoordinator, SeekIntent,
+};
+use studio_engine::services::teardown::Teardown;
 use studio_engine::{
     AgentTaskContext, CaptureTicket, CompletionOutcome, Controller, JobKind, JobResult,
     PreviewState, QuiescenceEvidence, TaskState, TurnCompletion, WriterObservation,
@@ -27,7 +29,7 @@ use studio_engine::{
 };
 use studio_project::checkpoint::Checkpoints;
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 
@@ -219,7 +221,7 @@ fn promote(
     marker: &str,
 ) -> (
     CapturedCandidate,
-    fframes_studio::candidate_runner::CandidateRun,
+    studio_engine::services::candidate_runner::CandidateRun,
     studio_engine::Promotion,
     RunScopes,
 ) {
@@ -368,7 +370,7 @@ fn a_failed_handoff_keeps_the_old_preview_playing_and_the_committed_source() {
 
 /// Intent exactly equal to what a staged preview was prepared at.
 fn staged_intent(
-    staged: &fframes_studio::preview_coordinator::StagedPreview,
+    staged: &studio_engine::services::preview_coordinator::StagedPreview,
     identity: &fframes_studio_protocol::PreviewIdentity,
 ) -> SeekIntent {
     let ready = staged.ready();

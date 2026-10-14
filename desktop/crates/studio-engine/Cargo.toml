@@ -19,6 +19,14 @@ toml = "0.8"
 rusqlite = { version = "0.38", features = ["bundled", "backup"] }
 notify = "8"
 sha2 = { workspace = true }
+parking_lot = { workspace = true }
+image = { workspace = true }
+cpal = { workspace = true }
+studio-harness = { workspace = true }
+fframes-media = { path = "../../../fframes-media" }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
 
 [dev-dependencies]
-parking_lot = { workspace = true }
+studio-test-support = { path = "../studio-test-support" }

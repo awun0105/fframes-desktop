@@ -96,8 +96,6 @@ pub fn create_render_image(
     Ok(Arc::new(render_image))
 }
 
-pub use crate::worker_client::generate_reference_frame;
-
 /// Tracks the presentation state and ensures the previous image is dropped from GPUI cache.
 pub struct ImagePresentationManager {
     current_image: Option<Arc<RenderImage>>,
@@ -171,6 +169,7 @@ impl ImagePresentationManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use studio_engine::services::worker_client::generate_reference_frame;
 
     #[test]
     fn preview_fits_physical_extent_aspect_and_protocol_cap_without_upscaling() {

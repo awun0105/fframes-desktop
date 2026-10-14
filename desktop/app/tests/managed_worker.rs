@@ -1,5 +1,5 @@
-use fframes_studio::worker_project;
 use studio_bootstrap::ProcessTreeManager;
+use studio_engine::services::worker_project;
 use studio_sdk::{CompatibilityManifest, SdkInstaller};
 
 #[test]

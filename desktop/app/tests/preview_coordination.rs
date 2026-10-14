@@ -1,7 +1,3 @@
-use fframes_studio::{
-    preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent},
-    worker_project::acquire_build_lock,
-};
 use std::{
     fs,
     path::PathBuf,
@@ -9,6 +5,8 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::ProcessTreeManager;
+use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
+use studio_engine::services::worker_project::acquire_build_lock;
 use studio_engine::{
     Controller, JobKind, JobResult, PreviewState, ReadyPreview, app_paths::AppPaths,
     build_materialization::sdk_pin,
@@ -51,7 +49,7 @@ fn spec(
         tag,
         compiler: c.operation_processes(),
         worker: c.processes.sub_manager(),
-        service: fframes_studio::worker_project::shared_build_service(),
+        service: studio_engine::services::worker_project::shared_build_service(),
     }
 }
 fn wait_ready(p: &PreviewCoordinator, c: &mut Controller) -> Arc<ReadyPreview> {
@@ -371,7 +369,7 @@ fn real_failed_build_and_invalid_source_preserve_seekable_immutable_revision_and
     drop(latest);
     // Completed builds are cached by the shared service until the project closes; the
     // product close path releases them, so the leak check must do the same.
-    fframes_studio::worker_project::shared_build_service()
+    studio_engine::services::worker_project::shared_build_service()
         .close_project(&String::from(c.project.manifest.project_id.clone()));
     fn assert_no_live_trees(path: &std::path::Path) {
         for e in fs::read_dir(path).unwrap() {

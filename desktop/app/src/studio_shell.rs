@@ -1,15 +1,11 @@
 use crate::{
     actions,
-    audio_service::{AudioEvent, AudioService, OutputDevice, OutputHandle},
-    build_service::BuildService,
     canvas_view::{CanvasViewState, StageLayout},
     design_system::{self, Shadow, TextStyle, shadow, text_style},
-    export_service::{ExportControl, ExportProgress, export_mp4},
     frame_image::{ImagePresentationManager, create_render_image},
     preset_panel::{
         Catalog, PresetCommand, PresetEvent, PresetPanel, PresetPick, PresetReport, PresetView,
     },
-    preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent},
     timeline_view::{TimelineEvent, TimelineView},
     ui::{
         Badge, BoundsProbe, Button, ButtonVariant, Collapsible, Icon, IconButton, IconButtonSize,
@@ -20,12 +16,7 @@ use crate::{
     },
 };
 use crate::{
-    agent_workflow::{AgentWorkflow, BuildSettings},
-    conversation_panel::{
-        Attachment, ConversationPanel, PanelEvent,
-        host::{HostInbox, open_workflow},
-        qualification::OwnershipPolicy,
-    },
+    conversation_panel::{Attachment, ConversationPanel, PanelEvent},
     project_view::ProjectPresentation,
     setup_view::SetupView,
 };
@@ -44,6 +35,15 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use studio_engine::agent::{AgentWorkflow, BuildSettings};
+use studio_engine::containment::OwnershipPolicy;
+use studio_engine::providers::host::{HostInbox, open_workflow};
+use studio_engine::services::audio_service::{
+    AudioEvent, AudioService, OutputDevice, OutputHandle,
+};
+use studio_engine::services::build_service::BuildService;
+use studio_engine::services::export_service::{ExportControl, ExportProgress, export_mp4};
+use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
 use studio_engine::{
     Controller, TaskScope, app_paths::AppPaths, build_materialization::sdk_pin, store::Store,
 };
@@ -587,7 +587,7 @@ impl StudioEnvironment {
         Self {
             app_data: None,
             sdk_home: None,
-            builds: crate::worker_project::shared_build_service(),
+            builds: studio_engine::services::worker_project::shared_build_service(),
             ownership: OwnershipPolicy::Validated,
         }
     }
@@ -802,7 +802,7 @@ impl StudioShell {
     /// reason the accepted revision is left awaiting an ordinary preview build.
     pub fn adopt_promotion(
         &mut self,
-        staged: Option<crate::preview_coordinator::StagedPreview>,
+        staged: Option<studio_engine::services::preview_coordinator::StagedPreview>,
         promotion: &studio_engine::Promotion,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
@@ -1764,7 +1764,10 @@ impl StudioShell {
         }
         self.rebuild_stranded_acceptance(cx);
         // Background teardown only ever reports problems; surface the newest one.
-        if let Some(report) = crate::teardown::Teardown::global().take_reports().pop() {
+        if let Some(report) = studio_engine::services::teardown::Teardown::global()
+            .take_reports()
+            .pop()
+        {
             self.error = Some(format!(
                 "Background cleanup ({}): {}",
                 report.label, report.problem
@@ -1837,7 +1840,7 @@ impl StudioShell {
 
     fn adopt_opened(
         &mut self,
-        opened: crate::conversation_panel::host::Opened,
+        opened: studio_engine::providers::host::Opened,
         cx: &mut Context<Self>,
     ) {
         let wanted = self.agent.opening == Some(opened.serial);
@@ -2563,7 +2566,7 @@ impl StudioShell {
                     .map_err(|error| error.to_string())
                     .and_then(|source| {
                         export_mp4(
-                            crate::export_service::ExportRequest {
+                            studio_engine::services::export_service::ExportRequest {
                                 source,
                                 sdk,
                                 builds: paths.builds(),

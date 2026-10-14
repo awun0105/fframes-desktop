@@ -1,6 +1,7 @@
-use fframes_studio::{WorkerClient, selection_spike::DisplayedSourceFrame};
+use fframes_studio::selection_spike::DisplayedSourceFrame;
 use std::{path::PathBuf, time::Duration};
 use studio_bootstrap::{ChildEnvironment, ProcessTreeManager};
+use studio_engine::services::worker_client::WorkerClient;
 use studio_harness::source_revision;
 
 #[test]

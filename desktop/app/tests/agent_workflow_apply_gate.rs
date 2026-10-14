@@ -2,7 +2,7 @@
 //! reviewable and exportable while Apply stays blocked.
 #![cfg(not(target_os = "linux"))]
 #![allow(dead_code, unused_imports)]
-include!("support/workflow_world.rs");
+include!("../../crates/studio-engine/tests/support/workflow_world.rs");
 
 fn run_studio_tools(capability: &std::path::Path, tool: &str) -> std::process::Output {
     std::process::Command::new(env!("CARGO_BIN_EXE_studio-tools"))

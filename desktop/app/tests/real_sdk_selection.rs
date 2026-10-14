@@ -5,11 +5,11 @@
 //! SDK_BUNDLE=/absolute/path/to/verified-bundle cargo test --locked \
 //!   --manifest-path desktop/Cargo.toml -p fframes-studio --test real_sdk_selection -- --ignored
 //! ```
-use fframes_studio::worker_project;
 use fframes_studio_protocol::{EditorFrameStatus, PreviewIdentity};
 use std::{fs, path::PathBuf, process::Command, time::Duration};
 use studio_bootstrap::ProcessTreeManager;
 use studio_engine::build_materialization::sdk_pin;
+use studio_engine::services::worker_project;
 use studio_project::{
     ProjectPath, SourceRevision,
     revision::FileKind,

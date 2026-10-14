@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use fframes_studio::{frame_image, thumbnail_cache};
+use fframes_studio::frame_image;
 use fframes_studio_protocol::PreviewIdentity;
 use gpui::RenderImage;
+use studio_engine::services::thumbnail_cache;
 use thumbnail_cache::{MAX_THUMBNAIL_BYTES, MAX_THUMBNAIL_ENTRIES, ThumbnailCache, ThumbnailKey};
 
-#[path = "support/preview_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
 mod preview_fixture;
 
 fn identity(revision: &str, generation: u64) -> PreviewIdentity {
@@ -22,8 +23,9 @@ fn key(frame: usize) -> ThumbnailKey {
 }
 
 fn image(frame: usize) -> Arc<RenderImage> {
-    let (header, pixels) =
-        frame_image::generate_reference_frame("revision", 1, 1, frame, 4, 4, false);
+    let (header, pixels) = studio_engine::services::worker_client::generate_reference_frame(
+        "revision", 1, 1, frame, 4, 4, false,
+    );
     frame_image::create_render_image(&header, &pixels).expect("synthetic image")
 }
 
@@ -129,12 +131,12 @@ fn clear_returns_every_image_and_resets_current_accounting() {
 #[test]
 #[ignore = "requires compatible SDK_ACTIVE or SDK_BUNDLE; exercises real compiled timeline and thumbnail destinations"]
 fn real_compiled_tracks_and_thumbnail_seek_destinations() {
-    use fframes_studio::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
     use std::{
         fs,
         path::PathBuf,
         time::{Duration, Instant},
     };
+    use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
     use studio_engine::{
         Controller, JobKind, JobResult, PreviewState, TimelineModel, TimelineSelection,
         TimelineViewport, app_paths::AppPaths,
@@ -186,7 +188,7 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
         tag,
         compiler: controller.operation_processes(),
         worker: controller.processes.sub_manager(),
-        service: fframes_studio::worker_project::shared_build_service(),
+        service: studio_engine::services::worker_project::shared_build_service(),
     });
     let deadline = Instant::now() + Duration::from_secs(180);
     let ready = loop {
@@ -300,7 +302,7 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     drop(ready);
     // Completed builds stay cached by the shared service until the project closes (the
     // product close path releases them); do the same before checking for leaks.
-    fframes_studio::worker_project::shared_build_service().close_project(&String::from(
+    studio_engine::services::worker_project::shared_build_service().close_project(&String::from(
         controller.project.manifest.project_id.clone(),
     ));
     fn no_leased_trees(path: &std::path::Path) {

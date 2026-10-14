@@ -1,10 +1,10 @@
-use fframes_studio::agent_tools::{
-    BoundRevision, RevisionInfo, RevisionLabel, ToolBackend, ToolBinding, ToolCall, ToolDispatcher,
-    ToolError, ToolReply, ToolRequest,
-};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::sync::Arc;
+use studio_engine::agent_tools::{
+    BoundRevision, RevisionInfo, RevisionLabel, ToolBackend, ToolBinding, ToolCall, ToolDispatcher,
+    ToolError, ToolReply, ToolRequest,
+};
 use studio_engine::{AgentTaskId, OpenSession, TaskIdentity};
 use studio_project::{ProjectId, SourceRevision};
 
@@ -121,7 +121,7 @@ fn selection_retrieval_tools_share_dispatch_and_revision_fences() {
             .unwrap_err();
         assert_eq!(
             error.code,
-            fframes_studio::agent_tools::ToolErrorCode::StaleRevision
+            studio_engine::agent_tools::ToolErrorCode::StaleRevision
         );
     }
     assert_eq!(

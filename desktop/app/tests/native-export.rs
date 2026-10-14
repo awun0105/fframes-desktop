@@ -66,7 +66,7 @@ fn audio_wave() -> Vec<u8> {
 
 fn run_cli(
     project: &Path,
-    environment: &fframes_studio::build_service::CompileEnvironment,
+    environment: &studio_engine::services::build_service::CompileEnvironment,
     args: &[&str],
 ) -> Output {
     let mut command = Command::new("cargo");
@@ -154,13 +154,15 @@ fn export_refuses_a_newer_unvalidated_live_source() {
 #[test]
 #[ignore = "requires assembled Linux SDK_BUNDLE and compiles/renders the actual generated worker"]
 fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio() {
-    use fframes_studio::{
-        build_service::{BuildLimits, BuildService, Subscriber, SubscriberKind},
-        export_service::{ExportControl, ExportProgress, ExportRequest, export_mp4},
-        worker_project::{CargoCompiler, compile_portable_worker_via},
-    };
     use studio_bootstrap::ProcessTreeManager;
     use studio_engine::build_materialization::sdk_pin;
+    use studio_engine::services::build_service::{
+        BuildLimits, BuildService, Subscriber, SubscriberKind,
+    };
+    use studio_engine::services::export_service::{
+        ExportControl, ExportProgress, ExportRequest, export_mp4,
+    };
+    use studio_engine::services::worker_project::{CargoCompiler, compile_portable_worker_via};
 
     let temporary = tempfile::tempdir().unwrap();
     let (sdk, manifest) = install_sdk(&temporary);
@@ -337,9 +339,10 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
     assert!(streams.iter().any(|stream| stream["codec_type"] == "video"));
     assert!(streams.iter().any(|stream| stream["codec_type"] == "audio"));
 
-    let compile_environment =
-        fframes_studio::build_service::CompileEnvironment::resolve(&sdk, &manifest, &builds)
-            .unwrap();
+    let compile_environment = studio_engine::services::build_service::CompileEnvironment::resolve(
+        &sdk, &manifest, &builds,
+    )
+    .unwrap();
     let frame_directory = temporary.path().join("frames");
     fs::create_dir_all(&frame_directory).unwrap();
     let frame_output = frame_directory.to_string_lossy().into_owned();

@@ -2,11 +2,11 @@
 //! provider-owned setup guidance, reply correlation and focus/shortcut routing.
 //!
 //! Nothing here touches GPUI or the filesystem, so every rule is unit-testable.
-use crate::agent_workflow::{
+use std::collections::VecDeque;
+use studio_engine::agent::{
     AdapterReadiness, MAX_QUEUED_BRIEFS, PermissionCard, PermissionRef, PermissionState, TaskPhase,
     TaskView, UndoView, WorkflowSnapshot,
 };
-use std::collections::VecDeque;
 use studio_engine::{AgentTaskId, DraftState};
 use studio_harness::AdapterStatus;
 
@@ -676,11 +676,11 @@ pub fn transport_for_key(key: &str) -> Option<Transport> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_workflow::{
+    use std::{path::PathBuf, sync::Arc};
+    use studio_engine::agent::{
         AdapterView, ChangeCard, ConflictView, McpView, RecoveryView, RepairView, ResourceView,
         ReviewView,
     };
-    use std::{path::PathBuf, sync::Arc};
     use studio_engine::{ReviewPolicy, TaskScope, TaskState};
     use studio_harness::{DiscoveryReport, driver::PermissionChoice};
     use studio_project::ProjectId;
@@ -876,7 +876,7 @@ mod tests {
         assert!(!derive_controls(&conflicted, false, true).new_chat);
 
         let mut queued = with_task(TaskPhase::Accepted);
-        queued.queue.push(crate::agent_workflow::QueuedBrief {
+        queued.queue.push(studio_engine::agent::QueuedBrief {
             id: 1,
             summary: "x".into(),
             queued_unix: 0,
@@ -911,7 +911,7 @@ mod tests {
     fn a_full_queue_blocks_further_briefs() {
         let mut snapshot = with_task(TaskPhase::Editing);
         snapshot.queue = (0..MAX_QUEUED_BRIEFS as u64)
-            .map(|id| crate::agent_workflow::QueuedBrief {
+            .map(|id| studio_engine::agent::QueuedBrief {
                 id,
                 summary: "x".into(),
                 queued_unix: 0,
@@ -957,7 +957,7 @@ mod tests {
         assert!(!derive_controls(&snapshot, false, true).export_draft);
         // After a restart there is no task view, only the recovery state.
         let mut restarted = base_snapshot();
-        restarted.recovery.draft = Some(crate::agent_workflow::DraftNotice {
+        restarted.recovery.draft = Some(studio_engine::agent::DraftNotice {
             state: DraftState::Retained {
                 task: "t".into(),
                 reason: "stopped".into(),
@@ -1033,7 +1033,7 @@ mod tests {
     #[test]
     fn an_unsafe_working_copy_blocks_new_tasks_until_acknowledged() {
         let mut snapshot = base_snapshot();
-        snapshot.recovery.draft = Some(crate::agent_workflow::DraftNotice {
+        snapshot.recovery.draft = Some(studio_engine::agent::DraftNotice {
             state: DraftState::UnsafeWriter {
                 task: "t".into(),
                 reason: "previous session ended".into(),

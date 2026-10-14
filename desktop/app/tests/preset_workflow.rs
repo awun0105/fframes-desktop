@@ -5,10 +5,8 @@
 //! of the reports and snapshots proven here (the GPUI process is exercised by `x11_shell`).
 #![cfg(target_os = "linux")]
 
-use fframes_studio::{
-    build_service::{BuildLimits, BuildService},
-    preset_panel::{Catalog, Outcome, PresetCommand, PresetReport, PresetView, Refusal, execute},
-    preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent},
+use fframes_studio::preset_panel::{
+    Catalog, Outcome, PresetCommand, PresetReport, PresetView, Refusal, execute,
 };
 use parking_lot::Mutex;
 use std::{
@@ -18,13 +16,15 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::ProcessTreeManager;
+use studio_engine::services::build_service::{BuildLimits, BuildService};
+use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
 use studio_engine::{
     ApplyGate, Boundary, Controller, JobKind, JobResult, PresetMutation, PreviewState,
     app_paths::AppPaths,
 };
 use studio_project::SourceRevision;
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 

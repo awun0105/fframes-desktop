@@ -1,11 +1,3 @@
-use fframes_studio::{
-    build_service::{
-        BuildError, BuildKey, BuildLimits, BuildService, BuildState, CompileEnvironment,
-        CompileRequest, Subscriber, SubscriberKind,
-    },
-    preview_coordinator::{BuildSpec, PreviewCoordinator},
-    worker_project::shared_build_service,
-};
 use std::{
     sync::{
         Arc,
@@ -14,9 +6,15 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{ChildEnvironment, ProcessTreeManager};
+use studio_engine::services::build_service::{
+    BuildError, BuildKey, BuildLimits, BuildService, BuildState, CompileEnvironment,
+    CompileRequest, Subscriber, SubscriberKind,
+};
+use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator};
+use studio_engine::services::worker_project::shared_build_service;
 use studio_engine::{Controller, JobKind, JobResult, app_paths::AppPaths};
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 
@@ -695,10 +693,10 @@ fn the_process_wide_service_is_one_shared_instance_for_ui_and_tools() {
 }
 
 struct PanickingCompiler;
-impl fframes_studio::build_service::Compiler for PanickingCompiler {
+impl studio_engine::services::build_service::Compiler for PanickingCompiler {
     fn compile(
         &self,
-        _request: &fframes_studio::build_service::CompileRequest,
+        _request: &studio_engine::services::build_service::CompileRequest,
         _scope: &ProcessTreeManager,
     ) -> Result<Arc<studio_engine::build_materialization::MaterializedBuild>, String> {
         // Long enough for the second subscriber to join before the compile dies.
@@ -756,7 +754,7 @@ fn default_limits_are_eight_entries_and_a_two_gib_target() {
     let limits = BuildLimits::default();
     assert_eq!(limits.max_entries, 8);
     assert_eq!(limits.eviction_target_bytes, 2 * 1024 * 1024 * 1024);
-    assert_eq!(fframes_studio::build_service::MAX_CACHED_BUILDS, 8);
+    assert_eq!(studio_engine::services::build_service::MAX_CACHED_BUILDS, 8);
 }
 
 #[test]
@@ -864,7 +862,8 @@ fn a_key_the_compiler_cannot_honor_is_refused_before_any_compile_or_cache_entry(
 
 #[test]
 fn the_cargo_compiler_only_accepts_the_default_cpu_debug_worker_key() {
-    use fframes_studio::{build_service::Compiler, worker_project::CargoCompiler};
+    use studio_engine::services::build_service::Compiler;
+    use studio_engine::services::worker_project::CargoCompiler;
     let e = env();
     let project = create_project(&e.temp.path().join("video"));
     let base = build_key(&project, &e.sdk, &e.builds);
@@ -951,7 +950,7 @@ fn a_different_consumed_environment_input_is_a_different_key_and_never_joins() {
     assert!(!Arc::ptr_eq(lease_a.build(), lease_c.build()));
 
     // The compile used exactly the frozen inputs the key digested.
-    let frozen = |lease: &fframes_studio::build_service::BuildLease, name: &str| {
+    let frozen = |lease: &studio_engine::services::build_service::BuildLease, name: &str| {
         lease
             .build()
             .environment

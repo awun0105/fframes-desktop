@@ -6186,7 +6186,11 @@ dependencies = [
 name = "studio-engine"
 version = "0.1.0"
 dependencies = [
+ "cpal",
+ "fframes-media",
  "fframes-studio-protocol",
+ "image",
+ "libc",
  "notify",
  "parking_lot",
  "rusqlite",
@@ -6194,9 +6198,11 @@ dependencies = [
  "serde_json",
  "sha2",
  "studio-bootstrap",
+ "studio-harness",
  "studio-presets",
  "studio-project",
  "studio-sdk",
+ "studio-test-support",
  "tempfile",
  "thiserror 2.0.21",
  "toml 0.8.23",

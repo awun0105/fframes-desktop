@@ -17,7 +17,7 @@
 
 use fframes_studio_protocol::PreviewIdentity;
 
-include!("support/workflow_world.rs");
+include!("../../crates/studio-engine/tests/support/workflow_world.rs");
 
 #[test]
 fn session_manifest_lifecycle_and_redaction() {
@@ -26,15 +26,13 @@ fn session_manifest_lifecycle_and_redaction() {
     let app_paths = w.paths.clone();
 
     // 1. Initially no manifest exists
-    let loaded =
-        fframes_studio::agent_workflow::session_store::SessionStore::load(&app_paths, &project_id)
-            .expect("load ok");
+    let loaded = studio_engine::agent::session_store::SessionStore::load(&app_paths, &project_id)
+        .expect("load ok");
     assert!(loaded.is_none());
 
     // 2. Save a valid manifest
-    let manifest = fframes_studio::agent_workflow::session_store::SessionManifest {
-        schema_version:
-            fframes_studio::agent_workflow::session_store::SESSION_MANIFEST_SCHEMA_VERSION,
+    let manifest = studio_engine::agent::session_store::SessionManifest {
+        schema_version: studio_engine::agent::session_store::SESSION_MANIFEST_SCHEMA_VERSION,
         provider_id: "claude".into(),
         wire_session_id: Some("session-token-secret-12345678".into()),
         project_id: project_id.to_string(),
@@ -44,11 +42,10 @@ fn session_manifest_lifecycle_and_redaction() {
             .into(),
         last_accepted_revision: "2222222222222222222222222222222222222222222222222222222222222222"
             .into(),
-        context_schema: fframes_studio::agent_workflow::session_store::CONTEXT_SCHEMA_VERSION
-            .into(),
+        context_schema: studio_engine::agent::session_store::CONTEXT_SCHEMA_VERSION.into(),
         capability_snapshot: None,
         transcript_boundary: 42,
-        state: fframes_studio::agent_workflow::session_store::SessionManifestState::Ready,
+        state: studio_engine::agent::session_store::SessionManifestState::Ready,
         created_at: "1728285120".into(),
         updated_at: "1728285120".into(),
     };
@@ -61,18 +58,13 @@ fn session_manifest_lifecycle_and_redaction() {
     assert!(!redacted_id.contains(wire_session_id));
     assert!(!redacted_id.contains("token-secret"));
 
-    fframes_studio::agent_workflow::session_store::SessionStore::save(
-        &app_paths,
-        &project_id,
-        &manifest,
-    )
-    .expect("save ok");
+    studio_engine::agent::session_store::SessionStore::save(&app_paths, &project_id, &manifest)
+        .expect("save ok");
 
     // 3. Load back and verify
-    let loaded =
-        fframes_studio::agent_workflow::session_store::SessionStore::load(&app_paths, &project_id)
-            .expect("load ok")
-            .expect("manifest found");
+    let loaded = studio_engine::agent::session_store::SessionStore::load(&app_paths, &project_id)
+        .expect("load ok")
+        .expect("manifest found");
     assert_eq!(loaded.provider_id, "claude");
     assert_eq!(
         loaded.wire_session_id.as_deref(),
@@ -81,11 +73,11 @@ fn session_manifest_lifecycle_and_redaction() {
     assert_eq!(loaded.transcript_boundary, 42);
 
     // 4. Test clearing / dismissing
-    fframes_studio::agent_workflow::session_store::SessionStore::clear(&app_paths, &project_id)
+    studio_engine::agent::session_store::SessionStore::clear(&app_paths, &project_id)
         .expect("clear ok");
 
     let after_clear =
-        fframes_studio::agent_workflow::session_store::SessionStore::load(&app_paths, &project_id)
+        studio_engine::agent::session_store::SessionStore::load(&app_paths, &project_id)
             .expect("load ok");
     assert!(after_clear.is_none());
 }
@@ -100,9 +92,8 @@ fn session_save_failure_visibly_disables_restoration() {
         .project(&studio_project::ProjectId::try_from("test-proj".to_string()).unwrap());
     fs::create_dir_all(state_dir.parent().unwrap()).unwrap();
     fs::write(&state_dir, "regular file").unwrap();
-    let manifest = fframes_studio::agent_workflow::session_store::SessionManifest {
-        schema_version:
-            fframes_studio::agent_workflow::session_store::SESSION_MANIFEST_SCHEMA_VERSION,
+    let manifest = studio_engine::agent::session_store::SessionManifest {
+        schema_version: studio_engine::agent::session_store::SESSION_MANIFEST_SCHEMA_VERSION,
         provider_id: "claude".into(),
         wire_session_id: Some("session-123".into()),
         project_id: "test-proj".into(),
@@ -112,16 +103,15 @@ fn session_save_failure_visibly_disables_restoration() {
             .into(),
         last_accepted_revision: "2222222222222222222222222222222222222222222222222222222222222222"
             .into(),
-        context_schema: fframes_studio::agent_workflow::session_store::CONTEXT_SCHEMA_VERSION
-            .into(),
+        context_schema: studio_engine::agent::session_store::CONTEXT_SCHEMA_VERSION.into(),
         capability_snapshot: None,
         transcript_boundary: 1,
-        state: fframes_studio::agent_workflow::session_store::SessionManifestState::Ready,
+        state: studio_engine::agent::session_store::SessionManifestState::Ready,
         created_at: "1728285120".into(),
         updated_at: "1728285120".into(),
     };
 
-    let save_result = fframes_studio::agent_workflow::session_store::SessionStore::save(
+    let save_result = studio_engine::agent::session_store::SessionStore::save(
         &unwritable_paths,
         &studio_project::ProjectId::try_from("test-proj".to_string()).unwrap(),
         &manifest,
@@ -137,7 +127,7 @@ fn bounded_handoff_context_budget_enforcement() {
     let large_diag: Vec<String> = (0..5000)
         .map(|i| format!("diagnostic line number {i} with substantial detail"))
         .collect();
-    let ctx = fframes_studio::agent_workflow::session_store::BoundedHandoffContext::new(
+    let ctx = studio_engine::agent::session_store::BoundedHandoffContext::new(
         "src_rev".into(),
         Some("draft_rev".into()),
         "brief text".into(),
@@ -149,10 +139,10 @@ fn bounded_handoff_context_budget_enforcement() {
 
     let bytes = serde_json::to_vec(&ctx).expect("serializes");
     assert!(
-        bytes.len() <= fframes_studio::agent_workflow::session_store::MAX_CONTEXT_ENVELOPE_BYTES,
+        bytes.len() <= studio_engine::agent::session_store::MAX_CONTEXT_ENVELOPE_BYTES,
         "context size {} exceeds budget {}",
         bytes.len(),
-        fframes_studio::agent_workflow::session_store::MAX_CONTEXT_ENVELOPE_BYTES
+        studio_engine::agent::session_store::MAX_CONTEXT_ENVELOPE_BYTES
     );
     assert!(ctx.omissions.contains(&"diagnostics_truncated".to_string()));
 }
@@ -189,8 +179,7 @@ fn two_retained_queued_briefs_without_automatic_execution_and_explicit_transfer(
     let w = World::new();
 
     // Configure target profile in registry to use test adapter
-    let mut registry =
-        fframes_studio::conversation_panel::provider_profiles::ProviderRegistry::default();
+    let mut registry = studio_engine::providers::provider_profiles::ProviderRegistry::default();
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
         codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
@@ -199,7 +188,7 @@ fn two_retained_queued_briefs_without_automatic_execution_and_explicit_transfer(
     fs::write(
         w.paths
             .data
-            .join(fframes_studio::conversation_panel::host::REGISTRY_FILE),
+            .join(studio_engine::providers::host::REGISTRY_FILE),
         registry.to_pretty(),
     )
     .unwrap();
@@ -235,7 +224,7 @@ fn two_retained_queued_briefs_without_automatic_execution_and_explicit_transfer(
     // Choose continuation: incoming provider is now configured
     w.wf()
         .choose_handoff_continuation(
-            fframes_studio::agent_workflow::model::HandoffChoice::RestartFromAccepted,
+            studio_engine::agent::model::HandoffChoice::RestartFromAccepted,
         )
         .expect("choose ok");
 
@@ -286,7 +275,7 @@ fn two_retained_queued_briefs_explicit_clear() {
 
     w.wf()
         .choose_handoff_continuation(
-            fframes_studio::agent_workflow::model::HandoffChoice::RestartFromAccepted,
+            studio_engine::agent::model::HandoffChoice::RestartFromAccepted,
         )
         .expect("choose ok");
     w.wait("switch resolved", |s| s.switch_pending.is_none());
@@ -314,7 +303,7 @@ fn unqualified_adapter_switch_is_blocked() {
     // Attempting continuation must be rejected because adapter is not qualified
     w.wf()
         .choose_handoff_continuation(
-            fframes_studio::agent_workflow::model::HandoffChoice::RestartFromAccepted,
+            studio_engine::agent::model::HandoffChoice::RestartFromAccepted,
         )
         .expect("command dispatched");
 
@@ -350,12 +339,12 @@ fn late_permission_reply_rejected_after_switch() {
     // Replying to the late permission from the outgoing task must fail (cannot affect incoming task)
     let reply_result = w.wf().reply_permission(
         &perm_ref,
-        fframes_studio::agent_workflow::PermissionAnswer::Select("yes".into()),
+        studio_engine::agent::PermissionAnswer::Select("yes".into()),
     );
     assert!(
         matches!(
             reply_result,
-            Err(fframes_studio::agent_workflow::WorkflowError::StalePermission)
+            Err(studio_engine::agent::WorkflowError::StalePermission)
         ),
         "late permission reply must be rejected as stale, got: {reply_result:?}"
     );
@@ -370,7 +359,7 @@ fn continuation_choices_apply_correct_draft_preparation() {
 
     w.wf()
         .choose_handoff_continuation(
-            fframes_studio::agent_workflow::model::HandoffChoice::RestartFromAccepted,
+            studio_engine::agent::model::HandoffChoice::RestartFromAccepted,
         )
         .expect("choose ok");
 
@@ -391,12 +380,10 @@ fn restore_session_binds_to_provider_and_launch_digest_and_reaches_driver() {
     let wire_session_id = "test-opaque-session-token-xyz".to_string();
 
     // 3. Load the authentic manifest created by the seed task, set wire_session_id and state
-    let mut manifest = fframes_studio::agent_workflow::session_store::SessionStore::load(
-        &w.paths,
-        &w.snap().project,
-    )
-    .unwrap()
-    .expect("manifest created by seed task");
+    let mut manifest =
+        studio_engine::agent::session_store::SessionStore::load(&w.paths, &w.snap().project)
+            .unwrap()
+            .expect("manifest created by seed task");
     assert_eq!(
         manifest.last_source_revision,
         w.ctl().lock().current_source_revision().to_string(),
@@ -408,13 +395,9 @@ fn restore_session_binds_to_provider_and_launch_digest_and_reaches_driver() {
         "restoration accepted revision must still match"
     );
     manifest.wire_session_id = Some(wire_session_id.clone());
-    manifest.state = fframes_studio::agent_workflow::session_store::SessionManifestState::Ready;
-    fframes_studio::agent_workflow::session_store::SessionStore::save(
-        &w.paths,
-        &w.snap().project,
-        &manifest,
-    )
-    .expect("save ok");
+    manifest.state = studio_engine::agent::session_store::SessionManifestState::Ready;
+    studio_engine::agent::session_store::SessionStore::save(&w.paths, &w.snap().project, &manifest)
+        .expect("save ok");
 
     // 4. Request restore
     w.wf().restore_session().expect("restore ok");
@@ -452,21 +435,15 @@ fn restore_session_rejects_changed_adapter_closure() {
     fs::write(w.agent.join("load-session"), "1").unwrap();
 
     // Load authentic manifest but tamper with the exact launch digest.
-    let mut manifest = fframes_studio::agent_workflow::session_store::SessionStore::load(
-        &w.paths,
-        &w.snap().project,
-    )
-    .unwrap()
-    .expect("manifest created by seed task");
+    let mut manifest =
+        studio_engine::agent::session_store::SessionStore::load(&w.paths, &w.snap().project)
+            .unwrap()
+            .expect("manifest created by seed task");
     manifest.wire_session_id = Some("test-session-diff".into());
     manifest.launch_digest = "some-different-launch-closure".into();
-    manifest.state = fframes_studio::agent_workflow::session_store::SessionManifestState::Ready;
-    fframes_studio::agent_workflow::session_store::SessionStore::save(
-        &w.paths,
-        &w.snap().project,
-        &manifest,
-    )
-    .expect("save ok");
+    manifest.state = studio_engine::agent::session_store::SessionManifestState::Ready;
+    studio_engine::agent::session_store::SessionStore::save(&w.paths, &w.snap().project, &manifest)
+        .expect("save ok");
 
     w.wf().restore_session().expect("restore ok");
     w.submit(&good("fresh"));
@@ -540,8 +517,7 @@ fn continue_draft_preserves_outgoing_draft_edits_for_incoming_provider() {
     let w = World::new();
 
     // Configure codex in registry with test adapter
-    let mut registry =
-        fframes_studio::conversation_panel::provider_profiles::ProviderRegistry::default();
+    let mut registry = studio_engine::providers::provider_profiles::ProviderRegistry::default();
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
         codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
@@ -550,7 +526,7 @@ fn continue_draft_preserves_outgoing_draft_edits_for_incoming_provider() {
     fs::write(
         w.paths
             .data
-            .join(fframes_studio::conversation_panel::host::REGISTRY_FILE),
+            .join(studio_engine::providers::host::REGISTRY_FILE),
         registry.to_pretty(),
     )
     .unwrap();
@@ -590,9 +566,7 @@ fn continue_draft_preserves_outgoing_draft_edits_for_incoming_provider() {
 
     // 3. Choose ContinueDraft
     w.wf()
-        .choose_handoff_continuation(
-            fframes_studio::agent_workflow::model::HandoffChoice::ContinueDraft,
-        )
+        .choose_handoff_continuation(studio_engine::agent::model::HandoffChoice::ContinueDraft)
         .expect("choose ok");
     w.wait("switch resolved", |s| s.switch_pending.is_none());
 
@@ -639,20 +613,14 @@ fn unsupported_expired_resume_failure_falls_back_to_fresh_session() {
     fs::write(w.agent.join("load-session"), "1").unwrap();
     fs::write(w.agent.join("fail-load"), "1").unwrap();
 
-    let mut manifest = fframes_studio::agent_workflow::session_store::SessionStore::load(
-        &w.paths,
-        &w.snap().project,
-    )
-    .unwrap()
-    .expect("manifest created by seed task");
+    let mut manifest =
+        studio_engine::agent::session_store::SessionStore::load(&w.paths, &w.snap().project)
+            .unwrap()
+            .expect("manifest created by seed task");
     manifest.wire_session_id = Some("test-fail-resume".into());
-    manifest.state = fframes_studio::agent_workflow::session_store::SessionManifestState::Ready;
-    fframes_studio::agent_workflow::session_store::SessionStore::save(
-        &w.paths,
-        &w.snap().project,
-        &manifest,
-    )
-    .expect("save ok");
+    manifest.state = studio_engine::agent::session_store::SessionManifestState::Ready;
+    studio_engine::agent::session_store::SessionStore::save(&w.paths, &w.snap().project, &manifest)
+        .expect("save ok");
 
     w.wf().restore_session().expect("restore ok");
 
@@ -716,8 +684,7 @@ fn unsupported_expired_resume_failure_falls_back_to_fresh_session() {
 fn restart_from_accepted_discards_uncommitted_draft_edits() {
     let w = World::new();
 
-    let mut registry =
-        fframes_studio::conversation_panel::provider_profiles::ProviderRegistry::default();
+    let mut registry = studio_engine::providers::provider_profiles::ProviderRegistry::default();
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
         codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
@@ -726,7 +693,7 @@ fn restart_from_accepted_discards_uncommitted_draft_edits() {
     fs::write(
         w.paths
             .data
-            .join(fframes_studio::conversation_panel::host::REGISTRY_FILE),
+            .join(studio_engine::providers::host::REGISTRY_FILE),
         registry.to_pretty(),
     )
     .unwrap();
@@ -748,7 +715,7 @@ fn restart_from_accepted_discards_uncommitted_draft_edits() {
     // 3. Choose RestartFromAccepted
     w.wf()
         .choose_handoff_continuation(
-            fframes_studio::agent_workflow::model::HandoffChoice::RestartFromAccepted,
+            studio_engine::agent::model::HandoffChoice::RestartFromAccepted,
         )
         .expect("choose ok");
     w.wait("switch resolved", |s| s.switch_pending.is_none());
@@ -1021,22 +988,16 @@ fn restore_session_rejects_changed_draft_location() {
 
     fs::write(w.agent.join("load-session"), "1").unwrap();
 
-    let mut manifest = fframes_studio::agent_workflow::session_store::SessionStore::load(
-        &w.paths,
-        &w.snap().project,
-    )
-    .unwrap()
-    .expect("manifest created by seed task");
+    let mut manifest =
+        studio_engine::agent::session_store::SessionStore::load(&w.paths, &w.snap().project)
+            .unwrap()
+            .expect("manifest created by seed task");
     manifest.wire_session_id = Some("test-session-diff-cwd".into());
     // Mismatched draft path
     manifest.draft_path = PathBuf::from("/tmp/nonexistent-draft-path-xyz");
-    manifest.state = fframes_studio::agent_workflow::session_store::SessionManifestState::Ready;
-    fframes_studio::agent_workflow::session_store::SessionStore::save(
-        &w.paths,
-        &w.snap().project,
-        &manifest,
-    )
-    .expect("save ok");
+    manifest.state = studio_engine::agent::session_store::SessionManifestState::Ready;
+    studio_engine::agent::session_store::SessionStore::save(&w.paths, &w.snap().project, &manifest)
+        .expect("save ok");
 
     w.wf().restore_session().expect("restore ok");
     w.submit(&good("fresh"));

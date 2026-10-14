@@ -1,15 +1,16 @@
-use crate::frame_image::{ImagePresentationManager, create_render_image, generate_reference_frame};
+use crate::frame_image::{ImagePresentationManager, create_render_image};
 use crate::presentation_stress::PresentationStress;
 use crate::preview_element::PreviewElement;
 use crate::selection_spike::{DisplayedSourceFrame, SelectedElementInfo, SelectionSpike};
 use crate::setup_view::SetupView;
 use crate::text_input::TextInput;
-use crate::worker_client::WorkerClient;
 use gpui::{
     AppContext, Bounds, Context, Entity, FontWeight, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Render, RenderImage, StatefulInteractiveElement, Styled, Window, div,
     green, px, rgb, white,
 };
+use studio_engine::services::worker_client::WorkerClient;
+use studio_engine::services::worker_client::generate_reference_frame;
 
 use std::time::{Duration, Instant};
 use studio_bootstrap::ProcessTreeManager;
@@ -145,7 +146,8 @@ impl StudioSpikeApp {
         }
         self.worker_epoch += 1;
         let epoch = self.worker_epoch;
-        self.worker_generation = crate::worker_client::allocate_worker_generation();
+        self.worker_generation =
+            studio_engine::services::worker_client::allocate_worker_generation();
         let generation = self.worker_generation;
         let sdk = self.setup_view.read(cx).sdk_home.join("active");
         let root = self.worker_project_root.clone().unwrap_or_else(|| {
@@ -160,8 +162,10 @@ impl StudioSpikeApp {
         self.worker_busy = true;
         self.worker_status = "Building/launching annotated worker...".into();
         let task = cx.background_executor().spawn(async move {
-            crate::worker_project::create_worker_project(&root, &sdk)?;
-            crate::worker_project::launch_worker(&root, &sdk, manifest, generation, &manager)
+            studio_engine::services::worker_project::create_worker_project(&root, &sdk)?;
+            studio_engine::services::worker_project::launch_worker(
+                &root, &sdk, manifest, generation, &manager,
+            )
         });
         cx.spawn(async move |this, cx| {
             let result = task.await;

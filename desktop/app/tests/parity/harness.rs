@@ -2,14 +2,7 @@
 //! preview worker compiled by a fake compiler, and app data, SDK home and writer ownership
 //! of the test's own. Tests drive it with actions and read its telemetry; this file is the
 //! only one that knows the window's root view.
-use fframes_studio::{
-    build_service::{BuildLimits, BuildService},
-    conversation_panel::{
-        host::{self, AdapterFile, McpChoice},
-        qualification::OwnershipPolicy,
-    },
-    studio_shell::{StudioEnvironment, StudioShell},
-};
+use fframes_studio::studio_shell::{StudioEnvironment, StudioShell};
 use gpui::{Action, AppContext, TestAppContext, WindowHandle};
 use serde_json::Value;
 use std::{
@@ -19,6 +12,9 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::containment::OwnershipPolicy;
+use studio_engine::providers::host::{self, AdapterFile, McpChoice};
+use studio_engine::services::build_service::{BuildLimits, BuildService};
 
 use crate::build_fixture::{FAKE_CONFIG, FakeCompiler, fake_sdk, manifest};
 use studio_engine::{app_paths::AppPaths, build_materialization::sdk_pin};
@@ -133,7 +129,10 @@ impl Studio {
             provider: "scripted".into(),
             executable: python(),
             args: vec![
-                concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/acp-agent.py").into(),
+                format!(
+                    "{}/support/acp-agent.py",
+                    studio_test_support::ENGINE_TESTS_DIR
+                ),
                 evidence.to_string_lossy().into_owned(),
             ],
             auth_env_names: vec![],
@@ -367,10 +366,7 @@ pub fn fake_rustc() -> &'static Path {
             let output = std::process::Command::new(rustc)
                 .args(["--edition=2024", "-o"])
                 .arg(&binary)
-                .arg(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/tests/support/fake-rustc.rs"
-                ))
+                .arg(Path::new(studio_test_support::ENGINE_TESTS_DIR).join("support/fake-rustc.rs"))
                 .output()
                 .unwrap();
             assert!(

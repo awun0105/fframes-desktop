@@ -1,15 +1,6 @@
 //! Candidate validation and the six project tools against a real preview-worker process
 //! (a deterministic python worker installed by an injected compiler) and the real shared
 //! build service. No SDK is needed; real-SDK checks live in `real_sdk_candidates.rs`.
-use fframes_studio::{
-    agent_tools::{
-        BoundRevision, ToolBinding, ToolDispatcher, ToolErrorCode,
-        backend::{ArtifactStore, ProjectToolBackend, ToolBackendConfig, WriterGate},
-    },
-    build_service::{BuildKey, BuildLimits, BuildService},
-    candidate_runner::{CandidateRunConfig, RunScopes, run_candidate_validation},
-    preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent},
-};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -18,6 +9,15 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::agent_tools::{
+    BoundRevision, ToolBinding, ToolDispatcher, ToolErrorCode,
+    backend::{ArtifactStore, ProjectToolBackend, ToolBackendConfig, WriterGate},
+};
+use studio_engine::services::build_service::{BuildKey, BuildLimits, BuildService};
+use studio_engine::services::candidate_runner::{
+    CandidateRunConfig, RunScopes, run_candidate_validation,
+};
+use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
 use studio_engine::{
     AgentTaskContext, CaptureTicket, Controller, JobKind, JobResult, PreviewState,
     QuiescenceEvidence, RepairDecision, TaskState, TurnCompletion, WriterObservation,
@@ -29,7 +29,7 @@ use studio_engine::{
 };
 use studio_project::checkpoint::Checkpoints;
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 
@@ -153,7 +153,7 @@ impl World {
         &self,
         captured: &CapturedCandidate,
         repairs: u32,
-    ) -> fframes_studio::candidate_runner::CandidateRun {
+    ) -> studio_engine::services::candidate_runner::CandidateRun {
         run_candidate_validation(
             captured,
             &self.checkpoints(),
@@ -276,13 +276,15 @@ fn passing_candidate_is_validated_and_staged_while_the_old_preview_keeps_playing
     drop(run);
     // ...and is returned to it once the staged candidate is dropped (its worker and lease
     // are released by the background teardown owner, never on the dropping thread).
-    assert!(fframes_studio::teardown::Teardown::global().wait_idle(Duration::from_secs(30)));
+    assert!(
+        studio_engine::services::teardown::Teardown::global().wait_idle(Duration::from_secs(30))
+    );
     assert_eq!(w.service.stats().artifact_bytes, artifact_before);
     coordinator.close();
 }
 
 /// Run a passing candidate whose compiled timeline is `width`x`height`; returns the run.
-fn run_sized(width: u32, height: u32) -> fframes_studio::candidate_runner::CandidateRun {
+fn run_sized(width: u32, height: u32) -> studio_engine::services::candidate_runner::CandidateRun {
     let mut w = world();
     let context = w.start();
     worker_config(
@@ -1049,7 +1051,7 @@ fn fixed_bindings_answer_for_the_captured_candidate_and_share_the_validation_bui
         call(&t, &missing, "timeline", json!({})).err(),
         Some(ToolErrorCode::Unavailable)
     );
-    let environment = fframes_studio::build_service::CompileEnvironment::resolve(
+    let environment = studio_engine::services::build_service::CompileEnvironment::resolve(
         &w.sdk,
         &manifest(),
         &w.paths.builds(),
@@ -1058,13 +1060,13 @@ fn fixed_bindings_answer_for_the_captured_candidate_and_share_the_validation_bui
     let key = BuildKey::worker(&studio_project::open(&context.draft).unwrap(), &environment);
     assert!(matches!(
         w.service.status(&key),
-        fframes_studio::build_service::BuildState::Ready { .. }
+        studio_engine::services::build_service::BuildState::Ready { .. }
     ));
 }
 
 #[test]
 fn captured_snapshot_history_is_bounded_and_evicted_identities_are_stale() {
-    use fframes_studio::agent_tools::{
+    use studio_engine::agent_tools::{
         MAX_TEXT_REPLY_BYTES,
         backend::{MAX_KNOWN_REVISIONS, STATUS_KNOWN_REVISIONS},
     };
@@ -1143,7 +1145,7 @@ fn tool_access_is_bound_to_the_task_and_project_and_closes_cleanly() {
         Some(ToolErrorCode::InvalidParams)
     );
     // Task end releases the workers, restored trees and artifacts it owned.
-    assert!(fframes_studio::agent_tools::TaskLiveness::is_live(
+    assert!(studio_engine::agent_tools::TaskLiveness::is_live(
         &*t.backend,
         &context.identity
     ));
@@ -1154,7 +1156,7 @@ fn tool_access_is_bound_to_the_task_and_project_and_closes_cleanly() {
         call(&t, &binding, "timeline", json!({})).err(),
         Some(ToolErrorCode::StaleTask)
     );
-    assert!(!fframes_studio::agent_tools::TaskLiveness::is_live(
+    assert!(!studio_engine::agent_tools::TaskLiveness::is_live(
         &*t.backend,
         &context.identity
     ));
@@ -1286,25 +1288,25 @@ fn mcp_session_config_passes_only_the_capability_path() {
     let capability = temp.path().join("cap-test.json");
     let secret = "s".repeat(64);
     fs::write(&capability, format!("{{\"secret\":\"{secret}\"}}")).unwrap();
-    let grant = fframes_studio::agent_tools::broker::ToolGrant {
+    let grant = studio_engine::agent_tools::broker::ToolGrant {
         capability_file: capability.clone(),
         expires_at: std::time::SystemTime::now(),
     };
     let command = temp.path().join("studio-mcp");
-    let server = fframes_studio::agent_tools::mcp_server_for(&grant, &command).unwrap();
+    let server = studio_engine::agent_tools::mcp_server_for(&grant, &command).unwrap();
     assert_eq!(server.command, command);
     assert_eq!(server.args, ["--capability", capability.to_str().unwrap()]);
     assert!(server.env.is_empty());
     assert!(!format!("{server:?}").contains(&secret));
     assert!(!server.args.iter().any(|a| a.contains(&secret)));
     // A relative command is refused before any adapter sees it.
-    assert!(fframes_studio::agent_tools::mcp_server_for(&grant, Path::new("studio-mcp")).is_err());
+    assert!(studio_engine::agent_tools::mcp_server_for(&grant, Path::new("studio-mcp")).is_err());
 }
 
 #[cfg(unix)]
 #[test]
 fn cli_through_the_broker_reaches_the_real_backend_and_stops_after_the_task_ends() {
-    use fframes_studio::agent_tools::broker::{BrokerConfig, ToolBroker};
+    use studio_engine::agent_tools::broker::{BrokerConfig, ToolBroker};
     let mut w = world();
     let context = w.start();
     worker_config(
@@ -1520,7 +1522,7 @@ fn mcp_session(capability: &Path, requests: &[Value]) -> Vec<Value> {
 #[cfg(unix)]
 #[test]
 fn cli_and_mcp_agree_on_revision_artifact_hashes_and_errors_over_the_real_backend() {
-    use fframes_studio::agent_tools::broker::{BrokerConfig, ToolBroker};
+    use studio_engine::agent_tools::broker::{BrokerConfig, ToolBroker};
     let mut w = world();
     let context = w.start();
     worker_config(

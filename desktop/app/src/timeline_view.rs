@@ -2,7 +2,6 @@
 use crate::{
     design_system::{self, TextStyle, TrackKind, segment_colors, text_style, track_color},
     frame_image::create_render_image,
-    thumbnail_cache::{ThumbnailCache, ThumbnailKey},
     ui::{
         BoundsProbe, Button, Icon, IconButton, IconButtonSize, SectionTitle, Slider, icon,
         interact::focus_ring, slider::ZOOM_TRACK_H,
@@ -12,6 +11,7 @@ use gpui::{
     Bounds, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, canvas, div, px,
 };
+use studio_engine::services::thumbnail_cache::{ThumbnailCache, ThumbnailKey};
 use studio_engine::{PreviewFrame, TaskScope, TimelineModel, TimelineSelection, TimelineViewport};
 
 #[derive(Debug, Clone)]

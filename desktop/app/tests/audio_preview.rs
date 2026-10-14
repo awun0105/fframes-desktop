@@ -7,17 +7,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use fframes_studio::{
-    audio_service::{AudioEvent, AudioService, OutputDevice},
-    frame_image,
-    preview_coordinator::{BuildSpec, PreviewCoordinator},
-    worker_project::{acquire_build_lock, launch_preview_worker},
-};
+use fframes_studio::frame_image;
 use studio_bootstrap::{ProcessTreeManager, SpawnOptions};
+use studio_engine::services::audio_service::{AudioEvent, AudioService, OutputDevice};
+use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator};
+use studio_engine::services::worker_project::{acquire_build_lock, launch_preview_worker};
 use studio_engine::{Controller, JobKind, app_paths::AppPaths};
 use studio_sdk::ProjectManager;
 
-#[path = "support/preview_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
 mod preview_fixture;
 
 fn decode_wav(bytes: &[u8]) -> (u32, Vec<[f32; 2]>) {
@@ -167,7 +165,7 @@ fn prepare_real() -> (
         tag,
         compiler: controller.operation_processes(),
         worker: controller.processes.sub_manager(),
-        service: fframes_studio::worker_project::shared_build_service(),
+        service: studio_engine::services::worker_project::shared_build_service(),
     });
     let deadline = Instant::now() + Duration::from_secs(240);
     let ready = loop {

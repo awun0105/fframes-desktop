@@ -1,9 +1,12 @@
 //! Per-open-project state, isolated SDK builds, durable checkpoints and recovery.
+pub mod agent;
 pub mod agent_task;
+pub mod agent_tools;
 pub mod app_paths;
 pub mod build_materialization;
 pub mod candidate_validation;
 pub mod canvas_selection;
+pub mod containment;
 pub mod controller;
 pub mod diagnostics;
 pub mod edit_transaction;
@@ -13,6 +16,8 @@ pub mod journal;
 pub mod playback_clock;
 pub mod preset_state;
 pub mod preview_state;
+pub mod providers;
+pub mod services;
 pub mod state;
 pub mod store;
 pub mod task_scope;

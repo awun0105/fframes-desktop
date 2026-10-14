@@ -2,20 +2,6 @@
 //! A deterministic in-test backend and liveness oracle stand in for the app.
 #![cfg(unix)]
 
-use fframes_studio::agent_tools::{
-    ArtifactRef, BoundRevision, FrameSelection, MAX_IMAGE_ARTIFACT_BYTES, MAX_QUEUED_CALLS,
-    MAX_REQUEST_BYTES, MAX_STRIP_FRAMES, MAX_TEXT_REPLY_BYTES, RevisionInfo, RevisionLabel,
-    TOOL_NAMES, TOOL_WORKERS, TaskLiveness, ToolBackend, ToolBinding, ToolCall, ToolDispatcher,
-    ToolError, ToolErrorCode, ToolReply, ToolRequest,
-    backend::{MAX_KNOWN_REVISIONS, RevisionHistory, STATUS_KNOWN_REVISIONS},
-    broker::{BrokerConfig, BrokerError, ToolBroker},
-    client::{BrokerClient, CAPABILITY_ENV, CallFailure, ClientError},
-    mcp::{
-        INVALID_PARAMS, INVALID_REQUEST, MAX_MCP_LINE_BYTES, MCP_PROTOCOL_VERSION,
-        MCP_QUALIFICATION, METHOD_NOT_FOUND, McpServer, NOT_INITIALIZED, PARSE_ERROR, ToolCaller,
-    },
-    tool_descriptions,
-};
 use parking_lot::{Condvar, Mutex};
 use serde_json::{Value, json};
 use std::{
@@ -35,6 +21,20 @@ use std::{
     },
     thread,
     time::{Duration, Instant},
+};
+use studio_engine::agent_tools::{
+    ArtifactRef, BoundRevision, FrameSelection, MAX_IMAGE_ARTIFACT_BYTES, MAX_QUEUED_CALLS,
+    MAX_REQUEST_BYTES, MAX_STRIP_FRAMES, MAX_TEXT_REPLY_BYTES, RevisionInfo, RevisionLabel,
+    TOOL_NAMES, TOOL_WORKERS, TaskLiveness, ToolBackend, ToolBinding, ToolCall, ToolDispatcher,
+    ToolError, ToolErrorCode, ToolReply, ToolRequest,
+    backend::{MAX_KNOWN_REVISIONS, RevisionHistory, STATUS_KNOWN_REVISIONS},
+    broker::{BrokerConfig, BrokerError, ToolBroker},
+    client::{BrokerClient, CAPABILITY_ENV, CallFailure, ClientError},
+    mcp::{
+        INVALID_PARAMS, INVALID_REQUEST, MAX_MCP_LINE_BYTES, MCP_PROTOCOL_VERSION,
+        MCP_QUALIFICATION, METHOD_NOT_FOUND, McpServer, NOT_INITIALIZED, PARSE_ERROR, ToolCaller,
+    },
+    tool_descriptions,
 };
 use studio_engine::{AgentTaskId, OpenSession, TaskIdentity};
 use studio_project::{ProjectId, SourceRevision};
@@ -2700,7 +2700,7 @@ fn mcp_stderr_is_bounded_to_sixteen_kib() {
 
 #[test]
 fn grants_are_short_lived_and_expired_ones_do_not_linger() {
-    use fframes_studio::agent_tools::broker::MAX_GRANT_TTL;
+    use studio_engine::agent_tools::broker::MAX_GRANT_TTL;
     assert!(MAX_GRANT_TTL <= Duration::from_secs(60 * 60));
     let h = harness();
     // A request for ten days is clamped to the maximum lifetime.

@@ -8,18 +8,14 @@
 //!   snapshot becomes list operations, so streaming text and tool-card updates re-measure
 //!   in place while the reader's position holds.
 //! * [`controls`] decides which controls exist in which state (pure, unit-tested).
-//! * [`host`] holds the app-local adapter description and the workflow inbox.
+//! * [`studio_engine::providers::host`] holds the app-local adapter description and the workflow inbox.
 //! * [`provider_setup`] selects providers, detects and installs adapters and turns them on.
 pub mod controls;
-pub mod host;
-#[path = "conversation_panel/provider-profiles.rs"]
-pub mod provider_profiles;
 pub mod provider_setup;
-pub mod qualification;
 pub mod rows;
 
 /// Redacted observation of an evidence set: state, revision and frame labels only.
-fn evidence_telemetry(view: &crate::agent_workflow::EvidenceView) -> serde_json::Value {
+fn evidence_telemetry(view: &studio_engine::agent::EvidenceView) -> serde_json::Value {
     serde_json::json!({
         "state": format!("{:?}", view.state),
         "revision": view.revision,
@@ -52,8 +48,8 @@ fn row_telemetry(kind: &RowKind) -> serde_json::Value {
 
 /// One line per evidence set: its state, the immutable revision it was rendered from and
 /// the actual frames rendered. Never predicted pixels.
-fn evidence_summary(name: &str, view: &crate::agent_workflow::EvidenceView) -> String {
-    use crate::agent_workflow::EvidenceState;
+fn evidence_summary(name: &str, view: &studio_engine::agent::EvidenceView) -> String {
+    use studio_engine::agent::EvidenceState;
     let state = match view.state {
         EvidenceState::Pending => "rendering…".to_owned(),
         EvidenceState::Ready => {
@@ -90,12 +86,6 @@ fn evidence_image_key(task: &studio_engine::AgentTaskId, artifact_id: &str) -> S
 }
 
 use crate::{
-    agent_workflow::{
-        AdapterReadiness, AgentWorkflow, ChangeCard, ConflictView, HandoffState, HistoryEntry,
-        NoticeLevel, OutcomeKind, PermissionAnswer, PermissionCard, PermissionRef, PermissionState,
-        Row, RowKind, StructuredError, TaskPhase, ToolCard, UndoView, UserSource, ValidationCard,
-        WorkflowSnapshot,
-    },
     design_system::{self, TextStyle, text_style},
     text_input::TextInput,
     ui::{
@@ -112,9 +102,7 @@ use gpui::{
     InteractiveElement, IntoElement, ListAlignment, ListState, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, canvas, div, list, px,
 };
-use host::{AdapterFields, AdapterFile, McpChoice};
 use parking_lot::Mutex;
-use qualification::{OwnershipPolicy, Resolution};
 use rows::{ListOp, OVERDRAW_PX, ResidentLimits, RowKey, Viewport};
 use std::{
     cell::Cell,
@@ -125,6 +113,15 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+use studio_engine::agent::{
+    AdapterReadiness, AgentWorkflow, ChangeCard, ConflictView, HandoffState, HistoryEntry,
+    NoticeLevel, OutcomeKind, PermissionAnswer, PermissionCard, PermissionRef, PermissionState,
+    Row, RowKind, StructuredError, TaskPhase, ToolCard, UndoView, UserSource, ValidationCard,
+    WorkflowSnapshot,
+};
+use studio_engine::containment::{OwnershipPolicy, Resolution};
+use studio_engine::providers::host::{self, AdapterFields, AdapterFile, McpChoice};
+use studio_engine::providers::provider_profiles;
 use studio_engine::{DraftState, ReviewPolicy, TaskScope, app_paths::AppPaths};
 use studio_harness::driver::{ConfigKind, OptionValue, ToolStatus};
 
@@ -689,7 +686,7 @@ impl ConversationPanel {
         let serial = attached.serial;
         let chat = self.chat;
         let started = attached.workflow.history_page_with(
-            crate::agent_workflow::RowId(before),
+            studio_engine::agent::RowId(before),
             limit,
             move |result| {
                 *slot.done.lock() = Some((serial, chat, result.map_err(|e| e.to_string())));
@@ -744,7 +741,7 @@ impl ConversationPanel {
 
     fn command<T>(
         &mut self,
-        result: Result<T, crate::agent_workflow::WorkflowError>,
+        result: Result<T, studio_engine::agent::WorkflowError>,
         cx: &mut Context<Self>,
     ) -> Option<T> {
         match result {
@@ -938,7 +935,7 @@ impl ConversationPanel {
         ticket: u64,
         target: Option<String>,
         file: Option<AdapterFile>,
-        resolved: Option<(crate::agent_workflow::AdapterSettings, Resolution)>,
+        resolved: Option<(studio_engine::agent::AdapterSettings, Resolution)>,
         paths: AppPaths,
         cx: &mut Context<Self>,
     ) {
@@ -2629,7 +2626,7 @@ impl ConversationPanel {
                             if let Some(workflow) = this.workflow().cloned() {
                                 this.command(
                                     workflow.choose_handoff_continuation(
-                                        crate::agent_workflow::model::HandoffChoice::ContinueDraft,
+                                        studio_engine::agent::model::HandoffChoice::ContinueDraft,
                                     ),
                                     cx,
                                 );
@@ -2646,7 +2643,7 @@ impl ConversationPanel {
                             if let Some(workflow) = this.workflow().cloned() {
                                 this.command(
                                     workflow.choose_handoff_continuation(
-                                        crate::agent_workflow::model::HandoffChoice::RestartFromAccepted,
+                                        studio_engine::agent::model::HandoffChoice::RestartFromAccepted,
                                     ),
                                     cx,
                                 );
@@ -2984,7 +2981,7 @@ fn tool_badge(status: Option<ToolStatus>) -> (&'static str, UiTone) {
 
 /// Only a locked or retained working copy needs the user's attention; one whose bytes
 /// were published (or that a running task owns) is routine.
-fn draft_needs_attention(draft: &crate::agent_workflow::DraftNotice) -> bool {
+fn draft_needs_attention(draft: &studio_engine::agent::DraftNotice) -> bool {
     matches!(
         draft.state,
         DraftState::UnsafeWriter { .. } | DraftState::Retained { .. }

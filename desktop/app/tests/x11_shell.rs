@@ -32,7 +32,7 @@ use std::{
 use studio_engine::build_materialization::sdk_pin;
 use studio_sdk::{CompatibilityManifest, SdkInstaller};
 
-#[path = "support/preview_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
 #[allow(dead_code)]
 mod preview_fixture;
 
@@ -351,7 +351,7 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
             "provider": "scripted-peer",
             "executable": python(),
             "args": [
-                format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR")),
+                format!("{}/support/acp-agent.py", studio_test_support::ENGINE_TESTS_DIR),
                 evidence.to_string_lossy()
             ],
             "auth_env_names": [],
@@ -640,7 +640,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             "provider": "scripted-peer",
             "executable": python(),
             "args": [
-                format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR")),
+                format!("{}/support/acp-agent.py", studio_test_support::ENGINE_TESTS_DIR),
                 evidence.to_string_lossy()
             ],
             "auth_env_names": [],

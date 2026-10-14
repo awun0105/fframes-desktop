@@ -6,24 +6,22 @@
 //! `x11_shell.rs`; neither the peer nor these tests qualify a provider.)
 //! The real workflow snapshots include successful Apply, currently qualified only on Linux.
 #![cfg(target_os = "linux")]
-use fframes_studio::{
-    agent_workflow::{log::RowLimits, *},
-    build_service::{BuildLimits, BuildService},
-    conversation_panel::{
-        controls::{self, ReplyRefusal, ReplyTracker, SubmitKind, UndoControl, derive_controls},
-        host::{self, AdapterFile, HostInbox, McpChoice},
-        qualification::OwnershipPolicy,
-        rows::{self, ListOp, ResidentLimits, RowKey},
-    },
+use fframes_studio::conversation_panel::{
+    controls::{self, ReplyRefusal, ReplyTracker, SubmitKind, UndoControl, derive_controls},
+    host::{self, AdapterFile, HostInbox, McpChoice},
+    qualification::OwnershipPolicy,
+    rows::{self, ListOp, ResidentLimits, RowKey},
 };
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::agent::{log::RowLimits, *};
+use studio_engine::services::build_service::{BuildLimits, BuildService};
 use studio_engine::{AgentTaskId, Controller, ReviewPolicy, app_paths::AppPaths};
 use studio_harness::{AdapterConfig, driver::OptionValue};
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 
@@ -60,7 +58,10 @@ fn python() -> String {
 }
 
 fn agent_script() -> String {
-    format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR"))
+    format!(
+        "{}/support/acp-agent.py",
+        studio_test_support::ENGINE_TESTS_DIR
+    )
 }
 
 struct World {
@@ -557,7 +558,7 @@ fn a_real_permission_card_is_answered_once_and_closed_cards_refuse_clicks() {
 
 #[test]
 fn the_production_policy_never_lets_a_saved_adapter_claim_containment() {
-    use fframes_studio::conversation_panel::qualification::Containment;
+    use studio_engine::containment::Containment;
     let (mut world, inbox) = World::new();
     world.workflow.take().unwrap().close();
     // The same saved description, opened under the production policy: no ledger is

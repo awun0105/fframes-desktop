@@ -183,7 +183,7 @@ fn main() {
             timeout,
             development: _,
             out,
-        } => qualify_writer(fframes_studio::qualify_writer::Options {
+        } => qualify_writer(studio_engine::containment::qualify_writer::Options {
             profile,
             timeout: Duration::from_secs(timeout),
             // clap ties --out and --development together.
@@ -204,10 +204,10 @@ fn main() {
     }
 }
 
-fn qualify_writer(options: fframes_studio::qualify_writer::Options) {
+fn qualify_writer(options: studio_engine::containment::qualify_writer::Options) {
     let result = studio_engine::app_paths::AppPaths::system()
         .map_err(|e| e.to_string())
-        .and_then(|paths| fframes_studio::qualify_writer::run(&paths, &options));
+        .and_then(|paths| studio_engine::containment::qualify_writer::run(&paths, &options));
     match result {
         Ok((measured, path)) => {
             println!("evidence: {}", path.display());

@@ -1,6 +1,5 @@
 use crate::{
     frame_image::create_render_image, selection_spike::DisplayedSourceFrame, text_input::TextInput,
-    worker_client::WorkerClient, worker_project,
 };
 use gpui::{
     AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement,
@@ -16,6 +15,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use studio_bootstrap::ProcessTreeManager;
+use studio_engine::services::worker_client::WorkerClient;
+use studio_engine::services::worker_project;
 use studio_harness::{AcpSession, AdapterConfig, SessionControl, copy_draft, source_revision};
 use studio_sdk::CompatibilityManifest;
 
@@ -117,7 +118,8 @@ impl AgentSpike {
         let completion_cancelled = cancelled.clone();
         self.generation += 1;
         let generation = self.generation;
-        let baseline_generation = crate::worker_client::allocate_worker_generation();
+        let baseline_generation =
+            studio_engine::services::worker_client::allocate_worker_generation();
         self.active = true;
         self.status = "Preparing isolated draft...".into();
         self.transcript.clear();
@@ -196,7 +198,7 @@ impl AgentSpike {
                     &draft,
                     &sdk,
                     manifest,
-                    crate::worker_client::allocate_worker_generation(),
+                    studio_engine::services::worker_client::allocate_worker_generation(),
                     &manager,
                 )?;
                 if source_revision(&draft).map_err(|e| e.to_string())? != revision {

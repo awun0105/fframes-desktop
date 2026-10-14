@@ -1,7 +1,7 @@
-use fframes_studio::worker_project::launch_portable_worker;
 use std::{fs, path::PathBuf, time::Duration};
 use studio_bootstrap::ProcessTreeManager;
 use studio_engine::build_materialization::sdk_pin;
+use studio_engine::services::worker_project::launch_portable_worker;
 use studio_sdk::{CompatibilityManifest, SdkInstaller};
 
 #[test]

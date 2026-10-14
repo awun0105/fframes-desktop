@@ -17,8 +17,8 @@
 //!   (the list shifts its anchor item by the splice, so a prepended page or an evicted
 //!   head does not move what the user is reading).
 //! * [`page_request`] decides when to ask the log for an older page.
-use crate::agent_workflow::{MAX_HISTORY_PAGE, MAX_RESIDENT_ROW_BYTES, MAX_RESIDENT_ROWS, Row};
 use std::sync::Arc;
+use studio_engine::agent::{MAX_HISTORY_PAGE, MAX_RESIDENT_ROW_BYTES, MAX_RESIDENT_ROWS, Row};
 
 /// Extra pixels rendered above and below the viewport (the bounded overscan).
 pub const OVERDRAW_PX: f32 = 240.;
@@ -268,7 +268,7 @@ pub fn page_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_workflow::{NoticeLevel, RowId, RowKind};
+    use studio_engine::agent::{NoticeLevel, RowId, RowKind};
 
     fn row(id: u64, text: &str) -> Arc<Row> {
         Arc::new(Row {

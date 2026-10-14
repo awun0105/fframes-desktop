@@ -21,14 +21,6 @@
 //! Cargo compilations for equal and different keys.
 //!
 //! Skipped runs are not qualification.
-use fframes_studio::{
-    build_service::{
-        BuildKey, BuildLimits, BuildService, CompileEnvironment, CompileRequest, Compiler,
-        Subscriber, SubscriberKind,
-    },
-    candidate_runner::{CandidateRunConfig, RunScopes, run_candidate_validation},
-    worker_project::{CargoCompiler, acquire_build_lock},
-};
 use sha2::Digest;
 use std::{
     fs,
@@ -39,6 +31,14 @@ use std::{
     },
 };
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::services::build_service::{
+    BuildKey, BuildLimits, BuildService, CompileEnvironment, CompileRequest, Compiler, Subscriber,
+    SubscriberKind,
+};
+use studio_engine::services::candidate_runner::{
+    CandidateRunConfig, RunScopes, run_candidate_validation,
+};
+use studio_engine::services::worker_project::{CargoCompiler, acquire_build_lock};
 use studio_engine::{
     AgentTaskContext, Controller, QuiescenceEvidence, TaskState, TurnCompletion, WriterObservation,
     app_paths::AppPaths,
@@ -47,7 +47,7 @@ use studio_engine::{
 use studio_project::checkpoint::Checkpoints;
 use studio_sdk::{CompatibilityManifest, ProjectManager};
 
-#[path = "support/preview_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
 mod preview_fixture;
 
 fn sdk(temp: &tempfile::TempDir) -> (PathBuf, CompatibilityManifest) {
@@ -164,7 +164,7 @@ impl Real {
         playhead: usize,
     ) -> (
         CapturedCandidate,
-        fframes_studio::candidate_runner::CandidateRun,
+        studio_engine::services::candidate_runner::CandidateRun,
     ) {
         let context: AgentTaskContext = self.controller.begin_agent_task("real sdk edit").unwrap();
         let id = context.identity.clone();
@@ -464,7 +464,7 @@ fn real_sdk_equal_key_requests_from_ui_tool_and_validation_run_cargo_once() {
             .windows(2)
             .all(|w| Arc::ptr_eq(w[0].build(), w[1].build()))
     );
-    assert!(fframes_studio::worker_project::worker_binary(leases[0].build()).is_file());
+    assert!(studio_engine::services::worker_project::worker_binary(leases[0].build()).is_file());
     // A later equal request is served from the cache, still without a second compile.
     let later = real
         .service

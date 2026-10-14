@@ -19,10 +19,6 @@
 //! ```
 #![cfg(unix)]
 
-use fframes_studio::{
-    agent_workflow::{log::RowLimits, *},
-    build_service::{BuildLimits, BuildService, Compiler, Subscriber, SubscriberKind},
-};
 use parking_lot::Mutex;
 use serde_json::{Map, Value, json};
 use std::{
@@ -34,10 +30,14 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::agent::{log::RowLimits, *};
+use studio_engine::services::build_service::{
+    BuildLimits, BuildService, Compiler, Subscriber, SubscriberKind,
+};
 use studio_engine::{AgentTaskId, Controller, app_paths::AppPaths};
 use studio_harness::{AdapterConfig, ExecutableSearch, McpStdioSupport, driver::DriverLimits};
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 
@@ -46,7 +46,10 @@ const GOOD_CONFIG: &str = r#"{"frames":120,"tracks":[[0.0,2.0]],"audio":"tone","
 const MEASUREMENT_SCHEMA: u32 = 1;
 
 fn agent_script() -> String {
-    format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR"))
+    format!(
+        "{}/support/acp-agent.py",
+        studio_test_support::ENGINE_TESTS_DIR
+    )
 }
 
 /// A script that validates: a new `src/lib.rs` plus the fake worker's timeline config.
@@ -69,12 +72,15 @@ struct Scripted {
 }
 
 impl Compiler for Scripted {
-    fn accepts(&self, key: &fframes_studio::build_service::BuildKey) -> Result<(), String> {
+    fn accepts(
+        &self,
+        key: &studio_engine::services::build_service::BuildKey,
+    ) -> Result<(), String> {
         self.inner.accepts(key)
     }
     fn compile(
         &self,
-        request: &fframes_studio::build_service::CompileRequest,
+        request: &studio_engine::services::build_service::CompileRequest,
         scope: &ProcessTreeManager,
     ) -> Result<Arc<studio_engine::build_materialization::MaterializedBuild>, String> {
         let lib = fs::read_to_string(request.project.root.join("src/lib.rs")).unwrap_or_default();

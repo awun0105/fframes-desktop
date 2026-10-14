@@ -12,7 +12,7 @@ use fframes_studio_protocol::{EditorFrameStatus, PreviewIdentity};
 
 // The shared harness (World, Scripted compiler, script helpers) lives in one file so
 // the scoped-editing suite runs against exactly the same subprocess setup.
-include!("support/workflow_world.rs");
+include!("../../crates/studio-engine/tests/support/workflow_world.rs");
 
 #[test]
 fn opening_a_project_launches_no_agent_and_readiness_is_an_explicit_probe() {
@@ -1572,7 +1572,7 @@ fn a_committed_revision_is_handed_to_the_preview_and_a_failed_handoff_is_exposed
 
 #[test]
 fn the_resident_transcript_is_bounded_and_older_rows_are_paged_from_the_log() {
-    use fframes_studio::agent_workflow::log::RowLimits;
+    use studio_engine::agent::log::RowLimits;
     let w = World::with(Options {
         row_limits: Some(RowLimits {
             max_rows: 20,
@@ -1621,7 +1621,7 @@ fn the_resident_transcript_is_bounded_and_older_rows_are_paged_from_the_log() {
 
 #[test]
 fn streaming_text_is_bounded_by_bytes_and_never_one_unbounded_row() {
-    use fframes_studio::agent_workflow::log::RowLimits;
+    use studio_engine::agent::log::RowLimits;
     let w = World::with(Options {
         row_limits: Some(RowLimits {
             max_bytes: 48 * 1024,
@@ -1946,7 +1946,7 @@ fn an_engine_refusal_before_the_session_is_registered_fails_boundedly_and_close_
 
 #[test]
 fn a_conversation_log_that_cannot_be_written_stops_the_task_and_keeps_memory_bounded() {
-    use fframes_studio::agent_workflow::log::RowLimits;
+    use studio_engine::agent::log::RowLimits;
     let limits = RowLimits {
         max_rows: 8,
         max_bytes: 64 * 1024,
@@ -2291,7 +2291,7 @@ fn settings_are_refused_for_a_just_submitted_task_and_for_an_undo_before_any_sna
 
 #[test]
 fn an_open_permission_stays_answerable_after_its_card_leaves_the_transcript_window() {
-    use fframes_studio::agent_workflow::log::RowLimits;
+    use studio_engine::agent::log::RowLimits;
     let w = World::with(Options {
         row_limits: Some(RowLimits {
             max_rows: 5,
@@ -2453,7 +2453,7 @@ fn a_follow_up_task_keeps_the_pending_preview_of_the_accepted_revision() {
 
 #[test]
 fn a_tool_call_updated_after_its_card_left_the_window_is_one_persisted_card() {
-    use fframes_studio::agent_workflow::log::RowLimits;
+    use studio_engine::agent::log::RowLimits;
     use studio_harness::driver::ToolStatus;
     let w = World::with(Options {
         row_limits: Some(RowLimits {
@@ -2903,7 +2903,7 @@ fn measured_starter_title_scope(
         worker_generation: 1,
     };
     let manager = ProcessTreeManager::new();
-    let build = fframes_studio::worker_project::compile_portable_worker(
+    let build = studio_engine::services::worker_project::compile_portable_worker(
         &project,
         &world.sdk,
         world.manifest.clone(),
@@ -2911,9 +2911,12 @@ fn measured_starter_title_scope(
         &manager,
     )
     .expect("compile the generated starter using the managed SDK");
-    let mut worker =
-        fframes_studio::worker_project::launch_preview_worker(build, preview.clone(), &manager)
-            .expect("launch the generated starter preview worker");
+    let mut worker = studio_engine::services::worker_project::launch_preview_worker(
+        build,
+        preview.clone(),
+        &manager,
+    )
+    .expect("launch the generated starter preview worker");
     let timeline = worker.timeline().expect("managed starter timeline");
     let frame = worker.frame(0, 17, 1.0).expect("managed title frame");
     let metadata = frame
