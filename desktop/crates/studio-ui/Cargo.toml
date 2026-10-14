@@ -28,3 +28,9 @@ unicode-segmentation = "1"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+studio-test-support = { path = "../studio-test-support" }
+tempfile = { workspace = true }
+
+[[test]]
+name = "parity"
+path = "tests/parity/main.rs"

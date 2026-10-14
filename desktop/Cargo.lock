@@ -6323,7 +6323,9 @@ dependencies = [
  "studio-project",
  "studio-proto",
  "studio-sdk",
+ "studio-test-support",
  "studio-theme",
+ "tempfile",
  "thiserror 2.0.21",
  "unicode-segmentation",
 ]

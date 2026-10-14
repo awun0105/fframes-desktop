@@ -2,7 +2,6 @@
 //! preview worker compiled by a fake compiler, and app data, SDK home and writer ownership
 //! of the test's own. Tests drive it with actions and read its telemetry; this file is the
 //! only one that knows the window's root view.
-use fframes_studio::studio_shell::StudioShell;
 use gpui::{Action, AppContext, TestAppContext, WindowHandle};
 use serde_json::Value;
 use std::{
@@ -16,6 +15,7 @@ use studio_engine::containment::OwnershipPolicy;
 use studio_engine::engine::backend::StudioEnvironment;
 use studio_engine::providers::host::{self, AdapterFile, McpChoice};
 use studio_engine::services::build_service::{BuildLimits, BuildService};
+use studio_ui::shell::StudioShell;
 
 use crate::build_fixture::{FAKE_CONFIG, FakeCompiler, fake_sdk, manifest};
 use studio_engine::{app_paths::AppPaths, build_materialization::sdk_pin};
@@ -192,7 +192,7 @@ impl Studio {
     pub fn open_project(self) -> Self {
         let mut studio = self;
         let project = studio.project.clone();
-        studio.dispatch(fframes_studio::actions::OpenProject);
+        studio.dispatch(studio_ui::actions::OpenProject);
         studio.choose_path(&project);
         studio.wait("project open", |t| {
             t["project_open"] == true && t["busy"] == false
@@ -212,7 +212,7 @@ impl Studio {
 
     fn display(self) -> Self {
         let mut studio = self.open_project();
-        studio.dispatch(fframes_studio::actions::BuildPreview);
+        studio.dispatch(studio_ui::actions::BuildPreview);
         studio.wait("preview displayed", |t| {
             t["preview"]["status"] == "displayed" && t["total_frames"] == 90
         });

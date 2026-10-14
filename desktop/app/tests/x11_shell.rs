@@ -1,6 +1,6 @@
 //! The production GPUI shell as a real process on a private X server.
 //!
-//! The headless parity suite (`tests/parity`, GPUI's `TestAppContext`) drives the shell
+//! The headless parity suite (`studio-ui/tests/parity`, GPUI's `TestAppContext`) drives the shell
 //! through its actions; this test covers what a headless window cannot, exercising the
 //! hand-off wiring the way the M0/M2 native qualifications did: the real
 //! `fframes-studio qualify-m3` binary on an owned Xvfb, driven with xdotool, observed

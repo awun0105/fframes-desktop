@@ -1,10 +1,10 @@
 //! Build, preview and export services: start, cancel, failure surfaced.
 use crate::harness::Studio;
-use fframes_studio::actions::{BuildPreview, CancelExport, CancelPreview, ExportVideo};
 use std::{
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
+use studio_ui::actions::{BuildPreview, CancelExport, CancelPreview, ExportVideo};
 
 #[gpui::test]
 fn build_shows_the_preview(cx: &mut gpui::TestAppContext) {

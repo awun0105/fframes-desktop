@@ -1,8 +1,8 @@
 //! Preset/Style panel: apply and reset (gated: see `Studio::mutation_open`).
 use crate::harness::{Mutation, Studio};
-use fframes_studio::actions::{ApplyPreset, ResetPreset, SetStyleOverride};
 use serde_json::Value;
 use std::fs;
+use studio_ui::actions::{ApplyPreset, ResetPreset, SetStyleOverride};
 
 fn key_of(t: &Value, id: &str) -> String {
     t["presets"]["entries"]

@@ -2,7 +2,7 @@
 //! these pin the shell's choice of output against the device list the audio service reports
 //! (empty on hosts without audio hardware).
 use crate::harness::Studio;
-use fframes_studio::actions::{
+use studio_ui::actions::{
     DisableAudioOutput, NextAudioOutput, RetryAudioOutput, ToggleMute, TogglePlayback,
 };
 

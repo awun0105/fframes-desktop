@@ -1,8 +1,8 @@
 //! The setup screen (the SDK it reports, selecting or importing one) and Detect agents.
 use crate::harness::{Studio, fake_rustc};
-use fframes_studio::actions::{DetectAgents, ImportSdkBundle, SelectSdk, UseDetectedAgent};
 use serde_json::Value;
 use std::{fs, path::PathBuf, time::Duration};
+use studio_ui::actions::{DetectAgents, ImportSdkBundle, SelectSdk, UseDetectedAgent};
 
 fn sdk_status(t: &Value) -> &str {
     t["sdk"].as_str().unwrap_or_default()
@@ -17,7 +17,7 @@ fn an_installed_sdk_is_available_to_the_agent(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
-fn the_shell_reports_the_apps_version(cx: &mut gpui::TestAppContext) {
+fn the_shell_reports_the_version_it_was_given(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::new(cx);
     assert_eq!(studio.telemetry()["app_version"], env!("CARGO_PKG_VERSION"));
 }

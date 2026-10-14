@@ -1,9 +1,9 @@
 //! Timeline: scene cycling, range selection, zoom, seek from the ruler.
 use crate::harness::Studio;
-use fframes_studio::actions::{
+use serde_json::{Value, json};
+use studio_ui::actions::{
     CycleScene, MarkRangeEnd, MarkRangeStart, Seek, SeekToEnd, SeekToStart, ZoomIn, ZoomOut,
 };
-use serde_json::{Value, json};
 
 fn selection(t: &Value) -> &Value {
     &t["timeline"]["selection"]

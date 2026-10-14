@@ -1,7 +1,7 @@
 //! Transport: play/pause and frame stepping.
 use crate::harness::Studio;
-use fframes_studio::actions::{OpenProject, StepBackward, StepForward, TogglePlayback};
 use std::time::Duration;
+use studio_ui::actions::{OpenProject, StepBackward, StepForward, TogglePlayback};
 
 #[gpui::test]
 fn play_advances_the_playhead_and_pause_holds_it(cx: &mut gpui::TestAppContext) {

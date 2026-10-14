@@ -1,7 +1,7 @@
 //! Canvas: `select_at` and the mapping from a click on the video to the source object.
 use crate::harness::Studio;
-use fframes_studio::actions::SelectCanvasAt;
 use serde_json::Value;
+use studio_ui::actions::SelectCanvasAt;
 
 /// A title and a badge painted over its right part, in a 640x360 video.
 const OBJECTS: &str = r#"{"frames":90,"width":640,"height":360,"export_hang":true,
@@ -62,7 +62,7 @@ fn overlapping_objects_select_the_top_one_then_cycle(cx: &mut gpui::TestAppConte
 #[gpui::test]
 fn selecting_pauses_playback(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed_with(cx, OBJECTS);
-    studio.dispatch(fframes_studio::actions::TogglePlayback);
+    studio.dispatch(studio_ui::actions::TogglePlayback);
     studio.wait("playing", |t| t["playing"] == true);
     studio.dispatch(click(120., 120.));
     studio.wait("paused on a selection", |t| {

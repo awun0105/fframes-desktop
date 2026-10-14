@@ -3,7 +3,7 @@
 //! view type, so the views can be replaced without rewriting them; only `harness.rs` knows
 //! the root view.
 
-#[path = "../../../crates/studio-engine/tests/support/build_fixture.rs"]
+#[path = "../../../studio-engine/tests/support/build_fixture.rs"]
 mod build_fixture;
 mod harness;
 

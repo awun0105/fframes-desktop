@@ -24,7 +24,7 @@ Effort was 5-7d before [spike S4](../261013-0733-studio-m1-foundations/reports/s
 3b. Window chrome per OS from Cap's `main.rs` options: on Windows the custom frame with Cap's `windows_caption` (patched insets, `start_window_move`) and an opaque background; on macOS a hidden titlebar with an opaque background (no transparency, floating level or glass); on Linux client decorations.
 3c. Setup screen: build `setup_view` on Cap's settings page frame (`settings_window.rs` 4,905 lines, `settings_pages.rs` 8,414): page rail (`TabRail`), `::settings` components and `field` rows. Port the frame and row patterns only; the fframes pages are adapter setup here and provider profiles in phase 6.
 4. Move `timeline_view.rs`, `preset_panel.rs`, `setup_view.rs`, `project_view.rs`, `canvas_view.rs`, `preview_element.rs`, `frame_image.rs` (gpui half), `text_input.rs` into `studio-ui` modules.
-5. Move the parity suite to `desktop/crates/studio-ui/tests/parity/` and switch merge gate 3 to `cargo test -p studio-ui --test parity` in CI.
+5. Move the parity suite to `desktop/crates/studio-ui/tests/parity/` and switch merge gate 3 to `cargo test -p studio-ui --test parity` in CI. Done: CI already runs every `-p studio-ui` test, so the suite runs there without a workflow change.
 
 ## Reference patterns (Cap, Zeron)
 
@@ -43,7 +43,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 - [x] Shell modules
 - [ ] Actions and keymap
 - [x] Remaining views moved
-- [ ] Parity suite moved and CI updated
+- [x] Parity suite moved and CI updated
 
 ## Design decisions (2026-10-14, after scouting)
 
@@ -85,7 +85,7 @@ The decisions:
      - `layout.rs`: `impl Render`.
 
      `mod.rs` keeps the struct, the constructors and what two or more sections share: `Picker`, `PreparedInstall`, `AgentHost` and the `action_button`/`action_icon_button` pair. Unit tests move with the code they test. Methods called across sections are `pub(super)`; everything else stays private to its file.
-  3. Move the parity suite to `studio-ui/tests/parity/`. Switch merge gate 3 in `desktop.yml`, `desktop-self-hosted.yml` and `desktop-release.yml`.
+  3. Move the parity suite to `studio-ui/tests/parity/`. Done 2026-10-14: the same 34 tests by name, now run by `cargo test -p studio-ui --test parity`. The workflows needed no change: `desktop.yml`, `desktop-self-hosted.yml` and `desktop-release.yml` run every test of `-p studio-ui`, which includes the suite.
   4. Keymap: one `bind_keys` with key contexts, most specific first: `TextInput`, then `Composer`, then `Timeline` and `Player`, then `Workspace`. The preview surface's raw `on_key_down` (Space, arrows, Home, End, `c`, `0`, Escape) becomes actions bound in the `Player` context. The root Tab handler stays. Test first: Ctrl+Z in a focused text field does not reach timeline undo, and Space on the preview still toggles playback.
   5. Cap's layout, a visible change:
      - a 52 px header;
@@ -107,7 +107,7 @@ The decisions:
 - **Guards for every move.**
   - Scripts read source by text (phase 2): before each move, Grep `desktop/scripts` and `.github` for the moved file's path and its distinctive strings, with a positive control. Also check the workflows' `paths:` filters on `desktop/app/**`. `py desktop/scripts/test-packaging.py` runs with every commit's checks.
   - Linux-only tests do not compile here. When the app's re-exports are removed at the parity move, Grep `app/tests` (including `x11_shell.rs` and `cfg(target_os = "linux")` blocks) for `fframes_studio::(studio_shell|timeline_view|preset_panel|setup_view|canvas_view|frame_image|actions|ui|conversation_panel)`.
-  - Before the parity move, list what the suite resolves by path: `build_fixture` through `#[path]` from `studio-engine/tests/support`, the `studio_test_support` dev-dependency, and any `CARGO_MANIFEST_DIR` fixture paths. `studio-ui` gains those dev-dependencies. After the keymap step, the harness calls the shell's `bind_keys`. The app version is passed in by the caller: the shell and the setup view take it, and a `studio-ui` unit test fails if the crate's sources read their own package version. After the move, the harness and `the_shell_reports_the_apps_version` would both expand `env!("CARGO_PKG_VERSION")` to the kit's version, so that test stays in `app/tests` or compares against a version the app exports.
+  - Before the parity move, list what the suite resolves by path: `build_fixture` through `#[path]` from `studio-engine/tests/support`, the `studio_test_support` dev-dependency, and any `CARGO_MANIFEST_DIR` fixture paths. `studio-ui` gains those dev-dependencies. After the keymap step, the harness calls the shell's `bind_keys`. The app version is passed in by the caller: the shell and the setup view take it, and a `studio-ui` unit test fails if the crate's sources read their own package version. After the move the harness passes `studio-ui`'s own version, so the parity test `the_shell_reports_the_version_it_was_given` checks only that the shell reports what it was given. That the app passes its own version is guarded by the source scan, and `main.rs` passes `env!("CARGO_PKG_VERSION")` of the app crate.
   - Only `app/tests/preset_workflow.rs` reads a view's source by text (`include_str!` of `preset_panel.rs`, Linux-only); its path follows the move. Every other `include_str!` or `read_to_string` of a `src/` path reads project fixtures.
   - Follow-up: that test, `panel_colors_never_come_from_preset_data`, has checked nothing since phase 2. It scans for `rgb(` literals, and the panel now takes every colour from `Theme` fields. A colour derived from preset data would pass it. It needs a check that fits the theme, outside the move commits.
   - The design-system doc's "deliberate differences" bullet about the 248 px left column and the zoom placement is updated in the layout commit.

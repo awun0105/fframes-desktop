@@ -1,8 +1,8 @@
 //! Checkpoints: create and restore. Neither writes the project's source (a restore makes a
 //! copy), so unlike presets they are not behind the mutation gate on any platform.
 use crate::harness::Studio;
-use fframes_studio::actions::{RestoreCheckpoint, SaveCheckpoint};
 use std::{fs, path::PathBuf};
+use studio_ui::actions::{RestoreCheckpoint, SaveCheckpoint};
 
 fn edit(studio: &mut Studio, text: &str) -> String {
     fs::write(studio.project_file("src/lib.rs"), text).unwrap();

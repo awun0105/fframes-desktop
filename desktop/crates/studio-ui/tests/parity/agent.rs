@@ -4,11 +4,11 @@ use crate::{
     build_fixture::FAKE_CONFIG,
     harness::{FIXTURE_CONFIG, Mutation, Studio},
 };
-use fframes_studio::actions::{
-    AnswerPermission, ApplyCandidate, FocusPrompt, OpenProject, SubmitPrompt, ToggleReviewPolicy,
-};
 use serde_json::{Value, json};
 use std::{fs, time::Duration};
+use studio_ui::actions::{
+    AnswerPermission, ApplyCandidate, FocusPrompt, OpenProject, SubmitPrompt, ToggleReviewPolicy,
+};
 
 const BRIEF: &str = "Make the title red";
 const REPLY: [&str; 2] = ["Working on it. ", "done"];
