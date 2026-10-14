@@ -1367,6 +1367,7 @@ impl StudioShell {
         value["timeline"] = self.timeline.read(cx).qualification_metrics();
         value["panel"] = self.panel.read(cx).telemetry();
         value["export"] = export_telemetry(self.export_status.as_ref());
+        value["presets"] = self.preset_panel.read(cx).telemetry();
         value["output_devices"] = self.audio.devices().into();
         value
     }
@@ -4170,6 +4171,18 @@ impl StudioShell {
             }))
             .on_action(cx.listener(|s, _: &actions::ExportVideo, _, cx| s.pick(Picker::Export, cx)))
             .on_action(cx.listener(|s, _: &actions::CancelExport, _, cx| s.cancel_export(cx)))
+            .on_action(cx.listener(|s, action: &actions::ApplyPreset, _, cx| {
+                let key = action.key.clone();
+                s.run_preset(PresetCommand::Apply { key }, cx)
+            }))
+            .on_action(cx.listener(|s, action: &actions::ResetPreset, _, cx| {
+                let key = action.key.clone();
+                s.run_preset(PresetCommand::Reset { key }, cx)
+            }))
+            .on_action(cx.listener(|s, action: &actions::SetStyleOverride, _, cx| {
+                let (token, value) = (action.token.clone(), action.value.clone());
+                s.run_preset(PresetCommand::SetOverride { token, value }, cx)
+            }))
             .on_action(cx.listener(|s, _: &actions::SaveCheckpoint, _, cx| {
                 s.dispatch(Command::Checkpoint, cx)
             }))

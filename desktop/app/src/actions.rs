@@ -61,6 +61,28 @@ pub struct SelectCanvasAt {
     pub cycle: bool,
 }
 
+/// Apply the catalog preset `key` (its package hash) to the project, keeping its overrides.
+#[derive(Clone, PartialEq, Eq, Debug, Action)]
+#[action(namespace = studio, no_json)]
+pub struct ApplyPreset {
+    pub key: String,
+}
+
+/// Apply the catalog preset `key` and clear every project override.
+#[derive(Clone, PartialEq, Eq, Debug, Action)]
+#[action(namespace = studio, no_json)]
+pub struct ResetPreset {
+    pub key: String,
+}
+
+/// Override the applied preset's `token` with `value` (JSON when it parses, else text).
+#[derive(Clone, PartialEq, Eq, Debug, Action)]
+#[action(namespace = studio, no_json)]
+pub struct SetStyleOverride {
+    pub token: String,
+    pub value: String,
+}
+
 /// Move the playhead to `frame`.
 #[derive(Clone, PartialEq, Eq, Debug, Action)]
 #[action(namespace = studio, no_json)]

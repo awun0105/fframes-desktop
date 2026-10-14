@@ -614,6 +614,31 @@ impl PresetPanel {
         self.selected.as_deref()
     }
 
+    /// The catalog, the applied preset, why mutation is blocked (if it is) and the last
+    /// command's status lines; preset ids and token names only, never values.
+    pub fn telemetry(&self) -> serde_json::Value {
+        let Some(view) = &self.view else {
+            return serde_json::json!({ "entries": [] });
+        };
+        serde_json::json!({
+            "entries": view.entries.iter().map(|entry| serde_json::json!({
+                "key": entry.key,
+                "id": entry.id,
+                "applied": entry.applied,
+            })).collect::<Vec<_>>(),
+            "selected": self.selected,
+            "applied": view.applied.as_ref().map(|applied| serde_json::json!({
+                "id": applied.id,
+                "overrides": applied.overridden.len(),
+            })),
+            "blocked": match &view.mutation {
+                PresetMutation::Enabled => None,
+                PresetMutation::Disabled(reason) => Some(reason.clone()),
+            },
+            "status": self.last.as_ref().map(PresetReport::status_lines),
+        })
+    }
+
     /// True while an override field holds keyboard focus.
     pub fn has_text_focus(&self, window: &Window, cx: &gpui::App) -> bool {
         use gpui::Focusable;

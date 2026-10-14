@@ -27,6 +27,13 @@ pub const FIXTURE_CONFIG: &str = r#"{"frames":90,"fps":30,"scenes":[[0,45],[45,9
 
 const WAIT: Duration = Duration::from_secs(60);
 
+/// Whether this platform may change project source (presets, agent Apply). Only Linux
+/// x86-64 is qualified until M3 opens the gates; the gated tests assert the real outcome
+/// where this holds and "blocked, with the reason shown" elsewhere, so M3 flips them here.
+pub fn mutation_open() -> bool {
+    studio_engine::preset_state::MUTATION_QUALIFIED
+}
+
 pub struct Studio {
     pub cx: TestAppContext,
     window: WindowHandle<StudioShell>,
