@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Split the agent actor"
-status: in-progress
+status: done
 priority: P1
 effort: "2-3d"
 dependencies: [3]
@@ -25,7 +25,7 @@ dependencies: [3]
 - [x] Scout handler groups
 - [x] Split modules
 - [x] Snapshots through engine events
-- [ ] Agent tests green
+- [x] Agent tests green
 
 ## Success criteria
 
@@ -59,3 +59,5 @@ Task 3 is done. The actor itself did not change: it already calls the workflow's
 - Kept on the inbox, on purpose: open results, hand-offs (a hand-off of an old serial is dropped and its staged worker reaped) and the panel's history-page wake. The inbox's single `dirty` flag is why it was not moved to the engine channel as a whole: a stale wake would strand the next session.
 
 Tests: a `WorkflowWake` unit test; an engine-handle test (five publishes give one event stamped with the session and serial, nothing more until it is taken); an `AppState` test (a change from a session no longer open is dropped); and the parity test `the_agent_of_the_project_switched_to_still_updates_the_panel` (a reply streams to its last chunk in the project opened mid-turn). Two mutations each fail all six agent parity tests: the shell ignoring the event, and never taking the wake. An earlier version took the wake at adoption separately; removing that take also failed all six, and the take now belongs to the refresh that follows adoption. `app/tests/agent_workflow_ui.rs` (Linux only) passes a wake to `host::open_workflow`; it was type-checked here with its gate removed. Task 4 is closed by the Linux CI job, which runs it.
+
+Task 4 closed: CI run 38614584722 passed on both jobs. On Linux, `agent_workflow_ui` ran its 13 tests, and the engine's agent integration tests and the agent parity tests passed on Windows and Linux. No file in `studio-engine/src/agent` exceeds 1,500 lines (the largest is `log.rs` at 1,255 lines).
