@@ -1,5 +1,5 @@
 //! The native panel's rules against REAL workflow snapshots: the scripted ACP peer
-//! (`tests/support/acp-agent.py`), the deterministic fake preview worker and the engine's
+//! (`studio-engine/tests/support/acp-agent.py`), the deterministic fake preview worker and the engine's
 //! real controller. No window is opened here: the controls, reply correlation, paging
 //! window and shell hosting glue are pure functions of snapshots, so they are proven
 //! against what the workflow actually publishes. (The GPUI process itself is exercised by
@@ -8,8 +8,6 @@
 #![cfg(target_os = "linux")]
 use fframes_studio::conversation_panel::{
     controls::{self, ReplyRefusal, ReplyTracker, SubmitKind, UndoControl, derive_controls},
-    host::{self, AdapterFile, HostInbox, McpChoice},
-    qualification::OwnershipPolicy,
     rows::{self, ListOp, ResidentLimits, RowKey},
 };
 use parking_lot::Mutex;
@@ -17,6 +15,8 @@ use serde_json::{Value, json};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 use studio_engine::agent::{log::RowLimits, *};
+use studio_engine::containment::OwnershipPolicy;
+use studio_engine::providers::host::{self, AdapterFile, HostInbox, McpChoice};
 use studio_engine::services::build_service::{BuildLimits, BuildService};
 use studio_engine::{AgentTaskId, Controller, ReviewPolicy, app_paths::AppPaths};
 use studio_harness::{AdapterConfig, driver::OptionValue};
