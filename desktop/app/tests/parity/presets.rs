@@ -55,10 +55,12 @@ fn apply_and_reset(cx: &mut gpui::TestAppContext) {
         token: "color.accent".into(),
         value: "#ff0000".into(),
     });
-    // The committed override asks for a matching preview; the shell takes no command
-    // until that build is sent and answered.
+    // The committed override asks for a matching preview, and the shell takes no command
+    // while that build (or a refresh after the style file changed) is in flight.
     studio.wait("override set", |t| {
-        t["presets"]["applied"]["overrides"] == 1 && t["busy"] == false
+        t["presets"]["applied"]["overrides"] == 1
+            && t["busy"] == false
+            && t["displayed_revision"] == t["current_source_revision"]
     });
     let overrides = studio.project_file("style/overrides.json");
     assert!(
