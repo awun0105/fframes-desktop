@@ -128,11 +128,19 @@ fn a_prompt_streams_the_reply_asks_permission_and_applies(cx: &mut gpui::TestApp
         assert_eq!(phase(&applied), "Accepted", "{applied:#}");
         assert_eq!(source(&studio), EDIT);
     } else {
+        studio.wait("Apply shown as blocked", |t| {
+            t["panel"]["apply_blocked"]
+                .as_str()
+                .is_some_and(|reason| !reason.is_empty())
+        });
         let refused = studio.settle(Duration::from_millis(300));
-        let reason = refused["panel"]["apply_blocked"]
-            .as_str()
-            .unwrap_or_else(|| panic!("Apply is not shown as blocked: {:#}", refused["panel"]));
-        assert!(!reason.is_empty());
+        assert!(
+            refused["panel"]["apply_blocked"]
+                .as_str()
+                .is_some_and(|reason| !reason.is_empty()),
+            "Apply stopped being shown as blocked: {:#}",
+            refused["panel"]
+        );
         assert_eq!(phase(&refused), "Waiting for your review");
         assert_eq!(source(&studio), original);
     }
