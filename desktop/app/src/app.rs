@@ -1,8 +1,6 @@
-use crate::frame_image::{ImagePresentationManager, create_render_image};
 use crate::presentation_stress::PresentationStress;
 use crate::preview_element::PreviewElement;
 use crate::selection_spike::{DisplayedSourceFrame, SelectedElementInfo, SelectionSpike};
-use crate::setup_view::SetupView;
 use gpui::{
     AppContext, Bounds, Context, Entity, FontWeight, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Render, RenderImage, StatefulInteractiveElement, Styled, Window, div,
@@ -10,7 +8,9 @@ use gpui::{
 };
 use studio_engine::services::worker_client::WorkerClient;
 use studio_engine::services::worker_client::generate_reference_frame;
+use studio_ui::frame_image::{ImagePresentationManager, create_render_image};
 use studio_ui::kit::{TextInput, TextInputState};
+use studio_ui::setup_view::SetupView;
 
 use std::time::{Duration, Instant};
 use studio_bootstrap::ProcessTreeManager;
@@ -618,7 +618,7 @@ impl Render for StudioSpikeApp {
         // The setup image is a bootstrap preview; source inspection requires worker metadata.
         let setup_state = self.setup_view.read(cx).state.clone();
         if !self.stress.active
-            && let crate::setup_view::SetupState::Rendered { ref frame_path, .. } = setup_state
+            && let studio_ui::setup_view::SetupState::Rendered { ref frame_path, .. } = setup_state
             && self.displayed_setup_frame.as_ref() != Some(frame_path)
             && let Ok(bytes) = std::fs::read(frame_path)
             && let Ok(image) = image::load_from_memory(&bytes)

@@ -7,13 +7,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use fframes_studio::frame_image;
 use studio_bootstrap::{ProcessTreeManager, SpawnOptions};
 use studio_engine::services::audio_service::{AudioEvent, AudioService, OutputDevice};
 use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator};
 use studio_engine::services::worker_project::{acquire_build_lock, launch_preview_worker};
 use studio_engine::{Controller, JobKind, app_paths::AppPaths};
 use studio_sdk::ProjectManager;
+use studio_ui::frame_image;
 
 #[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
 mod preview_fixture;

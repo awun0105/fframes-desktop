@@ -1,6 +1,6 @@
-use fframes_studio::canvas_view::CanvasViewState;
 use fframes_studio_protocol::*;
 use studio_engine::PreviewFrame;
+use studio_ui::canvas_view::CanvasViewState;
 
 fn identity(revision: &str, generation: u64) -> PreviewIdentity {
     PreviewIdentity {

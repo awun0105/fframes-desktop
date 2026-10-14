@@ -6,10 +6,6 @@
 //! `x11_shell.rs`; neither the peer nor these tests qualify a provider.)
 //! The real workflow snapshots include successful Apply, currently qualified only on Linux.
 #![cfg(target_os = "linux")]
-use fframes_studio::conversation_panel::{
-    controls::{self, ReplyRefusal, ReplyTracker, SubmitKind, UndoControl, derive_controls},
-    rows::{self, ListOp, ResidentLimits, RowKey},
-};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
@@ -20,6 +16,10 @@ use studio_engine::providers::host::{self, AdapterFile, HostInbox, McpChoice};
 use studio_engine::services::build_service::{BuildLimits, BuildService};
 use studio_engine::{AgentTaskId, Controller, ReviewPolicy, app_paths::AppPaths};
 use studio_harness::{AdapterConfig, driver::OptionValue};
+use studio_ui::panels::conversation::{
+    controls::{self, ReplyRefusal, ReplyTracker, SubmitKind, UndoControl, derive_controls},
+    rows::{self, ListOp, ResidentLimits, RowKey},
+};
 
 #[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
@@ -770,7 +770,7 @@ fn controls_derive_switch_choice_and_block_new_submissions() {
     world.wf().initiate_switch("codex").unwrap();
     let s = world.wait("switch pending", |s| s.switch_pending.is_some());
 
-    let controls = fframes_studio::conversation_panel::controls::derive_controls(&s, false, true);
+    let controls = studio_ui::panels::conversation::controls::derive_controls(&s, false, true);
     assert!(
         controls.switch_choice.is_some(),
         "switch_choice control must be derived when switch_pending is present"
@@ -812,7 +812,7 @@ fn controls_derive_session_restore_and_retained_queue() {
         s.switch_pending.is_some() && s.retained_queue.len() == 2
     });
 
-    let controls = fframes_studio::conversation_panel::controls::derive_controls(&s, false, true);
+    let controls = studio_ui::panels::conversation::controls::derive_controls(&s, false, true);
     assert!(
         controls.retained_queue.is_some(),
         "retained_queue control must be derived"

@@ -1,10 +1,8 @@
-use fframes_studio::frame_image::{
-    ConversionError, convert_rgba_to_gpui_bgra, create_render_image,
-};
 use fframes_studio_protocol::{
     AlphaMode, CURRENT_PROTOCOL_VERSION, ChannelOrder, ColorSpace, FrameHeader, ProtocolError,
 };
 use studio_engine::services::worker_client::generate_reference_frame;
+use studio_ui::frame_image::{ConversionError, convert_rgba_to_gpui_bgra, create_render_image};
 
 #[test]
 fn test_stride_removal_and_padding_strip() {

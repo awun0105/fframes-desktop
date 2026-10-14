@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use fframes_studio::frame_image;
 use fframes_studio_protocol::PreviewIdentity;
 use gpui::RenderImage;
 use studio_engine::services::thumbnail_cache;
+use studio_ui::frame_image;
 use thumbnail_cache::{MAX_THUMBNAIL_BYTES, MAX_THUMBNAIL_ENTRIES, ThumbnailCache, ThumbnailKey};
 
 #[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]

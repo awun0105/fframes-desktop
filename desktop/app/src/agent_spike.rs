@@ -1,4 +1,4 @@
-use crate::{frame_image::create_render_image, selection_spike::DisplayedSourceFrame};
+use crate::selection_spike::DisplayedSourceFrame;
 use gpui::{
     AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement,
     Render, RenderImage, StatefulInteractiveElement, Styled, Window, div, rgb, white,
@@ -17,6 +17,7 @@ use studio_engine::services::worker_client::WorkerClient;
 use studio_engine::services::worker_project;
 use studio_harness::{AcpSession, AdapterConfig, SessionControl, copy_draft, source_revision};
 use studio_sdk::CompatibilityManifest;
+use studio_ui::frame_image::create_render_image;
 use studio_ui::kit::{TextInput, TextInputState};
 
 pub struct CandidatePreview {

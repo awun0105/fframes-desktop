@@ -309,7 +309,7 @@ fn run_studio(qualification: Option<Qualification>) {
                     },
                     move |window, cx| {
                         cx.new(|cx| {
-                            let mut shell = fframes_studio::studio_shell::StudioShell::new(
+                            let mut shell = studio_ui::shell::StudioShell::new(
                                 env!("CARGO_PKG_VERSION"),
                                 window,
                                 cx,
