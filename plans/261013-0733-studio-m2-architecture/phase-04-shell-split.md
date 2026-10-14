@@ -37,7 +37,10 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Bootstrap order, native-call rule, key contexts and cached sections applied
+- [x] Bootstrap order, native-call rule, key contexts and cached sections applied. Checked 2026-10-15:
+  - `main.rs` follows Cap's order where it applies: icons are embedded through the `AssetSource`; the keys are bound and the theme preference is installed inside `run` before `open_window`, with per-OS window options; the window is activated after it opens. Studio has no bundled font (it uses the system UI font, see the design system) and no tokio runtime, so `add_fonts` and `gpui_tokio::init_from_handle` have nothing to do.
+  - Native-call rule: no entity update changes native window state. The Windows caption buttons are window control areas that the OS handles. The macOS window move and zoom are called from the header's mouse listener, as Zed's title bar does; this is not verified on macOS.
+  - Key contexts and cached sections: see steps 4 and 5.
 
 - [x] Scout sections
 - [x] Shell modules
