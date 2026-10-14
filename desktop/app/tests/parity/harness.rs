@@ -267,6 +267,11 @@ impl Studio {
             .simulate_path_prompt_response(move |_| Some(vec![path]));
     }
 
+    /// Cancels the open dialog the last action opened.
+    pub fn cancel_path(&mut self) {
+        self.cx.simulate_path_prompt_response(|_| None);
+    }
+
     /// Answers the save dialog the last action opened.
     pub fn choose_new_path(&mut self, path: &Path) {
         let path = path.to_path_buf();

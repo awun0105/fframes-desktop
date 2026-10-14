@@ -9,3 +9,10 @@ description = "Component kit, editor layout and panels for fframes studio"
 path = "src/lib.rs"
 
 [dependencies]
+gpui = { workspace = true }
+studio-engine = { workspace = true }
+studio-proto = { workspace = true }
+async-channel = "2"
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

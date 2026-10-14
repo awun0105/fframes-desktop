@@ -2,3 +2,4 @@
 //! a preview.
 pub mod backend;
 pub mod fence;
+pub mod handle;

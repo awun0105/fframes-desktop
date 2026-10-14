@@ -2031,6 +2031,7 @@ dependencies = [
 name = "fframes-studio"
 version = "0.1.2"
 dependencies = [
+ "async-channel",
  "clap",
  "cpal",
  "fframes-media",
@@ -2049,8 +2050,10 @@ dependencies = [
  "studio-harness",
  "studio-presets",
  "studio-project",
+ "studio-proto",
  "studio-sdk",
  "studio-test-support",
+ "studio-ui",
  "tempfile",
  "thiserror 2.0.21",
  "uuid",
@@ -6186,6 +6189,7 @@ dependencies = [
 name = "studio-engine"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
  "cpal",
  "fframes-media",
  "fframes-studio-protocol",
@@ -6201,6 +6205,7 @@ dependencies = [
  "studio-harness",
  "studio-presets",
  "studio-project",
+ "studio-proto",
  "studio-sdk",
  "studio-test-support",
  "tempfile",
@@ -6294,6 +6299,12 @@ version = "0.1.0"
 [[package]]
 name = "studio-ui"
 version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "gpui",
+ "studio-engine",
+ "studio-proto",
+]
 
 [[package]]
 name = "subtle"

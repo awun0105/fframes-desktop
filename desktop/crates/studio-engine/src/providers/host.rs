@@ -511,11 +511,21 @@ pub struct HostInbox {
     opened: Mutex<Vec<Opened>>,
     handoffs: Mutex<VecDeque<QueuedHandoff>>,
     dirty: AtomicBool,
+    listener: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl HostInbox {
+    /// Called on the waking thread, under no lock of the inbox, at the first wake after
+    /// [`Self::take_wake`].
+    pub fn set_listener(&self, listener: impl Fn() + Send + Sync + 'static) {
+        *self.listener.lock() = Some(Arc::new(listener));
+    }
     pub fn wake(&self) {
-        self.dirty.store(true, Ordering::Release);
+        if !self.dirty.swap(true, Ordering::AcqRel)
+            && let Some(listener) = self.listener.lock().clone()
+        {
+            listener();
+        }
     }
     /// True once per wake.
     pub fn take_wake(&self) -> bool {
@@ -954,6 +964,22 @@ mod tests {
             Some(file) => assert!(file == long || file == short),
         }
         assert!(no_temporaries(&paths));
+    }
+
+    #[test]
+    fn the_listener_hears_the_first_wake_until_it_is_taken() {
+        let inbox = HostInbox::default();
+        let heard = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = heard.clone();
+        inbox.set_listener(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+        });
+        inbox.wake();
+        inbox.wake();
+        assert_eq!(heard.load(Ordering::SeqCst), 1);
+        assert!(inbox.take_wake());
+        inbox.wake();
+        assert_eq!(heard.load(Ordering::SeqCst), 2);
     }
 
     #[test]

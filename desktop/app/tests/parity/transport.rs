@@ -1,6 +1,6 @@
 //! Transport: play/pause and frame stepping.
 use crate::harness::Studio;
-use fframes_studio::actions::{StepBackward, StepForward, TogglePlayback};
+use fframes_studio::actions::{OpenProject, StepBackward, StepForward, TogglePlayback};
 use std::time::Duration;
 
 #[gpui::test]
@@ -46,4 +46,19 @@ fn stepping_pauses_playback(cx: &mut gpui::TestAppContext) {
     studio.wait("playing", |t| t["playing"] == true);
     studio.dispatch(StepForward);
     studio.wait("paused by the step", |t| t["playing"] == false);
+}
+
+#[gpui::test]
+fn frames_keep_arriving_after_a_cancelled_dialog(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed(cx);
+    studio.dispatch(OpenProject);
+    // The dialog is open: the frame this step asks for waits.
+    studio.dispatch(StepForward);
+    studio.settle(Duration::from_millis(200));
+    studio.cancel_path();
+    studio.wait("the waiting frame shows", |t| t["paint_frame"] == 1);
+    studio.dispatch(StepForward);
+    studio.wait("the next frame shows", |t| {
+        t["position"] == 2 && t["paint_frame"] == 2
+    });
 }

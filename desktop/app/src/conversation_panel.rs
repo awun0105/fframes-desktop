@@ -224,6 +224,8 @@ impl ConfigMenu {
 struct PageSlot {
     done: Mutex<Option<PageResult>>,
     loading: AtomicBool,
+    /// Tells the shell a page finished.
+    wake: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 struct SetupForm {
@@ -302,7 +304,15 @@ impl ConversationPanel {
         list.set_follow_mode(FollowMode::Tail);
         let viewport = Rc::new(Cell::new(None));
         let seen = viewport.clone();
-        list.set_scroll_handler(move |event, _, _| seen.set(Some(event.visible_range.start)));
+        let panel = cx.entity().downgrade();
+        list.set_scroll_handler(move |event, _, cx| {
+            seen.set(Some(event.visible_range.start));
+            // Scrolled towards the top: page in earlier history.
+            let panel = panel.clone();
+            cx.defer(move |cx| {
+                let _ = panel.update(cx, |panel, _| panel.maybe_request_page());
+            });
+        });
         Self {
             attached: None,
             snapshot: None,
@@ -516,8 +526,14 @@ impl ConversationPanel {
         })
     }
 
-    /// Takes the newest snapshot and finished history pages. Cheap; the shell calls it from
-    /// its frame loop. Returns whether anything changed.
+    /// Called on a workflow thread when a history page finished; the shell then calls
+    /// [`Self::poll`].
+    pub fn set_wake(&mut self, wake: impl Fn() + Send + Sync + 'static) {
+        *self.page.wake.lock() = Some(Arc::new(wake));
+    }
+
+    /// Takes the newest snapshot and finished history pages. Cheap; the shell calls it
+    /// whenever the workflow changed or a page finished. Returns whether anything changed.
     pub fn poll(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(attached) = &self.attached else {
             return false;
@@ -690,6 +706,9 @@ impl ConversationPanel {
             limit,
             move |result| {
                 *slot.done.lock() = Some((serial, chat, result.map_err(|e| e.to_string())));
+                if let Some(wake) = slot.wake.lock().clone() {
+                    wake();
+                }
             },
         );
         if let Err(error) = started {

@@ -23,6 +23,8 @@ parking_lot = { workspace = true }
 image = { workspace = true }
 cpal = { workspace = true }
 studio-harness = { workspace = true }
+studio-proto = { workspace = true }
+async-channel = "2"
 fframes-media = { path = "../../../fframes-media" }
 
 [target.'cfg(unix)'.dependencies]

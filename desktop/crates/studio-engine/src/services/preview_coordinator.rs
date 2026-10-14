@@ -233,22 +233,41 @@ struct Mailbox {
     frame: Option<PreviewFrame>,
     error: Option<(OperationTag, String)>,
     closed: bool,
+    /// The listener was told about the news now waiting; it is told again only after
+    /// [`PreviewCoordinator::events`] took it.
+    notified: bool,
 }
+
+impl Mailbox {
+    fn has_news(&self) -> bool {
+        self.compiled.is_some()
+            || self.ready.is_some()
+            || self.frame.is_some()
+            || self.thumbnail.is_some()
+            || self.error.is_some()
+    }
+}
+
+type Listener = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
 
 /// The mailbox retains one replaceable intent, one frame and one candidate event.
 /// No mutex is held while hashing, compiling or talking to a worker.
 pub struct PreviewCoordinator {
     shared: Arc<Mutex<Mailbox>>,
+    listener: Listener,
     owner: ProcessTreeManager,
     task: Option<std::thread::JoinHandle<()>>,
 }
 impl PreviewCoordinator {
     pub fn new(owner: ProcessTreeManager) -> Self {
         let shared = Arc::new(Mutex::new(Mailbox::default()));
+        let listener = Listener::default();
         let mailbox = shared.clone();
-        let task = std::thread::spawn(move || pump(mailbox));
+        let wake = listener.clone();
+        let task = std::thread::spawn(move || pump(mailbox, wake));
         Self {
             shared,
+            listener,
             owner,
             task: Some(task),
         }
@@ -349,8 +368,16 @@ impl PreviewCoordinator {
             s.metrics.queue_high_water = 1;
         }
     }
+    /// Called on the coordinator's thread, never under its lock, when news (a compiled or
+    /// ready candidate, a frame, a thumbnail, an error) is waiting for [`Self::events`];
+    /// once until it is taken.
+    pub fn set_listener(&self, listener: impl Fn() + Send + Sync + 'static) {
+        *self.listener.lock() = Some(Arc::new(listener));
+        self.shared.lock().notified = false;
+    }
     pub fn events(&self) -> PreviewEvents {
         let mut s = self.shared.lock();
+        s.notified = false;
         PreviewEvents {
             compiled: s.compiled.take(),
             ready: s.ready.take(),
@@ -636,7 +663,7 @@ fn publish_result(
     }
 }
 
-fn pump(shared: Arc<Mutex<Mailbox>>) {
+fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
     let mut displayed: Option<StagedPreview> = None;
     // Compilation, initial preparation and re-priming share one candidate lane.
     // Its blocking worker requests never run on the displayed-worker pump.
@@ -799,6 +826,15 @@ fn pump(shared: Arc<Mutex<Mailbox>>) {
                 }
                 shared.lock().active_thumbnail = None;
             }
+        }
+        let wake = {
+            let mut s = shared.lock();
+            let wake = s.has_news() && !s.notified && !s.closed;
+            s.notified |= wake;
+            wake
+        };
+        if wake && let Some(listener) = listener.lock().clone() {
+            listener();
         }
         std::thread::sleep(Duration::from_millis(5));
     }

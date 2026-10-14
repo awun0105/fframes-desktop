@@ -27,6 +27,9 @@ gpui = { workspace = true }
 gpui_platform = { workspace = true }
 studio-project = { workspace = true }
 studio-engine = { workspace = true }
+studio-proto = { workspace = true }
+studio-ui = { workspace = true }
+async-channel = "2"
 studio-presets = { workspace = true }
 studio-bootstrap = { workspace = true }
 studio-sdk = { workspace = true }

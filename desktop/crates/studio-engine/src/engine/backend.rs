@@ -17,6 +17,7 @@ use std::{
     },
 };
 use studio_project::{ProjectId, manifest::CargoEntry};
+use studio_proto::SessionId;
 use studio_sdk::{CompatibilityManifest, Doctor};
 
 #[derive(Clone)]
@@ -28,13 +29,13 @@ pub struct Recent {
 }
 #[derive(Clone, Default)]
 pub struct Presentation {
+    /// The session of the open project this presentation shows.
+    pub session: Option<SessionId>,
     pub project: Option<ProjectPresentation>,
     pub recents: Vec<Recent>,
     pub sdk: String,
     pub state: Option<crate::ProjectState>,
     pub owner: Option<studio_bootstrap::ProcessTreeManager>,
-    /// The open project's controller, shared with the agent workflow.
-    pub controller: Option<Arc<Mutex<Controller>>>,
     pub paths: Option<AppPaths>,
     /// The installed SDK agent tasks compile and preview against (set only while it
     /// verifies and supports the preview contract). Separate from agent readiness.
@@ -75,6 +76,10 @@ pub struct Backend {
     /// Shared with the agent workflow, which locks it only for short engine calls and for
     /// capture/publication on its own job threads.
     pub controller: Option<Arc<Mutex<Controller>>>,
+    /// The open project's session; reopening the open folder keeps it.
+    pub session: Option<SessionId>,
+    /// Sessions opened so far (the next one is `sessions + 1`).
+    pub sessions: u64,
     pub compatibility: Option<CompatibilityManifest>,
     /// Why no manifest resolved for this host; shown while `compatibility` is `None`.
     pub compatibility_error: String,
@@ -277,6 +282,7 @@ impl Backend {
                     controller.close().map_err(|e| e.to_string())?;
                 }
                 self.controller = None;
+                self.session = None;
                 self.check_sdk();
             }
             Command::RemoveRecent(id) => Store::open(&paths.database())
@@ -370,6 +376,8 @@ impl Backend {
             previous.close().map_err(|e| e.to_string())?;
         }
         self.controller = Some(Arc::new(Mutex::new(candidate)));
+        self.sessions += 1;
+        self.session = Some(SessionId(self.sessions));
         self.check_sdk();
         Ok(())
     }
@@ -489,13 +497,13 @@ impl Backend {
             )
         });
         Ok(Presentation {
+            session: self.session,
             project: open.as_ref().map(|(project, _, _, _)| project.clone()),
             recents,
             sdk: self.sdk.clone(),
             state: open.as_ref().map(|(_, state, _, _)| state.clone()),
             preset: open.as_ref().map(|(_, _, _, preset)| preset.clone()),
             owner: open.map(|(_, _, owner, _)| owner),
-            controller: self.controller.clone(),
             paths: self.paths.clone(),
             agent_sdk: self.agent_sdk.clone(),
         })
@@ -564,6 +572,8 @@ mod tests {
         let mut backend = Backend {
             paths: Some(paths),
             controller: Some(Arc::new(Mutex::new(controller))),
+            session: Some(SessionId(1)),
+            sessions: 1,
             compatibility: None,
             compatibility_error: "SDK manifest unavailable".into(),
             sdk_home: None,

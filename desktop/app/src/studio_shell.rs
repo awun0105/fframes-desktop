@@ -18,14 +18,12 @@ use gpui::{
     AppContext, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
     StatefulInteractiveElement, Styled, Window, canvas, div, px,
 };
-use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, TryRecvError},
     },
     time::{Duration, Instant},
 };
@@ -33,17 +31,23 @@ use studio_engine::TaskScope;
 use studio_engine::agent::{AgentWorkflow, BuildSettings};
 use studio_engine::containment::OwnershipPolicy;
 use studio_engine::engine::backend::StudioEnvironment;
-use studio_engine::engine::backend::{AgentSdk, Backend, Command, Presentation};
-use studio_engine::engine::fence::{PresentationVerdict, install_fence, presentation_verdict};
-use studio_engine::presets::{Catalog, PresetCommand, PresetReport};
-use studio_engine::providers::host::{HostInbox, open_workflow};
+use studio_engine::engine::backend::{AgentSdk, Command, Presentation};
+use studio_engine::engine::fence::{PresentationVerdict, presentation_verdict};
+use studio_engine::engine::handle::{
+    CommandFinished, EngineEvent, EngineHandle, PreviewGated, PreviewNews, WorkflowOpen,
+};
+use studio_engine::presets::{PresetCommand, PresetReport};
+use studio_engine::providers::host::HostInbox;
 use studio_engine::services::audio_service::{
     AudioEvent, AudioService, OutputDevice, OutputHandle,
 };
 use studio_engine::services::build_service::BuildService;
-use studio_engine::services::export_service::{ExportControl, ExportProgress, export_mp4};
+use studio_engine::services::export_service::{ExportControl, ExportProgress};
 use studio_engine::services::preview_coordinator::{PreviewCoordinator, SeekIntent};
+use studio_engine::services::thumbnail_cache::ThumbnailKey;
 use studio_project::ProjectId;
+use studio_proto::CommandId;
+use studio_ui::app_state::{AppEvent, AppState};
 
 enum Picker {
     Create,
@@ -91,15 +95,19 @@ struct PreparedInstall {
 }
 
 pub struct StudioShell {
-    backend: Arc<Mutex<Backend>>,
+    engine: EngineHandle,
+    app: gpui::Entity<AppState>,
+    _app_subscription: gpui::Subscription,
     /// The environment's build service, read here so the UI thread never waits on the
-    /// backend for it.
+    /// engine for it.
     builds: BuildService,
     closed: Arc<AtomicBool>,
     focus: gpui::FocusHandle,
     presentation: Presentation,
+    /// A command is in flight or a native picker is open.
     busy: bool,
-    epoch: u64,
+    /// The command in flight and whether it is a refresh (which keeps the error shown).
+    in_flight: Option<(CommandId, bool)>,
     error: Option<String>,
     failed_open: Option<PathBuf>,
     left_tab: LeftTab,
@@ -120,6 +128,10 @@ pub struct StudioShell {
     preview_extent: (u32, u32),
     clear_images: bool,
     preview_gate_pending: bool,
+    /// Woken by the preview coordinator when it has news.
+    preview_wake: async_channel::Sender<()>,
+    /// The thumbnails last asked of the coordinator; `None` asks again.
+    thumbnails_sent: Option<Vec<ThumbnailKey>>,
     timeline: gpui::Entity<TimelineView>,
     _timeline_subscription: gpui::Subscription,
     transport: studio_engine::PlaybackClock,
@@ -155,7 +167,6 @@ pub struct StudioShell {
     presentation_refresh_pending: bool,
     /// When the accepted source started waiting for a preview that nothing is preparing.
     awaiting_since: Option<Instant>,
-    export_events: Option<Receiver<ExportProgress>>,
     export_status: Option<ExportProgress>,
     export_cancelled: Option<Arc<ExportControl>>,
     export_processes: Option<studio_bootstrap::ProcessTreeManager>,
@@ -178,7 +189,6 @@ struct AgentHost {
     playhead: usize,
     /// A revision the preview now displays, still to be reported.
     displayed: Option<String>,
-    last_sync: Instant,
     /// Who may say a writer is contained: validated qualification evidence only, except
     /// for the explicit test injection of the `qualify-m3` observation entry.
     ownership: OwnershipPolicy,
@@ -196,7 +206,6 @@ impl AgentHost {
             applied_sdk: None,
             playhead: 0,
             displayed: None,
-            last_sync: Instant::now(),
             ownership,
         }
     }
@@ -271,7 +280,7 @@ impl StudioShell {
             _ => Err("no staged preview is available".into()),
         };
         // The published bytes changed the source: the presentation catches up once idle.
-        self.refresh_wanted = true;
+        self.refresh_presentation();
         let outcome = match handoff {
             Ok(authorization) => {
                 // Preview-state bookkeeping follows the adoption so a rejected adoption
@@ -341,25 +350,15 @@ impl StudioShell {
             cx.subscribe_in(&preset_panel, window, |shell, _, event, window, cx| {
                 shell.preset_event(event.clone(), window, cx)
             });
-        let closed = Arc::new(AtomicBool::new(false));
-        let processes = studio_bootstrap::ProcessTreeManager::new();
-        let backend = Arc::new(Mutex::new(Backend {
-            paths: None,
-            controller: None,
-            compatibility: None,
-            compatibility_error: "SDK manifest unavailable".into(),
-            sdk_home: None,
-            sdk: "Checking SDK…".into(),
-            agent_sdk: None,
-            closed: closed.clone(),
-            processes: processes.clone(),
-            build_spec: None,
-            catalog: Catalog::default(),
-            preset_report: None,
-            environment: environment.clone(),
-            app_version: env!("CARGO_PKG_VERSION"),
-        }));
-        let owner = backend.clone();
+        let (engine, events) = EngineHandle::new(environment.clone(), env!("CARGO_PKG_VERSION"));
+        let app = cx.new(|cx| AppState::new(engine.clone(), events, cx));
+        let app_subscription = cx.subscribe(&app, |shell, _, event: &AppEvent, cx| {
+            if let Some(event) = event.take() {
+                shell.engine_event(event, cx);
+            }
+        });
+        let closed = engine.closed().clone();
+        let owner = engine.clone();
         let shutdown = closed.clone();
         let clock_start = Instant::now();
         let audio = Arc::new(AudioService::new(clock_start));
@@ -378,13 +377,12 @@ impl StudioShell {
             let pending = shell.pending_ready.take();
             shell.output = None;
             let owner = owner.clone();
-            let processes = processes.clone();
             let builds = builds.clone();
             cx.background_executor().spawn(async move {
                 if let Some(workflow) = workflow {
                     workflow.close();
                 }
-                processes.shutdown(Duration::ZERO);
+                owner.processes().shutdown(Duration::ZERO);
                 // Compiles are owned by the build service, not the app process scope.
                 builds.close();
                 audio.join();
@@ -395,23 +393,47 @@ impl StudioShell {
                 drop((displayed, pending));
                 // A hash/copy may still own the serialized queue. Do not wait
                 // unboundedly on it during quit; durable jobs recover as interrupted.
-                if let Some(mut backend) = owner.try_lock_for(Duration::from_millis(50))
-                    && let Some(controller) = backend.controller.take()
-                    && let Some(mut controller) = controller.try_lock_for(Duration::from_millis(50))
-                {
-                    let _ = controller.close();
-                }
+                owner.shutdown(Duration::from_millis(50));
             })
         })
         .detach();
+        let agent = AgentHost::new(environment.ownership.clone());
+        let (agent_wake, agent_wakes) = async_channel::bounded(1);
+        agent.inbox.set_listener(move || {
+            let _ = agent_wake.try_send(());
+        });
+        let inbox = agent.inbox.clone();
+        panel.update(cx, |panel, _| panel.set_wake(move || inbox.wake()));
+        cx.spawn(async move |this, cx| {
+            while agent_wakes.recv().await.is_ok() {
+                if this.update(cx, |shell, cx| shell.agent_woken(cx)).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+        let (preview_wake, preview_wakes) = async_channel::bounded(1);
+        cx.spawn(async move |this, cx| {
+            while preview_wakes.recv().await.is_ok() {
+                if this
+                    .update(cx, |shell, cx| shell.drain_preview(cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
         let mut shell = Self {
-            backend,
+            engine,
+            app,
+            _app_subscription: app_subscription,
             builds: environment.builds.clone(),
             closed,
             focus,
             presentation: Presentation::default(),
             busy: false,
-            epoch: 0,
+            in_flight: None,
             error: None,
             failed_open: None,
             left_tab: LeftTab::Project,
@@ -432,6 +454,8 @@ impl StudioShell {
             preview_extent: (1280, 720),
             clear_images: false,
             preview_gate_pending: false,
+            preview_wake,
+            thumbnails_sent: None,
             timeline,
             _timeline_subscription: timeline_subscription,
             transport: studio_engine::PlaybackClock::install(30, 0, 0, 0.)
@@ -445,11 +469,10 @@ impl StudioShell {
             _panel_subscription: panel_subscription,
             preset_panel,
             _preset_subscription: preset_subscription,
-            agent: AgentHost::new(environment.ownership.clone()),
+            agent,
             refresh_wanted: false,
             presentation_refresh_pending: false,
             awaiting_since: None,
-            export_events: None,
             export_status: None,
             export_cancelled: None,
             export_processes: None,
@@ -479,52 +502,15 @@ impl StudioShell {
                         return false;
                     }
                     shell.tick_playback(cx);
-                    shell.poll_preview(cx);
-                    shell.poll_agent(cx);
-                    shell.poll_export(cx);
+                    shell.request_thumbnails(cx);
+                    shell.forward_playhead();
+                    shell.rebuild_stranded_acceptance(cx);
                     true
                 }) else {
                     break;
                 };
                 if !keep_running {
                     break;
-                }
-            }
-        })
-        .detach();
-        // Coalesced notifications; never hash source in render or on the UI thread.
-        cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(750))
-                    .await;
-                let Ok(Some((backend, closed))) = this.update(cx, |shell, _| {
-                    if shell.busy {
-                        None
-                    } else {
-                        Some((shell.backend.clone(), shell.closed.clone()))
-                    }
-                }) else {
-                    if this.upgrade().is_none() {
-                        break;
-                    }
-                    continue;
-                };
-                if closed.load(Ordering::Acquire) {
-                    break;
-                }
-                let changed = cx
-                    .background_executor()
-                    .spawn(async move {
-                        backend
-                            .lock()
-                            .controller
-                            .as_ref()
-                            .is_some_and(|c| c.lock().changed_hint())
-                    })
-                    .await;
-                if changed {
-                    let _ = this.update(cx, |shell, cx| shell.dispatch(Command::Refresh, cx));
                 }
             }
         })
@@ -874,101 +860,149 @@ impl StudioShell {
         // first (cancelling its task and reaping its scopes), on the background thread and
         // before the controller it shares is closed.
         let closing = self.take_workflow_for(&command, cx);
+        let leaves_session = closing.is_some() || self.leaves_session(&command);
         let refresh = matches!(command, Command::Refresh);
         self.busy = true;
-        self.epoch += 1;
-        let epoch = self.epoch;
-        let backend = self.backend.clone();
-        let closed = self.closed.clone();
-        let task = cx.background_executor().spawn(async move {
-            if let Some(workflow) = closing {
-                workflow.close();
+        let id = self.engine.send(command, closing);
+        self.in_flight = Some((id, refresh));
+        self.app.update(cx, |app, _| app.sent(id, leaves_session));
+        cx.notify();
+    }
+
+    /// Whether `command` closes or replaces the open project.
+    fn leaves_session(&self, command: &Command) -> bool {
+        let current = self.presentation.project.as_ref().map(|p| &p.root);
+        match command {
+            Command::Close | Command::Import(_) | Command::Create(_) => true,
+            Command::Open(path) | Command::Locate(path, _) | Command::Independent(path) => {
+                current != Some(path)
             }
-            let mut backend = backend.lock();
-            if closed.load(Ordering::Acquire) {
-                return (Err("Window closed".into()), None, None, None);
+            _ => false,
+        }
+    }
+
+    fn engine_event(&mut self, event: EngineEvent, cx: &mut Context<Self>) {
+        if self.closed.load(Ordering::Acquire) {
+            return;
+        }
+        match event {
+            EngineEvent::CommandFinished(finished) => {
+                self.command_finished(*finished, cx);
+                self.refresh_if_wanted();
+                // Preview news held back while the command ran.
+                self.drain_preview(cx);
             }
-            let result = backend.command(command);
-            let presentation = backend.presentation();
-            let spec = backend.build_spec.take();
-            let report = backend.preset_report.take();
-            match presentation {
-                Ok(p) => (result, Some(p), spec, report),
-                Err(e) => (Err(e), None, None, report),
+            EngineEvent::PreviewGated(gated) => {
+                self.preview_gated(*gated, cx);
+                self.drain_preview(cx);
             }
-        });
-        cx.spawn(async move |this, cx| {
-            let (result, presentation, spec, report) = task.await;
-            let _ = this.update(cx, |shell, cx| {
-                if shell.epoch != epoch || shell.closed.load(Ordering::Acquire) {
-                    return;
-                }
-                shell.busy = false;
+            EngineEvent::Refreshed { presentation, .. } => {
+                self.presentation_refresh_pending = false;
                 if let Some(presentation) = presentation {
-                    let changed_session = shell.preview_session.as_ref()
-                        != presentation.state.as_ref().map(|s| s.session());
-                    if changed_session {
-                        shell.detach_preview(cx);
-                        if let (Some(state), Some(owner)) =
-                            (&presentation.state, &presentation.owner)
-                        {
-                            shell.preview =
-                                Some(Arc::new(PreviewCoordinator::new(owner.sub_manager())));
-                            shell.preview_session = Some(state.session().clone());
-                            shell.preview_state = studio_engine::PreviewState::default();
-                        }
-                    }
-                    let verdict = if changed_session {
-                        PresentationVerdict::CancelPreparation
-                    } else {
-                        presentation_verdict(
-                            &shell.preview_state,
-                            shell.presentation.state.as_ref().map(|s| s.generation()),
-                            presentation.state.as_ref(),
-                        )
-                    };
-                    match verdict {
-                        PresentationVerdict::Older => {
-                            // Captured before a publication this shell already knows: it
-                            // replaces nothing and cancels nothing; a fresh one is taken.
-                            shell.refresh_wanted = true;
-                        }
-                        verdict => {
-                            if verdict == PresentationVerdict::CancelPreparation {
-                                if let Some(preview) = &shell.preview {
-                                    preview.cancel_build();
-                                }
-                                shell.preview_state.cancel_build();
-                                shell.discard_install(cx);
-                            }
-                            shell.presentation = presentation;
-                            shell.sync_agent(cx);
-                            shell.push_preset_view(cx);
-                        }
-                    }
+                    self.presentation = *presentation;
+                    self.push_preset_view(cx);
                 }
-                if let Some(spec) = spec {
-                    shell.preview_state.begin(spec.tag.clone());
-                    if let Some(preview) = &shell.preview {
-                        preview.build(spec);
-                    }
-                }
-                match result {
-                    Ok(()) => {
-                        if !refresh {
-                            shell.error = None;
-                            shell.failed_open = None;
-                        }
-                    }
-                    Err(error) => shell.error = Some(error),
-                }
-                if let Some(report) = report {
-                    shell.adopt_preset_report(report, cx);
-                }
+                self.refresh_if_wanted();
                 cx.notify();
-            });
-        })
-        .detach();
+            }
+            EngineEvent::SourceChanged { .. } => {
+                // A native picker or a command defers it; the engine says it again.
+                if !self.busy {
+                    self.dispatch(Command::Refresh, cx);
+                }
+            }
+            EngineEvent::CleanupProblem(report) => {
+                // Background teardown only ever reports problems; show the newest one.
+                self.error = Some(format!(
+                    "Background cleanup ({}): {}",
+                    report.label, report.problem
+                ));
+                cx.notify();
+            }
+        }
+    }
+
+    fn command_finished(&mut self, finished: CommandFinished, cx: &mut Context<Self>) {
+        let CommandFinished {
+            id,
+            result,
+            presentation,
+            build: spec,
+            preset: report,
+            ..
+        } = finished;
+        let Some((_, refresh)) = self.in_flight.take_if(|(sent, _)| *sent == id) else {
+            return;
+        };
+        // Jobs run in order: a refresh or preview news sent before this command has been
+        // answered, or dropped with the session this command left.
+        self.presentation_refresh_pending = false;
+        self.preview_gate_pending = false;
+        self.busy = false;
+        if let Some(presentation) = presentation {
+            let changed_session =
+                self.preview_session.as_ref() != presentation.state.as_ref().map(|s| s.session());
+            if changed_session {
+                self.detach_preview(cx);
+                if let (Some(state), Some(owner)) = (&presentation.state, &presentation.owner) {
+                    let preview = PreviewCoordinator::new(owner.sub_manager());
+                    let wake = self.preview_wake.clone();
+                    preview.set_listener(move || {
+                        let _ = wake.try_send(());
+                    });
+                    self.preview = Some(Arc::new(preview));
+                    self.thumbnails_sent = None;
+                    self.preview_session = Some(state.session().clone());
+                    self.preview_state = studio_engine::PreviewState::default();
+                }
+            }
+            let verdict = if changed_session {
+                PresentationVerdict::CancelPreparation
+            } else {
+                presentation_verdict(
+                    &self.preview_state,
+                    self.presentation.state.as_ref().map(|s| s.generation()),
+                    presentation.state.as_ref(),
+                )
+            };
+            match verdict {
+                PresentationVerdict::Older => {
+                    // Captured before a publication this shell already knows: it
+                    // replaces nothing and cancels nothing; a fresh one is taken.
+                    self.refresh_presentation();
+                }
+                verdict => {
+                    if verdict == PresentationVerdict::CancelPreparation {
+                        if let Some(preview) = &self.preview {
+                            preview.cancel_build();
+                        }
+                        self.preview_state.cancel_build();
+                        self.discard_install(cx);
+                    }
+                    self.presentation = presentation;
+                    self.sync_agent(cx);
+                    self.push_preset_view(cx);
+                }
+            }
+        }
+        if let Some(spec) = spec {
+            self.preview_state.begin(spec.tag.clone());
+            if let Some(preview) = &self.preview {
+                preview.build(spec);
+            }
+        }
+        match result {
+            Ok(()) => {
+                if !refresh {
+                    self.error = None;
+                    self.failed_open = None;
+                }
+            }
+            Err(error) => self.error = Some(error),
+        }
+        if let Some(report) = report {
+            self.adopt_preset_report(report, cx);
+        }
         cx.notify();
     }
 
@@ -982,11 +1016,11 @@ impl StudioShell {
         self.preset_panel
             .update(cx, |panel, cx| panel.report(report, cx));
         if catalog_changed {
-            self.refresh_wanted = true;
+            self.refresh_presentation();
         }
         if let Some(request) = request {
             self.awaiting_preview = Some(request.label);
-            self.refresh_wanted = true;
+            self.refresh_presentation();
             self.dispatch(Command::Build, cx);
         }
     }
@@ -1025,15 +1059,7 @@ impl StudioShell {
         command: &Command,
         cx: &mut Context<Self>,
     ) -> Option<Arc<AgentWorkflow>> {
-        let current = self.presentation.project.as_ref().map(|p| p.root.clone());
-        let replaces = match command {
-            Command::Close | Command::Import(_) | Command::Create(_) => true,
-            Command::Open(path) | Command::Locate(path, _) | Command::Independent(path) => {
-                current.as_ref() != Some(path)
-            }
-            _ => false,
-        };
-        if !replaces {
+        if !self.leaves_session(command) {
             return None;
         }
         self.agent.opening = None;
@@ -1084,10 +1110,7 @@ impl StudioShell {
     }
 
     fn start_agent_open(&mut self) {
-        let (Some(controller), Some(paths)) = (
-            self.presentation.controller.clone(),
-            self.presentation.paths.clone(),
-        ) else {
+        let Some(session) = self.presentation.session else {
             return;
         };
         self.agent.serial += 1;
@@ -1100,31 +1123,17 @@ impl StudioShell {
             .as_ref()
             .map(|sdk| agent_build(sdk, &service));
         self.agent.applied_sdk = self.presentation.agent_sdk.as_ref().map(|s| s.dir.clone());
-        let inbox = self.agent.inbox.clone();
-        let policy = self.agent.ownership.clone();
-        let spawned = std::thread::Builder::new()
-            .name("studio-agent-open".into())
-            .spawn({
-                let inbox = inbox.clone();
-                move || {
-                    inbox.push_opened(open_workflow(
-                        controller,
-                        paths,
-                        build,
-                        serial,
-                        inbox.clone(),
-                        policy,
-                    ))
-                }
-            });
-        if let Err(error) = spawned {
-            self.agent.opening = None;
-            self.error = Some(format!("Cannot start the agent workflow: {error}"));
-        }
+        self.engine.open_workflow(WorkflowOpen {
+            session,
+            serial,
+            build,
+            inbox: self.agent.inbox.clone(),
+            policy: self.agent.ownership.clone(),
+        });
     }
 
     /// Hands a changed SDK selection to the workflow (it refuses while a task runs; the
-    /// frame loop retries).
+    /// task ending wakes the agent and it is tried again).
     fn sync_agent_build(&mut self) {
         let Some(workflow) = &self.agent.workflow else {
             return;
@@ -1147,15 +1156,15 @@ impl StudioShell {
         }
     }
 
-    /// Frame-loop half of the agent workflow: adopt a finished open, adopt committed
-    /// promotions on this thread (the only place the preview coordinator is touched),
-    /// report what the preview displays, forward the playhead and refresh the panel.
-    fn poll_agent(&mut self, cx: &mut Context<Self>) {
+    /// The agent half of the window, run whenever the workflow, its open or a history page
+    /// woke it: adopt a finished open, adopt committed promotions on this thread (the only
+    /// place the preview coordinator is touched), retry a refused build selection (a task
+    /// ending wakes it) and refresh the panel.
+    fn agent_woken(&mut self, cx: &mut Context<Self>) {
         let inbox = self.agent.inbox.clone();
-        if inbox.take_wake() || self.agent.workflow.is_some() {
-            for opened in inbox.take_opened() {
-                self.adopt_opened(opened, cx);
-            }
+        inbox.take_wake();
+        for opened in inbox.take_opened() {
+            self.adopt_opened(opened, cx);
         }
         for queued in inbox.take_handoffs() {
             if self.agent.attached != Some(queued.serial) {
@@ -1176,71 +1185,54 @@ impl StudioShell {
                 let _ = workflow.report_handoff(&published, outcome);
             }
         }
-        if let Some(workflow) = &self.agent.workflow {
-            if let Some(revision) = self.agent.displayed.take() {
-                let _ = workflow.preview_displayed(&revision);
-            }
-            let position = self.preview_state.position();
-            if position != self.agent.playhead {
-                self.agent.playhead = position;
-                workflow.set_playhead(position);
-            }
-        }
-        if self.agent.workflow.is_some()
-            && self.agent.last_sync.elapsed() > Duration::from_millis(500)
-        {
-            self.agent.last_sync = Instant::now();
-            self.sync_agent_build();
-        }
-        if self.refresh_wanted {
-            self.refresh_wanted = false;
-            self.refresh_presentation(cx);
-        }
-        self.rebuild_stranded_acceptance(cx);
-        // Background teardown only ever reports problems; surface the newest one.
-        if let Some(report) = studio_engine::services::teardown::Teardown::global()
-            .take_reports()
-            .pop()
-        {
-            self.error = Some(format!(
-                "Background cleanup ({}): {}",
-                report.label, report.problem
-            ));
-            cx.notify();
-        }
+        self.report_displayed();
+        self.sync_agent_build();
         self.panel.update(cx, |panel, cx| {
             panel.poll(cx);
         });
     }
 
+    /// Tells the workflow which revision the preview now displays.
+    fn report_displayed(&mut self) {
+        if let Some(workflow) = &self.agent.workflow
+            && let Some(revision) = self.agent.displayed.take()
+        {
+            let _ = workflow.preview_displayed(&revision);
+        }
+    }
+
+    /// Forwards the playhead to the workflow when it moved.
+    fn forward_playhead(&mut self) {
+        let Some(workflow) = &self.agent.workflow else {
+            return;
+        };
+        let position = self.preview_state.position();
+        if position != self.agent.playhead {
+            self.agent.playhead = position;
+            workflow.set_playhead(position);
+        }
+    }
+
     /// Replaces the presentation with the controller's current one. Unlike a command's
     /// completion this never cancels preparation: a promotion advances the generation on
     /// purpose and the staged preview adopted for it must survive.
-    fn refresh_presentation(&mut self, cx: &mut Context<Self>) {
-        if self.presentation_refresh_pending || self.closed.load(Ordering::Acquire) {
+    fn refresh_presentation(&mut self) {
+        if self.closed.load(Ordering::Acquire) {
+            return;
+        }
+        if self.presentation_refresh_pending {
+            self.refresh_wanted = true;
             return;
         }
         self.presentation_refresh_pending = true;
-        let backend = self.backend.clone();
-        let session = self.preview_session.clone();
-        let task = cx
-            .background_executor()
-            .spawn(async move { backend.lock().presentation().ok() });
-        cx.spawn(async move |this, cx| {
-            let presentation = task.await;
-            let _ = this.update(cx, |shell, cx| {
-                shell.presentation_refresh_pending = false;
-                if shell.preview_session != session {
-                    return;
-                }
-                if let Some(presentation) = presentation {
-                    shell.presentation = presentation;
-                    shell.push_preset_view(cx);
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+        self.engine.refresh();
+    }
+
+    /// Sends the refresh wanted while another was pending.
+    fn refresh_if_wanted(&mut self) {
+        if std::mem::take(&mut self.refresh_wanted) {
+            self.refresh_presentation();
+        }
     }
 
     /// Safety net for an accepted source whose handoff never produced a preview (a
@@ -1356,7 +1348,9 @@ impl StudioShell {
         self.resume_scrub = false;
         self.timeline.update(cx, |v, cx| v.clear(cx));
     }
-    fn poll_preview(&mut self, cx: &mut Context<Self>) {
+    /// Takes the preview coordinator's news. Held back while a command runs or earlier
+    /// news is with the engine; both drain again when they finish.
+    fn drain_preview(&mut self, cx: &mut Context<Self>) {
         if self.busy || self.preview_gate_pending {
             return;
         }
@@ -1367,12 +1361,8 @@ impl StudioShell {
         if let Some((key, frame)) = events.thumbnail {
             self.timeline
                 .update(cx, |v, cx| v.thumbnail(key, frame, cx));
+            self.thumbnails_sent = None;
         }
-        preview.thumbnails(if self.transport.playing() {
-            vec![]
-        } else {
-            self.timeline.read(cx).thumbnail_requests()
-        });
         if let Some(frame) = events.frame
             && self.preview_state.accepts_frame(&frame)
             && self.requested_clock_epoch == self.transport.epoch()
@@ -1384,101 +1374,103 @@ impl StudioShell {
             return;
         }
         self.preview_gate_pending = true;
-        let backend = self.backend.clone();
-        let session = self.preview_session.clone();
-        let task = cx.background_executor().spawn(async move {
-            let b = backend.lock();
-            let mut error = None;
-            let controller = b.controller.clone();
-            let state = if let Some(c) = &controller {
-                let mut c = c.lock();
-                if let Some(tag) = events.compiled
-                    && let Err(e) = c.complete(
-                        &tag,
-                        studio_engine::JobResult::Built(tag.base_source.clone()),
-                    )
-                {
-                    error = Some((tag, e.to_string()));
-                }
-                if let Some((tag, e)) = events.error {
-                    if c.state().active_tag() == Some(&tag) {
-                        let _ = c.complete(&tag, studio_engine::JobResult::Failed(e.clone()));
-                    }
-                    error = Some((tag, e));
-                }
-                if events.ready.is_some()
-                    && let Err(e) = c.reconcile()
-                {
-                    error = events
-                        .ready
-                        .as_ref()
-                        .map(|r| (r.tag().clone(), e.to_string()));
-                }
-                Some(c.state().clone())
-            } else {
-                None
-            };
-            (events.ready, state, error, b.presentation().ok())
+        self.engine.preview_news(PreviewNews {
+            compiled: events.compiled,
+            error: events.error,
+            ready: events.ready,
         });
-        cx.spawn(async move |this, cx| {
-            let (ready, state, error, presentation) = task.await;
-            let _ = this.update(cx, |shell, cx| {
-                shell.preview_gate_pending = false;
-                if shell.preview_session != session {
-                    return;
+    }
+
+    /// Asks the coordinator for the timeline's visible thumbnails when they changed;
+    /// nothing while playing.
+    fn request_thumbnails(&mut self, cx: &mut Context<Self>) {
+        let Some(preview) = &self.preview else {
+            return;
+        };
+        let requests = if self.transport.playing() {
+            vec![]
+        } else {
+            self.timeline.read(cx).thumbnail_requests()
+        };
+        if self.thumbnails_sent.as_ref() != Some(&requests) {
+            preview.thumbnails(requests.clone());
+            self.thumbnails_sent = Some(requests);
+        }
+    }
+
+    fn preview_gated(&mut self, gated: PreviewGated, cx: &mut Context<Self>) {
+        let PreviewGated {
+            ready,
+            state,
+            error,
+            presentation,
+            ..
+        } = gated;
+        self.preview_gate_pending = false;
+        if let Some(p) = presentation {
+            self.presentation = p;
+            self.push_preset_view(cx);
+        }
+        if let Some((tag, e)) = error {
+            self.preview_state.fail(&tag, e.clone());
+            self.discard_install(cx);
+            self.error = Some(e);
+        } else if let (Some(ready), Some(state)) = (ready, state) {
+            // A staged preview of just-published bytes carries the promotion
+            // tag (base source = the published revision, the task's own
+            // generation); it is installable only under the engine's current
+            // authorization, never as a build of the task base.
+            let promoted = state.promotion().is_some_and(|p| p.tag() == ready.tag());
+            if !promoted
+                && (ready.tag().generation != state.generation()
+                    || ready.tag().base_source != *state.source())
+            {
+                if let Some(preview) = &self.preview {
+                    preview.cancel_build();
                 }
-                if let Some(p) = presentation {
-                    shell.presentation = p;
-                    shell.push_preset_view(cx);
+                self.preview_state.cancel_build();
+            } else if self.transport.playing()
+                && (promoted
+                    || matches!(state.job(), studio_engine::JobState::Succeeded(tag) if tag == ready.tag()))
+            {
+                // Re-evaluate the audible position, then re-prime the candidate
+                // under the newly frozen seek serial. Old playback served the
+                // entire compilation/preparation, not the compiler's cursor.
+                self.resume_install = true;
+                self.pause_playback(cx);
+            } else if self.preview_state.can_install(&ready, &state).is_ok() {
+                let mut clock = self.transport.clone();
+                if let Err(e) = clock.reinstall(
+                    ready.timeline.fps,
+                    ready.timeline.total_frames,
+                    ready.position,
+                    self.clock_start.elapsed().as_secs_f64(),
+                ) {
+                    self.error = Some(e.to_string());
+                } else {
+                    // Reserve the staged epoch in the active clock as well.
+                    // A seek during preparation must advance past this epoch,
+                    // never collide with a callback for another revision.
+                    let _ = self.transport.wait_for_output();
+                    self.audio.stage(
+                        ready.clone(),
+                        clock.epoch(),
+                        ready.position,
+                        self.output_device.clone(),
+                    );
+                    self.output = None;
+                    self.audio_ready_epoch = None;
+                    self.pending_ready = Some(PreparedInstall {
+                        ready,
+                        clock,
+                        audio: None,
+                        audio_ready: false,
+                    });
+                    self.audio_note = "Priming matching audio and first frame".into();
                 }
-                if let Some((tag, e)) = error {
-                    shell.preview_state.fail(&tag, e.clone());
-                    shell.discard_install(cx);
-                    shell.error = Some(e);
-                } else if let (Some(ready), Some(state)) = (ready, state) {
-                    // A staged preview of just-published bytes carries the promotion
-                    // tag (base source = the published revision, the task's own
-                    // generation); it is installable only under the engine's current
-                    // authorization, never as a build of the task base.
-                    let promoted = state.promotion().is_some_and(|p| p.tag() == ready.tag());
-                    if !promoted
-                        && (ready.tag().generation != state.generation()
-                            || ready.tag().base_source != *state.source())
-                    {
-                        if let Some(preview) = &shell.preview {
-                            preview.cancel_build();
-                        }
-                        shell.preview_state.cancel_build();
-                    } else if shell.transport.playing()
-                        && (promoted
-                            || matches!(state.job(), studio_engine::JobState::Succeeded(tag) if tag == ready.tag())) {
-                            // Re-evaluate the audible position, then re-prime the candidate
-                            // under the newly frozen seek serial. Old playback served the
-                            // entire compilation/preparation, not the compiler's cursor.
-                            shell.resume_install = true;
-                            shell.pause_playback(cx);
-                    } else if shell.preview_state.can_install(&ready, &state).is_ok() {
-                            let mut clock = shell.transport.clone();
-                            if let Err(e) = clock.reinstall(ready.timeline.fps, ready.timeline.total_frames,
-                                ready.position, shell.clock_start.elapsed().as_secs_f64()) {
-                                shell.error = Some(e.to_string());
-                            } else {
-                                // Reserve the staged epoch in the active clock as well.
-                                // A seek during preparation must advance past this epoch,
-                                // never collide with a callback for another revision.
-                                let _ = shell.transport.wait_for_output();
-                                shell.audio.stage(ready.clone(), clock.epoch(), ready.position, shell.output_device.clone());
-                                shell.output = None;
-                                shell.audio_ready_epoch = None;
-                                shell.pending_ready = Some(PreparedInstall { ready, clock, audio: None, audio_ready: false });
-                                shell.audio_note = "Priming matching audio and first frame".into();
-                            }
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+            }
+        }
+        cx.notify();
     }
     fn seek_preview(&mut self, position: usize, cx: &mut Context<Self>) {
         let resume = std::mem::take(&mut self.resume_install);
@@ -1859,7 +1851,6 @@ impl StudioShell {
         // A watcher refresh must not discard the result of an active native dialog.
         self.busy = true;
         cx.notify();
-        let epoch = self.epoch;
         if matches!(
             kind,
             Picker::Create | Picker::Restore | Picker::PresetExport(_) | Picker::Export
@@ -1887,10 +1878,12 @@ impl StudioShell {
             cx.spawn(async move |this, cx| {
                 let result = picker.await;
                 let _ = this.update(cx, |shell, cx| {
-                    if shell.epoch != epoch || shell.closed.load(Ordering::Acquire) {
+                    if shell.closed.load(Ordering::Acquire) {
                         return;
                     }
                     shell.busy = false;
+                    // Preview news held back while the dialog was open.
+                    shell.drain_preview(cx);
                     match result {
                         Ok(Ok(Some(path))) => {
                             if let Picker::PresetExport(key) = kind {
@@ -1929,10 +1922,12 @@ impl StudioShell {
             cx.spawn(async move |this, cx| {
                 let result = picker.await;
                 let _ = this.update(cx, |shell, cx| {
-                    if shell.epoch != epoch || shell.closed.load(Ordering::Acquire) {
+                    if shell.closed.load(Ordering::Acquire) {
                         return;
                     }
                     shell.busy = false;
+                    // Preview news held back while the dialog was open.
+                    shell.drain_preview(cx);
                     match result {
                         Ok(Ok(Some(paths))) => if let Some(path) = paths.into_iter().next() {
                             let command = match kind {
@@ -1965,9 +1960,8 @@ impl StudioShell {
         if self.export_cancelled.is_some() {
             return;
         }
-        let (Some(controller), Some(paths), Some(sdk)) = (
-            self.presentation.controller.clone(),
-            self.presentation.paths.clone(),
+        let (Some(session), Some(sdk)) = (
+            self.presentation.session,
             self.presentation
                 .agent_sdk
                 .as_ref()
@@ -1979,105 +1973,68 @@ impl StudioShell {
             cx.notify();
             return;
         };
-        let control = Arc::new(ExportControl::default());
-        let processes = studio_bootstrap::ProcessTreeManager::new();
-        let (sender, receiver) = mpsc::sync_channel(16);
+        let job = match self
+            .engine
+            .start_export(session, destination, sdk, self.builds.clone())
+        {
+            Ok(job) => job,
+            Err(error) => {
+                self.export_status = Some(ExportProgress::Failed(error));
+                cx.notify();
+                return;
+            }
+        };
+        let control = job.control.clone();
         self.export_cancelled = Some(control.clone());
-        self.export_processes = Some(processes.clone());
-        self.export_events = Some(receiver);
+        self.export_processes = Some(job.processes.clone());
         self.export_status = Some(ExportProgress::Started {
             revision: "capturing validated revision".into(),
             label: "Preparing immutable project snapshot".into(),
         });
-        let service = self.builds.clone();
-        let spawn = std::thread::Builder::new()
-            .name("studio-mp4-export".into())
-            .spawn(move || {
-                // The freeze takes the project only briefly; rendering must not hold it,
-                // or every command on the project waits for the export.
-                let source = controller.lock().freeze_export_source();
-                let result = source
-                    .map_err(|error| error.to_string())
-                    .and_then(|source| {
-                        export_mp4(
-                            studio_engine::services::export_service::ExportRequest {
-                                source,
-                                sdk,
-                                builds: paths.builds(),
-                                destination,
-                            },
-                            service,
-                            processes,
-                            control.clone(),
-                            |event| {
-                                let _ = sender.send(event);
-                            },
-                        )
-                    });
-                if let Err(error) = result {
-                    let event = if control.is_cancelled() {
-                        ExportProgress::Cancelled
-                    } else {
-                        ExportProgress::Failed(error)
-                    };
-                    let _ = sender.send(event);
+        cx.spawn(async move |this, cx| {
+            while let Ok(event) = job.progress.recv().await {
+                let terminal = is_terminal(&event);
+                let shown = this.update(cx, |shell, cx| {
+                    shell.export_progress(&control, Some(event), cx)
+                });
+                if terminal || shown.is_err() {
+                    return;
                 }
-            });
-        if let Err(error) = spawn {
-            self.export_events = None;
-            self.export_cancelled = None;
-            self.export_processes = None;
-            self.export_status = Some(ExportProgress::Failed(format!(
-                "Could not start the export job: {error}"
-            )));
-        }
+            }
+            let _ = this.update(cx, |shell, cx| shell.export_progress(&control, None, cx));
+        })
+        .detach();
         cx.notify();
     }
 
-    fn poll_export(&mut self, cx: &mut Context<Self>) {
-        let Some(receiver) = &self.export_events else {
+    /// Shows the progress of the export `control` runs; `None` when its thread stopped
+    /// without a terminal event. A replaced export's progress is ignored.
+    fn export_progress(
+        &mut self,
+        control: &Arc<ExportControl>,
+        event: Option<ExportProgress>,
+        cx: &mut Context<Self>,
+    ) {
+        if !self
+            .export_cancelled
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, control))
+        {
             return;
-        };
-        let mut terminal = false;
-        loop {
-            match receiver.try_recv() {
-                Ok(event) => {
-                    terminal = matches!(
-                        event,
-                        ExportProgress::Complete { .. }
-                            | ExportProgress::Failed(_)
-                            | ExportProgress::Cancelled
-                    );
-                    self.export_status = Some(event);
-                    cx.notify();
-                    if terminal {
-                        break;
-                    }
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    terminal = true;
-                    if self
-                        .export_cancelled
-                        .as_ref()
-                        .is_some_and(|token| token.is_cancelled())
-                    {
-                        self.export_status = Some(ExportProgress::Cancelled);
-                    } else {
-                        self.export_status = Some(ExportProgress::Failed(
-                            "Export worker stopped without a completion result".into(),
-                        ));
-                    }
-                    cx.notify();
-                    break;
-                }
-            }
         }
-        if terminal {
-            self.export_events = None;
+        let event = event.unwrap_or_else(|| {
+            if control.is_cancelled() {
+                ExportProgress::Cancelled
+            } else {
+                ExportProgress::Failed("Export worker stopped without a completion result".into())
+            }
+        });
+        if is_terminal(&event) {
             self.export_cancelled = None;
             self.export_processes = None;
         }
+        self.export_status = Some(event);
+        cx.notify();
     }
 
     fn cancel_export(&mut self, cx: &mut Context<Self>) {
@@ -3786,6 +3743,13 @@ fn recent_row_actions(missing: bool) -> Vec<&'static str> {
     }
 }
 
+fn is_terminal(event: &ExportProgress) -> bool {
+    matches!(
+        event,
+        ExportProgress::Complete { .. } | ExportProgress::Failed(_) | ExportProgress::Cancelled
+    )
+}
+
 /// Dot tone of the managed SDK line: busy, ready or missing.
 fn sdk_status_tone(busy: bool, ready: bool) -> Tone {
     if busy {
@@ -3956,99 +3920,112 @@ impl Render for StudioShell {
             self.clear_images = false;
         }
         if let Some(install) = self.pending_ready.take() {
-            let mut committed = false;
-            let ready = &install.ready;
+            let ready = &install.ready.clone();
+            let audio_ready = install.audio_ready;
+            let mut slot = Some(install);
             // No filesystem work here. The controller's nonblocking guard is the source
             // fence and it is held from the final `can_install` check through the
             // coordinator commit and the preview-state install: a workflow publication
             // or a source reconcile cannot interleave, and every check reads the guard's
             // current state, never a copy taken when preparation finished. Unavailable
             // (a job holds the controller, or a source scan is pending) means deferred.
-            let backend = self.backend.clone();
-            let locked = backend.try_lock();
-            let controller = locked.as_ref().and_then(|b| b.controller.clone());
-            let fence = controller.as_deref().and_then(install_fence);
-            let current = fence.as_ref().map(|c| c.state());
-            if current.is_none() || !install.audio_ready {
-                committed = true; // Deferred, not rejected.
-                self.pending_ready = Some(install);
-            } else if let Some(source) = current
-                && self.presentation.state.as_ref().is_some_and(|s| {
-                    s.session() == source.session()
-                        && s.source() == source.source()
-                        && s.generation() == source.generation()
-                })
-                && self.preview_state.can_install(ready, source).is_ok()
-            {
-                let image = ready
-                    .frame
-                    .as_ref()
-                    .map(|f| create_render_image(&f.response.header, &f.pixels))
-                    .transpose();
-                match image {
-                    Ok(image) => {
-                        let model = studio_engine::TimelineModel::new(ready.timeline.clone());
-                        if let Err(e) = &model {
-                            self.error = Some(e.clone());
-                        }
-                        if self.preview.as_ref().is_some_and(|p| {
-                            model.is_ok() && p.commit(ready.identity().clone(), ready.seek_serial)
-                        }) && self.preview_state.install(ready, source).is_ok()
-                        {
-                            if let Some(image) = image {
-                                self.images.replace_image(image, window);
-                            } else {
-                                self.images.clear(window);
-                            }
-                            self.transport = install.clock;
-                            if self.resume_install && ready.position < ready.timeline.total_frames {
-                                let _ = self
-                                    .transport
-                                    .toggle(self.clock_start.elapsed().as_secs_f64());
-                            }
-                            self.resume_install = false;
-                            self.output = install.audio;
-                            self.audio_ready_epoch = Some(self.transport.epoch());
-                            self.requested_clock_epoch = self.transport.epoch();
-                            self.presented_serial = ready.seek_serial;
-                            self.painted_frame =
-                                ready.frame.as_ref().map(|f| f.response.frame_index);
-                            if let Some(frame) = ready.frame.as_ref() {
-                                if let Err(error) =
-                                    self.canvas.install_frame(ready.identity().clone(), frame)
-                                {
-                                    self.canvas.clear();
-                                    self.canvas.message =
-                                        Some(format!("Canvas metadata unavailable: {error}"));
+            let engine = self.engine.clone();
+            let outcome = audio_ready.then(|| {
+                engine.with_install_fence(|source| {
+                    let mut committed = false;
+                    if self.presentation.state.as_ref().is_some_and(|s| {
+                        s.session() == source.session()
+                            && s.source() == source.source()
+                            && s.generation() == source.generation()
+                    }) && self.preview_state.can_install(ready, source).is_ok()
+                    {
+                        let image = ready
+                            .frame
+                            .as_ref()
+                            .map(|f| create_render_image(&f.response.header, &f.pixels))
+                            .transpose();
+                        match image {
+                            Ok(image) => {
+                                let model =
+                                    studio_engine::TimelineModel::new(ready.timeline.clone());
+                                if let Err(e) = &model {
+                                    self.error = Some(e.clone());
                                 }
-                            } else {
-                                self.canvas.clear();
+                                if self.preview.as_ref().is_some_and(|p| {
+                                    model.is_ok()
+                                        && p.commit(ready.identity().clone(), ready.seek_serial)
+                                }) && self.preview_state.install(ready, source).is_ok()
+                                {
+                                    if let Some(image) = image {
+                                        self.images.replace_image(image, window);
+                                    } else {
+                                        self.images.clear(window);
+                                    }
+                                    let install = slot.take().expect("taken once");
+                                    self.transport = install.clock;
+                                    if self.resume_install
+                                        && ready.position < ready.timeline.total_frames
+                                    {
+                                        let _ = self
+                                            .transport
+                                            .toggle(self.clock_start.elapsed().as_secs_f64());
+                                    }
+                                    self.resume_install = false;
+                                    self.output = install.audio;
+                                    self.audio_ready_epoch = Some(self.transport.epoch());
+                                    self.requested_clock_epoch = self.transport.epoch();
+                                    self.presented_serial = ready.seek_serial;
+                                    self.painted_frame =
+                                        ready.frame.as_ref().map(|f| f.response.frame_index);
+                                    if let Some(frame) = ready.frame.as_ref() {
+                                        if let Err(error) = self
+                                            .canvas
+                                            .install_frame(ready.identity().clone(), frame)
+                                        {
+                                            self.canvas.clear();
+                                            self.canvas.message = Some(format!(
+                                                "Canvas metadata unavailable: {error}"
+                                            ));
+                                        }
+                                    } else {
+                                        self.canvas.clear();
+                                    }
+                                    self.timeline.update(cx, |v, cx| {
+                                        v.install(model.unwrap(), ready.position, cx)
+                                    });
+                                    self.displayed = Some(ready.clone());
+                                    if let Some(workflow) = &self.agent.workflow {
+                                        let _ = workflow.set_displayed_preview_identity(Some(
+                                            ready.identity().clone(),
+                                        ));
+                                    }
+                                    if ready.tag().base_source == *source.source() {
+                                        self.awaiting_preview = None;
+                                    }
+                                    // Tell the workflow what is on screen so its accepted-awaiting
+                                    // label clears exactly when the matching preview shows.
+                                    self.agent.displayed =
+                                        Some(ready.identity().source_revision.clone());
+                                    self.error = None;
+                                    // The commit dropped the queued thumbnails of the old preview.
+                                    self.thumbnails_sent = None;
+                                    committed = true;
+                                }
                             }
-                            self.timeline
-                                .update(cx, |v, cx| v.install(model.unwrap(), ready.position, cx));
-                            self.displayed = Some(ready.clone());
-                            if let Some(workflow) = &self.agent.workflow {
-                                let _ = workflow
-                                    .set_displayed_preview_identity(Some(ready.identity().clone()));
-                            }
-                            if ready.tag().base_source == *source.source() {
-                                self.awaiting_preview = None;
-                            }
-                            // Tell the workflow what is on screen so its accepted-awaiting
-                            // label clears exactly when the matching preview shows.
-                            self.agent.displayed = Some(ready.identity().source_revision.clone());
-                            self.error = None;
-                            committed = true;
+                            Err(e) => self.error = Some(e.to_string()),
                         }
                     }
-                    Err(e) => self.error = Some(e.to_string()),
+                    committed
+                })
+            });
+            match outcome.flatten() {
+                // Deferred, not rejected.
+                None => self.pending_ready = slot,
+                Some(true) => self.report_displayed(),
+                Some(false) => {
+                    self.audio.stop(self.transport.epoch());
+                    self.discard_install(cx);
                 }
-            }
-            drop(fence);
-            drop(locked);
-            if !committed {
-                self.audio.stop(self.transport.epoch());
-                self.discard_install(cx);
             }
         }
         if let Some(f) = self.pending_frame.take()

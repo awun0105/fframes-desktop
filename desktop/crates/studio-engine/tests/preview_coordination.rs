@@ -444,3 +444,37 @@ fn seek_and_wait(p: &PreviewCoordinator, state: &mut PreviewState, position: usi
         std::thread::sleep(Duration::from_millis(5));
     }
 }
+
+#[test]
+fn the_listener_is_woken_once_per_drain_when_the_coordinator_has_news() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("video");
+    let paths = AppPaths::new(temp.path().join("history")).unwrap();
+    let compatibility = CompatibilityManifest::default_linux_x64();
+    studio_project::create(
+        &root,
+        "Video",
+        sdk_pin(&compatibility),
+        &compatibility.fframes_version,
+        "0.1.0",
+    )
+    .unwrap();
+    let mut controller = Controller::open(&root, &paths).unwrap();
+    controller.reconcile().unwrap();
+    let preview = PreviewCoordinator::new(ProcessTreeManager::new());
+    let (woken, wakes) = std::sync::mpsc::channel();
+    preview.set_listener(move || {
+        let _ = woken.send(());
+    });
+    // No SDK at this path: the build fails and its error is the news.
+    let missing = temp.path().join("no-sdk");
+    preview.build(spec(&mut controller, &missing, &compatibility, &paths));
+    wakes
+        .recv_timeout(Duration::from_secs(60))
+        .expect("woken for the failed build");
+    // Not drained yet: the pending news wakes nobody again.
+    assert!(wakes.recv_timeout(Duration::from_millis(100)).is_err());
+    assert!(preview.events().error.is_some());
+    // Drained and nothing new: still quiet.
+    assert!(wakes.recv_timeout(Duration::from_millis(100)).is_err());
+}
