@@ -14,7 +14,10 @@ studio-engine = { workspace = true }
 studio-proto = { workspace = true }
 studio-theme = { workspace = true }
 async-channel = "2"
+fframes-studio-protocol = { workspace = true }
+image = { workspace = true }
 smallvec = { workspace = true }
+thiserror = { workspace = true }
 unicode-segmentation = "1"
 
 [dev-dependencies]

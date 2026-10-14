@@ -6311,11 +6311,14 @@ name = "studio-ui"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "fframes-studio-protocol",
  "gpui",
+ "image",
  "smallvec",
  "studio-engine",
  "studio-proto",
  "studio-theme",
+ "thiserror 2.0.21",
  "unicode-segmentation",
 ]
 

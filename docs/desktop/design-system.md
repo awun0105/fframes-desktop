@@ -57,7 +57,7 @@ Every control is a tab stop (disabled ones are skipped), shows a 2 px `accent` f
 
 ## Telemetry ids
 
-Native tests and qualification scripts find controls by the bounds the app reports. Element ids and labels are chosen by the caller and must not change. A control that is measured passes `.on_bounds(BoundsProbe::new(..).into_bounds_handler())` (`BoundsProbe` is in `desktop/app/src/ui/probe.rs`), and the callback receives `[left, top, width, height]` on every prepaint. Components never invent ids that a test looks up.
+Native tests and qualification scripts find controls by the bounds the app reports. Element ids and labels are chosen by the caller and must not change. A control that is measured passes `.on_bounds(BoundsProbe::new(..).into_bounds_handler())` (`BoundsProbe` is in `desktop/crates/studio-ui/src/probe.rs`), and the callback receives `[left, top, width, height]` on every prepaint. Components never invent ids that a test looks up.
 
 While qualifying, the agent panel's `buttons` telemetry also reports `agent-tab-Chat`, `agent-tab-Project` and `agent-undo` next to `agent-policy` and `agent-apply`, so the native shell test clicks measured bounds instead of fixed window coordinates.
 
