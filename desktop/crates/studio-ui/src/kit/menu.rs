@@ -5,7 +5,8 @@
 //! - Arrow Down / Arrow Up move a highlight, wrapping at both ends,
 //! - Home / End jump to the ends,
 //! - Enter (or Space) commits the highlighted item,
-//! - the currently-selected item carries a check mark.
+//! - the currently-selected item carries a check mark,
+//! - disabled rows are shown dimmed and every key steps over them.
 //!
 //! The state machine is a plain struct so it can be tested without a window;
 //! [`Menu`] is the element that draws it.
@@ -13,20 +14,27 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    Anchor, App, Bounds, ClickEvent, ElementId, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Point, RenderOnce, SharedString, Size, StatefulInteractiveElement,
-    Styled, Window, div, point, prelude::FluentBuilder, px, svg,
+    Anchor, App, Bounds, ElementId, FocusHandle, Hsla, InteractiveElement, IntoElement,
+    KeyDownEvent, ParentElement, Pixels, Point, RenderOnce, Role, SharedString, Size,
+    StatefulInteractiveElement, Styled, Window, div, point, prelude::FluentBuilder, px, svg,
 };
 
 use studio_theme::Theme;
 
+use super::interact::DISABLED_OPACITY;
+
 pub(crate) type OpenHandler = Box<dyn Fn(&Bounds<Pixels>, &mut Window, &mut App) + 'static>;
 
-/// One row: a label and whether it is the value currently in force.
+/// One row: a label, whether it is the value currently in force, and whether
+/// it can be chosen at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuItem {
     pub label: SharedString,
     pub checked: bool,
+    pub disabled: bool,
+    /// The row's element id, for automation that addresses rows by name.
+    /// Without one the row is `{menu id}-item-{index}`.
+    pub id: Option<SharedString>,
 }
 
 impl MenuItem {
@@ -34,7 +42,19 @@ impl MenuItem {
         Self {
             label: label.into(),
             checked,
+            disabled: false,
+            id: None,
         }
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn id(mut self, id: impl Into<SharedString>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 }
 
@@ -65,6 +85,8 @@ pub struct MenuState {
     /// straight after opening still commits the current value, because
     /// `highlighted` is seeded either way.
     pub highlight_visible: bool,
+    /// Rows that are shown but cannot be highlighted or committed.
+    pub disabled: Vec<bool>,
 }
 
 impl MenuState {
@@ -72,13 +94,16 @@ impl MenuState {
     /// first Arrow Down steps off the current value rather than jumping to the
     /// top of the list.
     pub fn new(origin: Point<Pixels>, items: &[MenuItem]) -> Self {
-        Self {
+        let mut state = Self {
             origin,
             trigger_bounds: None,
             len: items.len(),
             highlighted: items.iter().position(|item| item.checked),
             highlight_visible: false,
-        }
+            disabled: items.iter().map(|item| item.disabled).collect(),
+        };
+        state.leave_disabled_row();
+        state
     }
 
     pub fn anchored(trigger_bounds: Bounds<Pixels>, items: &[MenuItem]) -> Self {
@@ -93,6 +118,46 @@ impl MenuState {
         self.highlighted.filter(|_| self.highlight_visible)
     }
 
+    pub fn is_disabled(&self, index: usize) -> bool {
+        self.disabled.get(index).copied().unwrap_or(false)
+    }
+
+    /// Availability that changes while the menu is open. Missing entries are
+    /// enabled; a highlight left on a disabled row moves to the next enabled
+    /// one.
+    pub fn set_disabled(&mut self, disabled: Vec<bool>) {
+        self.disabled = (0..self.len)
+            .map(|index| disabled.get(index).copied().unwrap_or(false))
+            .collect();
+        self.leave_disabled_row();
+    }
+
+    /// Shows the highlight on `index` -- what a [`Menu::on_highlight`] handler
+    /// applies. Out-of-range and disabled rows are refused.
+    pub fn set_highlighted(&mut self, index: usize) {
+        if index < self.len && !self.is_disabled(index) {
+            self.highlighted = Some(index);
+            self.highlight_visible = true;
+        }
+    }
+
+    fn leave_disabled_row(&mut self) {
+        if let Some(index) = self.highlighted
+            && self.is_disabled(index)
+        {
+            self.highlighted = self.step_enabled(index, 1);
+        }
+    }
+
+    /// The enabled row `delta` (1 or -1) steps from `from`, wrapping. `None`
+    /// when every row is disabled.
+    fn step_enabled(&self, from: usize, delta: isize) -> Option<usize> {
+        let len = self.len as isize;
+        (1..=len)
+            .map(|n| (from as isize + delta * n).rem_euclid(len) as usize)
+            .find(|index| !self.is_disabled(*index))
+    }
+
     pub fn on_key(&mut self, key: &str) -> MenuKey {
         if self.len == 0 {
             return match key {
@@ -101,11 +166,15 @@ impl MenuState {
             };
         }
         match key {
-            "down" | "up" | "home" | "end" => {
-                self.highlight_visible = true;
-                self.move_highlight(key)
-            }
-            "enter" | "space" => match self.highlighted {
+            "down" | "up" | "home" | "end" => match self.move_target(key) {
+                Some(index) => {
+                    self.highlighted = Some(index);
+                    self.highlight_visible = true;
+                    MenuKey::Moved
+                }
+                None => MenuKey::Ignored,
+            },
+            "enter" | "space" => match self.highlighted.filter(|index| !self.is_disabled(*index)) {
                 Some(index) => MenuKey::Commit(index),
                 None => MenuKey::Ignored,
             },
@@ -114,31 +183,15 @@ impl MenuState {
         }
     }
 
-    fn move_highlight(&mut self, key: &str) -> MenuKey {
+    /// Down and Up wrap, Home and End take the first and last enabled row;
+    /// all of them step over disabled rows.
+    fn move_target(&self, key: &str) -> Option<usize> {
+        let last = self.len - 1;
         match key {
-            "down" => {
-                self.highlighted = Some(match self.highlighted {
-                    Some(index) if index + 1 < self.len => index + 1,
-                    Some(_) => 0,
-                    None => 0,
-                });
-                MenuKey::Moved
-            }
-            "up" => {
-                self.highlighted = Some(match self.highlighted {
-                    Some(0) | None => self.len - 1,
-                    Some(index) => index - 1,
-                });
-                MenuKey::Moved
-            }
-            "home" => {
-                self.highlighted = Some(0);
-                MenuKey::Moved
-            }
-            _ => {
-                self.highlighted = Some(self.len - 1);
-                MenuKey::Moved
-            }
+            "down" => self.step_enabled(self.highlighted.unwrap_or(last), 1),
+            "up" => self.step_enabled(self.highlighted.unwrap_or(0), -1),
+            "home" => self.step_enabled(last, 1),
+            _ => self.step_enabled(0, -1),
         }
     }
 }
@@ -146,6 +199,7 @@ impl MenuState {
 /// As with [`crate::kit::SegmentedControl`], the index arrives by reference so
 /// `cx.listener` can build the handler directly.
 type SelectHandler = Box<dyn Fn(&usize, &mut Window, &mut App) + 'static>;
+type DismissHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 
 #[derive(IntoElement)]
 pub struct Menu {
@@ -153,7 +207,8 @@ pub struct Menu {
     items: Vec<MenuItem>,
     origin: Point<Pixels>,
     trigger_bounds: Option<Bounds<Pixels>>,
-    highlighted: Option<usize>,
+    state: MenuState,
+    focus: Option<FocusHandle>,
     min_width: Pixels,
     max_height: Pixels,
     radius: Pixels,
@@ -162,8 +217,9 @@ pub struct Menu {
     border: Hsla,
     hover: Hsla,
     text: Hsla,
+    on_highlight: Option<SelectHandler>,
     on_select: Option<SelectHandler>,
-    on_dismiss: Option<crate::kit::button::ClickHandler>,
+    on_dismiss: Option<DismissHandler>,
 }
 
 impl Menu {
@@ -186,7 +242,8 @@ impl Menu {
             items,
             origin: state.origin,
             trigger_bounds: state.trigger_bounds,
-            highlighted: state.visible_highlight(),
+            state: state.clone(),
+            focus: None,
             min_width: px(180.),
             max_height: px(320.),
             radius: px(10.),
@@ -201,6 +258,7 @@ impl Menu {
             border: theme.settings_border(),
             hover: theme.settings_hover(),
             text: theme.settings_text(),
+            on_highlight: None,
             on_select: None,
             on_dismiss: None,
         }
@@ -275,11 +333,26 @@ impl Menu {
         self
     }
 
-    pub fn on_dismiss(
+    /// Click-away, and Escape while the menu has focus.
+    pub fn on_dismiss(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_dismiss = Some(Rc::new(handler));
+        self
+    }
+
+    /// Routes the arrow, Home, End, Enter, Space and Escape keys to this menu
+    /// while `focus` is focused. The caller focuses it when the menu opens.
+    pub fn focus(mut self, focus: &FocusHandle) -> Self {
+        self.focus = Some(focus.clone());
+        self
+    }
+
+    /// The row an arrow, Home or End key moved to; apply it with
+    /// [`MenuState::set_highlighted`].
+    pub fn on_highlight(
         mut self,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+        handler: impl Fn(&usize, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.on_dismiss = Some(Box::new(handler));
+        self.on_highlight = Some(Box::new(handler));
         self
     }
 }
@@ -317,7 +390,8 @@ impl RenderOnce for Menu {
             items,
             origin,
             trigger_bounds,
-            highlighted,
+            state,
+            focus,
             min_width,
             max_height,
             radius,
@@ -326,15 +400,44 @@ impl RenderOnce for Menu {
             border,
             hover,
             text,
+            on_highlight,
             on_select,
             on_dismiss,
         } = self;
+        let highlighted = state.visible_highlight();
 
         let prefix: SharedString = match &id {
             ElementId::Name(name) => name.clone(),
             other => SharedString::from(format!("{other:?}")),
         };
-        let handler: Option<std::rc::Rc<SelectHandler>> = on_select.map(std::rc::Rc::new);
+        let handler: Option<Rc<SelectHandler>> = on_select.map(Rc::new);
+        let disabled_rows = state.disabled.clone();
+        let keys = {
+            let on_select = handler.clone();
+            let on_dismiss = on_dismiss.clone();
+            move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                let mut next = state.clone();
+                match next.on_key(event.keystroke.key.as_str()) {
+                    MenuKey::Moved => {
+                        if let (Some(handler), Some(index)) = (&on_highlight, next.highlighted) {
+                            handler(&index, window, cx);
+                        }
+                    }
+                    MenuKey::Commit(index) => {
+                        if let Some(handler) = &on_select {
+                            handler(&index, window, cx);
+                        }
+                    }
+                    MenuKey::Dismiss => {
+                        if let Some(handler) = &on_dismiss {
+                            handler(window, cx);
+                        }
+                    }
+                    MenuKey::Ignored => return,
+                }
+                cx.stop_propagation();
+            }
+        };
         let viewport = window.viewport_size();
         let max_width = (viewport.width - px(24.)).max(px(0.));
         let max_height = max_height.min((viewport.height - px(24.)).max(px(0.)));
@@ -359,7 +462,7 @@ impl RenderOnce for Menu {
                     .left_0()
                     .size_full()
                     .when_some(on_dismiss, |this, handler| {
-                        this.on_click(move |event, window, cx| handler(event, window, cx))
+                        this.on_click(move |_, window, cx| handler(window, cx))
                     }),
             )
             .child(
@@ -370,7 +473,10 @@ impl RenderOnce for Menu {
                     .child(
                         div()
                             .id(id)
+                            .role(Role::Menu)
                             .occlude()
+                            .when_some(focus, |this, focus| this.track_focus(&focus))
+                            .on_key_down(keys)
                             .flex()
                             .flex_col()
                             .min_w(min_width.min(max_width))
@@ -387,8 +493,13 @@ impl RenderOnce for Menu {
                             .text_size(px(12.))
                             .children(items.into_iter().enumerate().map(|(index, item)| {
                                 let handler = handler.clone();
+                                let disabled = disabled_rows.get(index).copied().unwrap_or(false);
                                 div()
-                                    .id(SharedString::from(format!("{prefix}-item-{index}")))
+                                    .id(item.id.clone().unwrap_or_else(|| {
+                                        SharedString::from(format!("{prefix}-item-{index}"))
+                                    }))
+                                    .role(Role::MenuItem)
+                                    .aria_label(item.label.clone())
                                     .flex()
                                     .flex_row()
                                     .flex_shrink_0()
@@ -397,8 +508,13 @@ impl RenderOnce for Menu {
                                     .h(px(24.))
                                     .px(px(6.))
                                     .rounded(px(4.))
-                                    .when(highlighted == Some(index), |this| this.bg(hover))
-                                    .hover(move |style| style.bg(hover))
+                                    .when(disabled, |this| this.opacity(DISABLED_OPACITY))
+                                    .when(!disabled && highlighted == Some(index), |this| {
+                                        this.bg(hover)
+                                    })
+                                    .when(!disabled, |this| {
+                                        this.hover(move |style| style.bg(hover))
+                                    })
                                     .child(div().w(px(12.)).flex_shrink_0().children(
                                         item.checked.then(|| {
                                             svg()
@@ -408,7 +524,7 @@ impl RenderOnce for Menu {
                                         }),
                                     ))
                                     .child(div().flex_1().min_w_0().truncate().child(item.label))
-                                    .when_some(handler, |this, handler| {
+                                    .when_some(handler.filter(|_| !disabled), |this, handler| {
                                         this.on_click(move |_, window, cx| {
                                             handler(&index, window, cx)
                                         })
@@ -422,7 +538,148 @@ impl RenderOnce for Menu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::point;
+    use crate::kit::test_support::{Log, log, press};
+    use gpui::{Context, FocusHandle, Render, TestAppContext, point, size};
+
+    fn with_disabled(flags: &[bool], highlighted: Option<usize>) -> MenuState {
+        let items: Vec<MenuItem> = flags
+            .iter()
+            .enumerate()
+            .map(|(index, disabled)| {
+                MenuItem::new(format!("item {index}"), false).disabled(*disabled)
+            })
+            .collect();
+        let mut menu = MenuState::new(point(px(0.), px(0.)), &items);
+        menu.highlighted = highlighted;
+        menu
+    }
+
+    #[test]
+    fn disabled_rows_are_skipped_by_every_key() {
+        let flags = [true, false, true, false, true];
+        let after = |highlighted: usize, key: &str| {
+            let mut menu = with_disabled(&flags, Some(highlighted));
+            menu.on_key(key);
+            menu.highlighted
+        };
+        assert_eq!(after(1, "down"), Some(3));
+        assert_eq!(after(3, "down"), Some(1));
+        assert_eq!(after(1, "up"), Some(3));
+        assert_eq!(after(3, "home"), Some(1));
+        assert_eq!(after(1, "end"), Some(3));
+    }
+
+    #[test]
+    fn availability_can_change_while_the_menu_is_open() {
+        let mut menu = with_disabled(&[false; 3], Some(0));
+        assert_eq!(menu.on_key("enter"), MenuKey::Commit(0));
+        menu.set_disabled(vec![true, false, false]);
+        assert!(menu.is_disabled(0));
+        assert_eq!(menu.highlighted, Some(1));
+        menu.set_disabled(vec![]);
+        assert!(!menu.is_disabled(0));
+    }
+
+    #[test]
+    fn disabled_rows_cannot_be_highlighted_or_committed() {
+        let mut menu = with_disabled(&[true, false, true], Some(1));
+        menu.set_highlighted(2);
+        assert_eq!(menu.highlighted, Some(1));
+        menu.highlighted = Some(0);
+        assert_eq!(menu.on_key("enter"), MenuKey::Ignored);
+        menu.highlighted = Some(1);
+        assert_eq!(menu.on_key("enter"), MenuKey::Commit(1));
+    }
+
+    #[test]
+    fn a_menu_of_only_disabled_rows_ignores_navigation_and_commit() {
+        let mut menu = with_disabled(&[true, true], None);
+        for key in ["down", "up", "home", "end", "enter"] {
+            assert_eq!(menu.on_key(key), MenuKey::Ignored, "{key}");
+        }
+        assert_eq!(menu.on_key("escape"), MenuKey::Dismiss);
+    }
+
+    #[test]
+    fn a_menu_opened_on_a_disabled_value_highlights_the_next_enabled_row() {
+        let items = [
+            MenuItem::new("a", false),
+            MenuItem::new("b", true).disabled(true),
+            MenuItem::new("c", false),
+        ];
+        assert_eq!(
+            MenuState::new(point(px(0.), px(0.)), &items).highlighted,
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn a_select_menu_stays_below_when_neither_side_fits_better() {
+        let bounds = Bounds::new(point(px(100.), px(20.)), size(px(160.), px(30.)));
+        let (_, anchor, _) = anchored_placement(bounds, 40, px(320.), size(px(800.), px(300.)));
+        assert_eq!(anchor, Anchor::TopLeft);
+    }
+
+    struct Popup {
+        state: MenuState,
+        focus: FocusHandle,
+        events: Log<String>,
+    }
+
+    fn rows() -> Vec<MenuItem> {
+        vec![
+            MenuItem::new("Copy", true).id("copy"),
+            MenuItem::new("Paste", false).disabled(true),
+            MenuItem::new("Delete", false),
+        ]
+    }
+
+    impl Render for Popup {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            let (highlight, select, dismiss) = (
+                self.events.clone(),
+                self.events.clone(),
+                self.events.clone(),
+            );
+            Menu::editor(&theme, "popup", rows(), &self.state)
+                .focus(&self.focus)
+                .on_highlight(cx.listener(move |this, index: &usize, _, cx| {
+                    highlight.borrow_mut().push(format!("highlight {index}"));
+                    this.state.set_highlighted(*index);
+                    cx.notify();
+                }))
+                .on_select(move |index, _, _| select.borrow_mut().push(format!("select {index}")))
+                .on_dismiss(move |_, _| dismiss.borrow_mut().push("dismiss".into()))
+        }
+    }
+
+    #[gpui::test]
+    fn a_focused_menu_routes_its_keys(cx: &mut TestAppContext) {
+        let events = log();
+        let shared = events.clone();
+        let (view, cx) = cx.add_window_view(|_, cx| Popup {
+            state: MenuState::new(point(px(0.), px(0.)), &rows()),
+            focus: cx.focus_handle(),
+            events: shared,
+        });
+        cx.update(|window, cx| {
+            let focus = view.read(cx).focus.clone();
+            window.focus(&focus, cx);
+        });
+        press(cx, "down");
+        press(cx, "down");
+        press(cx, "enter");
+        press(cx, "escape");
+        assert_eq!(
+            *events.borrow(),
+            ["highlight 2", "highlight 0", "select 0", "dismiss"]
+        );
+        assert_eq!(
+            view.read_with(cx, |popup, _| popup.state.visible_highlight()),
+            Some(0)
+        );
+    }
 
     fn items(checked: Option<usize>) -> Vec<MenuItem> {
         (0..4)

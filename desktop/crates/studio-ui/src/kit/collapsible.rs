@@ -24,9 +24,14 @@
 use std::{cell::Cell, rc::Rc, time::Instant};
 
 use gpui::{
-    AnyElement, App, IntoElement, ParentElement, Pixels, RenderOnce, Styled, Window, canvas, div,
-    prelude::FluentBuilder, px,
+    AnyElement, App, ElementId, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
+    RenderOnce, Role, StatefulInteractiveElement, Styled, Transformation, Window, canvas, div,
+    prelude::FluentBuilder, px, radians, svg,
 };
+
+use studio_theme::Theme;
+
+use super::interact::focusable;
 
 /// `0.2s ease-out`, from the two keyframes.
 pub const COLLAPSIBLE_DURATION_SECS: f32 = 0.2;
@@ -148,6 +153,81 @@ impl CollapsibleState {
             (None, Some(_)) => 0.,
             _ => 0.,
         }
+    }
+}
+
+/// The requested open state arrives by reference, so `cx.listener(..)` builds
+/// one directly.
+type ToggleHandler = Box<dyn Fn(&bool, &mut Window, &mut App) + 'static>;
+
+/// The focusable header that opens and closes a section: a chevron that turns
+/// down when open, then the children. Enter, Space and a click all flip it.
+#[derive(IntoElement)]
+pub struct Disclosure {
+    id: ElementId,
+    open: bool,
+    children: Vec<AnyElement>,
+    on_toggle: Option<ToggleHandler>,
+}
+
+impl Disclosure {
+    pub fn new(id: impl Into<ElementId>, open: bool) -> Self {
+        Self {
+            id: id.into(),
+            open,
+            children: Vec::new(),
+            on_toggle: None,
+        }
+    }
+
+    /// Called with the requested open state.
+    pub fn on_toggle(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_toggle = Some(Box::new(handler));
+        self
+    }
+}
+
+impl ParentElement for Disclosure {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
+}
+
+impl RenderOnce for Disclosure {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = Theme::for_window(window, cx);
+        let Disclosure {
+            id,
+            open,
+            children,
+            on_toggle,
+        } = self;
+        let turn = if open {
+            std::f32::consts::FRAC_PI_2
+        } else {
+            0.
+        };
+
+        focusable(div().id(id), &theme, false)
+            .role(Role::DisclosureTriangle)
+            .aria_expanded(open)
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(6.))
+            .cursor_pointer()
+            .child(
+                svg()
+                    .path("icons/chevron-right.svg")
+                    .size(px(12.))
+                    .flex_shrink_0()
+                    .text_color(Hsla::from(theme.editor.text_3))
+                    .with_transformation(Transformation::rotate(radians(turn))),
+            )
+            .children(children)
+            .when_some(on_toggle, |this, handler| {
+                this.on_click(move |_, window, cx| handler(&!open, window, cx))
+            })
     }
 }
 
@@ -302,5 +382,45 @@ mod tests {
         measured(&state, 200.);
         state.set_open(true);
         assert_eq!(state.height_for(Instant::now()), (None, false));
+    }
+}
+
+#[cfg(test)]
+mod disclosure_tests {
+    use gpui::{Context, Render, TestAppContext};
+
+    use super::*;
+    use crate::kit::test_support::{Log, log, press, tab};
+
+    struct Section {
+        open: bool,
+        toggles: Log<bool>,
+    }
+
+    impl Render for Section {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let toggles = self.toggles.clone();
+            Disclosure::new("advanced", self.open)
+                .child("Advanced")
+                .on_toggle(cx.listener(move |this, open: &bool, _, cx| {
+                    toggles.borrow_mut().push(*open);
+                    this.open = *open;
+                    cx.notify();
+                }))
+        }
+    }
+
+    #[gpui::test]
+    fn enter_and_space_flip_the_focused_header(cx: &mut TestAppContext) {
+        let toggles = log();
+        let shared = toggles.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Section {
+            open: false,
+            toggles: shared,
+        });
+        tab(cx);
+        press(cx, "enter");
+        press(cx, "space");
+        assert_eq!(*toggles.borrow(), [true, false]);
     }
 }

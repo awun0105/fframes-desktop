@@ -8,10 +8,11 @@
 
 use gpui::{
     App, Bounds, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
-    div, prelude::FluentBuilder, px, svg,
+    ParentElement, Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, prelude::FluentBuilder, px, svg,
 };
 
+use super::interact::focusable;
 use super::menu::OpenHandler;
 use studio_theme::Theme;
 
@@ -126,7 +127,8 @@ impl Select {
 }
 
 impl RenderOnce for Select {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = Theme::for_window(window, cx);
         let Select {
             id,
             label,
@@ -148,8 +150,9 @@ impl RenderOnce for Select {
             on_open,
         } = self;
 
-        div()
-            .id(id)
+        focusable(div().id(id), &theme, disabled)
+            .role(Role::ComboBox)
+            .aria_label(label.clone())
             .flex()
             .flex_row()
             .items_center()
@@ -184,5 +187,44 @@ impl RenderOnce for Select {
                 this.on_click(move |event, window, cx| handler(event, window, cx))
             })
             .when_some(on_open.filter(|_| !disabled), crate::kit::Menu::trigger)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{Context, ParentElement, Render, TestAppContext};
+
+    use super::*;
+    use crate::kit::test_support::{Log, log, press, tab};
+
+    struct Pickers {
+        opened: Log<&'static str>,
+    }
+
+    impl Render for Pickers {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            let open = |name: &'static str| {
+                let opened = self.opened.clone();
+                move |_: &ClickEvent, _: &mut Window, _: &mut App| opened.borrow_mut().push(name)
+            };
+            div()
+                .child(
+                    Select::plain(&theme, "locked", "Locked")
+                        .disabled(true)
+                        .on_click(open("locked")),
+                )
+                .child(Select::plain(&theme, "fps", "30 fps").on_click(open("fps")))
+        }
+    }
+
+    #[gpui::test]
+    fn enter_opens_the_focused_select_and_tab_skips_a_disabled_one(cx: &mut TestAppContext) {
+        let opened = log();
+        let shared = opened.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Pickers { opened: shared });
+        tab(cx);
+        press(cx, "enter");
+        assert_eq!(*opened.borrow(), ["fps"]);
     }
 }

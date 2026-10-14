@@ -7,13 +7,35 @@ use gpui::{
     Styled, Window, div, prelude::FluentBuilder, px,
 };
 
-use studio_theme::Theme;
+use studio_theme::{METRICS, Shadow, Theme, shadow_for};
+
+use super::text::label;
 
 /// `<SectionCard>` / `<SectionRows>` -- `rounded-xl border border-gray-3
 /// bg-gray-2`.
 pub struct Card;
 
 impl Card {
+    /// The editor card: card fill, a 1 px line border, the card radius and the
+    /// card shadow.
+    pub fn editor(theme: &Theme) -> Div {
+        div()
+            .rounded(px(METRICS.radius_card))
+            .border_1()
+            .border_color(theme.editor.line)
+            .bg(theme.editor.card)
+            .shadow(shadow_for(theme.appearance, Shadow::Card).into_vec())
+    }
+
+    /// A surface nested inside an editor card: no shadow.
+    pub fn editor_nested(theme: &Theme) -> Div {
+        div()
+            .rounded(px(METRICS.radius_card))
+            .border_1()
+            .border_color(theme.editor.line)
+            .bg(theme.editor.card_2)
+    }
+
     pub fn settings(theme: &Theme, padded: bool) -> Div {
         div()
             .rounded(px(12.))
@@ -33,6 +55,21 @@ impl Card {
             }),
         )
     }
+}
+
+/// A 1 px horizontal rule in the editor's line colour.
+pub fn divider(theme: &Theme) -> Div {
+    div().h(px(1.)).w_full().flex_none().bg(theme.editor.line)
+}
+
+/// A titled editor group: a `Label` title in `text_2` above a column of
+/// children.
+pub fn titled_group(theme: &Theme, title: impl Into<SharedString>) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(METRICS.space_2))
+        .child(label(theme, title).text_color(theme.editor.text_2))
 }
 
 /// An anchored floating panel: `KPopover`'s content, not a modal.

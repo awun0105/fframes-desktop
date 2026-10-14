@@ -18,9 +18,12 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     App, Bounds, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, Styled, Window, canvas,
-    div, prelude::FluentBuilder, px,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, Role, SharedString,
+    StatefulInteractiveElement, Styled, Window, canvas, div, prelude::FluentBuilder, px,
 };
+use studio_theme::Theme;
+
+use super::interact::{Nav, focusable, nav_key};
 
 /// The shared cell a slider's track writes its prepaint bounds into.
 ///
@@ -67,6 +70,25 @@ pub fn snap_to_step(value: f32, minimum: f32, maximum: f32, step: f32) -> f32 {
     ((f64::from(minimum) + quotient.round() * f64::from(step)) as f32).clamp(minimum, maximum)
 }
 
+/// The fraction a key press moves to: arrows step by `step`, Home and End
+/// jump to the ends. `None` when the key does nothing here or the value would
+/// not change.
+pub fn slider_key(fraction: f32, key: Nav, step: f32) -> Option<f32> {
+    let next = match key {
+        Nav::Left | Nav::Down => fraction - step,
+        Nav::Right | Nav::Up => fraction + step,
+        Nav::Home => 0.,
+        Nav::End => 1.,
+        Nav::Activate | Nav::Escape => return None,
+    }
+    .clamp(0., 1.);
+    (next != fraction).then_some(next)
+}
+
+/// A key press's new fraction arrives by reference, so `cx.listener(..)`
+/// builds one directly.
+type KeyChangeHandler = Box<dyn Fn(&f32, &mut Window, &mut App) + 'static>;
+
 /// The press that begins a drag. Same shape as [`crate::kit::ClickHandler`]:
 /// `cx.listener(..)` builds one directly.
 type DragStartHandler = Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>;
@@ -87,6 +109,11 @@ pub struct Slider {
     fill: Option<Hsla>,
     thumb: Option<ThumbStyle>,
     on_drag_start: Option<DragStartHandler>,
+    /// The accessible name.
+    label: Option<SharedString>,
+    /// The fraction step of an arrow key, and where the new fraction goes. A
+    /// slider without one stays out of the tab order.
+    on_key_change: Option<(f32, KeyChangeHandler)>,
 }
 
 #[derive(Debug, Clone)]
@@ -115,7 +142,26 @@ impl Slider {
             fill: None,
             thumb: None,
             on_drag_start: None,
+            label: None,
+            on_key_change: None,
         }
+    }
+
+    /// The name a screen reader announces for the slider.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Makes the slider a tab stop whose arrow keys move it by `step` (a
+    /// fraction of the track) and whose Home and End keys jump to the ends.
+    pub fn on_key_change(
+        mut self,
+        step: f32,
+        handler: impl Fn(&f32, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_key_change = Some((step, Box::new(handler)));
+        self
     }
 
     /// The row stretches to fill its parent (`flex-1 min-w-0`) rather than
@@ -220,7 +266,7 @@ impl Slider {
 }
 
 impl RenderOnce for Slider {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let Slider {
             id,
             fraction,
@@ -233,10 +279,25 @@ impl RenderOnce for Slider {
             fill,
             thumb,
             on_drag_start,
+            label,
+            on_key_change,
         } = self;
 
-        div()
-            .id(id)
+        let row = div().id(id).role(Role::Slider);
+        let row = match on_key_change {
+            Some((step, handler)) => focusable(row, &Theme::for_window(window, cx), false)
+                .on_key_down(move |event, window, cx| {
+                    if let Some(next) = nav_key(event.keystroke.key.as_str())
+                        .and_then(|key| slider_key(fraction, key, step))
+                    {
+                        handler(&next, window, cx);
+                        cx.stop_propagation();
+                    }
+                }),
+            None => row,
+        };
+
+        row.when_some(label, |this, label| this.aria_label(label))
             .flex()
             .flex_row()
             .items_center()
@@ -365,7 +426,59 @@ pub fn value_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{point, size};
+    use crate::kit::interact::Nav;
+    use crate::kit::test_support::{Log, log, press, tab};
+    use gpui::{Context, Render, TestAppContext, point, size};
+
+    #[test]
+    fn keys_step_and_jump() {
+        assert_eq!(slider_key(0.5, Nav::Right, 0.1), Some(0.6));
+        assert_eq!(slider_key(0.5, Nav::Left, 0.25), Some(0.25));
+        assert_eq!(slider_key(0.5, Nav::Home, 0.1), Some(0.));
+        assert_eq!(slider_key(0.5, Nav::End, 0.1), Some(1.));
+        assert_eq!(slider_key(1., Nav::Right, 0.1), None);
+        assert_eq!(slider_key(0., Nav::Home, 0.1), None);
+        assert_eq!(slider_key(0.5, Nav::Escape, 0.1), None);
+    }
+
+    struct Volume {
+        fraction: f32,
+        changes: Log<f32>,
+    }
+
+    impl Render for Volume {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let changes = self.changes.clone();
+            let track: SliderTrack = Rc::new(Cell::new(None));
+            Slider::new("volume", self.fraction, track)
+                .label("Volume")
+                .on_key_change(
+                    0.25,
+                    cx.listener(move |this, fraction: &f32, _, cx| {
+                        changes.borrow_mut().push(*fraction);
+                        this.fraction = *fraction;
+                        cx.notify();
+                    }),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn arrow_keys_step_the_focused_slider(cx: &mut TestAppContext) {
+        let changes = log();
+        let shared = changes.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Volume {
+            fraction: 0.5,
+            changes: shared,
+        });
+        tab(cx);
+        press(cx, "right");
+        press(cx, "down");
+        press(cx, "end");
+        press(cx, "right");
+        press(cx, "home");
+        assert_eq!(*changes.borrow(), [0.75, 0.5, 1., 0.]);
+    }
 
     fn track(origin_x: f32, width: f32) -> Bounds<Pixels> {
         Bounds {

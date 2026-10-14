@@ -21,11 +21,13 @@
 
 use gpui::{
     App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window, div,
     prelude::FluentBuilder, px, svg,
 };
 
 use studio_theme::Theme;
+
+use super::interact::{Nav, focusable, nav_key, step_enabled};
 
 /// One segment. `selected` is computed by the caller so the control never has
 /// to know what the value type is.
@@ -33,6 +35,8 @@ use studio_theme::Theme;
 pub struct SegmentOption {
     pub label: Option<SharedString>,
     pub icon: Option<SharedString>,
+    /// The accessible name of an icon-only segment.
+    pub name: Option<SharedString>,
     pub selected: bool,
     pub disabled: bool,
 }
@@ -42,6 +46,7 @@ impl SegmentOption {
         Self {
             label: Some(label.into()),
             icon: None,
+            name: None,
             selected,
             disabled: false,
         }
@@ -51,6 +56,7 @@ impl SegmentOption {
         Self {
             label: None,
             icon: Some(icon.into()),
+            name: None,
             selected,
             disabled: false,
         }
@@ -60,6 +66,24 @@ impl SegmentOption {
         self.disabled = disabled;
         self
     }
+
+    /// The name a screen reader announces for an icon-only segment.
+    pub fn named(mut self, name: impl Into<SharedString>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+}
+
+/// The option a Left or Right key moves to: one step, no wrap, skipping
+/// disabled options. `None` when the key is not Left or Right or nothing
+/// enabled lies that way.
+pub fn segment_target(from: usize, key: Nav, options: &[SegmentOption]) -> Option<usize> {
+    let delta = match key {
+        Nav::Left => -1,
+        Nav::Right => 1,
+        _ => return None,
+    };
+    step_enabled(from, delta, options.len(), |i| options[i].disabled)
 }
 
 /// Maps a click on segment `index` back onto a value from a fixed list, which
@@ -251,7 +275,8 @@ impl SegmentedControl {
 }
 
 impl RenderOnce for SegmentedControl {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = Theme::for_window(window, cx);
         let SegmentedControl {
             id,
             options,
@@ -279,6 +304,7 @@ impl RenderOnce for SegmentedControl {
         } = self;
 
         let handler: Option<std::rc::Rc<SegmentHandler>> = on_select.map(std::rc::Rc::new);
+        let keyed = std::rc::Rc::new(options.clone());
         let prefix: SharedString = match &id {
             ElementId::Name(name) => name.clone(),
             other => SharedString::from(format!("{other:?}")),
@@ -286,6 +312,7 @@ impl RenderOnce for SegmentedControl {
 
         div()
             .id(id)
+            .role(Role::RadioGroup)
             .flex()
             .flex_row()
             .p(container_padding)
@@ -297,67 +324,191 @@ impl RenderOnce for SegmentedControl {
             })
             .children(options.into_iter().enumerate().map(|(index, option)| {
                 let handler = handler.clone();
+                let keyed = keyed.clone();
                 let selected = option.selected;
                 let disabled = option.disabled;
+                let name = option.label.clone().or(option.name.clone());
 
-                div()
-                    .id(SharedString::from(format!("{prefix}-{index}")))
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .justify_center()
-                    .gap(item_gap)
-                    .px(item_padding_x)
-                    .when(f32::from(item_padding_y) > 0., |this| {
-                        this.py(item_padding_y)
-                    })
-                    .when_some(item_height, |this, height| this.h(height))
-                    .rounded(item_radius)
-                    .text_size(text_size)
-                    .when(stretch, |this| this.flex_1())
-                    .when_some(font_weight, |this, weight| this.font_weight(weight))
-                    .when(disabled, |this| this.opacity(0.5))
-                    .map(|this| {
-                        if selected {
-                            let this = this
-                                .text_color(selected_text)
-                                .when(!selected_shadow.is_empty(), |this| {
-                                    this.shadow(selected_shadow.clone())
-                                });
-                            match selected_bg {
-                                Some(bg) => this.bg(bg),
-                                None => this,
-                            }
-                        } else {
-                            let this = this.text_color(idle_text);
-                            let this = match idle_bg {
-                                Some(bg) => this.bg(bg),
-                                None => this,
-                            };
-                            match hover_bg {
-                                Some(bg) if !disabled => this.hover(move |style| style.bg(bg)),
-                                _ => this,
-                            }
+                focusable(
+                    div().id(SharedString::from(format!("{prefix}-{index}"))),
+                    &theme,
+                    disabled,
+                )
+                .role(Role::RadioButton)
+                .aria_selected(selected)
+                .when_some(name, |this, name| this.aria_label(name))
+                .flex()
+                .flex_row()
+                .items_center()
+                .justify_center()
+                .gap(item_gap)
+                .px(item_padding_x)
+                .when(f32::from(item_padding_y) > 0., |this| {
+                    this.py(item_padding_y)
+                })
+                .when_some(item_height, |this, height| this.h(height))
+                .rounded(item_radius)
+                .text_size(text_size)
+                .when(stretch, |this| this.flex_1())
+                .when_some(font_weight, |this, weight| this.font_weight(weight))
+                .when(disabled, |this| this.opacity(0.5))
+                .map(|this| {
+                    if selected {
+                        let this = this
+                            .text_color(selected_text)
+                            .when(!selected_shadow.is_empty(), |this| {
+                                this.shadow(selected_shadow.clone())
+                            });
+                        match selected_bg {
+                            Some(bg) => this.bg(bg),
+                            None => this,
                         }
-                    })
-                    .children(option.icon.map(|icon| {
-                        svg()
-                            .path(icon)
-                            .size(icon_size)
-                            .flex_shrink_0()
-                            .text_color(if selected { selected_text } else { idle_text })
-                    }))
-                    .children(option.label)
-                    .when_some(handler.filter(|_| !disabled), |this, handler| {
-                        this.on_click(move |_, window, cx| handler(&index, window, cx))
-                    })
+                    } else {
+                        let this = this.text_color(idle_text);
+                        let this = match idle_bg {
+                            Some(bg) => this.bg(bg),
+                            None => this,
+                        };
+                        match hover_bg {
+                            Some(bg) if !disabled => this.hover(move |style| style.bg(bg)),
+                            _ => this,
+                        }
+                    }
+                })
+                .children(option.icon.map(|icon| {
+                    svg()
+                        .path(icon)
+                        .size(icon_size)
+                        .flex_shrink_0()
+                        .text_color(if selected { selected_text } else { idle_text })
+                }))
+                .children(option.label)
+                .when_some(handler.filter(|_| !disabled), |this, handler| {
+                    let keys = handler.clone();
+                    this.on_click(move |_, window, cx| handler(&index, window, cx))
+                        .on_key_down(move |event, window, cx| {
+                            let Some(key @ (Nav::Left | Nav::Right)) =
+                                nav_key(event.keystroke.key.as_str())
+                            else {
+                                return;
+                            };
+                            // Every enabled item is a tab stop, so the key belongs to the
+                            // focused one, which need not be the selected one.
+                            if let Some(target) = segment_target(index, key, &keyed) {
+                                keys(&target, window, cx);
+                                if key == Nav::Left {
+                                    window.focus_prev(cx);
+                                } else {
+                                    window.focus_next(cx);
+                                }
+                                cx.stop_propagation();
+                            }
+                        })
+                })
             }))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use gpui::{Context, Render, TestAppContext};
+
     use super::*;
+    use crate::kit::interact::Nav;
+    use crate::kit::test_support::{Log, log, press, tab};
+
+    fn options(disabled: &[bool]) -> Vec<SegmentOption> {
+        disabled
+            .iter()
+            .enumerate()
+            .map(|(i, d)| SegmentOption::new(format!("o{i}"), i == 0).disabled(*d))
+            .collect()
+    }
+
+    #[test]
+    fn arrows_move_one_step_without_wrapping() {
+        let o = options(&[false, false, false]);
+        assert_eq!(segment_target(1, Nav::Right, &o), Some(2));
+        assert_eq!(segment_target(1, Nav::Left, &o), Some(0));
+        assert_eq!(segment_target(2, Nav::Right, &o), None);
+        assert_eq!(segment_target(0, Nav::Left, &o), None);
+        assert_eq!(segment_target(0, Nav::Up, &o), None);
+    }
+
+    #[test]
+    fn disabled_options_are_skipped() {
+        let o = options(&[false, true, false]);
+        assert_eq!(segment_target(0, Nav::Right, &o), Some(2));
+        assert_eq!(segment_target(2, Nav::Left, &o), Some(0));
+        let trailing = options(&[false, true]);
+        assert_eq!(segment_target(0, Nav::Right, &trailing), None);
+    }
+
+    struct Picker {
+        selected: usize,
+        picks: Log<usize>,
+    }
+
+    impl Render for Picker {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            let picks = self.picks.clone();
+            let options = ["Fit", "Half", "Full"]
+                .into_iter()
+                .enumerate()
+                .map(|(i, label)| SegmentOption::new(label, i == self.selected).disabled(i == 1))
+                .collect();
+            SegmentedControl::editor(&theme, "zoom", options).on_select(cx.listener(
+                move |this, index: &usize, _, cx| {
+                    picks.borrow_mut().push(*index);
+                    this.selected = *index;
+                    cx.notify();
+                },
+            ))
+        }
+    }
+
+    #[gpui::test]
+    fn arrows_step_from_the_focused_segment_not_the_selected_one(cx: &mut TestAppContext) {
+        let picks = log();
+        let shared = picks.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Picker {
+            selected: 2,
+            picks: shared,
+        });
+        tab(cx);
+        press(cx, "right");
+        assert_eq!(
+            *picks.borrow(),
+            [2],
+            "focus is on Fit, so Right reaches Full"
+        );
+        press(cx, "left");
+        assert_eq!(
+            *picks.borrow(),
+            [2, 0],
+            "focus followed the selection to Full"
+        );
+    }
+
+    #[gpui::test]
+    fn right_arrow_selects_the_next_enabled_segment(cx: &mut TestAppContext) {
+        let picks = log();
+        let shared = picks.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Picker {
+            selected: 0,
+            picks: shared,
+        });
+        tab(cx);
+        press(cx, "right");
+        assert_eq!(*picks.borrow(), [2]);
+        press(cx, "right");
+        assert_eq!(*picks.borrow(), [2], "no wrap past the last segment");
+        press(cx, "left");
+        assert_eq!(*picks.borrow(), [2, 0]);
+        press(cx, "enter");
+        assert_eq!(*picks.borrow(), [2, 0, 0]);
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Quality {

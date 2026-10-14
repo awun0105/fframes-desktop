@@ -41,9 +41,9 @@ From [the Cap report](../reports/research-261013-1801-cap-gpui-desktop-ui.md); s
 
 ## Todo
 
-- [ ] Scout callers and component pairs
-- [ ] Cap theme ported, no material tokens
-- [ ] Cap kit ported
+- [x] Scout callers and component pairs
+- [x] Cap theme ported, no material tokens
+- [x] Cap kit ported
 - [ ] Call sites on Cap components; duplicates removed
 - [ ] Old `ui/` and `design_system/` deleted
 - [ ] Tests

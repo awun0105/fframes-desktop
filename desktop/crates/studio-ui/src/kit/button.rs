@@ -4,10 +4,11 @@
 
 use gpui::{
     App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window, div,
     prelude::FluentBuilder, px, svg,
 };
 
+use super::interact::focusable;
 use super::menu::OpenHandler;
 use studio_theme::Theme;
 
@@ -403,7 +404,8 @@ fn radix_paint(theme: &Theme, variant: ButtonVariant) -> ButtonPaint {
 }
 
 impl RenderOnce for Button {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = Theme::for_window(window, cx);
         let Button {
             id,
             label,
@@ -425,9 +427,9 @@ impl RenderOnce for Button {
 
         let icon_color = paint.text;
 
-        div()
-            .id(id)
-            .tab_index(0)
+        focusable(div().id(id), &theme, disabled)
+            .role(Role::Button)
+            .when_some(label.clone(), |this, label| this.aria_label(label))
             .flex()
             .flex_row()
             .items_center()
@@ -513,6 +515,8 @@ pub struct IconButton {
     disabled: bool,
     occlude: bool,
     rounded: Option<Pixels>,
+    /// The accessible name; an icon alone says nothing to a screen reader.
+    label: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
 
@@ -534,8 +538,15 @@ impl IconButton {
             disabled: false,
             occlude: false,
             rounded: None,
+            label: None,
             on_click: None,
         }
+    }
+
+    /// The name a screen reader announces for the button.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
     }
 
     /// The main window header's action row: a 20px hit box with no fill at
@@ -618,7 +629,8 @@ impl IconButton {
 }
 
 impl RenderOnce for IconButton {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = Theme::for_window(window, cx);
         let IconButton {
             id,
             icon,
@@ -635,13 +647,14 @@ impl RenderOnce for IconButton {
             disabled,
             occlude,
             rounded,
+            label,
             on_click,
         } = self;
 
-        div()
-            .id(id)
+        focusable(div().id(id), &theme, disabled)
+            .role(Role::Button)
+            .when_some(label, |this, label| this.aria_label(label))
             .when(occlude, |this| this.occlude())
-            .tab_index(0)
             .flex()
             .items_center()
             .justify_center()
@@ -680,5 +693,72 @@ impl RenderOnce for IconButton {
             .when_some(on_click.filter(|_| !disabled), |this, handler| {
                 this.on_click(move |event, window, cx| handler(event, window, cx))
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use gpui::{Context, IntoElement, ParentElement, Render, TestAppContext, VisualTestContext};
+
+    use super::*;
+    use crate::kit::test_support::{press, tab};
+
+    /// A disabled button followed by an enabled one and an icon button, each counting its
+    /// clicks.
+    struct Row {
+        clicks: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl Render for Row {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            let click = |name: &'static str| {
+                let clicks = self.clicks.clone();
+                move |_: &ClickEvent, _: &mut Window, _: &mut App| clicks.borrow_mut().push(name)
+            };
+            div()
+                .child(
+                    Button::plain(&theme, "off", ButtonVariant::Gray, ButtonSize::Sm)
+                        .label("Off")
+                        .disabled(true)
+                        .on_click(click("off")),
+                )
+                .child(
+                    Button::plain(&theme, "on", ButtonVariant::Gray, ButtonSize::Sm)
+                        .label("On")
+                        .on_click(click("on")),
+                )
+                .child(
+                    IconButton::body(&theme, "icon", "icons/x.svg")
+                        .label("Close")
+                        .on_click(click("icon")),
+                )
+        }
+    }
+
+    fn row(cx: &mut TestAppContext) -> (Rc<RefCell<Vec<&'static str>>>, &mut VisualTestContext) {
+        let clicks = Rc::new(RefCell::new(Vec::new()));
+        let shared = clicks.clone();
+        let (_, cx) = cx.add_window_view(|_, _| Row { clicks: shared });
+        (clicks, cx)
+    }
+
+    #[gpui::test]
+    fn tab_skips_a_disabled_button_and_enter_activates_the_focused_one(cx: &mut TestAppContext) {
+        let (clicks, cx) = row(cx);
+        tab(cx);
+        press(cx, "enter");
+        assert_eq!(*clicks.borrow(), ["on"]);
+        tab(cx);
+        press(cx, "space");
+        assert_eq!(*clicks.borrow(), ["on", "icon"]);
+    }
+
+    #[test]
+    fn an_icon_button_carries_its_accessible_name() {
+        let button = IconButton::new("close", "icons/x.svg").label("Close");
+        assert_eq!(button.label.as_ref().map(|l| l.as_ref()), Some("Close"));
     }
 }
