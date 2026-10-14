@@ -56,6 +56,8 @@ icon_files!(
     "layers",
     "package",
     "arrow-up",
+    "search",
+    "trash",
 );
 
 /// Serves the embedded Lucide icons (ISC, see `packaging/sdk/notices`).

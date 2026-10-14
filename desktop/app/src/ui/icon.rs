@@ -45,10 +45,12 @@ pub enum Icon {
     Layers,
     Package,
     ArrowUp,
+    Search,
+    Trash,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 39] = [
+    pub const ALL: [Icon; 41] = [
         Icon::Play,
         Icon::Pause,
         Icon::SkipBack,
@@ -88,6 +90,8 @@ impl Icon {
         Icon::Layers,
         Icon::Package,
         Icon::ArrowUp,
+        Icon::Search,
+        Icon::Trash,
     ];
 
     /// Asset path served by `crate::assets::Assets`.
@@ -132,6 +136,8 @@ impl Icon {
             Icon::Layers => "icons/layers.svg",
             Icon::Package => "icons/package.svg",
             Icon::ArrowUp => "icons/arrow-up.svg",
+            Icon::Search => "icons/search.svg",
+            Icon::Trash => "icons/trash.svg",
         }
     }
 }

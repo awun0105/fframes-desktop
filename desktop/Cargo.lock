@@ -6312,9 +6312,11 @@ version = "0.1.0"
 dependencies = [
  "async-channel",
  "gpui",
+ "smallvec",
  "studio-engine",
  "studio-proto",
  "studio-theme",
+ "unicode-segmentation",
 ]
 
 [[package]]
