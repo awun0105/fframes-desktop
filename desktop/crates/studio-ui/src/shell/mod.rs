@@ -1,12 +1,3 @@
-use crate::conversation_panel::{Attachment, ConversationPanel, PanelEvent};
-use crate::{
-    actions,
-    canvas_view::{CanvasViewState, StageLayout},
-    frame_image::{ImagePresentationManager, create_render_image},
-    preset_panel::{PresetEvent, PresetPanel, PresetPick},
-    timeline_view::{TimelineEvent, TimelineView},
-    ui::BoundsProbe,
-};
 use gpui::{
     AppContext, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
     StatefulInteractiveElement, Styled, Window, canvas, div, px,
@@ -41,11 +32,21 @@ use studio_engine::services::thumbnail_cache::ThumbnailKey;
 use studio_project::ProjectId;
 use studio_proto::CommandId;
 use studio_theme::{METRICS, Shadow, TextStyle, Theme, shadow_for, text_style};
-use studio_ui::app_state::{AppEvent, AppState};
-use studio_ui::kit::{
+
+use crate::app_state::{AppEvent, AppState};
+use crate::kit::{
     Badge, Card, CollapsibleSection, DISABLED_OPACITY, EditorButton, Handler, Icon, IconButton,
     IconButtonSize, Menu, MenuItem, MenuState, Notice, StatusDot, TabRail, TabRailItem, Tone,
     divider, focus_ring, focusable, heading, icon, muted, on_activate, section_title, with_tooltip,
+};
+use crate::panels::conversation::{Attachment, ConversationPanel, PanelEvent};
+use crate::{
+    actions,
+    canvas_view::{CanvasViewState, StageLayout},
+    frame_image::{ImagePresentationManager, create_render_image},
+    preset_panel::{PresetEvent, PresetPanel, PresetPick},
+    probe::BoundsProbe,
+    timeline_view::{TimelineEvent, TimelineView},
 };
 
 enum Picker {

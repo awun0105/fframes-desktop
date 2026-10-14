@@ -13,6 +13,7 @@ gpui = { workspace = true }
 studio-bootstrap = { workspace = true }
 studio-engine = { workspace = true }
 studio-harness = { workspace = true }
+studio-project = { workspace = true }
 studio-proto = { workspace = true }
 studio-sdk = { workspace = true }
 studio-theme = { workspace = true }
@@ -27,4 +28,3 @@ unicode-segmentation = "1"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
-studio-project = { workspace = true }

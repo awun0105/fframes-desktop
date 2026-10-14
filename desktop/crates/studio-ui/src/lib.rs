@@ -8,6 +8,7 @@ pub mod panels;
 pub mod preset_panel;
 pub mod probe;
 pub mod setup_view;
+pub mod shell;
 pub mod timeline_view;
 
 #[cfg(test)]
