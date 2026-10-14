@@ -87,7 +87,6 @@ fn evidence_image_key(task: &studio_engine::AgentTaskId, artifact_id: &str) -> S
 
 use crate::{
     design_system::{self, TextStyle, text_style},
-    text_input::TextInput,
     ui::{
         self, Badge, BoundsProbe, Button, ButtonVariant, Collapsible, FieldRow, Icon, IconButton,
         IconButtonSize, Menu, MenuState, Notice, Select, Toggle, Tone as UiTone, icon,
@@ -124,6 +123,8 @@ use studio_engine::providers::host::{self, AdapterFields, AdapterFile, McpChoice
 use studio_engine::providers::provider_profiles;
 use studio_engine::{DraftState, ReviewPolicy, TaskScope, app_paths::AppPaths};
 use studio_harness::driver::{ConfigKind, OptionValue, ToolStatus};
+use studio_theme::Theme;
+use studio_ui::kit::{TextInput, TextInputEvent, TextInputState};
 
 /// Height of the composer container and the inset of its contents.
 const COMPOSER_H: f32 = 64.;
@@ -229,17 +230,19 @@ struct PageSlot {
 }
 
 struct SetupForm {
-    provider: Entity<TextInput>,
-    executable: Entity<TextInput>,
-    args: Entity<TextInput>,
-    env_names: Entity<TextInput>,
+    provider: Entity<TextInputState>,
+    executable: Entity<TextInputState>,
+    args: Entity<TextInputState>,
+    env_names: Entity<TextInputState>,
 }
 
 pub struct ConversationPanel {
     attached: Option<Attached>,
     snapshot: Option<Arc<WorkflowSnapshot>>,
     tab: Tab,
-    prompt: Entity<TextInput>,
+    prompt: Entity<TextInputState>,
+    /// Refreshed at the top of every render.
+    theme: Theme,
     prompt_kind: Option<SubmitKind>,
     setup: SetupForm,
     saved_adapter: Option<AdapterFile>,
@@ -288,18 +291,33 @@ pub struct ConversationPanel {
     config_focus: FocusHandle,
 }
 
-fn input(placeholder: &str, cx: &mut Context<ConversationPanel>) -> Entity<TextInput> {
+/// A single-line field. Return in the prompt sends it; Escape in any field hands the
+/// keyboard back to the shell.
+fn input(
+    placeholder: &str,
+    window: &mut Window,
+    cx: &mut Context<ConversationPanel>,
+) -> Entity<TextInputState> {
     let placeholder = placeholder.to_owned();
-    cx.new(move |cx| {
-        let mut input = TextInput::new(cx);
-        input.placeholder = placeholder.into();
-        input.compact = true;
+    let input = cx.new(|cx| {
+        let mut input = TextInputState::single_line(window, cx);
+        input.set_placeholder(placeholder);
         input
-    })
+    });
+    cx.subscribe(
+        &input,
+        |panel, input, event: &TextInputEvent, cx| match event {
+            TextInputEvent::Confirmed if input == panel.prompt => panel.submit(cx),
+            TextInputEvent::Cancelled => cx.emit(PanelEvent::Leave),
+            _ => (),
+        },
+    )
+    .detach();
+    input
 }
 
 impl ConversationPanel {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let list = ListState::new(0, ListAlignment::Top, px(OVERDRAW_PX));
         list.set_follow_mode(FollowMode::Tail);
         let viewport = Rc::new(Cell::new(None));
@@ -317,13 +335,14 @@ impl ConversationPanel {
             attached: None,
             snapshot: None,
             tab: Tab::Chat,
-            prompt: input("Describe the change you want", cx),
+            prompt: input("Describe the change you want", window, cx),
+            theme: Theme::for_window(window, cx),
             prompt_kind: None,
             setup: SetupForm {
-                provider: input("Label, for example my-adapter", cx),
-                executable: input("Absolute path of the ACP adapter", cx),
-                args: input("Arguments, for example --acp", cx),
-                env_names: input("e.g. ANTHROPIC_API_KEY", cx),
+                provider: input("Label, for example my-adapter", window, cx),
+                executable: input("Absolute path of the ACP adapter", window, cx),
+                args: input("Arguments, for example --acp", window, cx),
+                env_names: input("e.g. ANTHROPIC_API_KEY", window, cx),
             },
             saved_adapter: None,
             registry: provider_profiles::ProviderRegistry::default(),
@@ -462,7 +481,7 @@ impl ConversationPanel {
     /// True while the prompt (or a setup field) holds keyboard focus.
     pub fn has_text_focus(&self, window: &Window, cx: &gpui::App) -> bool {
         use gpui::Focusable;
-        let focused = |input: &Entity<TextInput>| input.focus_handle(cx).is_focused(window);
+        let focused = |input: &Entity<TextInputState>| input.focus_handle(cx).is_focused(window);
         focused(&self.prompt)
             || focused(&self.setup.provider)
             || focused(&self.setup.executable)
@@ -596,7 +615,7 @@ impl ConversationPanel {
                 SubmitKind::Clarify(_) => "Answer the agent's question",
             };
             self.prompt.update(cx, |input, cx| {
-                input.placeholder = placeholder.into();
+                input.set_placeholder(placeholder);
                 cx.notify();
             });
             self.prompt_kind = Some(controls.submit.kind);
@@ -727,12 +746,12 @@ impl ConversationPanel {
     }
 
     fn prompt_is_empty(&self, cx: &gpui::App) -> bool {
-        self.prompt.read(cx).content().trim().is_empty()
+        self.prompt.read(cx).text().trim().is_empty()
     }
 
     fn fill_setup(&mut self, adapter: Option<&AdapterFile>, cx: &mut Context<Self>) {
         let fields = adapter.map(AdapterFile::fields).unwrap_or_default();
-        let set = |input: &Entity<TextInput>, text: String, cx: &mut Context<Self>| {
+        let set = |input: &Entity<TextInputState>, text: String, cx: &mut Context<Self>| {
             input.update(cx, |input, cx| input.set_text(text, cx));
         };
         set(&self.setup.provider, fields.provider, cx);
@@ -742,7 +761,7 @@ impl ConversationPanel {
     }
 
     fn setup_fields(&self, cx: &gpui::App) -> AdapterFields {
-        let text = |input: &Entity<TextInput>| input.read(cx).content().to_owned();
+        let text = |input: &Entity<TextInputState>| input.read(cx).text().to_owned();
         AdapterFields {
             provider: text(&self.setup.provider),
             executable: text(&self.setup.executable),
@@ -788,7 +807,7 @@ impl ConversationPanel {
             );
             return;
         }
-        let text = self.prompt.read(cx).content().to_owned();
+        let text = self.prompt.read(cx).text().to_owned();
         let workflow = attached.workflow.clone();
         let scope = self.task_scope.clone();
         let sent = match &controls.submit.kind {
@@ -1064,7 +1083,7 @@ impl ConversationPanel {
     /// the moment of the key: the prompt and every Setup field share this one path.
     fn key_in_field(
         &mut self,
-        field: &Entity<TextInput>,
+        field: &Entity<TextInputState>,
         event: &gpui::KeyDownEvent,
         submit: bool,
         window: &mut Window,
@@ -1931,7 +1950,7 @@ impl ConversationPanel {
     /// Shows the chat and moves the keyboard focus to its prompt.
     pub fn focus_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.tab = Tab::Chat;
-        let handle = self.prompt.read(cx).focus_handle.clone();
+        let handle = self.prompt.read(cx).focus_handle();
         window.focus(&handle, cx);
     }
 
@@ -2314,7 +2333,11 @@ impl ConversationPanel {
                         .left_0()
                         .size_full(),
                     )
-                    .child(self.prompt.clone()),
+                    .child(TextInput::plain(
+                        &self.theme,
+                        "agent-prompt-input",
+                        &self.prompt,
+                    )),
             )
             .child(
                 div()
@@ -2762,9 +2785,8 @@ impl ConversationPanel {
         }
         let field = |this: &Self,
                      label: &'static str,
-                     input: &Entity<TextInput>,
+                     input: &Entity<TextInputState>,
                      cx: &mut Context<Self>| {
-            let _ = this;
             // The handler reads THIS field's composition state: an active IME composition
             // keeps Enter/Tab/Escape (candidate selection and cancellation) in the field.
             let field = input.clone();
@@ -2780,7 +2802,11 @@ impl ConversationPanel {
                                 this.key_in_field(&field, event, false, window, cx);
                             },
                         ))
-                        .child(input.clone()),
+                        .child(TextInput::plain(
+                            &this.theme,
+                            SharedString::from(format!("setup-{label}")),
+                            input,
+                        )),
                 )
         };
         let editable = controls.settings_editable;
@@ -3028,6 +3054,7 @@ fn history_line(entry: &HistoryEntry) -> gpui::Div {
 
 impl Render for ConversationPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.theme.refresh(window, cx);
         self.sync_evidence_images();
         for image in self.retired_evidence_images.drain(..) {
             let _ = window.drop_image(image);

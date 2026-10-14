@@ -298,7 +298,7 @@ fn run_studio(qualification: Option<Qualification>) {
     gpui_platform::application()
         .with_assets(fframes_studio::assets::Assets)
         .run(move |cx: &mut App| {
-            fframes_studio::text_input::bind_keys(cx);
+            studio_ui::kit::bind_text_input_keys(cx);
             let settings = studio_engine::app_paths::AppPaths::system()
                 .map(|paths| studio_engine::app_settings::AppSettings::load(&paths))
                 .unwrap_or_default();
@@ -367,7 +367,7 @@ fn run_spike_ui(qualification: Option<PresentationQualification>) {
         .as_ref()
         .map(|qualification| qualification.output.clone());
     gpui_platform::application().run(move |cx: &mut App| {
-        fframes_studio::text_input::bind_keys(cx);
+        studio_ui::kit::bind_text_input_keys(cx);
         let bounds = Bounds::centered(None, size(px(1000.), px(1000.)), cx);
         cx.open_window(
             WindowOptions {
@@ -381,7 +381,7 @@ fn run_spike_ui(qualification: Option<PresentationQualification>) {
             },
             move |window, cx| {
                 cx.new(|cx| {
-                    let mut app = StudioSpikeApp::new(cx);
+                    let mut app = StudioSpikeApp::new(window, cx);
                     app.load_initial_frame(window, cx);
                     if let Some(qualification) = qualification {
                         app.setup_view.update(cx, |view, _| {

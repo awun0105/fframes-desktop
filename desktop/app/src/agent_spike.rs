@@ -1,6 +1,4 @@
-use crate::{
-    frame_image::create_render_image, selection_spike::DisplayedSourceFrame, text_input::TextInput,
-};
+use crate::{frame_image::create_render_image, selection_spike::DisplayedSourceFrame};
 use gpui::{
     AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement,
     Render, RenderImage, StatefulInteractiveElement, Styled, Window, div, rgb, white,
@@ -19,6 +17,7 @@ use studio_engine::services::worker_client::WorkerClient;
 use studio_engine::services::worker_project;
 use studio_harness::{AcpSession, AdapterConfig, SessionControl, copy_draft, source_revision};
 use studio_sdk::CompatibilityManifest;
+use studio_ui::kit::{TextInput, TextInputState};
 
 pub struct CandidatePreview {
     pub worker: WorkerClient,
@@ -27,8 +26,8 @@ pub struct CandidatePreview {
 }
 pub struct CandidateReady;
 pub struct AgentSpike {
-    pub config: Entity<TextInput>,
-    pub prompt: Entity<TextInput>,
+    pub config: Entity<TextInputState>,
+    pub prompt: Entity<TextInputState>,
     pub control: Arc<Mutex<Option<SessionControl>>>,
     pub active: bool,
     pub status: String,
@@ -48,6 +47,7 @@ impl AgentSpike {
         sdk_root: PathBuf,
         manifest: CompatibilityManifest,
         process_tree: ProcessTreeManager,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.on_app_quit(|panel, cx| {
@@ -62,15 +62,15 @@ impl AgentSpike {
             })
         })
         .detach();
-        let config = cx.new(TextInput::new);
+        let config = cx.new(|cx| TextInputState::single_line(window, cx));
         config.update(cx, |input, cx| {
-            input.placeholder = "Adapter JSON: executable, args, auth_env_names".into();
+            input.set_placeholder("Adapter JSON: executable, args, auth_env_names");
             input.set_text(
                 "{\"executable\":\"\",\"args\":[],\"auth_env_names\":[]}",
                 cx,
             );
         });
-        let prompt = cx.new(TextInput::new);
+        let prompt = cx.new(|cx| TextInputState::single_line(window, cx));
         prompt.update(cx,|input,cx|input.set_text("Change the marked intro.title text to Hello from the agent. Preserve its source markers and SVG ID. Ask for permission before editing.",cx));
         Self {
             config,
@@ -92,7 +92,7 @@ impl AgentSpike {
         if self.active {
             return;
         }
-        let config: AdapterConfig = match serde_json::from_str(self.config.read(cx).content()) {
+        let config: AdapterConfig = match serde_json::from_str(self.config.read(cx).text()) {
             Ok(config) => config,
             Err(_) => {
                 self.status = "Invalid adapter JSON configuration".into();
@@ -105,7 +105,7 @@ impl AgentSpike {
             cx.notify();
             return;
         }
-        let prompt = self.prompt.read(cx).content().to_string();
+        let prompt = self.prompt.read(cx).text().to_string();
         let source = self.project_root.clone();
         let sdk = self.sdk_root.clone();
         let manifest = self.manifest.clone();
@@ -326,7 +326,8 @@ impl AgentSpike {
     }
 }
 impl Render for AgentSpike {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = studio_theme::Theme::for_window(window, cx);
         let permissions = self
             .control
             .lock()
@@ -340,13 +341,14 @@ impl Render for AgentSpike {
             .is_some_and(|control| control.progress.lock().awaiting_reply);
         div().flex().flex_col().gap_2().p_2().text_xs().text_color(white())
             .child("ACP adapter — runs with provider-managed authentication and edits an isolated draft; process isolation is not a security sandbox")
-            .child(self.config.clone()).child(self.prompt.clone())
+            .child(TextInput::plain(&theme, "agent-config", &self.config))
+            .child(TextInput::plain(&theme, "agent-prompt", &self.prompt))
             .child(div().flex().gap_2()
                 .child(div().id("agent-run").p_2().bg(rgb(0x2563eb)).cursor_pointer().on_click(cx.listener(|panel,_,_,cx|panel.start(cx))).child("Run Agent Edit"))
                 .child(div().id("agent-stop").p_2().bg(rgb(0xb45309)).cursor_pointer().on_click(cx.listener(|panel,_,_,cx|panel.cancel(cx))).child("Stop"))
                 .children(awaiting_reply.then(|| div().id("agent-reply").p_2().bg(rgb(0x2563eb)).cursor_pointer()
                     .on_click(cx.listener(|panel,_,_,cx| {
-                        let reply=panel.prompt.read(cx).content().to_owned();
+                        let reply=panel.prompt.read(cx).text().to_owned();
                         let result=panel.control.lock().as_ref().ok_or("No active adapter".to_owned())
                             .and_then(|control|control.submit_reply(&reply).map_err(|e|e.to_string()));
                         panel.status=match result {Ok(())=>"Reply queued for this session".into(),Err(error)=>error};

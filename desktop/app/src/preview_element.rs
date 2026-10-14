@@ -107,7 +107,7 @@ impl Element for PreviewElement {
                             .elements
                             .iter()
                             .find(|element| element.element_id == "intro.title")
-                        && let Some(input) = app.text_input.read(cx).last_bounds
+                        && let Some(input) = app.text_input.read(cx).text_bounds()
                     {
                         // Native automation uses painted geometry, including the
                         // letterbox transform, rather than a timer or fixed pixels.

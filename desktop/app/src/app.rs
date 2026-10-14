@@ -3,7 +3,6 @@ use crate::presentation_stress::PresentationStress;
 use crate::preview_element::PreviewElement;
 use crate::selection_spike::{DisplayedSourceFrame, SelectedElementInfo, SelectionSpike};
 use crate::setup_view::SetupView;
-use crate::text_input::TextInput;
 use gpui::{
     AppContext, Bounds, Context, Entity, FontWeight, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Render, RenderImage, StatefulInteractiveElement, Styled, Window, div,
@@ -11,6 +10,7 @@ use gpui::{
 };
 use studio_engine::services::worker_client::WorkerClient;
 use studio_engine::services::worker_client::generate_reference_frame;
+use studio_ui::kit::{TextInput, TextInputState};
 
 use std::time::{Duration, Instant};
 use studio_bootstrap::ProcessTreeManager;
@@ -19,7 +19,7 @@ pub struct StudioSpikeApp {
     pub worker_generation: u64,
     pub worker_busy: bool,
     pub worker_epoch: u64,
-    pub text_input: Entity<TextInput>,
+    pub text_input: Entity<TextInputState>,
     pub setup_view: Entity<SetupView>,
     pub image_manager: ImagePresentationManager,
     pub frame_index: usize,
@@ -46,8 +46,8 @@ pub struct StudioSpikeApp {
 }
 
 impl StudioSpikeApp {
-    pub fn new(cx: &mut Context<Self>) -> Self {
-        let text_input = cx.new(TextInput::new);
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let text_input = cx.new(|cx| TextInputState::single_line(window, cx));
         let setup_view = cx.new(SetupView::new);
         let process_tree = ProcessTreeManager::new();
         cx.on_app_quit(|app, cx| {
@@ -72,6 +72,7 @@ impl StudioSpikeApp {
                 agent_sdk,
                 agent_manifest,
                 ProcessTreeManager::new(),
+                window,
                 agent_cx,
             )
         });
@@ -458,7 +459,7 @@ impl StudioSpikeApp {
     }
 
     fn persist_stress(&mut self, cx: &mut Context<Self>) {
-        self.stress_metrics.native_input_observed = self.text_input.read(cx).content().to_owned();
+        self.stress_metrics.native_input_observed = self.text_input.read(cx).text().to_owned();
         self.stress_metrics.selected_source = self.selected_source.clone();
         self.stress_metrics.confirmed_presentations = self.stress.confirmed;
         self.stress_metrics.completed = self.stress.confirmed == PresentationStress::TARGET
@@ -705,7 +706,11 @@ impl Render for StudioSpikeApp {
                             .text_color(rgb(0xAAAAAA))
                             .child("1. IME / Text Input Composer (marked text & UTF-16 selection)"),
                     )
-                    .child(self.text_input.clone()),
+                    .child(TextInput::plain(
+                        &studio_theme::Theme::for_window(window, cx),
+                        "spike-input",
+                        &self.text_input,
+                    )),
             )
             // Frame Image Presentation Section
             .child(

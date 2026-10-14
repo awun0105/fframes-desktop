@@ -7,7 +7,6 @@
 //! chrome: the panel uses the application design system, separate from project styling.
 use crate::{
     design_system::{self, TextStyle, text_style},
-    text_input::TextInput,
     ui::{
         Button, ButtonVariant, Collapsible, Icon, IconButton, IconButtonSize, Notice, SectionTitle,
         Tone, divider, icon,
@@ -23,6 +22,8 @@ use studio_engine::PresetMutation;
 use studio_engine::presets::{
     CssView, MAX_CSS_LINES, Outcome, PresetCommand, PresetReport, PresetView,
 };
+use studio_theme::Theme;
+use studio_ui::kit::{TextInput, TextInputEvent, TextInputState};
 
 // ---- GPUI panel ------------------------------------------------------------------------
 
@@ -50,30 +51,45 @@ pub struct PresetPanel {
     last: Option<PresetReport>,
     css: Option<CssView>,
     css_open: bool,
-    token: Entity<TextInput>,
-    value: Entity<TextInput>,
+    token: Entity<TextInputState>,
+    value: Entity<TextInputState>,
+    /// Refreshed at the top of every render.
+    theme: Theme,
 }
 
-fn input(placeholder: &str, cx: &mut Context<PresetPanel>) -> Entity<TextInput> {
+/// An override field: Return sets the override, Escape hands the keyboard back to the
+/// shell.
+fn input(
+    placeholder: &str,
+    window: &mut Window,
+    cx: &mut Context<PresetPanel>,
+) -> Entity<TextInputState> {
     let placeholder = placeholder.to_owned();
-    cx.new(move |cx| {
-        let mut input = TextInput::new(cx);
-        input.placeholder = placeholder.into();
-        input.compact = true;
+    let input = cx.new(|cx| {
+        let mut input = TextInputState::single_line(window, cx);
+        input.set_placeholder(placeholder);
         input
+    });
+    cx.subscribe(&input, |panel, _, event: &TextInputEvent, cx| match event {
+        TextInputEvent::Confirmed => panel.set_override(cx),
+        TextInputEvent::Cancelled => cx.emit(PresetEvent::Leave),
+        _ => (),
     })
+    .detach();
+    input
 }
 
 impl PresetPanel {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             view: None,
             selected: None,
             last: None,
             css: None,
             css_open: true,
-            token: input("Token, for example color.accent", cx),
-            value: input("Value, for example #ff5533 or 120", cx),
+            token: input("Token, for example color.accent", window, cx),
+            value: input("Value, for example #ff5533 or 120", window, cx),
+            theme: Theme::for_window(window, cx),
         }
     }
 
@@ -240,8 +256,8 @@ impl PresetPanel {
     }
 
     fn set_override(&mut self, cx: &mut Context<Self>) {
-        let token = self.token.read(cx).content().trim().to_owned();
-        let value = self.value.read(cx).content().trim().to_owned();
+        let token = self.token.read(cx).text().trim().to_owned();
+        let value = self.value.read(cx).text().trim().to_owned();
         if !token.is_empty() && !value.is_empty() {
             self.run(PresetCommand::SetOverride { token, value }, cx);
         }
@@ -250,45 +266,40 @@ impl PresetPanel {
     fn field(
         &self,
         id: &'static str,
-        input: Entity<TextInput>,
+        input: Entity<TextInputState>,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
+        // Return and Escape are the field's own key bindings; Tab is routed here.
         let field = input.clone();
         div()
             .id(id)
             .on_key_down(
-                cx.listener(move |this, event: &gpui::KeyDownEvent, window, cx| {
+                cx.listener(move |_, event: &gpui::KeyDownEvent, window, cx| {
                     if field.read(cx).is_composing() {
                         cx.stop_propagation();
                         return;
                     }
-                    match event.keystroke.key.as_str() {
-                        "enter" => {
-                            this.set_override(cx);
-                            cx.stop_propagation();
+                    if event.keystroke.key == "tab" {
+                        if event.keystroke.modifiers.shift {
+                            window.focus_prev(cx);
+                        } else {
+                            window.focus_next(cx);
                         }
-                        "tab" => {
-                            if event.keystroke.modifiers.shift {
-                                window.focus_prev(cx);
-                            } else {
-                                window.focus_next(cx);
-                            }
-                            cx.stop_propagation();
-                        }
-                        "escape" => {
-                            cx.emit(PresetEvent::Leave);
-                            cx.stop_propagation();
-                        }
-                        _ => (),
+                        cx.stop_propagation();
                     }
                 }),
             )
-            .child(input)
+            .child(TextInput::plain(
+                &self.theme,
+                SharedString::from(format!("{id}-input")),
+                &input,
+            ))
     }
 }
 
 impl Render for PresetPanel {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.theme.refresh(window, cx);
         let tokens = design_system::tokens();
         let palette = tokens.palette;
         let mut root = div()
@@ -670,9 +681,9 @@ mod field_keys {
     }
 
     fn open(cx: &mut TestAppContext) -> (Entity<PresetPanel>, Events, &mut VisualTestContext) {
-        cx.update(crate::text_input::bind_keys);
-        let (panel, cx) = cx.add_window_view(|_, cx| {
-            let mut panel = PresetPanel::new(cx);
+        cx.update(studio_ui::kit::bind_text_input_keys);
+        let (panel, cx) = cx.add_window_view(|window, cx| {
+            let mut panel = PresetPanel::new(window, cx);
             panel.set_view(Some(applied()), cx);
             panel
         });
@@ -725,8 +736,9 @@ mod field_keys {
                 input.replace_and_mark_text_in_range(None, "\u{304b}", None, window, cx)
             });
         });
-        cx.simulate_keystrokes("enter");
+        // Escape first: a Return the IME takes ends the composition.
         cx.simulate_keystrokes("escape");
+        cx.simulate_keystrokes("enter");
         assert!(events.borrow().is_empty(), "{:?}", events.borrow());
     }
 }

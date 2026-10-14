@@ -8,7 +8,6 @@
 //! them. A row at the end paints the focus ring statically.
 
 use fframes_studio::design_system::{self, Appearance, TextStyle, text_style, tokens};
-use fframes_studio::text_input::{self, TextInput};
 use fframes_studio::ui::{
     Badge, Button, ButtonVariant, Collapsible, FieldRow, Icon, IconButton, IconButtonSize, Kbd,
     Menu, MenuState, Notice, SectionTitle, SegmentOption, Segmented, Select, Slider, StatusDot,
@@ -19,6 +18,7 @@ use gpui::{
     ParentElement, Render, StatefulInteractiveElement, Styled, Window, WindowBounds, WindowOptions,
     div, px, size,
 };
+use studio_ui::kit::{TextInput, TextInputState, bind_text_input_keys};
 
 struct Gallery {
     toggle_on: bool,
@@ -31,21 +31,20 @@ struct Gallery {
     menu_open: bool,
     menu_focus: FocusHandle,
     notice_visible: bool,
-    input: Entity<TextInput>,
-    compact_input: Entity<TextInput>,
+    input: Entity<TextInputState>,
+    compact_input: Entity<TextInputState>,
 }
 
 impl Gallery {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
-            let mut input = TextInput::new(cx);
-            input.placeholder = "Placeholder text".into();
+            let mut input = TextInputState::single_line(window, cx);
+            input.set_placeholder("Placeholder text");
             input
         });
         let compact_input = cx.new(|cx| {
-            let mut input = TextInput::new(cx);
-            input.placeholder = "Compact input".into();
-            input.compact = true;
+            let mut input = TextInputState::single_line(window, cx);
+            input.set_placeholder("Compact input");
             input.set_text("Typed value", cx);
             input
         });
@@ -124,7 +123,8 @@ fn caption(text: &str) -> gpui::AnyElement {
 }
 
 impl Render for Gallery {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = studio_theme::Theme::for_window(window, cx);
         let this = cx.entity();
         let palette = tokens().palette;
         let metrics = tokens().metrics;
@@ -388,8 +388,12 @@ impl Render for Gallery {
             .flex_col()
             .gap(px(metrics.space_2))
             .child(SectionTitle::new("TextInput"))
-            .child(self.input.clone())
-            .child(self.compact_input.clone());
+            .child(TextInput::plain(&theme, "gallery-input", &self.input))
+            .child(TextInput::plain(
+                &theme,
+                "gallery-compact-input",
+                &self.compact_input,
+            ));
 
         let focus_ring = row(
             "Focus ring (static sample)",
@@ -482,7 +486,7 @@ fn main() {
     gpui_platform::application()
         .with_assets(fframes_studio::assets::Assets)
         .run(|cx: &mut App| {
-            text_input::bind_keys(cx);
+            bind_text_input_keys(cx);
             design_system::set_appearance(design_system::appearance_from_window(
                 cx.window_appearance(),
             ));
@@ -492,7 +496,7 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()
                 },
-                |_, cx| cx.new(Gallery::new),
+                |window, cx| cx.new(|cx| Gallery::new(window, cx)),
             )
             .expect("failed to open the gallery window");
             cx.on_window_closed(|cx, _| cx.quit()).detach();

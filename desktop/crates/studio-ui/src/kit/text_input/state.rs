@@ -5,7 +5,8 @@ use super::*;
 impl TextInputState {
     pub(super) fn new(multi_line: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
         register_live_input(cx.weak_entity(), cx);
-        let focus = cx.focus_handle();
+        // A field is a tab stop until it is disabled.
+        let focus = cx.focus_handle().tab_stop(true);
         let blur = cx.on_blur(&focus, window, |this: &mut Self, _window, cx| {
             this.drag = None;
             cx.emit(TextInputEvent::Blurred);
@@ -75,8 +76,21 @@ impl TextInputState {
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
         if self.disabled != disabled {
             self.disabled = disabled;
+            self.focus = self.focus.clone().tab_stop(!disabled);
             cx.notify();
         }
+    }
+
+    /// An IME composition is in progress: Return and Escape belong to the IME,
+    /// and so do Tab and the other keys an owner routes itself.
+    pub fn is_composing(&self) -> bool {
+        self.marked_range.is_some()
+    }
+
+    /// Where the text (inside the field's padding) was last painted, in window
+    /// coordinates. `None` until the first paint.
+    pub fn text_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.text_bounds
     }
 
     pub fn is_disabled(&self) -> bool {
@@ -660,6 +674,11 @@ impl TextInputState {
     }
 
     pub(super) fn on_confirm(&mut self, _: &Confirm, _window: &mut Window, cx: &mut Context<Self>) {
+        // Return commits the composition, so it is the IME's while one is open.
+        if self.is_composing() {
+            cx.propagate();
+            return;
+        }
         if self.multi_line {
             self.replace(None, "\n", UndoGroup::Discrete, cx);
         } else {
@@ -668,6 +687,11 @@ impl TextInputState {
     }
 
     pub(super) fn on_cancel(&mut self, _: &Cancel, _window: &mut Window, cx: &mut Context<Self>) {
+        // Escape abandons the composition, not the field.
+        if self.is_composing() {
+            cx.propagate();
+            return;
+        }
         cx.emit(TextInputEvent::Cancelled);
     }
 

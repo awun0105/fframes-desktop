@@ -340,12 +340,12 @@ impl StudioShell {
                     shell.install_task_scope(scope, cx);
                 }
             });
-        let panel = cx.new(ConversationPanel::new);
+        let panel = cx.new(|cx| ConversationPanel::new(window, cx));
         let panel_subscription =
             cx.subscribe_in(&panel, window, |shell, _, event, window, cx| match event {
                 PanelEvent::Leave => window.focus(&shell.focus, cx),
             });
-        let preset_panel = cx.new(PresetPanel::new);
+        let preset_panel = cx.new(|cx| PresetPanel::new(window, cx));
         let preset_subscription =
             cx.subscribe_in(&preset_panel, window, |shell, _, event, window, cx| {
                 shell.preset_event(event.clone(), window, cx)

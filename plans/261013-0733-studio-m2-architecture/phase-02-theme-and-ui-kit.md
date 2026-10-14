@@ -91,6 +91,9 @@ Parity tests pass; the appearance gpui test passes and switching the OS appearan
   - Before the swap, tests pin what the app relies on today: Enter submits the prompt, single-line fields stay single-line, and the action names the harness and the app keymap dispatch. The swap is its own commit.
   - The test that imports `crate::editor_sidebar` (a hex field) is dropped with that dependency.
   - Parity: the harness's `type_text` paths (prompt, setup fields, preset fields) must stay green.
+  - Swapped (2026-10-14). While an IME composition is open, Enter and Escape call `cx.propagate()` instead of confirming or cancelling. Tests prove only that the field and its owner emit nothing; that the platform IME then receives the key (macOS especially) is unverified.
+  - Single-line fields flatten newlines on purpose: a pasted line break becomes a space.
+  - Fields are tab stops until disabled. Qualification reads the prompt through `text()` and clicks at `text_bounds()`; no script read the old "Composition: idle" status line.
 - **Threading the theme.** A view's `render` takes `let theme = Theme::for_window(window, cx);` once and passes `&theme` (it is `Copy`) to helpers and components. Helpers with no window take `theme: &Theme`. The static `APPEARANCE` atomic and `tokens()` go away. `main.rs`'s `observe_window_appearance` hook becomes `studio_theme::bind_window`.
 - **Tests.**
   - Cap's state tests come with the kit (collapsible, color picker, kbd, menu, number field, progress, segmented, selection header, slider, text input).

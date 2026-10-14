@@ -361,3 +361,135 @@ fn no_binding_is_a_bare_printable_key() {
         }
     }
 }
+
+// -- In a window ----------------------------------------------------------
+
+mod in_a_window {
+    use std::{cell::RefCell, rc::Rc};
+
+    use gpui::{TestAppContext, VisualTestContext};
+
+    use super::*;
+
+    struct Form {
+        first: Entity<TextInputState>,
+        second: Entity<TextInputState>,
+    }
+
+    impl gpui::Render for Form {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = Theme::for_window(window, cx);
+            div()
+                .flex()
+                .flex_col()
+                .w(px(240.))
+                .child(TextInput::plain(&theme, "first", &self.first))
+                .child(TextInput::plain(&theme, "second", &self.second))
+        }
+    }
+
+    type Events = Rc<RefCell<Vec<TextInputEvent>>>;
+
+    fn form(cx: &mut TestAppContext) -> (Entity<Form>, Events, &mut VisualTestContext) {
+        cx.update(bind_keys);
+        let (form, cx) = cx.add_window_view(|window, cx| Form {
+            first: cx.new(|cx| TextInputState::single_line(window, cx)),
+            second: cx.new(|cx| TextInputState::single_line(window, cx)),
+        });
+        let events = Events::default();
+        let log = events.clone();
+        cx.update(|_, cx| {
+            let first = form.read(cx).first.clone();
+            cx.subscribe(&first, move |_, event: &TextInputEvent, _| {
+                log.borrow_mut().push(event.clone())
+            })
+            .detach();
+        });
+        cx.run_until_parked();
+        (form, events, cx)
+    }
+
+    fn focus_first(form: &Entity<Form>, cx: &mut VisualTestContext) {
+        cx.update(|window, cx| {
+            let focus = form.read(cx).first.read(cx).focus_handle();
+            window.focus(&focus, cx);
+        });
+    }
+
+    fn keys_seen(events: &Events) -> Vec<TextInputEvent> {
+        events
+            .borrow()
+            .iter()
+            .filter(|event| **event != TextInputEvent::Changed)
+            .cloned()
+            .collect()
+    }
+
+    #[gpui::test]
+    fn enter_and_escape_during_a_composition_stay_with_the_ime(cx: &mut TestAppContext) {
+        let (form, events, cx) = form(cx);
+        focus_first(&form, cx);
+        cx.simulate_input("abc");
+        cx.update(|window, cx| {
+            let first = form.read(cx).first.clone();
+            first.update(cx, |input, cx| {
+                input.replace_and_mark_text_in_range(None, "\u{304b}", None, window, cx)
+            });
+        });
+        let composing = |cx: &mut VisualTestContext| {
+            cx.update(|_, cx| form.read(cx).first.read(cx).is_composing())
+        };
+        assert!(composing(cx));
+        cx.simulate_keystrokes("escape");
+        assert!(composing(cx), "Escape went to the IME");
+        // Return goes to the IME too, which commits the composition with it.
+        cx.simulate_keystrokes("enter");
+        assert_eq!(keys_seen(&events), []);
+
+        cx.update(|window, cx| {
+            let first = form.read(cx).first.clone();
+            first.update(cx, |input, cx| input.unmark_text(window, cx));
+        });
+        cx.simulate_keystrokes("enter");
+        cx.simulate_keystrokes("escape");
+        assert_eq!(
+            keys_seen(&events),
+            [TextInputEvent::Confirmed, TextInputEvent::Cancelled]
+        );
+    }
+
+    #[gpui::test]
+    fn tab_reaches_enabled_fields_only(cx: &mut TestAppContext) {
+        let (form, _, cx) = form(cx);
+        let focused = |cx: &mut VisualTestContext| {
+            cx.update(|window, cx| {
+                let form = form.read(cx);
+                (
+                    form.first.read(cx).focus_handle().is_focused(window),
+                    form.second.read(cx).focus_handle().is_focused(window),
+                )
+            })
+        };
+        cx.update(|_, cx| {
+            let first = form.read(cx).first.clone();
+            first.update(cx, |input, cx| input.set_disabled(true, cx));
+        });
+        cx.update(|window, cx| window.focus_next(cx));
+        assert_eq!(focused(cx), (false, true));
+
+        cx.update(|_, cx| {
+            let first = form.read(cx).first.clone();
+            first.update(cx, |input, cx| input.set_disabled(false, cx));
+        });
+        cx.update(|window, cx| window.focus_prev(cx));
+        assert_eq!(focused(cx), (true, false));
+    }
+
+    #[gpui::test]
+    fn the_painted_text_bounds_are_readable(cx: &mut TestAppContext) {
+        let (form, _, cx) = form(cx);
+        let bounds = cx.update(|_, cx| form.read(cx).first.read(cx).text_bounds());
+        let bounds = bounds.expect("painted");
+        assert!(f32::from(bounds.size.width) > 0.);
+    }
+}
