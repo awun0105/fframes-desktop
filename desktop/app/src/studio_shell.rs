@@ -608,6 +608,9 @@ struct PreparedInstall {
 
 pub struct StudioShell {
     backend: Arc<Mutex<Backend>>,
+    /// The environment's build service, read here so the UI thread never waits on the
+    /// backend for it.
+    builds: BuildService,
     closed: Arc<AtomicBool>,
     focus: gpui::FocusHandle,
     presentation: Presentation,
@@ -969,6 +972,7 @@ impl StudioShell {
         .detach();
         let mut shell = Self {
             backend,
+            builds: environment.builds.clone(),
             closed,
             focus,
             presentation: Presentation::default(),
@@ -1648,7 +1652,7 @@ impl StudioShell {
         self.agent.serial += 1;
         let serial = self.agent.serial;
         self.agent.opening = Some(serial);
-        let service = self.backend.lock().environment.builds.clone();
+        let service = self.builds.clone();
         let build = self
             .presentation
             .agent_sdk
@@ -1688,7 +1692,7 @@ impl StudioShell {
         if desired == self.agent.applied_sdk {
             return;
         }
-        let service = self.backend.lock().environment.builds.clone();
+        let service = self.builds.clone();
         if workflow
             .set_build(
                 self.presentation
@@ -2540,13 +2544,14 @@ impl StudioShell {
             revision: "capturing validated revision".into(),
             label: "Preparing immutable project snapshot".into(),
         });
-        let service = self.backend.lock().environment.builds.clone();
+        let service = self.builds.clone();
         let spawn = std::thread::Builder::new()
             .name("studio-mp4-export".into())
             .spawn(move || {
-                let result = controller
-                    .lock()
-                    .freeze_export_source()
+                // The freeze takes the project only briefly; rendering must not hold it,
+                // or every command on the project waits for the export.
+                let source = controller.lock().freeze_export_source();
+                let result = source
                     .map_err(|error| error.to_string())
                     .and_then(|source| {
                         export_mp4(

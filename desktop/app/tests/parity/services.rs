@@ -93,3 +93,15 @@ fn a_failed_export_is_shown(cx: &mut gpui::TestAppContext) {
     );
     assert!(!destination.exists());
 }
+
+#[gpui::test]
+fn commands_run_while_an_export_renders(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed(cx);
+    studio.dispatch(ExportVideo);
+    studio.choose_new_path(&studio.path("export.mp4"));
+    studio.wait("export rendering", |t| t["export"]["state"] == "rendering");
+    // Cancelling the (absent) preview build is a command on the open project.
+    studio.dispatch(CancelPreview);
+    studio.wait("command finished", |t| t["busy"] == false);
+    assert_eq!(studio.telemetry()["export"]["state"], "rendering");
+}
