@@ -686,6 +686,8 @@ impl Render for StudioSpikeApp {
                     .flex()
                     .flex_col()
                     .gap_2()
+                    // The setup view fills its box like a settings window.
+                    .h(px(560.))
                     .child(self.setup_view.clone()),
             )
             // IME Text Input Section

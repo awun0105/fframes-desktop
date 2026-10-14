@@ -10,7 +10,8 @@ use studio_sdk::{
 use studio_theme::{METRICS, TextStyle, Theme, text_style};
 
 use crate::kit::{
-    Badge, Card, EditorButton, Icon, Notice, StatusDot, Tone, divider, heading, icon, muted,
+    Badge, Card, EditorButton, Icon, Notice, Section, SettingRow, SettingsFrame, SettingsNavItem,
+    StatusDot, Tone, icon, muted,
 };
 
 fn default_projects_root() -> PathBuf {
@@ -318,8 +319,8 @@ fn failing_step(previous: &SetupState) -> Option<usize> {
         .or_else(|| statuses.iter().position(|s| *s == StepStatus::Pending))
 }
 
-fn step_row(theme: &Theme, name: &'static str, status: StepStatus) -> gpui::Div {
-    let palette = theme.editor;
+/// A step as a settings row: its name beside its status marker.
+fn step_row(theme: &Theme, name: &'static str, status: StepStatus) -> gpui::AnyElement {
     let metrics = METRICS;
     let marker = match status {
         StepStatus::Pending => StatusDot::new(Tone::Neutral).into_any_element(),
@@ -331,29 +332,21 @@ fn step_row(theme: &Theme, name: &'static str, status: StepStatus) -> gpui::Div 
             icon(Icon::AlertTriangle, metrics.icon_md, theme.red_11).into_any_element()
         }
     };
-    let name_color = match status {
-        StepStatus::Pending => palette.text_3,
-        _ => palette.text_1,
-    };
-    div()
+    let control = div()
         .flex()
         .items_center()
         .gap(px(metrics.space_2))
+        .children(
+            (status == StepStatus::Active).then(|| Badge::new("In progress").tone(Tone::Info)),
+        )
         .child(
             div()
                 .w(px(metrics.icon_md))
                 .flex()
                 .justify_center()
                 .child(marker),
-        )
-        .child(
-            text_style(div(), TextStyle::Label)
-                .text_color(name_color)
-                .child(name),
-        )
-        .children(
-            (status == StepStatus::Active).then(|| Badge::new("In progress").tone(Tone::Info)),
-        )
+        );
+    SettingRow::settings(theme, name, None, control.into_any_element()).into_any_element()
 }
 
 fn detail_line(theme: &Theme, text: impl Into<gpui::SharedString>) -> gpui::Div {
@@ -477,44 +470,37 @@ impl SetupView {
     }
 }
 
-const CARD_MAX_W: f32 = 560.;
-const CARD_PADDING: f32 = 24.;
-
 impl Render for SetupView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_window(window, cx);
-        let palette = theme.editor;
-        let metrics = METRICS;
-        let steps = div().flex().flex_col().gap(px(metrics.space_2)).children(
-            STEP_NAMES
-                .iter()
-                .zip(step_statuses(&self.state))
-                .map(|(name, status)| step_row(&theme, name, status)),
+        let steps = STEP_NAMES
+            .iter()
+            .zip(step_statuses(&self.state))
+            .map(|(name, status)| step_row(&theme, name, status))
+            .collect();
+        let setup = Section::settings(
+            &theme,
+            "Set up fframes Studio",
+            Some("Get the managed SDK ready and render a template project."),
+            None,
+            vec![
+                Card::settings_rows(&theme, steps).into_any_element(),
+                Card::settings(&theme, true)
+                    .child(self.state_detail(&theme, cx))
+                    .into_any_element(),
+            ],
         );
-
-        div()
-            .flex()
-            .w_full()
-            .justify_center()
-            .p(px(metrics.space_6))
-            .bg(palette.window)
-            .child(
-                Card::editor(&theme)
-                    .flex()
-                    .flex_col()
-                    .w_full()
-                    .max_w(px(CARD_MAX_W))
-                    .p(px(CARD_PADDING))
-                    .gap(px(metrics.space_4))
-                    .child(heading(&theme, "Set up fframes Studio"))
-                    .child(muted(
-                        &theme,
-                        "Get the managed SDK ready and render a template project.",
-                    ))
-                    .child(steps)
-                    .child(divider(&theme))
-                    .child(self.state_detail(&theme, cx)),
-            )
+        SettingsFrame::settings(
+            &theme,
+            "setup",
+            vec![SettingsNavItem::new(
+                "setup-page",
+                "Setup",
+                Icon::Package,
+                true,
+            )],
+        )
+        .children([setup.into_any_element()])
     }
 }
 
