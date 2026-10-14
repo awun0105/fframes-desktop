@@ -644,8 +644,10 @@ class Check:
     env: dict[str, str] = field(default_factory=dict)
 
 
-def cargo_test(package: str, tests: list[str], tail: list[str] | None = None) -> list[str]:
-    argv = ["cargo", "test", "--locked", "-p", package]
+def cargo_test(packages: str | list[str], tests: list[str], tail: list[str] | None = None) -> list[str]:
+    argv = ["cargo", "test", "--locked"]
+    for package in [packages] if isinstance(packages, str) else packages:
+        argv += ["-p", package]
     for name in tests:
         argv += ["--test", name]
     return argv + (["--"] + tail if tail else [])
@@ -668,7 +670,7 @@ CHECKS = [
     ),
     Check(
         "app_tools_validation", ["dev_tools_and_validation"],
-        cargo_test("fframes-studio", ["agent_tools", "build_sharing", "candidate_runner", "promotion_handoff"]),
+        cargo_test(["fframes-studio", "studio-engine"], ["agent_tools", "build_sharing", "candidate_runner", "promotion_handoff"]),
         [f"tests/{n}.rs" for n in ("agent_tools", "build_sharing", "candidate_runner", "promotion_handoff")],
         "project tools broker/CLI/MCP, shared build service, candidate validation and preview handoff",
     ),

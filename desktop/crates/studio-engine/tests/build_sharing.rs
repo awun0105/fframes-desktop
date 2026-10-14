@@ -14,7 +14,7 @@ use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator
 use studio_engine::services::worker_project::shared_build_service;
 use studio_engine::{Controller, JobKind, JobResult, app_paths::AppPaths};
 
-#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
+#[path = "support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 

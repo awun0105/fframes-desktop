@@ -713,7 +713,7 @@ class InstalledHelperTests(unittest.TestCase):
             self.assertTrue(packaging.windows_dependencies(temp).startswith("# kernel32.dll\n"))
 
     def test_python_lookup_mirrors_the_rust_sibling_lookup(self):
-        source = (assembly.ROOT / "desktop/app/src/agent_tools.rs").read_text()
+        source = (assembly.ROOT / "desktop/crates/studio-engine/src/agent_tools.rs").read_text()
         body = source[source.index("pub fn sibling_binary") :].split("\n}\n", 1)[0]
         for needle in ("current_exe()", ".parent()?", "EXE_SUFFIX", "is_file()"):
             self.assertIn(needle, body)

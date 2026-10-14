@@ -196,7 +196,7 @@ jobs:
       - name: Assemble and verify native offline SDK
         run: python3 desktop/scripts/assemble-phase-zero-sdk.py --out "$RUNNER_TEMP/studio-sdk"
       - name: Install SDK and launch managed worker
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test managed_worker -- --ignored
+        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test managed_worker -- --ignored
       - name: Package native app and SDK artifact
         run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/fframes-studio-${{ matrix.target }}" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
       - name: Sign and notarize macOS app package

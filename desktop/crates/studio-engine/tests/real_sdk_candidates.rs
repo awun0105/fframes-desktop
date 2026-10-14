@@ -47,7 +47,7 @@ use studio_engine::{
 use studio_project::checkpoint::Checkpoints;
 use studio_sdk::{CompatibilityManifest, ProjectManager};
 
-#[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
+#[path = "support/preview_fixture.rs"]
 mod preview_fixture;
 
 fn sdk(temp: &tempfile::TempDir) -> (PathBuf, CompatibilityManifest) {

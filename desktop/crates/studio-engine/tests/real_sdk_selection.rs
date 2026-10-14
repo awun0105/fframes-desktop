@@ -69,7 +69,7 @@ fn generated_title_identity_geometry_and_source_anchor_survive_managed_render() 
 
     let manager = ProcessTreeManager::new();
     let builds =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/m5-managed-selection-builds");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/m5-managed-selection-builds");
     let build = worker_project::compile_portable_worker(
         &project,
         &sdk,

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 APP_BINARY = "fframes-studio"
 # The agent is told `studio-tools --capability <file> <tool>` and MCP uses `studio-mcp`; the app
-# finds both next to its own executable (`agent_tools::sibling_binary` in app/src/agent_tools.rs).
+# finds both next to its own executable (`agent_tools::sibling_binary` in crates/studio-engine/src/agent_tools.rs).
 HELPER_BINARIES = ("studio-tools", "studio-mcp")
 PACKAGED_BINARIES = (APP_BINARY, "studio_setup", *HELPER_BINARIES)
 # Windows ships the Universal CRT (api-ms-win-crt-*), but these DLLs come only from the Visual C++

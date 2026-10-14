@@ -124,13 +124,15 @@ jobs:
         run: python3 desktop/scripts/assemble-phase-zero-sdk.py --out "$RUNNER_TEMP/studio-sdk"
       - name: Install SDK and launch managed worker
         if: inputs.full
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test managed_worker -- --ignored
+        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test managed_worker -- --ignored
       - name: Portable project and SDK relocation with real worker
         if: inputs.full
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test portable_managed_worker -- --ignored
+        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test portable_managed_worker -- --ignored
       - name: Revision-safe preview and compiled timeline integration
         if: inputs.full
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test preview_coordination --test timeline_controls -- --ignored
+        run: |
+          SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test preview_coordination -- --ignored
+          SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test timeline_controls -- --ignored
       - name: Real SDK CPU pixels and audio mix parity
         if: inputs.full
         run: |
@@ -306,10 +308,12 @@ jobs:
         run: |
           $env:SDK_BUNDLE = "$env:RUNNER_TEMP\studio-sdk"
           foreach ($test in @("managed_worker", "portable_managed_worker")) {
-            cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test $test -- --ignored
+            cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test $test -- --ignored
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test preview_coordination --test timeline_controls -- --ignored
+          cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test preview_coordination -- --ignored
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test timeline_controls -- --ignored
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:AUDIO_PREVIEW_EVIDENCE = "$env:RUNNER_TEMP\m2-parity.json"
           cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored

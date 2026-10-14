@@ -52,7 +52,7 @@ def test_groups():
         ],
         "dev_source_retrieval_and_tools": [
             command(*project, "--test", "source_index"),
-            command(*app, "--test", "selection_tools"),
+            command(*engine, "--test", "selection_tools"),
         ],
         "dev_frozen_canvas_task_scope": [
             command(*engine, "--test", "agent_task_scope"),
@@ -210,7 +210,7 @@ def run():
 
     managed_name = "dev_managed_sdk_title_lookup"
     managed_command = command(
-        "--manifest-path", "desktop/Cargo.toml", "-p", "fframes-studio", "--test", "real_sdk_selection",
+        "--manifest-path", "desktop/Cargo.toml", "-p", "studio-engine", "--test", "real_sdk_selection",
         "--", "--ignored", "--exact", "generated_title_identity_geometry_and_source_anchor_survive_managed_render", "--nocapture",
     )
     managed_status, managed_evidence = run_group(
