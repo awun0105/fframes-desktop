@@ -535,7 +535,7 @@ fn a_failed_preview_after_a_committed_revision_keeps_the_previous_playable_previ
 fn panel_colors_never_come_from_preset_data() {
     // The preset panel is Studio chrome: no `rgb(...)` in it is computed from a snapshot,
     // token, override, CSS entry or catalog entry, and it never reads runtime token values.
-    let source = include_str!("../src/preset_panel.rs");
+    let source = include_str!("../../crates/studio-ui/src/preset_panel.rs");
     let production = source.split("#[cfg(test)]").next().unwrap();
     for (n, line) in production.lines().enumerate() {
         let Some(at) = line.find("rgb(") else {

@@ -15,7 +15,8 @@ use studio_engine::presets::{
     CssView, MAX_CSS_LINES, Outcome, PresetCommand, PresetReport, PresetView,
 };
 use studio_theme::{METRICS, TextStyle, Theme, text_style};
-use studio_ui::kit::{
+
+use crate::kit::{
     CollapsibleSection, EditorButton, Handler, Icon, IconButton, IconButtonSize, Notice, TextInput,
     TextInputEvent, TextInputState, Tone, divider, focusable, icon, on_activate, section_title,
     with_tooltip,
@@ -760,7 +761,7 @@ mod field_keys {
     }
 
     fn open(cx: &mut TestAppContext) -> (Entity<PresetPanel>, Events, &mut VisualTestContext) {
-        cx.update(studio_ui::kit::bind_text_input_keys);
+        cx.update(crate::kit::bind_text_input_keys);
         let (panel, cx) = cx.add_window_view(|window, cx| {
             let mut panel = PresetPanel::new(window, cx);
             panel.set_view(Some(applied()), cx);

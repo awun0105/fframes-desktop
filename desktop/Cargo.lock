@@ -6314,6 +6314,7 @@ dependencies = [
  "fframes-studio-protocol",
  "gpui",
  "image",
+ "serde_json",
  "smallvec",
  "studio-engine",
  "studio-proto",

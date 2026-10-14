@@ -1,7 +1,7 @@
 pub mod app;
 pub mod assets;
 pub mod conversation_panel;
-pub use studio_ui::{actions, canvas_view, frame_image};
+pub use studio_ui::{actions, canvas_view, frame_image, preset_panel};
 pub mod selection_spike;
 pub mod setup_view;
 
@@ -13,7 +13,6 @@ pub use selection_spike::{SelectedElementInfo, SelectionError, SelectionSpike};
 pub use setup_view::{SetupState, SetupView};
 
 pub mod presentation_stress;
-pub mod preset_panel;
 pub mod preview_element;
 pub mod timeline_view;
 pub mod ui;
