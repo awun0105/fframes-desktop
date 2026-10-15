@@ -600,7 +600,7 @@ fn an_undo_is_validated_through_the_candidate_pipeline_and_hands_off_like_an_app
 fn held_child(
     scope: &ProcessTreeManager,
 ) -> std::sync::Arc<parking_lot::Mutex<studio_bootstrap::TrackedChild>> {
-    let mut options = if cfg!(windows) {
+    let options = if cfg!(windows) {
         let mut options = SpawnOptions::new("powershell");
         options.args(["-NoProfile", "-Command", "Start-Sleep 60"]);
         options
