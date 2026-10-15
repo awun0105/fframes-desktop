@@ -600,8 +600,15 @@ fn an_undo_is_validated_through_the_candidate_pipeline_and_hands_off_like_an_app
 fn held_child(
     scope: &ProcessTreeManager,
 ) -> std::sync::Arc<parking_lot::Mutex<studio_bootstrap::TrackedChild>> {
-    let mut options = SpawnOptions::new("sleep");
-    options.arg("60");
+    let mut options = if cfg!(windows) {
+        let mut options = SpawnOptions::new("powershell");
+        options.args(["-NoProfile", "-Command", "Start-Sleep 60"]);
+        options
+    } else {
+        let mut options = SpawnOptions::new("sleep");
+        options.arg("60");
+        options
+    };
     scope.spawn(options).unwrap()
 }
 
@@ -708,12 +715,29 @@ fn share(w: World) -> (Arc<parking_lot::Mutex<Controller>>, impl Drop) {
     (Arc::new(parking_lot::Mutex::new(controller)), _temp)
 }
 
+/// The watcher's hint may arrive after the first scan (FSEvents on macOS delivers it
+/// late, even for writes made before the controller opened): reconcile until it is quiet.
+fn settle_watcher(controller: &parking_lot::Mutex<Controller>) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let mut c = controller.lock();
+        c.reconcile().unwrap();
+        if !c.changed_hint() {
+            break;
+        }
+        drop(c);
+        assert!(Instant::now() < deadline, "the change hint never settled");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 #[test]
 fn the_install_fence_excludes_every_controller_mutation_until_the_install_completes() {
     let mut w = world();
     let (coordinator, mut state) = display_base(&mut w);
     let ready = adopted_ready(&mut w, &coordinator, &mut state, "fenced install");
     let (controller, _keep) = share(w);
+    settle_watcher(&controller);
     // A fence is only offered while the controller is free...
     let fence = install_fence(&controller).expect("a free controller offers the fence");
     assert!(
@@ -757,18 +781,7 @@ fn a_source_that_moved_before_the_fence_never_installs_the_prepared_preview() {
     // The source advances after preparation finished and before the commit.
     let root = controller.lock().project.root.clone();
     fs::write(root.join("src/lib.rs"), "// moved on\n").unwrap();
-    // The watcher's hint may arrive after the first scan: reconcile until it is quiet.
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let mut c = controller.lock();
-        c.reconcile().unwrap();
-        if !c.changed_hint() {
-            break;
-        }
-        drop(c);
-        assert!(Instant::now() < deadline, "the change hint never settled");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    settle_watcher(&controller);
     let fence = install_fence(&controller).expect("free controller");
     // Validated against the guard's current state, not a copy taken earlier: refused.
     assert!(state.can_install(&ready, fence.state()).is_err());

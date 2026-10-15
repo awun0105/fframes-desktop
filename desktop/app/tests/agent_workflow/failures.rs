@@ -39,10 +39,9 @@ fn a_provider_crash_fails_the_task_with_the_draft_retained_and_no_writer() {
 
 #[test]
 fn an_adapter_that_dies_during_startup_fails_the_task_cleanly() {
-    let w = World::with(Options {
-        wrapper: vec!["env".into(), "SCRIPTED_AGENT_INIT=exit".into()],
-        ..Options::default()
-    });
+    let w = World::new();
+    // A marker file instead of `env SCRIPTED_AGENT_INIT=exit`: Windows has no `env`.
+    std::fs::write(w.agent.join("init-mode"), "exit").unwrap();
     w.submit(&good("never"));
     let task = w.wait_task(None);
     assert_eq!(task.phase, TaskPhase::Failed);

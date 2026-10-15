@@ -9,7 +9,8 @@ Usage: python3 acp-agent.py ROOT
          `session/new` params.cwd must equal it.
 
 Environment:
-  SCRIPTED_AGENT_INIT=exit   exit(3) on `initialize` (start failure)
+  SCRIPTED_AGENT_INIT=exit   exit(3) on `initialize` (start failure); or the file
+                             <evidence>/init-mode holding the mode
   SCRIPTED_AGENT_INIT=auth   answer `session/new` with -32000 "Authentication required"
   SCRIPTED_PROMPT_IMAGE=1    advertise ACP image-prompt support and record metadata only
   ROOT/prompt-image          same capability switch, usable with the isolated child environment
@@ -63,7 +64,9 @@ else:
 root = pathlib.Path(sys.argv[1])
 PID = os.getpid()
 SESSION_ID = f"sess-{PID}"
-INIT_MODE = os.environ.get("SCRIPTED_AGENT_INIT", "")
+INIT_MODE = os.environ.get("SCRIPTED_AGENT_INIT") or (
+    (root / "init-mode").read_text().strip() if (root / "init-mode").is_file() else ""
+)
 PROMPT_IMAGE = os.environ.get("SCRIPTED_PROMPT_IMAGE") == "1" or (root / "prompt-image").is_file()
 LOAD_SESSION = os.environ.get("SCRIPTED_LOAD_SESSION") == "1" or (root / "load-session").is_file()
 HARD_CAP_SECONDS = 120

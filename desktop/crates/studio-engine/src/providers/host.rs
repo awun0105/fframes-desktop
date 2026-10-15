@@ -88,7 +88,7 @@ impl AdapterFile {
             let message = e.to_string();
             if message.contains("`writer_qualification`") {
                 // Containment is derived from validated evidence now, never configured.
-                "\"writer_qualification\" is no longer a setting: writer containment is derived from the installed qualification ledger for this exact adapter. Remove it.".to_owned()
+                "\"writer_qualification\" is no longer a setting: writer containment is verified each time the adapter starts. Remove it.".to_owned()
             } else {
                 format!("Invalid adapter JSON: {message}")
             }

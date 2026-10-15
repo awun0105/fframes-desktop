@@ -360,8 +360,13 @@ fn a_root_renamed_away_and_replaced_by_a_link_fails_the_pathname_binding() {
         // The held handle still reaches the real directory: the swap is only visible
         // through the pathname, which is exactly what the binding re-checks.
         assert!(root.is_still_at(&root, ""));
-        // A look-alike directory under the old name is another directory.
-        fs::remove_dir(&project).unwrap();
+        // A look-alike directory under the old name is another directory. A Unix
+        // symlink is a file; a Windows directory link or junction is a directory.
+        if cfg!(unix) {
+            fs::remove_file(&project).unwrap();
+        } else {
+            fs::remove_dir(&project).unwrap();
+        }
         fs::create_dir(&project).unwrap();
         assert!(root.check_root_binding().is_err());
     }
