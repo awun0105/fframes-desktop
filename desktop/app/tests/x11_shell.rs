@@ -450,11 +450,14 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     // The staged preview was adopted on the UI thread and installed with matching
     // video/audio under a fresh epoch: the displayed revision is the accepted one and
     // the awaiting-preview label is gone.
+    // Waits for the displayed frame to answer the newest seek: a frame request can still be
+    // in flight when the hand-off is first reported.
     let shown = telemetry.wait("the matching preview to display", |v| {
         v["panel"]["handoff"] == "Displayed"
             && v["awaiting_preview"] == false
             && v["displayed_revision"].is_string()
             && displayed(v)["video_revision"] != base["video_revision"]
+            && displayed(v)["frame_serial"] == v["preview"]["seek_serial"]
     });
     let published = shown["displayed_revision"].as_str().unwrap().to_owned();
     assert_eq!(shown["panel"]["undo"], "available");
@@ -512,6 +515,7 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
             && v["displayed_revision"].is_string()
             && v["displayed_revision"].as_str() != Some(published.as_str())
             && v["awaiting_preview"] == false
+            && displayed(v)["frame_serial"] == v["preview"]["seek_serial"]
     });
     assert!(
         !project.join("notes.txt").exists(),
@@ -815,11 +819,19 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             && v["panel"]["before_evidence"]["state"] == "Ready"
     });
     assert_eq!(frozen["panel"]["task_scope"], range_label, "{frozen}");
-    telemetry.wait("the AutoApply range candidate evidence", |v| {
+    // AutoApply releases the candidate evidence as soon as it accepts, often between two
+    // reads, so a released record of the same frames counts too.
+    let range_evidence = telemetry.wait("the AutoApply range candidate evidence", |v| {
+        let (before, after) = (
+            &v["panel"]["before_evidence"],
+            &v["panel"]["after_evidence"],
+        );
         scope_of(v) == Some(range_label.as_str())
-            && v["panel"]["after_evidence"]["state"] == "Ready"
+            && (after["state"] == "Ready" || after["state"] == "Released")
+            && after["revision"] != before["revision"]
+            && after["artifacts"].is_array()
+            && frames_of(after) == frames_of(before)
     });
-    let range_evidence = telemetry.read().expect("range evidence telemetry");
     let range_before = &range_evidence["panel"]["before_evidence"];
     let range_after = &range_evidence["panel"]["after_evidence"];
     assert_ne!(
