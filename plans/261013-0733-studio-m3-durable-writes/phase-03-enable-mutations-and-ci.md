@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Open the gates, path aliases and CI coverage"
-status: in-progress
+status: completed
 priority: P1
 effort: "3-5d"
 dependencies: [1, 2, 4]
@@ -31,7 +31,12 @@ Edit transactions, preset apply and agent apply run on Windows and macOS, protec
 - [x] `MUTATION_QUALIFIED` removed; gates open on probe
 - [x] Apply-gate test rewritten; parity assertions flipped
 - [x] Workflow suites on three platforms (Desktop self-hosted validation run 38753289498 and Desktop CI run 38753289654 on commit 34a342f, 2026-10-15)
-- [ ] Preset apply and agent Apply by hand in the GUI on this VM (not done: needs a person at the RDP session)
+- [x] By hand in the GUI on this VM (2026-10-15): preset apply and reset work. Agent Apply by hand was not reported before the owner closed the phase; the Codex adapter now installs and its connection probe reports Ready, and the scripted-agent suites cover Apply on all three platforms.
+
+### Found during the check by hand
+
+- Installing an adapter failed with npm's `Maximum call stack size exceeded`: Studio passed npm a path with the verbatim `\\?\` prefix, and npm's `realpath` never ends on a verbatim path. The installer now strips that prefix (`studio_bootstrap::external_path`, shared with the SDK environment), with a Windows regression test.
+- Open: an `io error: The pipe is being closed. (os error 232)` was shown next to the connection-test notice. It is not from the adapter probe (Ready when reproduced); it matches the preview worker client's error text. Not reproduced yet.
 - [x] Docs sentence updated
 
 ## Success criteria
