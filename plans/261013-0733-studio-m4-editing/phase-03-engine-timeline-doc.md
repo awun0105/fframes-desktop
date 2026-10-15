@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Engine timing document and edit history"
-status: in-progress
+status: completed
 priority: P1
 effort: "3-4d"
 dependencies: [1]
@@ -67,12 +67,24 @@ Cap `editor_edits.rs`: snapshot history; `pause()`/`resume()` bracket a drag int
   accounts new PCM, releases the previous artifact, and publishes
   `PreviewEvents::retimed`. A failure after `set_timing` puts the worker back on its
   previous document. Builds apply the document before reading their timeline.
-  Candidate previews stay in code order, because their probed audio is laid out that
-  way, and an adopted candidate is retimed by the same lane. A worker without
+  A candidate's worker plays the candidate's own `timeline.json` from before the probe
+  (its probed audio and staged preview use that layout), and an adopted candidate is
+  retimed to the session's document by the same lane. A worker without
   `set_timing_v1` is refused unless the document is the code order.
 - **Candidates.** A captured candidate and its report carry the build revision, so
   validation matches the build identity. A changed `timeline.json` broadens validation
-  to the full video.
+  to the full video. A document the candidate's worker rejects (or a worker that cannot
+  play one) fails at the worker stage as a source failure.
+- **Export.** `freeze_export_source` selects the task head or the saved revision as
+  before, but accepts it when its build revision equals the current one, so timing
+  edits after a build or publication do not block an export. The worker reads only
+  `--timing-file`, so the frozen tree's `timeline.json` is never played; the export
+  plays the session's document (`timing_for_export`, `None` without clips).
+- **Promotion.** `learn_timeline` also accepts the adopted preview of the current
+  promotion, whose tag carries the task generation; editing is enabled after an agent
+  publication without a rebuild.
 - **Tests.** `tests/timing.rs` covers each case listed above against a synthetic
-  three-scene timeline. `tests/timing_retime.rs` (ignored, `SDK_BUNDLE`) retimes a
-  real worker built from the template.
+  three-scene timeline, plus export after a trim. `tests/promotion_install.rs` covers
+  editing after an adopted promotion. `tests/timing_retime.rs` and
+  `real_sdk_candidates_play_their_own_timing_document` (ignored, `SDK_BUNDLE`) run real
+  workers built from the template. All runs were on Windows only.

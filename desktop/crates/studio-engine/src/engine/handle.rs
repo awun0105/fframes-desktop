@@ -275,7 +275,7 @@ impl EngineHandle {
                 let (source, timing_json) = {
                     let controller = controller.lock();
                     let source = controller.freeze_export_source();
-                    (source, controller.timing_for_preview().0)
+                    (source, controller.timing_for_export())
                 };
                 drop(controller);
                 let result = source

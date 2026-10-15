@@ -135,11 +135,15 @@ impl Compiler for CountingCargo {
 
 impl Real {
     fn new() -> Self {
+        Self::with_project(preview_fixture::create)
+    }
+
+    fn with_project(create: impl FnOnce(&std::path::Path, &CompatibilityManifest)) -> Self {
         let cargo = Arc::new(CountingCargo(AtomicUsize::new(0)));
         let temp = tempfile::tempdir().unwrap();
         let (sdk, manifest) = sdk(&temp);
         let root = temp.path().join("portable-video");
-        preview_fixture::create(&root, &manifest);
+        create(&root, &manifest);
         let paths = AppPaths::new(temp.path().join("data")).unwrap();
         let controller = Controller::open(&root, &paths).unwrap();
         Self {
@@ -359,6 +363,80 @@ fn real_sdk_candidate_validation_scenarios() {
         failure.summary.contains("absent.jpg"),
         "{}",
         failure.summary
+    );
+    assert!(run.staged.is_none());
+}
+
+#[test]
+#[ignore = "requires SDK_BUNDLE or SDK_ACTIVE; real compiler + preview worker playing the candidate's timeline.json"]
+fn real_sdk_candidates_play_their_own_timing_document() {
+    // The project template: scenes intro, story and outro in code order.
+    let mut real = Real::with_project(|root, manifest| {
+        studio_project::create(
+            root,
+            "Timing",
+            studio_engine::build_materialization::sdk_pin(manifest),
+            &manifest.fframes_version,
+            manifest.studio_runtime_version(),
+        )
+        .unwrap();
+    });
+    let timing = |json: &'static str| {
+        move |draft: &std::path::Path| {
+            fs::write(draft.join(studio_project::revision::TIMING_FILE), json).unwrap()
+        }
+    };
+    let keys = |run: &studio_engine::services::candidate_runner::CandidateRun| -> Vec<String> {
+        let staged = run.staged.as_ref().expect("staged");
+        staged
+            .ready()
+            .timeline
+            .scenes
+            .iter()
+            .map(|scene| scene.clip.as_ref().unwrap().timing_key.clone())
+            .collect()
+    };
+
+    let (_, run) = real.candidate(|_| {}, 0);
+    assert!(run.report.passed(), "{:?}", run.report.failure());
+    assert_eq!(keys(&run), ["intro", "story", "outro"]);
+    let code_order = run.staged.as_ref().unwrap().ready().timeline.total_frames;
+    let code_order_samples = run.staged.as_ref().unwrap().ready().audio.sample_count;
+    drop(run);
+
+    // A timing-only edit: the probe and the staged playback use the agent's layout.
+    let (_, run) = real.candidate(
+        timing(
+            r#"{"version":1,"clips":[{"key":"outro","trim_start_frames":0,"trim_end_frames":0},{"key":"intro","trim_start_frames":15,"trim_end_frames":0}]}"#,
+        ),
+        0,
+    );
+    assert!(run.report.passed(), "{:?}", run.report.failure());
+    assert_eq!(keys(&run), ["outro", "intro", "story"]);
+    let ready = run.staged.as_ref().unwrap().ready();
+    assert_eq!(ready.timeline.total_frames, code_order - 15);
+    assert!(
+        ready.audio.sample_count < code_order_samples,
+        "the staged audio is laid out with the candidate's timing"
+    );
+    drop(run);
+
+    // A trim past the scene's length is the candidate's fault, reported to the repair turn.
+    let (_, run) = real.candidate(
+        timing(
+            r#"{"version":1,"clips":[{"key":"intro","trim_start_frames":100000,"trim_end_frames":0}]}"#,
+        ),
+        0,
+    );
+    let failure = run.report.failure().expect("rejected timing");
+    assert_eq!(
+        (failure.stage, failure.kind),
+        (ValidationStage::Worker, FailureKind::Source)
+    );
+    assert!(
+        failure.output_tail.contains("timeline.json"),
+        "{}",
+        failure.output_tail
     );
     assert!(run.staged.is_none());
 }

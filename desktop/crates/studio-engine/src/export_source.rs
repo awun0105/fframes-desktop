@@ -49,29 +49,29 @@ impl Controller {
     /// Freezes the latest validated published task revision, or the current saved
     /// revision after the preview build has succeeded. This deliberately does not use
     /// `ProjectState::accepted()` when a newer task revision is published.
+    ///
+    /// The timing document is not taken from the frozen tree: an export plays the open
+    /// session's (`Controller::timing_for_export`). So the selected revision only has to
+    /// hold the current source's code, and timeline edits made since it was saved or
+    /// published do not stop an export.
     pub fn freeze_export_source(&self) -> Result<FrozenExportSource, EngineError> {
         let state = self.state();
-        let (revision, task_revision, label) = match state.task_history().head() {
-            Some(record) if record.published == *state.source() => (
+        let (revision, task_revision, label, other_code) = match state.task_history().head() {
+            Some(record) => (
                 record.published.clone(),
                 Some(record.id.clone()),
                 format!("Published edit · {}", record.prompt_summary),
-            ),
-            Some(record) => {
-                return Err(EngineError::Diagnostic(format!(
+                format!(
                     "latest validated edit {} is not the current project source; reconcile the project before exporting",
                     record.id
-                )));
-            }
-            None if state.source() == state.accepted()
-                && state.built() == Some(state.build_source()) =>
-            {
-                (
-                    state.source().clone(),
-                    None,
-                    "Saved project · preview build verified".into(),
-                )
-            }
+                ),
+            ),
+            None if state.built() == Some(state.build_source()) => (
+                state.accepted().clone(),
+                None,
+                "Saved project · preview build verified".into(),
+                "project has unsaved, unvalidated source; build and save or publish a validated edit before exporting".into(),
+            ),
             None if state.source() != state.accepted() => {
                 return Err(EngineError::Diagnostic(
                     "project has unsaved, unvalidated source; build and save or publish a validated edit before exporting".into(),
@@ -83,11 +83,13 @@ impl Controller {
                 ));
             }
         };
+        // Equal revisions hold equal code; otherwise the frozen tree is compared below.
+        let same_revision = revision == *state.source();
 
         let live_source_warning = match studio_project::revision::SourceInventory::scan(
             &self.project.root,
         ) {
-            Ok(inventory) if inventory.revision == revision => None,
+            Ok(inventory) if inventory.revision == *state.source() => None,
             Ok(inventory) => {
                 return Err(EngineError::Diagnostic(format!(
                     "live source {} differs from the selected export revision {}; restore or explicitly select a validated revision",
@@ -119,6 +121,9 @@ impl Controller {
             return Err(EngineError::Diagnostic(
                 "frozen export source does not match its recorded revision".into(),
             ));
+        }
+        if !same_revision && project.inventory.build_revision() != *state.build_source() {
+            return Err(EngineError::Diagnostic(other_code));
         }
         Ok(FrozenExportSource {
             root: temp_root,

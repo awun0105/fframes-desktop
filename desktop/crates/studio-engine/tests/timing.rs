@@ -205,6 +205,34 @@ fn timing_edits_split_trim_and_move_and_write_each_one() {
 }
 
 #[test]
+fn timing_edit_after_a_build_still_exports_and_plays_the_edited_document() {
+    let f = fixture();
+    let mut c = opened(&f);
+    c.freeze_export_source().unwrap();
+    assert_eq!(
+        c.timing_for_export(),
+        None,
+        "no clips export the code order"
+    );
+
+    c.timeline_command(TimelineCommand::Trim {
+        clip: 2,
+        edge: TrimEdge::End,
+        frames: 5,
+    })
+    .unwrap();
+    assert_ne!(c.state().source(), c.state().accepted());
+    let frozen = c
+        .freeze_export_source()
+        .expect("a timing edit keeps the built code exportable");
+    assert_eq!(frozen.revision(), c.state().accepted());
+    assert_eq!(frozen.live_source_warning(), None);
+    let exported = TimingDoc::from_json(&c.timing_for_export().unwrap()).unwrap();
+    assert_eq!(exported, live(&f));
+    assert_eq!(exported.clips[2].trim_end_frames, 5);
+}
+
+#[test]
 fn timing_gesture_of_sixty_steps_is_one_undo_step_one_write_and_no_build() {
     let f = fixture();
     let mut c = opened(&f);

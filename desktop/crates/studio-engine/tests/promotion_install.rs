@@ -177,6 +177,19 @@ fn a_preview_tagged_with_the_task_base_or_a_stale_playhead_never_installs() {
 }
 
 #[test]
+fn the_adopted_preview_of_a_promotion_enables_timeline_editing() {
+    let (_f, mut c, promotion, _p, base_tag) = applied();
+    let auth = promotion.authorization.clone().unwrap();
+    c.learn_timeline(&base_tag, &ready(&base_tag, 0, 0, 60).timeline);
+    assert!(matches!(
+        c.timeline_snapshot().editing,
+        TimingEditing::Disabled(_)
+    ));
+    c.learn_timeline(auth.tag(), &ready(auth.tag(), 0, 0, 60).timeline);
+    assert_eq!(c.timeline_snapshot().editing, TimingEditing::Enabled);
+}
+
+#[test]
 fn any_later_source_change_revokes_the_authorization() {
     let (f, mut c, promotion, mut p, _base) = applied();
     let auth = promotion.authorization.clone().unwrap();

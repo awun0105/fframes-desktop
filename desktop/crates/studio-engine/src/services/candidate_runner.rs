@@ -32,8 +32,11 @@ use crate::{
 use fframes_studio_protocol::{InspectResponse, PreparedAudioDescriptor, PreviewTimelineResponse};
 use std::{any::Any, fs::File, io::Read, path::PathBuf, sync::Arc};
 use studio_bootstrap::ProcessTreeManager;
-use studio_project::checkpoint::Checkpoints;
+use studio_project::{checkpoint::Checkpoints, revision::TIMING_FILE};
 use studio_sdk::CompatibilityManifest;
+
+/// The timing generation a candidate's worker plays its own `timeline.json` under.
+const CANDIDATE_TIMING_GENERATION: u64 = 1;
 
 pub struct CandidateRunConfig {
     pub service: BuildService,
@@ -280,6 +283,18 @@ pub fn run_candidate_validation(
             None,
         );
     }
+    let candidate_timing = match std::fs::read_to_string(restored.project.root.join(TIMING_FILE)) {
+        Ok(json) => Some(json),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return fail(
+                FailureKind::Source,
+                ValidationStage::Capture,
+                format!("{TIMING_FILE} could not be read: {error}"),
+                None,
+            );
+        }
+    };
     let environment =
         match CompileEnvironment::resolve(&config.sdk, &config.compatibility, &config.builds) {
             Ok(environment) => environment,
@@ -362,6 +377,32 @@ pub fn run_candidate_validation(
         }
     };
     let cancelled = || scopes.compiler.is_shutdown() || scopes.worker.is_shutdown();
+    // The candidate's own timing document lays out everything probed and staged below,
+    // as the project will play once it is published.
+    let mut worker = worker;
+    if let Some(json) = &candidate_timing {
+        let applied = if worker.supports_timing() {
+            worker
+                .set_timing(Some(json.clone()), CANDIDATE_TIMING_GENERATION)
+                .map(drop)
+                .map_err(|error| error.to_string())
+        } else {
+            Err("this project's preview worker cannot play a timing document".into())
+        };
+        if let Err(reason) = applied {
+            let kind = if cancelled() {
+                FailureKind::Environment
+            } else {
+                FailureKind::Source
+            };
+            return fail(
+                kind,
+                ValidationStage::Worker,
+                format!("{TIMING_FILE} was rejected: {reason}"),
+                Some(identity),
+            );
+        }
+    }
     let mut probe = WorkerProbe::new(worker, &cancelled, &config.service);
     let report = validate_candidate(
         captured,
@@ -404,11 +445,13 @@ pub fn run_candidate_validation(
                         &scopes.worker,
                         &|| Some(desired.clone()),
                         audio,
-                        // The probed audio is laid out in code order; an adopted candidate
-                        // plays the session's timing through the displayed lane.
+                        // The worker already plays the candidate's timing (the probed
+                        // audio is laid out with it); an adopted candidate is retimed to
+                        // the session's through the displayed lane.
                         None,
                         &config.service,
                     )
+                    .map(|staged| staged.with_played_timing(candidate_timing))
                 })
         });
     match staged {

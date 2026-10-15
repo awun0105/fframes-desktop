@@ -104,6 +104,14 @@ impl StagedPreview {
     pub fn ready(&self) -> &Arc<ReadyPreview> {
         &self.ready
     }
+    /// Records the timing document the worker was laid out with before preparation, so
+    /// a failed retime restores it.
+    pub(crate) fn with_played_timing(mut self, timing_json: Option<String>) -> Self {
+        if let Some(parts) = self.parts.as_mut() {
+            parts.timing_json = timing_json;
+        }
+        self
+    }
     /// Reaps the worker on the calling thread and waits for the verified exit. Only for
     /// threads that may block (never the UI thread).
     pub fn teardown_now(mut self) -> Option<String> {

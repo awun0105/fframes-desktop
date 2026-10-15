@@ -60,9 +60,14 @@ impl Controller {
         }
     }
 
-    /// Records the scenes a ready preview reported, when it previews the current build.
+    /// Records the scenes a ready preview reported, when it previews the current build:
+    /// one built from it, or the adopted preview of the promotion that published it.
     pub fn learn_timeline(&mut self, tag: &OperationTag, timeline: &PreviewTimelineResponse) {
-        if self.state().is_current_build(tag) {
+        let state = self.state();
+        let promoted = state.promotion().is_some_and(|authorization| {
+            authorization.tag() == tag && authorization.is_current(state)
+        });
+        if state.is_current_build(tag) || promoted {
             let generation = self.state().generation();
             self.timing.learn_scenes(generation, code_scenes(timeline));
         }
@@ -96,6 +101,16 @@ impl Controller {
     /// The timing document and its generation, for a preview or an export.
     pub fn timing_for_preview(&self) -> (Option<String>, u64) {
         (self.timing.timing_json(), self.timing.generation())
+    }
+
+    /// The document an export plays: `None` (the code order) unless it has clips, so a
+    /// project whose worker cannot export timing still exports without an edit.
+    pub fn timing_for_export(&self) -> Option<String> {
+        self.timing
+            .doc()
+            .ok()
+            .filter(|doc| !doc.clips.is_empty())
+            .map(TimingDoc::to_json)
     }
 
     /// Applies one timeline command. Edits outside a gesture are written at once; inside

@@ -480,7 +480,7 @@ fn switch_when_candidate_awaiting_review_preserves_candidate() {
         .unwrap();
     w.submit(&json!({
         "text": ["Made an edit. ", "done"],
-        "write": {"src/lib.rs": "// edit\n", "timeline.json": r#"{"frames":120,"tracks":[[0.0,2.0]],"audio":"tone","pixel":40}"#}
+        "write": {"src/lib.rs": "// edit\n", FAKE_CONFIG: r#"{"frames":120,"tracks":[[0.0,2.0]],"audio":"tone","pixel":40}"#}
     }));
 
     w.wait_phase(TaskPhase::AwaitingReview);
@@ -533,7 +533,7 @@ fn continue_draft_preserves_outgoing_draft_edits_for_incoming_provider() {
         "text": ["Writing draft edit. ", "done"],
         "write_early": {
             "src/lib.rs": "// preserved draft line\n",
-            "timeline.json": GOOD_CONFIG,
+            FAKE_CONFIG: GOOD_CONFIG,
             "outgoing_marker.txt": "preserved content\n",
         },
     }));
@@ -572,7 +572,7 @@ fn continue_draft_preserves_outgoing_draft_edits_for_incoming_provider() {
         "text": ["Building on draft. ", "done"],
         "write": {
             "src/lib.rs": "// preserved draft line\n// second line\n",
-            "timeline.json": GOOD_CONFIG,
+            FAKE_CONFIG: GOOD_CONFIG,
         }
     }));
     w.wait("second task prepared", |s| {
