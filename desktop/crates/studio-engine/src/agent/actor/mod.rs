@@ -59,6 +59,8 @@ use studio_harness::{
 use studio_project::revision::SourceInventory;
 
 const PUBLISH_INTERVAL: Duration = Duration::from_millis(25);
+/// How often the actor compares the live count of owned processes with the published one.
+const OWNED_RECHECK_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_TOOL_INDEX: usize = 2048;
 const MAX_SCOPE_PROMPT_IMAGES: usize = 3;
 /// Controller commands that may wait behind a running job.
@@ -283,6 +285,10 @@ pub(crate) struct Actor {
     probe_generation: u64,
     dirty: bool,
     last_publish: Instant,
+    /// The owned-process count of the last snapshot, and when the live count was last
+    /// compared with it.
+    published_owned: usize,
+    owned_checked: Instant,
     revision: u64,
     closing: bool,
     log_failed: bool,
@@ -464,6 +470,8 @@ impl Actor {
             probe_generation: 0,
             dirty: true,
             last_publish: Instant::now(),
+            published_owned: 0,
+            owned_checked: Instant::now(),
             revision: 0,
             closing: false,
             log_failed: false,
@@ -546,11 +554,25 @@ impl Actor {
             }
             self.settle_log_loss();
             self.reap_jobs();
+            self.recheck_owned_processes();
             if self.dirty && self.last_publish.elapsed() >= PUBLISH_INTERVAL {
                 self.publish(false);
             }
         }
         self.shutdown_all(None);
+    }
+
+    /// Processes also start and end without an event of the workflow's own: a teardown
+    /// finishes on its own thread, a preview build spawns under the same root. A moved
+    /// count publishes a new snapshot so the published count does not go stale.
+    fn recheck_owned_processes(&mut self) {
+        if self.owned_checked.elapsed() < OWNED_RECHECK_INTERVAL {
+            return;
+        }
+        self.owned_checked = Instant::now();
+        if self.shared.root_scope.active_count() != self.published_owned {
+            self.dirty = true;
+        }
     }
 
     // ---- message dispatch ----------------------------------------------------------------------

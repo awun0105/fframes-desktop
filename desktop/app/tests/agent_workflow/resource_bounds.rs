@@ -76,3 +76,21 @@ fn streaming_text_is_bounded_by_bytes_and_never_one_unbounded_row() {
     assert!(s.resources.resident_bytes <= 48 * 1024 + MAX_ROW_TEXT_BYTES + ROW_OVERHEAD_BYTES);
     assert!(s.older_rows);
 }
+
+/// The published count of owned processes follows a process that starts and ends without
+/// an event of the workflow's own (as a preview build or an asynchronous teardown does),
+/// with no refresh asked for.
+#[test]
+fn the_owned_process_count_follows_processes_that_end_between_events() {
+    let w = World::new();
+    w.wait("the opened workflow", |s| s.resources.owned_processes == 0);
+    let mut sleeper = studio_bootstrap::process::SpawnOptions::new(python());
+    sleeper.args(["-c", "import time; time.sleep(60)"]);
+    let child = w.ctl().lock().processes.spawn(sleeper).unwrap();
+    w.wait("the process counted", |s| s.resources.owned_processes == 1);
+    child.lock().kill_forcefully().unwrap();
+    w.wait("the ended process no longer counted", |s| {
+        s.resources.owned_processes == 0
+    });
+    assert_eq!(w.processes(), 0);
+}

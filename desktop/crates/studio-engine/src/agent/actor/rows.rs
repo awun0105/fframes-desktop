@@ -264,6 +264,7 @@ impl Actor {
         // Open requests are tracked outside the transcript window: an evicted card is
         // still open (and answerable).
         let open_permissions = self.permission_rows.len();
+        self.published_owned = self.shared.root_scope.active_count();
         let (settings_adapter, tools_settings) = {
             let settings = self.shared.settings.lock();
             (settings.adapter.clone(), settings.tools.clone())
@@ -347,7 +348,7 @@ impl Actor {
                 max_resident_bytes: MAX_RESIDENT_ROW_BYTES,
                 queue_len: self.queue.len(),
                 open_permissions,
-                owned_processes: self.shared.root_scope.active_count(),
+                owned_processes: self.published_owned,
                 broker_grants: self.tools.as_ref().map_or(0, ToolRuntime::grants),
                 tool_workers: self.tools.as_ref().map_or(0, ToolRuntime::workers),
             },
