@@ -708,6 +708,17 @@ impl FFmpegDecoder {
     }
 
     unsafe fn open_codec_context(fmt_ctx: *mut AVFormatContext) -> Result<VideoStreamInfo> {
+        /// The stream's duration in its time base. Matroska/WebM store only the
+        /// container's, so fall back to that.
+        unsafe fn stream_duration(fmt_ctx: *mut AVFormatContext, stream: *mut AVStream) -> i64 {
+            unsafe {
+                if (*stream).duration > 0 || (*fmt_ctx).duration <= 0 {
+                    return (*stream).duration;
+                }
+                av_rescale_q((*fmt_ctx).duration, AV_TIME_BASE_Q, (*stream).time_base)
+            }
+        }
+
         unsafe {
             let ret = av_find_best_stream(
                 fmt_ctx,
@@ -773,7 +784,7 @@ impl FFmpegDecoder {
                 color_space: (*video_dec_ctx).colorspace,
                 color_range: (*video_dec_ctx).color_range,
                 time_base: (*stream).time_base,
-                duration: (*stream).duration,
+                duration: stream_duration(fmt_ctx, stream),
                 frame_rate: (*stream).r_frame_rate,
             })
         }
