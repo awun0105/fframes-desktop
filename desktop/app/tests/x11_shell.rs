@@ -450,14 +450,14 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     // The staged preview was adopted on the UI thread and installed with matching
     // video/audio under a fresh epoch: the displayed revision is the accepted one and
     // the awaiting-preview label is gone.
-    // Waits for the displayed frame to answer the newest seek: a frame request can still be
-    // in flight when the hand-off is first reported.
+    // Waits for the newest seek to be presented: a frame request (a re-render at the
+    // canvas scale) can still be in flight when the hand-off is first reported.
     let shown = telemetry.wait("the matching preview to display", |v| {
         v["panel"]["handoff"] == "Displayed"
             && v["awaiting_preview"] == false
             && v["displayed_revision"].is_string()
             && displayed(v)["video_revision"] != base["video_revision"]
-            && displayed(v)["frame_serial"] == v["preview"]["seek_serial"]
+            && v["preview"]["presented_serial"] == v["preview"]["seek_serial"]
     });
     let published = shown["displayed_revision"].as_str().unwrap().to_owned();
     assert_eq!(shown["panel"]["undo"], "available");
@@ -500,8 +500,11 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
         "{shown}"
     );
     assert!(shown["preview"]["seek_serial"].as_u64().unwrap() >= base_serial);
-    assert_eq!(
-        applied["frame_serial"], shown["preview"]["seek_serial"],
+    // `displayed` is the install record: its frame answers the seek the install carried.
+    // Frames requested after the install are presented without changing it.
+    assert_eq!(applied["frame_serial"], applied["seek_serial"], "{shown}");
+    assert!(
+        applied["seek_serial"].as_u64().unwrap() >= base_serial,
         "{shown}"
     );
 
@@ -515,7 +518,7 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
             && v["displayed_revision"].is_string()
             && v["displayed_revision"].as_str() != Some(published.as_str())
             && v["awaiting_preview"] == false
-            && displayed(v)["frame_serial"] == v["preview"]["seek_serial"]
+            && v["preview"]["presented_serial"] == v["preview"]["seek_serial"]
     });
     assert!(
         !project.join("notes.txt").exists(),
@@ -546,6 +549,14 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     assert_eq!(undone["preview"]["position"], 3, "{undone}");
     assert_eq!(reverted["frame_index"], 3, "{undone}");
     assert_eq!(undone["preview"]["painted_frame"], 3, "{undone}");
+    assert_eq!(
+        reverted["frame_serial"], reverted["seek_serial"],
+        "{undone}"
+    );
+    assert!(
+        reverted["seek_serial"].as_u64() >= applied["seek_serial"].as_u64(),
+        "{undone}"
+    );
     // Only the worker of the displayed preview is still owned: no adapter, no tool worker.
     // The task's evidence workers are released when it ends; their teardown is
     // asynchronous, so wait for it instead of sampling one instant.
