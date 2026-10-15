@@ -55,8 +55,6 @@ jobs:
           cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
           python3 desktop/scripts/test-packaging.py
           python3 desktop/scripts/test-release-gate.py
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
 
   # No self-hosted macOS runner exists, so the desktop tests and lint run on hosted macOS.
   desktop-macos:

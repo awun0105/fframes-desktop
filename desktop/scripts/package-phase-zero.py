@@ -204,23 +204,21 @@ def package(output, sdk_bundle=None):
                     stream,
                 )
             launcher.write_text('#!/usr/bin/env sh\nset -eu\npackage_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexport FFRAMES_SDK_BUNDLE="$package_dir/fframes Studio.app/Contents/sdk"\nexec "$package_dir/fframes Studio.app/Contents/MacOS/fframes-studio" studio\n')
-    ledger = json.loads((ROOT / "desktop/qualification/m0-results.json").read_text())
-    ledger["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    # Other platforms' results cite repository evidence that the package does not carry.
-    ledger.pop("additional_platforms", None)
-    ledger["target_platform"] = {"os": platform.system().lower(), "arch": target.split("-")[0], "triple": target, "status": "PENDING"}
-    ledger["metrics"] = {"native_package_build_seconds": time.monotonic() - started}
-    ledger["build_evidence"] = {"native_build": "PASSED", "sdk_included": bool(sdk), "interactive_qualification": "NOT_RUN", "sterile_offline_build": "NOT_RUN", "authenticated_acp": "NOT_RUN"}
-    for name, gate in ledger["gates"].items():
-        if name == "acp_task":
-            gate["status"] = "NOT_RUN"
-        else:
-            gate["passed"] = False
-        gate["notes"] = "Native artifact built; this gate needs its own reproducible native run."
-    (output / "qualification.json").write_text(json.dumps(ledger, indent=2) + "\n")
+    record = package_record(target, bool(sdk), time.monotonic() - started)
+    (output / "qualification.json").write_text(json.dumps(record, indent=2) + "\n")
     write_inventory(output, target, bool(sdk))
     shutil.make_archive(str(output), "zip", output.parent, output.name)
     return output
+
+
+def package_record(target, sdk_included, build_seconds):
+    """What the package says about its own build: the finalizer, installer and signing read it."""
+    return {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "target_platform": {"os": platform.system().lower(), "arch": target.split("-")[0], "triple": target},
+        "metrics": {"native_package_build_seconds": build_seconds},
+        "build_evidence": {"native_build": "PASSED", "sdk_included": sdk_included},
+    }
 
 
 def main():

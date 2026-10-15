@@ -15,11 +15,10 @@ gh workflow run "Desktop self-hosted validation" -R khanhthanhdev/fframes-deskto
 
 | Check | Where | When |
 | --- | --- | --- |
-| fmt, tests, clippy, protocol/runtime tests, packaging tests, ledgers | self-hosted Linux and Windows | every push |
+| fmt, tests, clippy, protocol/runtime tests, packaging and release gate tests | self-hosted Linux and Windows | every push |
 | SDK and Windows test build | self-hosted Windows | pushes to `main`, full runs |
 | Real worker, SDK, managed, portable, preview, timeline, audio parity | self-hosted Linux and Windows | full runs |
-| Linux test build and isolated-account presentation, input and source click | self-hosted Linux | full runs |
-| M2 virtual audio stress (advisory) | self-hosted Linux | full runs |
+| Linux test build | self-hosted Linux | full runs |
 | fmt, tests, clippy for pull requests from other repositories | hosted Ubuntu ([Desktop CI](../../.github/workflows/desktop.yml)) | those pull requests |
 
 The repository is public, so the self-hosted workflow runs only on `push` and **Run workflow**.
@@ -38,17 +37,12 @@ are system-wide, so the runner user sees them.
    sudo apt-get install -y build-essential cmake pkg-config git nasm clang libclang-dev \
      libssl-dev libfontconfig1-dev libasound2-dev libxkbcommon-x11-dev libwayland-dev \
      libegl1-mesa-dev libgl1-mesa-dev libxcb1-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-     libx11-xcb-dev libzstd-dev mesa-vulkan-drivers xvfb xdotool python3 python3-pil \
-     pulseaudio pulseaudio-utils curl unzip
+     libx11-xcb-dev libzstd-dev mesa-vulkan-drivers xvfb xdotool python3 curl unzip
    ```
 
    - `nasm`, `make`, `gcc` and `git` build the pinned static FFmpeg (once per change of
      `desktop/scripts/build-native-ffmpeg.py`).
-   - `xvfb`, `xdotool` and `python3-pil` run the presentation check on a virtual display.
-   - `pulseaudio` and `pulseaudio-utils` are only for the advisory audio stress. The test
-     starts its own PulseAudio as the runner user, so no audio service has to be running.
-   - `iproute2` and `util-linux` (`ip`, `unshare`, `setpriv`) are part of a standard Ubuntu
-     install; the isolated-account check uses them.
+   - `xvfb` and `xdotool` run the X11 shell tests on a virtual display.
 
 2. Create the runner user and register the runner. In the repository, open **Settings →
    Actions → Runners → New self-hosted runner → Linux x64** and follow the download and
@@ -62,33 +56,19 @@ are system-wide, so the runner user sees them.
 
    Rust needs no manual install: the job installs the pinned toolchain for the runner user.
 
-3. Give the runner user passwordless sudo. The isolated-account presentation check runs as root
-   to create the account and network namespaces, then starts the app as `nobody` without
-   network:
-
-   ```sh
-   echo "<runner-user> ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/github-runner
-   sudo chmod 440 /etc/sudoers.d/github-runner
-   sudo visudo -c
-   ```
-
-   This means every push runs repository code that can become root on this machine, so use a
-   machine dedicated to CI and keep write access to the repository to people you trust. The
-   check also makes the parent folders of the runner's work folder readable by all users, and
-   leaves its evidence owned by `nobody`; the job removes that with `sudo` when it ends.
+3. The runner user needs no sudo. Earlier versions of this workflow ran an isolated-account
+   check as root; a runner set up for it can have `/etc/sudoers.d/github-runner` removed.
 
 4. Check the machine as the runner user. This is the same check the job runs first; it
    prints nothing when everything is there:
 
    ```sh
-   for tool in nasm cmake make git pkg-config gcc python3 Xvfb xdotool ip unshare setpriv pulseaudio pactl; do
+   for tool in nasm cmake make git pkg-config gcc python3 Xvfb xdotool; do
      command -v "$tool" >/dev/null || echo "missing: $tool"
    done
    for package in libclang-dev libssl-dev libasound2-dev; do
      dpkg -s "$package" >/dev/null 2>&1 || echo "missing: $package"
    done
-   python3 -c "import PIL" 2>/dev/null || echo "missing: python3-pil"
-   sudo -n /usr/bin/python3 -c "" 2>/dev/null || echo "missing: passwordless sudo"
    ```
 
    If a package is missing, the job stops at **Check Linux native prerequisites** and prints the
@@ -110,18 +90,14 @@ Both runners keep state in the runner's tool cache folder (`<runner>/_work/_tool
 - `fframes-ffmpeg/<key>` (Linux): the FFmpeg install for one version of its build script. Old
   keys can be deleted.
 
-If a Linux run is killed while the presentation check runs, `/tmp/.X94-lock` can stay behind and
-the next check refuses to start. It is owned by root: remove it with `sudo rm /tmp/.X94-lock` when
-no `Xvfb :94` process is running.
-
 ## Test builds
 
 Test builds are kept for 14 days:
 
 - `studio-test-x86_64-pc-windows-msvc`: the packaged Windows app with the SDK, from every push to
   `main` and every full run.
-- `studio-test-x86_64-unknown-linux-gnu`: the packaged Linux app with the SDK, plus the
-  presentation and audio evidence, from full runs only.
+- `studio-test-x86_64-unknown-linux-gnu`: the packaged Linux app with the SDK, plus the audio
+  parity evidence, from full runs only.
 
 The run's summary page links the zip directly and shows a `gh run download` command for it. To
 download the newest Windows test build from `main`:
