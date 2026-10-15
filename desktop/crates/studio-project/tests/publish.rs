@@ -1,9 +1,9 @@
-//! No-clobber publication primitives and exact transaction-name exclusion, on Linux and
-//! Windows. Tests keep one name on both; where the platforms differ by design (Windows
+//! No-clobber publication primitives and exact transaction-name exclusion, on Linux, macOS and
+//! Windows. Tests keep one name on every OS; where the platforms differ by design (Windows
 //! renames the opened file, has junctions and a read-only attribute instead of mode
 //! bits, refuses to rename an ancestor of a held directory) the test asserts each
 //! platform's own guarantee.
-#![cfg(any(target_os = "linux", windows))]
+#![cfg(any(target_os = "linux", target_os = "macos", windows))]
 
 use std::{fs, io::ErrorKind, path::Path};
 use studio_project::{
@@ -393,7 +393,7 @@ fn a_swapped_ancestor_of_the_root_fails_the_pathname_binding() {
     );
 }
 
-/// Linux: the link-based pair has a window between its two syscalls in which an
+/// Unix: the link-based pair has a window between its two syscalls in which an
 /// editor's save is lost; the atomic rename has none. Windows has no link pair; its
 /// rename has a window between opening the source and renaming it, but the source
 /// handle excludes `FILE_SHARE_DELETE`, so an editor's rename-over inside the window
@@ -459,7 +459,10 @@ fn link_then_unlink_loses_an_editor_save_between_the_two_syscalls() {
         window_opened.set(true);
     })
     .unwrap();
-    assert!(!window_opened.get(), "renameat2 has no two-syscall window");
+    assert!(
+        !window_opened.get(),
+        "the atomic rename has no two-syscall window"
+    );
     editor_save("editor B").unwrap();
     assert_eq!(fs::read(temp.path().join(&orig)).unwrap(), b"original A");
     assert_eq!(fs::read(temp.path().join("old.txt")).unwrap(), b"editor B");

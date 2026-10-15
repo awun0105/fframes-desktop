@@ -1,6 +1,6 @@
 //! Crash and corruption recovery of file-set transactions: every durable boundary,
 //! idempotent replay, conflicted recovery, journal damage and projection loss.
-#![cfg(any(target_os = "linux", windows))]
+#![cfg(any(target_os = "linux", target_os = "macos", windows))]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;

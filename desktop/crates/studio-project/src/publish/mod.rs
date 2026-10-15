@@ -389,7 +389,15 @@ fn is_unsupported(error: &io::Error) -> bool {
         return true;
     }
     #[cfg(unix)]
-    let codes = [libc::ENOSYS, libc::EINVAL, libc::EOPNOTSUPP, libc::EPERM];
+    // macOS answers `RENAME_EXCL` on volumes without it (SMB, some FUSE) with ENOTSUP,
+    // which differs from EOPNOTSUPP there; on Linux they are the same number.
+    let codes = [
+        libc::ENOSYS,
+        libc::EINVAL,
+        libc::EOPNOTSUPP,
+        libc::ENOTSUP,
+        libc::EPERM,
+    ];
     // ERROR_INVALID_FUNCTION, ERROR_NOT_SUPPORTED, ERROR_BAD_LENGTH and
     // ERROR_INVALID_PARAMETER: SMB answers the handle-relative rename with the last two.
     #[cfg(windows)]

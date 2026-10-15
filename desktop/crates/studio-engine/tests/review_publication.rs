@@ -1,7 +1,7 @@
 //! Regressions for the Stage 3 review findings on publication: partial-stage ownership
 //! (H1), root pathname fencing (H4), file <-> directory topology (H5) and exact
 //! permission bits (M1).
-#![cfg(any(target_os = "linux", windows))]
+#![cfg(any(target_os = "linux", target_os = "macos", windows))]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;

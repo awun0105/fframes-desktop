@@ -1,6 +1,6 @@
 //! POSIX primitives: `*at` calls relative to a held directory descriptor, `O_NOFOLLOW`
 //! on every open and `AT_SYMLINK_NOFOLLOW` on every stat. The atomic no-replace rename
-//! itself is per OS (`linux.rs`).
+//! itself is per OS (`linux.rs`, `macos.rs`).
 use std::{
     ffi::CString,
     fs::File,

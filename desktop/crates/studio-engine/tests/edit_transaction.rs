@@ -1,7 +1,7 @@
 //! Apply / Undo behaviour: durable task revisions, policy, fences and the interleavings
 //! an uncooperative editor can produce around each publication step. Crash-boundary
 //! coverage lives in `task_recovery.rs`.
-#![cfg(any(target_os = "linux", windows))]
+#![cfg(any(target_os = "linux", target_os = "macos", windows))]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;
@@ -1078,7 +1078,7 @@ fn a_filesystem_with_only_the_link_pair_blocks_apply_and_undo_without_touching_f
         panic!("the link pair must not open the gate");
     };
     assert!(
-        reason.contains("renameat2") && reason.contains("editor"),
+        reason.contains("atomic no-replace rename") && reason.contains("editor"),
         "{reason}"
     );
     let (_, captured, report) = validated(&f, &mut c, "via links", multi_file_edit);

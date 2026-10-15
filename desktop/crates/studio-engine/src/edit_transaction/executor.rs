@@ -969,7 +969,7 @@ impl<'a> Machine<'a> {
     /// moved is still exactly our bytes and our inode, then discards it. If an outside
     /// writer got there first the moved file is put back.
     fn take_down_published(&mut self, dir: &Dir, op: &FileOp, after: &FileState) -> Result<(), Rb> {
-        // The source is the live name: one atomic renameat2, never link + unlink.
+        // The source is the live name: one atomic no-replace rename, never link + unlink.
         dir.rename_noreplace(LIVE, &op.name, dir, &op.recovery.rollback)
             .map_err(|e| match e.kind() {
                 io::ErrorKind::AlreadyExists | io::ErrorKind::NotFound => Rb::Foreign(format!(

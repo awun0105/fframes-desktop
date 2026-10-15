@@ -29,7 +29,7 @@ Crash recovery suites (`studio-engine/tests/{edit_transaction,task_recovery,revi
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
 | 1 | [Windows publication and executor](./phase-01-windows-publish.md) | 5-7d | M1 phase 1 | Completed |
-| 2 | [macOS publication and executor](./phase-02-macos-publish.md) | 3-4d | M1 phase 1 | Pending |
+| 2 | [macOS publication and executor](./phase-02-macos-publish.md) | 3-4d | M1 phase 1 | In progress (macOS CI run pending) |
 | 3 | [Open the gates, path aliases and CI coverage](./phase-03-enable-mutations-and-ci.md) | 3-5d | 1, 2, 4, M2 phase 3 | Pending |
 | 4 | [Runtime writer containment](./phase-04-runtime-writer-containment.md) | 4-6d | M2 phases 1 and 8 | Pending |
 | 5 | [Agent tool broker on Windows](./phase-05-windows-tool-broker.md) | 3-5d | M2 phase 1 | Pending |

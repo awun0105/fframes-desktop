@@ -126,7 +126,8 @@ impl Controller {
     }
 
     /// Whether this platform and the project's filesystem proved atomic no-replace
-    /// publication (`renameat2`). Auto-Apply must stay disabled unless this is `Ready`.
+    /// publication (`renameat2`, `renameatx_np`, `FileRenameInformationEx`). Auto-Apply
+    /// must stay disabled unless this is `Ready`.
     pub fn apply_gate(&mut self) -> &ApplyGate {
         if self.apply_gate.is_none() {
             self.apply_gate = Some(match self.mechanism_override {
