@@ -18,7 +18,7 @@ use crate::actions;
 /// The preview surface's key context.
 pub(super) const PLAYER: &str = "Player";
 /// The timeline tracks' key context.
-const TIMELINE: &str = crate::timeline_view::KEY_CONTEXT;
+const TIMELINE: &str = crate::timeline::KEY_CONTEXT;
 /// The window's key context, around every other one.
 pub(super) const WORKSPACE: &str = "Workspace";
 

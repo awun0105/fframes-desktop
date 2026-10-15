@@ -155,7 +155,7 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
     use studio_engine::{
         Controller, JobKind, JobResult, PreviewState, TimelineModel, TimelineSelection,
-        TimelineViewport, app_paths::AppPaths,
+        TimelineTransform, app_paths::AppPaths,
     };
     let temp = tempfile::tempdir().unwrap();
     let sdk = if let Some(bundle) = std::env::var_os("SDK_BUNDLE") {
@@ -242,6 +242,16 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     );
     // Core's 44.1kHz timeline rounds 0.125s to sample 5513, not video frame 4.
     assert_eq!(model.report().audio_tracks[0].start_seconds, 5513. / 44100.);
+    // The mix's waveform comes with the validated PCM: ten peaks a second, sound after
+    // the track starts.
+    let peaks = ready.audio_source.as_ref().unwrap().waveform();
+    assert_eq!(peaks.len(), (model.duration() * 10.).ceil() as usize);
+    assert!(
+        peaks[2..]
+            .iter()
+            .any(|db| *db > studio_engine::waveform::WAVEFORM_MIN_DB),
+        "{peaks:?}"
+    );
     let overlap = model.report().scenes[1].start_frame;
     assert_eq!(model.scene_hits(overlap), vec![0, 1]);
     let mut selection = TimelineSelection::default();
@@ -257,7 +267,7 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     );
     assert!(coordinator.commit(ready.identity().clone(), ready.seek_serial));
     state.install(&ready, controller.state()).unwrap();
-    let mut viewport = TimelineViewport::default();
+    let mut viewport = TimelineTransform::default();
     viewport.resize(600., &model);
     viewport.fit(&model);
     let samples = viewport.thumbnail_frames(&model);

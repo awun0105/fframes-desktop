@@ -277,6 +277,7 @@ impl StudioShell {
             })
             .collect::<serde_json::Map<_, _>>()
             .into();
+        value["renders"]["timeline"] = self.timeline.read(cx).renders().into();
         value["panel"] = self.panel.read(cx).telemetry();
         value["export"] = export_telemetry(self.export_status.as_ref());
         value["presets"] = self.preset_panel.read(cx).telemetry();

@@ -101,8 +101,13 @@ impl Render for StudioShell {
                                     } else {
                                         self.canvas.clear();
                                     }
+                                    let waveform = ready
+                                        .audio_source
+                                        .as_ref()
+                                        .map(|source| source.waveform().clone())
+                                        .unwrap_or_else(|| std::sync::Arc::from([]));
                                     self.timeline.update(cx, |v, cx| {
-                                        v.install(model.unwrap(), ready.position, cx)
+                                        v.install(model.unwrap(), waveform, ready.position, cx)
                                     });
                                     self.displayed = Some(ready.clone());
                                     if let Some(workflow) = &self.agent.workflow {
@@ -274,8 +279,17 @@ impl Render for StudioShell {
                             Card::editor(&self.theme)
                                 .size_full()
                                 .overflow_hidden()
-                                .child(self.timeline.clone()),
+                                .child(
+                                    self.timeline
+                                        .clone()
+                                        .cached(StyleRefinement::default().size_full()),
+                                ),
                         )
+                        // Over the cached timeline: only this moves while playing.
+                        .child(crate::timeline::playhead_overlay(
+                            &self.theme,
+                            self.timeline.read(cx).playhead(),
+                        ))
                         .child(self.render_resize_grip(split.timeline_height, cx)),
                 );
         } else {

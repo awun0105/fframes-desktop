@@ -103,6 +103,8 @@ impl PreviewWorkerClient {
         }
         let mut buffer = [0u8; 65536];
         let mut hash = Sha256::new();
+        // The hash pass reads every sample once; the waveform is folded in on the way.
+        let mut peaks = crate::waveform::PeakAccumulator::new(audio.sample_rate, audio.channels);
         let mut remaining = audio.byte_count;
         while remaining > 0 {
             if cancelled() {
@@ -111,13 +113,12 @@ impl PreviewWorkerClient {
             let length = remaining.min(buffer.len() as u64) as usize;
             file.read_exact(&mut buffer[..length])
                 .map_err(|e| e.to_string())?;
-            if buffer[..length]
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .any(|b| !f32::from_le_bytes(*b).is_finite())
-            {
-                return Err("Prepared PCM contains nonfinite samples".into());
+            for bytes in buffer[..length].as_chunks::<4>().0 {
+                let sample = f32::from_le_bytes(*bytes);
+                if !sample.is_finite() {
+                    return Err("Prepared PCM contains nonfinite samples".into());
+                }
+                peaks.push(sample);
             }
             hash.update(&buffer[..length]);
             remaining -= length as u64;
@@ -125,11 +126,10 @@ impl PreviewWorkerClient {
         if format!("{:x}", hash.finalize()) != audio.sha256.to_lowercase() {
             return Err("Prepared PCM checksum mismatch".into());
         }
-        Ok(std::sync::Arc::new(crate::PreparedAudioSource::new(
-            file,
-            audio.clone(),
-            lease,
-        )))
+        Ok(std::sync::Arc::new(
+            crate::PreparedAudioSource::new(file, audio.clone(), lease)
+                .with_waveform(peaks.finish()),
+        ))
     }
     fn envelope(&mut self) -> Result<PreviewEnvelope, WorkerClientError> {
         self.next_request = self

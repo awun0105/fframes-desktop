@@ -130,8 +130,13 @@ impl StudioShell {
         self.output = None;
         self.audio_ready_epoch = None;
         let position = self.preview_state.position();
+        let waveform = ready
+            .audio_source
+            .as_ref()
+            .map(|source| source.waveform().clone())
+            .unwrap_or_else(|| std::sync::Arc::from([]));
         self.timeline
-            .update(cx, |v, cx| v.install(model, position, cx));
+            .update(cx, |v, cx| v.install(model, waveform, position, cx));
         self.displayed = Some(ready);
         self.thumbnails_sent = None;
         self.request_frame(position, cx);
@@ -292,9 +297,8 @@ impl StudioShell {
                 scale: self.preview_state.scale(),
             });
         }
-        self.timeline.update(cx, |v, cx| {
-            v.set_position(self.preview_state.position(), cx)
-        });
+        let position = self.preview_state.position();
+        self.timeline.update(cx, |v, _| v.set_position(position));
         true
     }
 

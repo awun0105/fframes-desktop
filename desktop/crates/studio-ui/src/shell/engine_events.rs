@@ -315,6 +315,9 @@ impl StudioShell {
         let view = self.presentation.preset.clone();
         self.preset_panel
             .update(cx, |panel, cx| panel.set_view(view, cx));
+        let snapshot = self.presentation.timeline.clone();
+        self.timeline
+            .update(cx, |timeline, cx| timeline.set_snapshot(snapshot, cx));
         if let (Some(preview), Some(timeline)) = (&self.preview, &self.presentation.timeline)
             && self.timing_sent != Some(timeline.generation)
         {

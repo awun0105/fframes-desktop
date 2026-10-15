@@ -1,18 +1,28 @@
-//! Native compiled tracks. Geometry/selection are engine-owned; textures are window-owned.
+//! The timeline entity: Cap's transform (engine-owned), ruler, clip track, overlay and
+//! audio rows, the mix waveform and the minimap. Geometry and selection are engine-owned,
+//! thumbnail textures window-owned. The shell mounts it cached and paints the playhead.
+use std::sync::Arc;
+
 use gpui::{
-    Bounds, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, canvas, div, px,
+    Bounds, Context, EventEmitter, FocusHandle, Hsla, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, canvas, div,
+    prelude::FluentBuilder, px,
 };
 use studio_engine::services::thumbnail_cache::{ThumbnailCache, ThumbnailKey};
-use studio_engine::{PreviewFrame, TaskScope, TimelineModel, TimelineSelection, TimelineViewport};
-use studio_theme::{
-    METRICS, TextStyle, Theme, TrackKind, segment_colors_for, text_style, track_color,
-};
+use studio_engine::timing::TimelineSnapshot;
+use studio_engine::{PreviewFrame, TaskScope, TimelineModel, TimelineSelection, TimelineTransform};
+use studio_theme::{METRICS, TextStyle, Theme, TrackKind, text_style, track_color};
 
+use super::minimap::{MINIMAP_MAX_WIDTH, MinimapDrag, render_minimap, zoomed_in};
+use super::model::{ClipSegment, clip_segments};
+use super::playhead::PlayheadGeometry;
+use super::ruler::render_ruler;
+use super::segment::{lane_name, row_top, segment, track_row};
+use super::waveform::waveform_path;
 use crate::frame_image::create_render_image;
 use crate::kit::{
-    EditorButton, Icon, IconButton, IconButtonSize, Slider, SliderTrack, focus_ring, icon,
-    section_title, selectable,
+    EditorButton, Icon, IconButton, IconButtonSize, Slider, SliderTrack, focus_ring, section_title,
+    selectable,
 };
 use crate::probe::BoundsProbe;
 
@@ -29,14 +39,26 @@ pub enum TimelineEvent {
 
 pub struct TimelineView {
     model: Option<TimelineModel>,
-    viewport: TimelineViewport,
+    /// The engine's clips; the clip track follows them when present.
+    snapshot: Option<TimelineSnapshot>,
+    clips: Vec<ClipSegment>,
+    /// Peaks of the displayed preview's mix, see `studio_engine::waveform`.
+    waveform: Arc<[f32]>,
+    viewport: TimelineTransform,
     selection: TimelineSelection,
+    /// The playhead frame. Stored without a notify: the shell paints the playhead.
     position: usize,
     focus: FocusHandle,
     bounds: Option<Bounds<Pixels>>,
     /// `[left, top, width, height]` of the Fit button, reported by its probe.
     fit_bounds: Option<[f32; 4]>,
+    minimap_bounds: Option<Bounds<Pixels>>,
+    minimap_drag: Option<MinimapDrag>,
     drag: Option<(usize, bool)>,
+    /// Segments built by the last render, after culling.
+    painted_segments: usize,
+    /// How often the view rendered; playback must not render it.
+    renders: u64,
     cache: ThumbnailCache<gpui::RenderImage>,
     pending_thumbnail: Option<(ThumbnailKey, PreviewFrame)>,
     clear_cache: bool,
@@ -48,20 +70,33 @@ impl TimelineView {
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             model: None,
-            viewport: TimelineViewport::default(),
+            snapshot: None,
+            clips: Vec::new(),
+            waveform: Arc::from([]),
+            viewport: TimelineTransform::default(),
             selection: TimelineSelection::default(),
             position: 0,
             focus: cx.focus_handle().tab_stop(true),
             bounds: None,
             fit_bounds: None,
+            minimap_bounds: None,
+            minimap_drag: None,
             drag: None,
+            painted_segments: 0,
+            renders: 0,
             cache: ThumbnailCache::default(),
             pending_thumbnail: None,
             clear_cache: false,
             release_failures: 0,
         }
     }
-    pub fn install(&mut self, model: TimelineModel, position: usize, cx: &mut Context<Self>) {
+    pub fn install(
+        &mut self,
+        model: TimelineModel,
+        waveform: Arc<[f32]>,
+        position: usize,
+        cx: &mut Context<Self>,
+    ) {
         let first = self.model.is_none();
         let same_preview = self.model.as_ref().is_some_and(|current| {
             current.report().envelope.identity == model.report().envelope.identity
@@ -77,7 +112,10 @@ impl TimelineView {
         }
         self.position = position.min(model.report().total_frames);
         self.model = Some(model);
+        self.waveform = waveform;
+        self.refresh_clips();
         self.drag = None;
+        self.minimap_drag = None;
         self.clear_cache = true;
         self.pending_thumbnail = None;
         self.emit_scope_changed(cx);
@@ -85,13 +123,31 @@ impl TimelineView {
     }
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.model = None;
+        self.waveform = Arc::from([]);
+        self.refresh_clips();
         self.selection = TimelineSelection::default();
         self.drag = None;
+        self.minimap_drag = None;
         self.position = 0;
         self.clear_cache = true;
         self.pending_thumbnail = None;
         self.emit_scope_changed(cx);
         cx.notify();
+    }
+    /// The engine's timing document and clips, from the presentation.
+    pub fn set_snapshot(&mut self, snapshot: Option<TimelineSnapshot>, cx: &mut Context<Self>) {
+        if self.snapshot != snapshot {
+            self.snapshot = snapshot;
+            self.refresh_clips();
+            cx.notify();
+        }
+    }
+    fn refresh_clips(&mut self) {
+        self.clips = self
+            .model
+            .as_ref()
+            .map(|model| clip_segments(model, self.snapshot.as_ref()))
+            .unwrap_or_default();
     }
     pub fn selected_scope(&self) -> Result<Option<TaskScope>, String> {
         self.model
@@ -104,11 +160,24 @@ impl TimelineView {
         let scope = self.selected_scope().map(|scope| scope.map(Box::new));
         cx.emit(TimelineEvent::ScopeChanged(scope));
     }
-    pub fn set_position(&mut self, frame: usize, cx: &mut Context<Self>) {
-        if self.position != frame {
-            self.position = frame;
-            cx.notify();
-        }
+    /// Moves the playhead. The timeline does not render again for it; the shell paints
+    /// the playhead from [`Self::playhead`].
+    pub fn set_position(&mut self, frame: usize) {
+        self.position = frame;
+    }
+    pub fn renders(&self) -> u64 {
+        self.renders
+    }
+    /// Where the shell paints the playhead, once the tracks have been laid out.
+    pub fn playhead(&self) -> Option<PlayheadGeometry> {
+        let (model, bounds) = (self.model.as_ref()?, self.bounds?);
+        let inset = px(axis_inset());
+        let axis = Bounds::new(
+            bounds.origin + gpui::point(inset, px(0.)),
+            gpui::size((bounds.size.width - inset).max(px(0.)), bounds.size.height),
+        );
+        let x = f32::from(axis.left()) + self.viewport.x_at_frame(self.position, model) as f32;
+        Some(PlayheadGeometry { axis, x })
     }
     pub fn thumbnail_requests(&self) -> Vec<ThumbnailKey> {
         let Some(model) = &self.model else {
@@ -139,11 +208,22 @@ impl TimelineView {
                 METRICS.ruler_h,
             ]
         };
+        let rect = |b: Bounds<Pixels>| {
+            [
+                f32::from(b.left()),
+                f32::from(b.top()),
+                f32::from(b.size.width),
+                f32::from(b.size.height),
+            ]
+        };
         serde_json::json!({
             "entries": self.cache.len(), "bytes": self.cache.bytes(),
             "high_water_entries": self.cache.high_water_entries(), "high_water_bytes": self.cache.high_water_bytes(),
             "release_failures": self.release_failures,
-            "pixels_per_second": self.viewport.pixels_per_second, "scroll_x": self.viewport.scroll_x,
+            "pixels_per_second": self.viewport.pixels_per_second(), "scroll_x": self.viewport.scroll_x(),
+            "zoom": self.viewport.zoom, "position_seconds": self.viewport.position,
+            "clips": self.clips.len(), "painted_segments": self.painted_segments,
+            "waveform_peaks": self.waveform.len(),
             "selection": {
                 "scene": self.selection.scene_id,
                 "range": self.selection.range.as_ref().map(|r| [r.start, r.end]),
@@ -152,6 +232,7 @@ impl TimelineView {
             },
             "ruler_bounds": self.bounds.map(ruler),
             "fit_bounds": self.fit_bounds,
+            "minimap_bounds": self.minimap_bounds.map(rect),
         })
     }
     pub fn thumbnail(&mut self, key: ThumbnailKey, frame: PreviewFrame, cx: &mut Context<Self>) {
@@ -198,7 +279,7 @@ impl TimelineView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(frame) = self.pointer_frame(event.position.x) else {
+        let (Some(frame), Some(model)) = (self.pointer_frame(event.position.x), &self.model) else {
             return;
         };
         window.focus(&self.focus, cx);
@@ -208,8 +289,7 @@ impl TimelineView {
             });
         self.drag = Some((frame, range));
         if range {
-            self.selection
-                .select_range(frame, frame, self.model.as_ref().unwrap());
+            self.selection.select_range(frame, frame, model);
             self.emit_scope_changed(cx);
         } else {
             cx.emit(TimelineEvent::BeginScrub);
@@ -226,8 +306,9 @@ impl TimelineView {
             return;
         };
         if range {
-            self.selection
-                .select_range(start, frame, self.model.as_ref().unwrap());
+            if let Some(model) = &self.model {
+                self.selection.select_range(start, frame, model);
+            }
             self.emit_scope_changed(cx);
             cx.notify();
         } else {
@@ -237,6 +318,30 @@ impl TimelineView {
     fn pointer_up(&mut self, cx: &mut Context<Self>) {
         if let Some((_, false)) = self.drag.take() {
             cx.emit(TimelineEvent::EndScrub);
+        }
+    }
+    fn minimap_down(&mut self, event: &gpui::MouseDownEvent, cx: &mut Context<Self>) {
+        let (Some(model), Some(bar)) = (&self.model, self.minimap_bounds) else {
+            return;
+        };
+        self.minimap_drag = MinimapDrag::begin(
+            f32::from(event.position.x),
+            f32::from(bar.left()),
+            f32::from(bar.size.width),
+            &mut self.viewport,
+            model,
+        );
+        if self.minimap_drag.is_some() {
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+    fn minimap_move(&mut self, event: &gpui::MouseMoveEvent, cx: &mut Context<Self>) {
+        if let (Some(drag), Some(model)) = (&self.minimap_drag, &self.model)
+            && event.dragging()
+        {
+            self.viewport = drag.update(f32::from(event.position.x), model);
+            cx.notify();
         }
     }
     /// Moves the playhead past the last frame.
@@ -251,6 +356,13 @@ impl TimelineView {
             return;
         };
         self.selection.cycle_scene_at(self.position, model);
+        self.emit_scope_changed(cx);
+        cx.notify();
+    }
+    fn select_scene(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(model) = &self.model {
+            self.selection.select_scene(index, model);
+        }
         self.emit_scope_changed(cx);
         cx.notify();
     }
@@ -282,7 +394,8 @@ impl TimelineView {
         self.emit_scope_changed(cx);
         cx.notify();
     }
-    /// Zooms by `factor`, keeping the playhead where it is on screen.
+    /// Zooms by `factor` (`2.` doubles the pixels per second), keeping the playhead
+    /// where it is on screen.
     pub fn zoom(&mut self, factor: f64, cx: &mut Context<Self>) {
         if let Some(model) = &self.model {
             self.viewport.zoom(
@@ -290,6 +403,13 @@ impl TimelineView {
                 self.viewport.x_at_frame(self.position, model),
                 model,
             );
+            cx.notify();
+        }
+    }
+    /// Shows the whole video.
+    pub fn fit(&mut self, cx: &mut Context<Self>) {
+        if let Some(model) = &self.model {
+            self.viewport.fit(model);
             cx.notify();
         }
     }
@@ -328,10 +448,15 @@ impl TimelineView {
     }
     /// Zoom to the slider `fraction`, keeping the playhead where it is on screen.
     fn set_zoom_fraction(&mut self, fraction: f32, cx: &mut Context<Self>) {
-        let target = fraction_to_zoom(fraction);
-        if self.viewport.pixels_per_second > 0. {
-            self.zoom(target / self.viewport.pixels_per_second, cx);
-        }
+        let target = fraction_to_zoom(fraction, self.fit_pixels_per_second());
+        self.zoom(target / self.viewport.pixels_per_second(), cx);
+    }
+    /// The scale at which the whole video fills the axis.
+    fn fit_pixels_per_second(&self) -> f64 {
+        self.model
+            .as_ref()
+            .filter(|model| model.duration() > 0.)
+            .map_or(ZOOM_MAX, |model| self.viewport.width / model.duration())
     }
 }
 
@@ -341,23 +466,15 @@ fn thumbnail_scale(model: &TimelineModel) -> f64 {
         .min(1.)
 }
 
-/// Zoom range of `TimelineViewport` (pixels per second); the viewport clamps to it.
-const ZOOM_MIN: f64 = 0.01;
-const ZOOM_MAX: f64 = 100_000.;
-/// Left inset of the segment label and the room kept on its right.
-const LABEL_PAD_LEFT: f32 = 13.;
-const LABEL_PAD_RIGHT: f32 = 10.;
-const ACCENT_BAR_W: f32 = 3.;
-const PLAYHEAD_HEAD: f32 = 12.;
-const PLAYHEAD_RING: f32 = 4.;
-const MAJOR_TICK_H: f32 = 8.;
-const MINOR_TICK_H: f32 = 5.;
-const MINOR_PER_MAJOR: usize = 5;
+/// The closest zoom (pixels per second); the transform clamps to it.
+const ZOOM_MAX: f64 = studio_engine::MAX_PIXELS_PER_SECOND;
 const ZOOM_SLIDER_W: f32 = 72.;
 const ZOOM_TRACK_H: f32 = 3.;
 const ZOOM_THUMB: f32 = 14.;
 const CARD_PAD: f32 = 11.;
 const CARD_PAD_TOP: f32 = 9.;
+/// The mix waveform keeps this much of its row free at the top.
+const WAVEFORM_PAD: f32 = 6.;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HitZone {
@@ -381,163 +498,24 @@ fn axis_inset() -> f32 {
     metrics.track_gutter_w + metrics.space_2
 }
 
-/// Zoom (pixels per second) as a 0..=1 slider fraction on a log scale.
-fn zoom_to_fraction(pixels_per_second: f64) -> f32 {
-    ((pixels_per_second.clamp(ZOOM_MIN, ZOOM_MAX) / ZOOM_MIN).ln() / (ZOOM_MAX / ZOOM_MIN).ln())
-        as f32
+/// Zoom (pixels per second) as a 0..=1 slider fraction on a log scale from Fit (`fit`)
+/// to the closest zoom.
+fn zoom_to_fraction(pixels_per_second: f64, fit: f64) -> f32 {
+    if fit >= ZOOM_MAX || fit <= 0. {
+        return 0.;
+    }
+    ((pixels_per_second.clamp(fit, ZOOM_MAX) / fit).ln() / (ZOOM_MAX / fit).ln()) as f32
 }
 
 /// Inverse of [`zoom_to_fraction`].
-fn fraction_to_zoom(fraction: f32) -> f64 {
-    ZOOM_MIN * (ZOOM_MAX / ZOOM_MIN).powf(f64::from(fraction.clamp(0., 1.)))
-}
-
-/// Where a segment label sits: `left` from the segment's left edge, `width` available.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct LabelSlice {
-    left: f32,
-    width: f32,
-}
-
-/// Anchors a label to the part of a segment (at `x`, `width` wide) that is inside
-/// a viewport `view_width` wide.
-fn label_slice(x: f32, width: f32, view_width: f32) -> LabelSlice {
-    let visible_start = (-x).clamp(0., width);
-    let visible_end = (view_width - x).min(width).max(visible_start);
-    LabelSlice {
-        left: visible_start + LABEL_PAD_LEFT,
-        width: (visible_end - visible_start - LABEL_PAD_LEFT - LABEL_PAD_RIGHT).max(0.),
-    }
-}
-
-/// Minor tick positions between the major ticks at `majors` (x, ascending).
-fn minor_tick_xs(majors: &[f64], view_width: f64) -> Vec<f64> {
-    let [first, second, ..] = majors else {
-        return Vec::new();
-    };
-    let step = (second - first) / MINOR_PER_MAJOR as f64;
-    if !(step.is_finite() && step > 1.) {
-        return Vec::new();
-    }
-    let start = first - (first / step).floor().max(0.) * step;
-    let count = ((view_width - start) / step).floor().max(0.) as usize + 1;
-    (0..count)
-        .map(|index| start + index as f64 * step)
-        .filter(|x| majors.iter().all(|major| (major - x).abs() > 0.5))
-        .collect()
-}
-
-fn lane_name(base: &str, index: usize, count: usize) -> String {
-    if count > 1 {
-        format!("{base} {}", index + 1)
-    } else {
-        base.to_owned()
-    }
-}
-
-/// A track row: gutter with icon and name, then the clipped band for segments.
-fn track_row(
-    theme: &Theme,
-    top: f32,
-    name: String,
-    glyph: Icon,
-    segments: Vec<gpui::AnyElement>,
-) -> gpui::Div {
-    let metrics = METRICS;
-    div()
-        .absolute()
-        .left_0()
-        .right_0()
-        .top(px(top))
-        .h(px(metrics.track_h))
-        .flex()
-        .items_center()
-        .gap(px(metrics.space_2))
-        .child(
-            text_style(div(), TextStyle::Small)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .w(px(metrics.track_gutter_w))
-                .flex_none()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .overflow_hidden()
-                .text_color(theme.editor.text_2)
-                .child(icon(glyph, metrics.icon_sm, theme.editor.text_2))
-                .child(
-                    div()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_ellipsis()
-                        .child(name),
-                ),
-        )
-        .child(
-            div()
-                .relative()
-                .flex_1()
-                .min_w_0()
-                .h_full()
-                .overflow_hidden()
-                .rounded(px(metrics.radius_segment))
-                .bg(theme.editor.card_2)
-                .children(segments),
-        )
-}
-
-/// Segment box with its accent bar and clipped label. The caller adds ids and handlers.
-fn segment(
-    theme: &Theme,
-    kind: TrackKind,
-    selected: bool,
-    x: f32,
-    width: f32,
-    view_width: f32,
-    label: String,
-) -> gpui::Div {
-    let metrics = METRICS;
-    let colors = segment_colors_for(theme.appearance, kind, selected);
-    let slice = label_slice(x, width, view_width);
-    div()
-        .absolute()
-        .left(px(x))
-        .top_0()
-        .w(px(width))
-        .h(px(metrics.track_h))
-        .overflow_hidden()
-        .rounded(px(metrics.radius_segment))
-        .border_1()
-        .border_color(colors.border)
-        .bg(colors.fill)
-        .child(
-            div()
-                .absolute()
-                .left_0()
-                .top_0()
-                .bottom_0()
-                .w(px(ACCENT_BAR_W))
-                .bg(track_color(kind)),
-        )
-        .child(
-            text_style(div(), TextStyle::Small)
-                .absolute()
-                .left(px(slice.left))
-                .top_0()
-                .bottom_0()
-                .w(px(slice.width))
-                .flex()
-                .items_center()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
-                .text_color(colors.label)
-                .child(label),
-        )
+fn fraction_to_zoom(fraction: f32, fit: f64) -> f64 {
+    let fit = fit.clamp(f64::MIN_POSITIVE, ZOOM_MAX);
+    fit * (ZOOM_MAX / fit).powf(f64::from(fraction.clamp(0., 1.)))
 }
 
 impl Render for TimelineView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.renders += 1;
         if self.clear_cache {
             for image in self.cache.clear() {
                 self.release_failures += usize::from(window.drop_image(image).is_err());
@@ -561,12 +539,43 @@ impl Render for TimelineView {
             .as_ref()
             .is_some_and(|m| m.report().total_frames > 0);
         let entity = cx.entity();
-        let zoom_fraction = zoom_to_fraction(self.viewport.pixels_per_second);
+        let zoom_fraction = zoom_to_fraction(
+            self.viewport.pixels_per_second(),
+            self.fit_pixels_per_second(),
+        );
+        let mut controls = div().flex().items_center().gap(px(metrics.space_1));
+        if let Some(model) = &self.model {
+            let weak = cx.entity().downgrade();
+            let fps = model.report().fps as f64;
+            let boundaries = self.clips.iter().map(|clip| clip.start as f64 / fps);
+            let interactive = zoomed_in(&self.viewport, model);
+            controls = controls.child(
+                render_minimap(&theme, &self.viewport, model, boundaries, MINIMAP_MAX_WIDTH)
+                    .id("timeline-minimap")
+                    .relative()
+                    .mr(px(metrics.space_1))
+                    // It takes presses only while part of the video is hidden.
+                    .when(interactive, |minimap| {
+                        minimap.cursor(gpui::CursorStyle::OpenHand).on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|v, e, _, cx| v.minimap_down(e, cx)),
+                        )
+                    })
+                    .child(
+                        canvas(
+                            move |bounds, _, cx| {
+                                let _ =
+                                    weak.update(cx, |view, _| view.minimap_bounds = Some(bounds));
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full(),
+                    ),
+            );
+        }
         let toolbar = section_title(&theme, "Timeline").child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(metrics.space_1))
+            controls
                 .child(Self::icon_button(
                     &theme,
                     "timeline-zoom-out",
@@ -624,12 +633,7 @@ impl Render for TimelineView {
                             })
                             .into_bounds_handler(),
                         )
-                        .on_click(Self::action(&entity, |v, cx| {
-                            if let Some(m) = &v.model {
-                                v.viewport.fit(m);
-                                cx.notify();
-                            }
-                        })),
+                        .on_click(Self::action(&entity, |v, cx| v.fit(cx))),
                 )
                 .child(Self::icon_button(
                     &theme,
@@ -638,13 +642,7 @@ impl Render for TimelineView {
                     "Cycle scene (S)",
                     "Cycle scene (S)",
                     enabled,
-                    Self::action(&entity, |v, cx| {
-                        if let Some(m) = &v.model {
-                            v.selection.cycle_scene_at(v.position, m);
-                            v.emit_scope_changed(cx);
-                            cx.notify();
-                        }
-                    }),
+                    Self::action(&entity, |v, cx| v.cycle_scene(cx)),
                 )),
         );
         let root = div()
@@ -653,13 +651,23 @@ impl Render for TimelineView {
             .gap(px(metrics.space_1 + 2.))
             .min_w_0()
             .flex_shrink_0()
-            .h_full()
+            .size_full()
             .pl(px(CARD_PAD))
             .pr(px(CARD_PAD))
             .pt(px(CARD_PAD_TOP))
             .pb(px(CARD_PAD))
+            .on_mouse_move(cx.listener(|v, e, _, cx| v.minimap_move(e, cx)))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|v, _, _, _| v.minimap_drag = None),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|v, _, _, _| v.minimap_drag = None),
+            )
             .child(toolbar);
         let Some(model) = &self.model else {
+            self.painted_segments = 0;
             return root.child(
                 text_style(div(), TextStyle::Body)
                     .text_color(colors.text_2)
@@ -737,127 +745,72 @@ impl Render for TimelineView {
                 )
                 .absolute()
                 .size_full(),
-            );
+            )
+            .child(render_ruler(&theme, geometry.ticks, inset));
 
-        // Ruler: major ticks carry the labels, minor ticks subdivide them.
-        let major_xs: Vec<f64> = geometry.ticks.iter().map(|tick| tick.x).collect();
-        let mut ruler = div()
-            .absolute()
-            .left(px(inset))
-            .right_0()
-            .top_0()
-            .h(px(metrics.ruler_h))
-            .overflow_hidden();
-        for x in minor_tick_xs(&major_xs, self.viewport.width) {
-            ruler = ruler.child(
-                div()
-                    .absolute()
-                    .left(px(x as f32))
-                    .bottom_0()
-                    .w(px(1.))
-                    .h(px(MINOR_TICK_H))
-                    .bg(colors.line_strong),
-            );
-        }
-        for tick in geometry.ticks {
-            let x = tick.x as f32;
-            ruler = ruler
-                .child(
-                    div()
-                        .absolute()
-                        .left(px(x))
-                        .bottom_0()
-                        .w(px(1.))
-                        .h(px(MAJOR_TICK_H))
-                        .bg(colors.line_strong),
-                )
-                .child(
-                    text_style(div(), TextStyle::Small)
-                        .absolute()
-                        .left(px(x + 4.))
-                        .top(px(3.))
-                        .whitespace_nowrap()
-                        .text_color(colors.text_3)
-                        .child(tick.label),
-                );
-        }
-        tracks = tracks.child(ruler);
-
-        // Lanes scroll vertically independently of the ruler. Only horizontal visible geometry is rendered.
+        // Rows below the ruler: the clip track, overlay lanes, audio files and the mix.
+        // Only segments inside the padded viewport are built (Cap's `isSegmentVisible`).
+        let report = model.report();
+        let fps = report.fps as f64;
+        let pixels_per_second = self.viewport.pixels_per_second();
         let scene_lanes = geometry.scene_lane_count.max(1);
-        let audio_count = model.report().audio_tracks.len();
-        let row_top = |row: usize| row as f32 * (metrics.track_h + metrics.track_gap);
+        let audio_count = report.audio_tracks.len();
+        let mut painted = 0;
         let mut scene_rows: Vec<Vec<gpui::AnyElement>> =
             (0..scene_lanes).map(|_| Vec::new()).collect();
         let mut audio_rows: Vec<Vec<gpui::AnyElement>> =
             (0..audio_count).map(|_| Vec::new()).collect();
-        for rect in geometry.scenes {
-            let scene = &model.report().scenes[rect.index];
-            if scene.start_frame == scene.end_frame {
+        for (number, clip) in self.clips.iter().enumerate() {
+            let (start, end) = (clip.start as f64 / fps, clip.end as f64 / fps);
+            if !self.viewport.segment_visible(start, end) {
                 continue;
             }
-            let selected = self.selection.scene_id.as_ref() == Some(&scene.instance_id);
-            let index = rect.index;
-            let kind = if rect.lane == 0 {
-                TrackKind::Clip
-            } else {
-                TrackKind::Overlay
-            };
+            let scene = clip.scene.map(|index| (index, &report.scenes[index]));
+            let selected = scene
+                .is_some_and(|(_, s)| self.selection.scene_id.as_ref() == Some(&s.instance_id));
             let element = segment(
                 &theme,
-                kind,
+                if clip.lane == 0 {
+                    TrackKind::Clip
+                } else {
+                    TrackKind::Overlay
+                },
                 selected,
-                rect.x as f32,
-                rect.width.max(1.) as f32,
+                self.viewport.x_at_seconds(start) as f32,
+                ((end - start) * pixels_per_second).max(1.) as f32,
                 view_width,
-                format!("{} #{}", scene.name, scene.index),
-            )
-            .id(format!("scene-{}", scene.instance_id))
-            .role(gpui::Role::Button)
-            .aria_label(format!("Scene {} instance {}", scene.name, scene.index))
-            .tab_index(0)
-            .focus_visible(move |s| s.border_color(colors.accent))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |v, e: &gpui::MouseDownEvent, w, cx| {
-                    if e.modifiers.shift {
-                        return;
-                    }
-                    if let Some(m) = &v.model {
-                        v.selection.select_scene(index, m);
-                    }
-                    v.emit_scope_changed(cx);
-                    w.focus(&v.focus, cx);
-                    cx.notify();
-                    cx.stop_propagation();
-                }),
-            )
-            .on_key_down(cx.listener(move |v, e: &gpui::KeyDownEvent, _, cx| {
-                if e.keystroke.key == "enter" {
-                    if let Some(m) = &v.model {
-                        v.selection.select_scene(index, m);
-                    }
-                    v.emit_scope_changed(cx);
-                    cx.notify();
-                    cx.stop_propagation();
-                }
-            }));
-            scene_rows[rect.lane.min(scene_lanes - 1)].push(element.into_any_element());
+                clip.label.clone(),
+            );
+            painted += 1;
+            scene_rows[clip.lane.min(scene_lanes - 1)].push(match scene {
+                Some((index, scene)) => self
+                    .selectable_scene(element, index, scene, colors.accent.into(), cx)
+                    .into_any_element(),
+                None => element
+                    .id(("clip", number))
+                    .aria_label(format!("Clip {}", clip.label))
+                    .into_any_element(),
+            });
         }
         for rect in geometry.audio {
-            let audio = &model.report().audio_tracks[rect.index];
-            let element = segment(
-                &theme,
-                TrackKind::Audio,
-                false,
-                rect.x as f32,
-                rect.width.max(1.) as f32,
-                view_width,
-                format!("♫ {} · {:.3}s", audio.file, audio.start_seconds),
+            let audio = &report.audio_tracks[rect.index];
+            painted += 1;
+            audio_rows[rect.lane.min(audio_count - 1)].push(
+                segment(
+                    &theme,
+                    TrackKind::Audio,
+                    false,
+                    rect.x as f32,
+                    rect.width.max(1.) as f32,
+                    view_width,
+                    format!("♫ {} · {:.3}s", audio.file, audio.start_seconds),
+                )
+                .into_any_element(),
             );
-            audio_rows[rect.lane.min(audio_count - 1)].push(element.into_any_element());
         }
-        let total_rows = scene_lanes + audio_count;
+        self.painted_segments = painted;
+        let mix = !self.waveform.is_empty() && audio_count > 0;
+        let total_rows = scene_lanes + audio_count + usize::from(mix);
         let mut content = div().relative().h(px(
             (row_top(total_rows) - metrics.track_gap).max(metrics.track_h)
         ));
@@ -879,6 +832,15 @@ impl Render for TimelineView {
                 segments,
             ));
         }
+        if mix {
+            content = content.child(track_row(
+                &theme,
+                row_top(scene_lanes + audio_count),
+                "Mix".into(),
+                Icon::Volume2,
+                vec![self.mix_waveform(model).into_any_element()],
+            ));
+        }
         let lanes = div()
             .id("timeline-lanes")
             .absolute()
@@ -889,67 +851,38 @@ impl Render for TimelineView {
             .child(content);
         tracks = tracks.child(lanes);
 
-        // Selection range and playhead share one clip box over the time axis.
-        let mut overlay = div()
-            .absolute()
-            .left(px(inset))
-            .right_0()
-            .top_0()
-            .bottom_0()
-            .overflow_hidden();
+        // The selected range over the time axis; the shell paints the playhead.
         if let Some(range) = &self.selection.range {
             let start = self.viewport.x_at_frame(range.start, model);
             let end = self.viewport.x_at_frame(range.end, model);
-            overlay = overlay.child(
+            tracks = tracks.child(
                 div()
                     .absolute()
-                    .left(px(start as f32))
-                    .top(px(metrics.ruler_h))
-                    .bottom_0()
-                    .w(px((end - start) as f32))
-                    .bg(theme.selection())
-                    .border_l_1()
-                    .border_r_1()
-                    .border_color(colors.accent),
-            );
-        }
-        let playhead_x = self.viewport.x_at_frame(self.position, model) as f32;
-        let ring = PLAYHEAD_HEAD + 2. * PLAYHEAD_RING;
-        overlay = overlay
-            .child(
-                div()
-                    .absolute()
-                    .left(px(playhead_x))
+                    .left(px(inset))
+                    .right_0()
                     .top_0()
                     .bottom_0()
-                    .w(px(1.))
-                    .bg(colors.playhead),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left(px(playhead_x + 0.5 - ring / 2.))
-                    .top(px((metrics.ruler_h - ring) / 2.))
-                    .size(px(ring))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .bg(colors.card)
+                    .overflow_hidden()
                     .child(
                         div()
-                            .size(px(PLAYHEAD_HEAD))
-                            .rounded_full()
-                            .bg(colors.playhead),
+                            .absolute()
+                            .left(px(start as f32))
+                            .top(px(metrics.ruler_h))
+                            .bottom_0()
+                            .w(px((end - start) as f32))
+                            .bg(theme.selection())
+                            .border_l_1()
+                            .border_r_1()
+                            .border_color(colors.accent),
                     ),
             );
-        tracks = tracks.child(overlay);
+        }
 
         let mut thumbs = div().relative().flex_none().h(px(38.)).overflow_hidden();
         for frame in self.viewport.thumbnail_frames(model) {
             let key = ThumbnailKey::new(
-                model.report().envelope.identity.clone(),
-                model.report().timing_generation,
+                report.envelope.identity.clone(),
+                report.timing_generation,
                 thumbnail_scale(model),
                 frame,
             );
@@ -985,16 +918,78 @@ impl Render for TimelineView {
                 .flex_none()
                 .text_color(colors.text_3)
                 .child(selectable(format!(
-                    "{} · {selected} · drag tracks / Shift-drag for range",
-                    model.time_label(self.position)
+                    "{selected} · drag tracks / Shift-drag for range"
                 ))),
         )
+    }
+}
+
+impl TimelineView {
+    /// A scene segment that selects its scene on click or Enter.
+    fn selectable_scene(
+        &self,
+        element: gpui::Div,
+        index: usize,
+        scene: &fframes_studio_protocol::PreviewSceneInfo,
+        accent: Hsla,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        element
+            .id(format!("scene-{}", scene.instance_id))
+            .role(gpui::Role::Button)
+            .aria_label(format!("Scene {} instance {}", scene.name, scene.index))
+            .tab_index(0)
+            .focus_visible(move |s| s.border_color(accent))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |v, e: &gpui::MouseDownEvent, w, cx| {
+                    if e.modifiers.shift {
+                        return;
+                    }
+                    v.select_scene(index, cx);
+                    w.focus(&v.focus, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_key_down(cx.listener(move |v, e: &gpui::KeyDownEvent, _, cx| {
+                if e.keystroke.key == "enter" {
+                    v.select_scene(index, cx);
+                    cx.stop_propagation();
+                }
+            }))
+    }
+
+    /// The mix row's waveform over the visible seconds.
+    fn mix_waveform(&self, model: &TimelineModel) -> impl IntoElement {
+        let peaks = self.waveform.clone();
+        let start = self.viewport.position.max(0.);
+        let end = (self.viewport.position + self.viewport.zoom).min(model.duration());
+        let x = self.viewport.x_at_seconds(start) as f32;
+        let width = ((end - start) * self.viewport.pixels_per_second()) as f32;
+        let color = Hsla::from(track_color(TrackKind::Audio)).opacity(0.55);
+        canvas(
+            |_, _, _| {},
+            move |bounds, _, window, _| {
+                let area = Bounds::new(
+                    bounds.origin + gpui::point(px(x), px(WAVEFORM_PAD)),
+                    gpui::size(px(width), bounds.size.height - px(WAVEFORM_PAD)),
+                );
+                if end > start
+                    && let Some(path) = waveform_path(&peaks, (start, end), area)
+                {
+                    window.paint_path(path, color);
+                }
+            },
+        )
+        .absolute()
+        .size_full()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timeline::model::tests::report;
 
     #[test]
     fn ruler_click_scrubs_and_lane_click_selects() {
@@ -1007,50 +1002,19 @@ mod tests {
     }
 
     #[test]
-    fn zoom_slider_maps_to_zoom_range_and_back() {
-        assert_eq!(zoom_to_fraction(ZOOM_MIN), 0.);
-        assert_eq!(zoom_to_fraction(ZOOM_MAX), 1.);
-        assert_eq!(zoom_to_fraction(ZOOM_MIN / 10.), 0.);
-        assert_eq!(zoom_to_fraction(ZOOM_MAX * 10.), 1.);
-        assert_eq!(fraction_to_zoom(-1.), ZOOM_MIN);
-        for pps in [0.5, 12., 100., 4_000.] {
-            let back = fraction_to_zoom(zoom_to_fraction(pps));
+    fn zoom_slider_runs_from_fit_to_the_closest_zoom() {
+        let fit = 25.;
+        assert_eq!(zoom_to_fraction(fit, fit), 0.);
+        assert_eq!(zoom_to_fraction(ZOOM_MAX, fit), 1.);
+        assert_eq!(zoom_to_fraction(fit / 10., fit), 0.);
+        assert_eq!(zoom_to_fraction(ZOOM_MAX * 10., fit), 1.);
+        assert_eq!(zoom_to_fraction(10., ZOOM_MAX), 0.);
+        assert_eq!(fraction_to_zoom(-1., fit), fit);
+        for pps in [30., 100., 4_000.] {
+            let back = fraction_to_zoom(zoom_to_fraction(pps, fit), fit);
             assert!((back / pps - 1.).abs() < 1e-3, "{pps} -> {back}");
         }
-        assert!(fraction_to_zoom(0.25) < fraction_to_zoom(0.75));
-    }
-
-    #[test]
-    fn segment_label_anchors_to_visible_slice() {
-        let inner = LABEL_PAD_LEFT + LABEL_PAD_RIGHT;
-        // Fully visible: label starts after the left padding.
-        let whole = label_slice(10., 100., 500.);
-        assert_eq!(whole.left, LABEL_PAD_LEFT);
-        assert_eq!(whole.width, 100. - inner);
-        // Scrolled past the left edge: label follows the visible part.
-        let left_cut = label_slice(-50., 100., 500.);
-        assert_eq!(left_cut.left, 50. + LABEL_PAD_LEFT);
-        assert_eq!(left_cut.width, 50. - inner);
-        // Cut by the right edge of the viewport.
-        let right_cut = label_slice(450., 100., 500.);
-        assert_eq!(right_cut.left, LABEL_PAD_LEFT);
-        assert_eq!(right_cut.width, 50. - inner);
-        // Too little visible: no width, never negative.
-        assert_eq!(label_slice(490., 100., 500.).width, 0.);
-        // Longer than the viewport on both sides.
-        let both = label_slice(-1000., 5000., 400.);
-        assert_eq!(both.left, 1000. + LABEL_PAD_LEFT);
-        assert_eq!(both.width, 400. - inner);
-    }
-
-    #[test]
-    fn minor_ticks_subdivide_majors_without_overlap() {
-        assert!(minor_tick_xs(&[], 300.).is_empty());
-        assert!(minor_tick_xs(&[10.], 300.).is_empty());
-        let minors = minor_tick_xs(&[20., 120., 220.], 300.);
-        assert!(minors.iter().all(|x| (0. ..=300.).contains(x)));
-        assert!(!minors.iter().any(|x| [20., 120., 220.].contains(x)));
-        assert_eq!(minors.iter().filter(|x| **x > 20. && **x < 120.).count(), 4);
+        assert!(fraction_to_zoom(0.25, fit) < fraction_to_zoom(0.75, fit));
     }
 
     #[gpui::test]
@@ -1062,10 +1026,107 @@ mod tests {
         assert!(width > 0. && height > 0., "{fit:?}");
     }
 
-    #[test]
-    fn axis_inset_is_gutter_plus_gap() {
-        assert_eq!(axis_inset(), 112.);
-        assert_eq!(lane_name("Audio", 0, 1), "Audio");
-        assert_eq!(lane_name("Audio", 1, 2), "Audio 2");
+    /// 30 one-second clips at 10 fps.
+    fn thirty_clips() -> TimelineModel {
+        let keys: Vec<_> = (0..30).map(|index| format!("clip-{index}")).collect();
+        let scenes: Vec<_> = keys
+            .iter()
+            .enumerate()
+            .map(|(index, key)| (key.as_str(), index * 10, index * 10 + 10))
+            .collect();
+        TimelineModel::new(report(10, &scenes)).unwrap()
+    }
+
+    #[gpui::test]
+    fn only_segments_near_the_view_are_painted(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = cx.add_window_view(|_, cx| TimelineView::new(cx));
+        view.update(cx, |view, cx| {
+            view.install(thirty_clips(), Arc::from([]), 0, cx)
+        });
+        cx.run_until_parked();
+        assert_eq!(view.read_with(cx, |view, _| view.painted_segments), 30);
+        view.update(cx, |view, cx| {
+            let model = view.model.clone().unwrap();
+            view.viewport.update_zoom(3., 0., &model);
+            view.viewport.set_position(10., &model);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        // [10 s, 13 s) and two seconds of padding either side: clips 7 to 15.
+        let metrics = view.read_with(cx, |view, _| view.qualification_metrics());
+        assert_eq!(metrics["painted_segments"], 9, "{metrics:#}");
+        assert_eq!(metrics["clips"], 30);
+    }
+
+    #[gpui::test]
+    fn the_engine_snapshot_drives_the_clip_track(cx: &mut gpui::TestAppContext) {
+        use crate::timeline::model::tests::snapshot;
+        let (view, cx) = cx.add_window_view(|_, cx| TimelineView::new(cx));
+        view.update(cx, |view, cx| {
+            view.install(thirty_clips(), Arc::from([]), 0, cx)
+        });
+        cx.run_until_parked();
+        // The document plays two clips; until the report catches up the second has no scene.
+        view.update(cx, |view, cx| {
+            view.set_snapshot(
+                Some(snapshot(&[("clip-3", 10, 0, 0), ("clip-3", 10, 5, 0)])),
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        let (clips, painted) = view.read_with(cx, |view, _| {
+            let spans: Vec<_> = view
+                .clips
+                .iter()
+                .map(|c| (c.start, c.end, c.scene))
+                .collect();
+            (spans, view.painted_segments)
+        });
+        // The first clip keeps its scene's frames, the second follows it, and the 29
+        // scenes no clip plays stay on their rows.
+        assert_eq!(clips[..2], [(30, 40, Some(3)), (40, 45, None)]);
+        assert_eq!(clips.len(), 31);
+        assert!(!clips[2..].iter().any(|(_, _, scene)| *scene == Some(3)));
+        assert_eq!(painted, 31);
+        view.update(cx, |view, cx| view.set_snapshot(None, cx));
+        assert_eq!(view.read_with(cx, |view, _| view.clips.len()), 30);
+    }
+
+    #[gpui::test]
+    fn a_minimap_press_centres_the_view_and_a_fitted_one_ignores_it(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = cx.add_window_view(|_, cx| TimelineView::new(cx));
+        view.update(cx, |view, cx| {
+            view.install(thirty_clips(), Arc::from([]), 0, cx)
+        });
+        cx.run_until_parked();
+        let centre = |cx: &mut gpui::VisualTestContext| {
+            let [left, top, width, height] = view
+                .read_with(cx, |view, _| view.qualification_metrics())["minimap_bounds"]
+                .as_array()
+                .expect("the minimap reports where it is")
+                .iter()
+                .map(|value| value.as_f64().unwrap() as f32)
+                .collect::<Vec<_>>()[..]
+            else {
+                panic!("four numbers")
+            };
+            gpui::point(px(left + width / 2.), px(top + height / 2.))
+        };
+        // Fitted: the minimap is hidden and the press changes nothing.
+        let at = centre(cx);
+        cx.simulate_click(at, gpui::Modifiers::none());
+        assert_eq!(view.read_with(cx, |view, _| view.viewport.position), 0.);
+
+        view.update(cx, |view, cx| {
+            let model = view.model.clone().unwrap();
+            view.viewport.update_zoom(3., 0., &model);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        // The bar's middle is 15 s; the 3 s view is centred on it.
+        let at = centre(cx);
+        cx.simulate_click(at, gpui::Modifiers::none());
+        let position = view.read_with(cx, |view, _| view.viewport.position);
+        assert!((position - 13.5).abs() < 1e-3, "{position}");
     }
 }

@@ -37,7 +37,12 @@ fn playback_renders_the_player_and_leaves_the_other_sections(cx: &mut gpui::Test
     assert_eq!(after["playing"], true);
     let grew = |section| renders(&after, section) - renders(&before, section);
     assert!(grew("player") >= 10, "{:#}", after["renders"]);
-    for section in ["header", "sidebar"] {
+    // The playhead moves over the cached timeline without rendering it.
+    assert_ne!(
+        before["timeline"]["selection"]["position"],
+        after["timeline"]["selection"]["position"]
+    );
+    for section in ["header", "sidebar", "timeline"] {
         assert!(
             grew(section) <= 1,
             "{section}: {:#} -> {:#}",

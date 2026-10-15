@@ -45,7 +45,7 @@ use crate::{
     canvas_view::CanvasViewState,
     frame_image::ImagePresentationManager,
     preset_panel::PresetPanel,
-    timeline_view::{TimelineEvent, TimelineView},
+    timeline::{TimelineEvent, TimelineView},
 };
 use left_column::LeftTab;
 

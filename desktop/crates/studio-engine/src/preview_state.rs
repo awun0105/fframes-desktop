@@ -123,6 +123,8 @@ pub struct PreparedAudioSource {
     /// Budget accounting of the PCM bytes (an opaque guard owned by the build service
     /// that releases them when this source, and so the open file, is dropped).
     accounting: std::sync::OnceLock<Box<dyn std::any::Any + Send + Sync>>,
+    /// The waveform of these bytes (`descriptor.sha256`), see [`crate::waveform`].
+    waveform: Arc<[f32]>,
 }
 impl PreparedAudioSource {
     pub fn build(&self) -> &Arc<crate::build_materialization::MaterializedBuild> {
@@ -138,7 +140,17 @@ impl PreparedAudioSource {
             descriptor,
             _lease: lease,
             accounting: std::sync::OnceLock::new(),
+            waveform: Arc::from([]),
         }
+    }
+    /// Attaches the waveform peaks computed while the file was validated.
+    pub fn with_waveform(mut self, peaks: Vec<f32>) -> Self {
+        self.waveform = peaks.into();
+        self
+    }
+    /// Peaks at [`crate::waveform::WAVEFORM_PEAKS_PER_SECOND`], empty when none were computed.
+    pub fn waveform(&self) -> &Arc<[f32]> {
+        &self.waveform
     }
     /// Ties `guard` to this source's lifetime. Only the first guard is kept; returns
     /// false (dropping `guard`, which releases whatever it accounted) when one is set.
