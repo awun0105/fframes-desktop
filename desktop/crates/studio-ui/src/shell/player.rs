@@ -594,6 +594,10 @@ impl StudioShell {
             .child(self.render_player_toolbar(cx))
             .child(self.render_stage(cx))
             .child(self.render_transport(cx))
+            .child(super::sections::section_probe(
+                super::sections::Section::Player,
+                cx,
+            ))
             .child(
                 // Measures the card so the transport can pick its compact layout.
                 canvas(

@@ -259,8 +259,8 @@ impl Render for StudioShell {
                         .min_h(px(split.player_min_height))
                         .flex()
                         .gap(gutter)
-                        .child(player)
-                        .child(sidebar),
+                        .child(sidebar)
+                        .child(player),
                 )
                 .child(
                     div()
@@ -283,8 +283,8 @@ impl Render for StudioShell {
                     .min_h_0()
                     .flex()
                     .gap(gutter)
-                    .child(self.render_empty_state(cx))
-                    .child(sidebar),
+                    .child(sidebar)
+                    .child(self.render_empty_state(cx)),
             );
         }
         Self::on_actions(div(), cx)

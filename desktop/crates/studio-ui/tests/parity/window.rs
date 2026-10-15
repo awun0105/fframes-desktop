@@ -53,7 +53,7 @@ fn bounds(t: &Value, section: &str) -> [f64; 4] {
 fn the_sections_fill_their_boxes(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed(cx);
     let t = studio.wait("every section measured", |t| {
-        ["header", "sidebar", "agent"]
+        ["header", "sidebar", "player", "agent"]
             .iter()
             .all(|section| t["sections"][section].is_array())
     });
@@ -89,11 +89,16 @@ fn the_sections_fill_their_boxes(cx: &mut gpui::TestAppContext) {
     } else {
         assert!(t["sections"]["caption"].is_null());
     }
-    // The sidebar shares the row above the timeline with the player.
+    // The sidebar shares the row above the timeline with the player, on its left.
     let sidebar = bounds(&t, "sidebar");
     assert!(
         close(sidebar[3] + BORDERS, available - timeline) && close(sidebar[2] + BORDERS, SIDEBAR_W),
         "sidebar {sidebar:?}, {available} available, timeline {timeline}"
+    );
+    let player = bounds(&t, "player");
+    assert!(
+        sidebar[0] + sidebar[2] <= player[0] && close(sidebar[1], player[1]),
+        "sidebar {sidebar:?} is not left of the player {player:?}"
     );
     // The agent panel is the sidebar's open tab: its full inner width, down to its padding.
     let agent = bounds(&t, "agent");
