@@ -1,17 +1,19 @@
 //! Tool contract, broker security/limits, MCP protocol and CLI/MCP subprocess parity.
 //! A deterministic in-test backend and liveness oracle stand in for the app.
-#![cfg(unix)]
+//! Unix and Windows run the same suite; the few file-mode, symlink and socket-path cases
+//! are unix-only and have their Windows counterparts next to them.
 
 use parking_lot::{Condvar, Mutex};
 use serde_json::{Value, json};
+#[cfg(unix)]
+use std::os::unix::{
+    fs::{PermissionsExt, symlink},
+    net::{UnixListener, UnixStream},
+};
 use std::{
     collections::HashSet,
     fs,
     io::{BufRead, BufReader, Read, Write},
-    os::unix::{
-        fs::{PermissionsExt, symlink},
-        net::{UnixListener, UnixStream},
-    },
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
@@ -22,6 +24,8 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+#[cfg(windows)]
+use studio_engine::agent_tools::transport;
 use studio_engine::agent_tools::{
     ArtifactRef, BoundRevision, FrameSelection, MAX_IMAGE_ARTIFACT_BYTES, MAX_QUEUED_CALLS,
     MAX_REQUEST_BYTES, MAX_STRIP_FRAMES, MAX_TEXT_REPLY_BYTES, RevisionInfo, RevisionLabel,
@@ -37,6 +41,7 @@ use studio_engine::agent_tools::{
     tool_descriptions,
 };
 use studio_engine::{AgentTaskId, OpenSession, TaskIdentity};
+
 use studio_project::{ProjectId, SourceRevision};
 
 const REV_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -249,11 +254,42 @@ struct Harness {
     broker: ToolBroker,
 }
 
+#[cfg(unix)]
 fn short_tempdir() -> tempfile::TempDir {
     tempfile::Builder::new()
         .prefix("fft")
         .tempdir_in("/tmp")
         .unwrap()
+}
+
+/// Pipe names do not depend on the runtime directory's path.
+#[cfg(windows)]
+fn short_tempdir() -> tempfile::TempDir {
+    tempfile::Builder::new().prefix("fft").tempdir().unwrap()
+}
+
+#[cfg(unix)]
+type RawStream = UnixStream;
+#[cfg(windows)]
+type RawStream = transport::Stream;
+
+fn raw_connect(endpoint: &Path) -> std::io::Result<RawStream> {
+    #[cfg(unix)]
+    return UnixStream::connect(endpoint);
+    #[cfg(windows)]
+    return transport::connect(endpoint, Duration::from_secs(5));
+}
+
+/// Whether the broker still serves its endpoint. A pipe is looked up in the pipe
+/// directory: opening its path would connect to it.
+fn endpoint_exists(endpoint: &Path) -> bool {
+    #[cfg(unix)]
+    return endpoint.exists();
+    #[cfg(windows)]
+    return fs::read_dir(r"\\.\pipe\")
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|entry| Some(entry.file_name().as_os_str()) == endpoint.file_name());
 }
 
 fn start_in(
@@ -320,13 +356,13 @@ impl Cap {
 }
 
 struct Wire {
-    stream: UnixStream,
-    reader: BufReader<UnixStream>,
+    stream: RawStream,
+    reader: BufReader<RawStream>,
 }
 
 impl Wire {
     fn connect(socket: &Path) -> Self {
-        let stream = UnixStream::connect(socket).unwrap();
+        let stream = raw_connect(socket).unwrap();
         stream.set_read_timeout(Some(WAIT)).unwrap();
         Self {
             reader: BufReader::new(stream.try_clone().unwrap()),
@@ -377,10 +413,24 @@ fn never() -> bool {
     false
 }
 
+#[cfg(unix)]
 fn private_copy(dir: &Path, name: &str, bytes: &[u8], mode: u32) -> PathBuf {
     let path = dir.join(name);
     fs::write(&path, bytes).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+    path
+}
+
+/// A mode without group or world bits makes the file private to the current user; any
+/// other mode leaves the temp directory's inherited permissions, which grant others.
+#[cfg(windows)]
+fn private_copy(dir: &Path, name: &str, bytes: &[u8], mode: u32) -> PathBuf {
+    let path = dir.join(name);
+    if mode & 0o077 == 0 {
+        transport::create_private_file(&path, bytes).unwrap();
+    } else {
+        fs::write(&path, bytes).unwrap();
+    }
     path
 }
 

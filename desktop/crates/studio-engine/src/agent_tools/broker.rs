@@ -1,16 +1,18 @@
 //! App-owned local tool broker.
 //!
-//! The broker listens on a unix domain socket inside a private runtime directory and
-//! serves the [`ToolDispatcher`] to the `studio-tools` CLI and the `studio-mcp` server.
-//! Every capability is bound to one task ([`ToolBinding`]); the secret lives only in the
-//! 0600 capability file `cap-<id>.json` (`{"version":1,"socket":..,"capability":..,
-//! "secret":..}`) and in broker memory.
+//! The broker listens on a local endpoint (see [`super::transport`]: a unix domain socket
+//! inside the private runtime directory, a named pipe on Windows) and serves the
+//! [`ToolDispatcher`] to the `studio-tools` CLI and the `studio-mcp` server. Every
+//! capability is bound to one task ([`ToolBinding`]); the secret lives only in the
+//! private capability file `cap-<id>.json` (`{"version":1,"socket":..,"capability":..,
+//! "secret":..}`, where `socket` names the endpoint) and in broker memory.
 //!
 //! # Security
-//! - `runtime_dir` is created 0700 and verified (a real directory owned by us, no
-//!   group/world bits, not a symlink) or the broker refuses to start. The socket is 0600.
-//! - Every accepted connection's peer uid is checked against ours (`SO_PEERCRED` on
-//!   Linux, `getpeereid` elsewhere).
+//! - `runtime_dir` is created private and verified (a real directory owned by us that
+//!   nobody else can open, not a symlink) or the broker refuses to start. The endpoint
+//!   is as private: a 0600 socket, or a pipe whose DACL grants only the current user.
+//! - Every connection's peer is checked against the current user (`SO_PEERCRED` on
+//!   Linux, `getpeereid` on other unixes, the client's token on Windows).
 //! - The secret is 32 random bytes (hex), compared in constant time, and never put on
 //!   argv, in logs, errors, `Debug`/`Display` output or [`ToolGrant`]. An unknown
 //!   capability id and a wrong secret are indistinguishable (`unauthorized`);
@@ -35,11 +37,11 @@
 //! executing call's `cancelled` closure turns true when its connection drops, the grant
 //! is revoked or expires, or the broker shuts down. A panicking backend becomes an
 //! `internal` error and the worker survives.
-#[cfg(unix)]
 use super::{
     MAX_QUEUED_CALLS, MAX_REQUEST_BYTES, MAX_TEXT_REPLY_BYTES, TOOL_WORKERS, ToolError,
     ToolErrorCode,
     client::{LineRead, LineReader},
+    transport::{self, Accepted, Stream},
 };
 use super::{TaskLiveness, ToolBinding, ToolDispatcher};
 use crate::TaskIdentity;
@@ -94,8 +96,6 @@ pub struct BrokerStats {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BrokerError {
-    #[error("the tool broker needs unix domain sockets and is unsupported on this platform")]
-    Unsupported,
     #[error("runtime directory {} is not private: {reason}", path.display())]
     InsecureRuntimeDir { path: PathBuf, reason: String },
     #[error("socket path {} is too long for a unix domain socket", .0.display())]
@@ -114,13 +114,11 @@ pub enum BrokerError {
     },
 }
 
-#[cfg(unix)]
 fn io_error(context: &'static str) -> impl FnOnce(io::Error) -> BrokerError {
     move |source| BrokerError::Io { context, source }
 }
 
 /// Hex of random bytes, from the OS RNG through `uuid` (v4 = `getrandom`).
-#[cfg(unix)]
 fn random_bytes_32() -> [u8; 32] {
     let mut out = [0u8; 32];
     out[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
@@ -128,7 +126,6 @@ fn random_bytes_32() -> [u8; 32] {
     out
 }
 
-#[cfg(unix)]
 fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut out, byte| {
@@ -137,7 +134,6 @@ fn hex(bytes: &[u8]) -> String {
     })
 }
 
-#[cfg(unix)]
 fn unhex_32(text: &str) -> Option<[u8; 32]> {
     let bytes = text.as_bytes();
     if bytes.len() != 64 {
@@ -156,7 +152,6 @@ fn unhex_32(text: &str) -> Option<[u8; 32]> {
     Some(out)
 }
 
-#[cfg(unix)]
 mod imp {
     use super::*;
     use parking_lot::{Condvar, Mutex};
@@ -166,13 +161,6 @@ mod imp {
         collections::{HashMap, VecDeque},
         fs,
         io::Write,
-        os::{
-            fd::AsRawFd,
-            unix::{
-                fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-                net::{UnixListener, UnixStream},
-            },
-        },
         panic::{AssertUnwindSafe, catch_unwind},
         sync::{
             atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -182,8 +170,6 @@ mod imp {
         time::Instant,
     };
 
-    /// Longest filesystem path a unix socket address can name (macOS is the strictest).
-    const MAX_SOCKET_PATH: usize = 100;
     const MAX_HELLO_BYTES: usize = 4096;
     /// Replies buffered per connection (pipelined calls awaiting their in-order turn).
     const MAX_PIPELINED: usize = 64;
@@ -285,7 +271,7 @@ mod imp {
         queue_changed: Condvar,
         connections: Mutex<Vec<JoinHandle<()>>>,
         /// One shutdown handle per live connection; removed when its thread ends.
-        streams: Mutex<HashMap<u64, UnixStream>>,
+        streams: Mutex<HashMap<u64, Stream>>,
         next_connection: AtomicU64,
         live_connections: AtomicUsize,
         live_threads: AtomicUsize,
@@ -300,10 +286,10 @@ mod imp {
             self.shutdown.load(Ordering::SeqCst)
         }
 
-        /// `shutdown(Both)` on every live connection's socket.
+        /// Cuts every live connection off.
         fn close_connections(&self) {
             for stream in self.streams.lock().values() {
-                let _ = stream.shutdown(std::net::Shutdown::Both);
+                transport::close(stream);
             }
         }
     }
@@ -350,118 +336,6 @@ mod imp {
         }
     }
 
-    fn euid() -> u32 {
-        // SAFETY: geteuid has no preconditions and cannot fail.
-        unsafe { libc::geteuid() }
-    }
-
-    fn insecure(path: &Path, reason: impl Into<String>) -> BrokerError {
-        BrokerError::InsecureRuntimeDir {
-            path: path.to_path_buf(),
-            reason: reason.into(),
-        }
-    }
-
-    fn verify_private_dir(path: &Path) -> Result<(), BrokerError> {
-        let meta = fs::symlink_metadata(path).map_err(io_error("inspect runtime dir"))?;
-        if meta.file_type().is_symlink() {
-            return Err(insecure(path, "is a symlink"));
-        }
-        if !meta.is_dir() {
-            return Err(insecure(path, "is not a directory"));
-        }
-        if meta.uid() != euid() {
-            return Err(insecure(path, "is not owned by the current user"));
-        }
-        if meta.mode() & 0o077 != 0 {
-            return Err(insecure(
-                path,
-                format!(
-                    "is accessible by group or others (mode {:o})",
-                    meta.mode() & 0o777
-                ),
-            ));
-        }
-        Ok(())
-    }
-
-    fn prepare_runtime_dir(dir: &Path) -> Result<PathBuf, BrokerError> {
-        match fs::symlink_metadata(dir) {
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                fs::DirBuilder::new()
-                    .recursive(true)
-                    .mode(0o700)
-                    .create(dir)
-                    .map_err(io_error("create runtime dir"))?;
-            }
-            Err(error) => return Err(io_error("inspect runtime dir")(error)),
-        }
-        verify_private_dir(dir)?;
-        fs::canonicalize(dir).map_err(io_error("resolve runtime dir"))
-    }
-
-    /// A previous run's socket and capability files are dead: its sockets are gone.
-    fn clear_stale(runtime_dir: &Path, socket: &Path) -> Result<(), BrokerError> {
-        match fs::symlink_metadata(socket) {
-            Ok(meta) if meta.file_type().is_socket() && meta.uid() == euid() => {
-                if UnixStream::connect(socket).is_ok() {
-                    return Err(BrokerError::AlreadyRunning(socket.to_path_buf()));
-                }
-                fs::remove_file(socket).map_err(io_error("remove stale socket"))?;
-            }
-            Ok(_) => return Err(insecure(runtime_dir, "contains an unexpected broker.sock")),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(io_error("inspect socket")(error)),
-        }
-        for entry in fs::read_dir(runtime_dir).map_err(io_error("list runtime dir"))? {
-            let entry = entry.map_err(io_error("list runtime dir"))?;
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name.starts_with("cap-") && name.ends_with(".json") {
-                let path = entry.path();
-                if let Ok(meta) = fs::symlink_metadata(&path)
-                    && meta.is_file()
-                    && meta.uid() == euid()
-                {
-                    let _ = fs::remove_file(path);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
-        {
-            // SAFETY: zeroed ucred is a valid out-parameter; `length` is its size.
-            let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
-            let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-            let rc = unsafe {
-                libc::getsockopt(
-                    stream.as_raw_fd(),
-                    libc::SOL_SOCKET,
-                    libc::SO_PEERCRED,
-                    std::ptr::addr_of_mut!(cred).cast(),
-                    &mut length,
-                )
-            };
-            if rc < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(cred.uid)
-        }
-        #[cfg(not(any(target_os = "linux", target_os = "android")))]
-        {
-            let (mut uid, mut gid): (libc::uid_t, libc::gid_t) = (0, 0);
-            // SAFETY: valid descriptor and out-parameters.
-            if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(uid)
-        }
-    }
-
     fn fatal(code: ToolErrorCode) -> bool {
         matches!(
             code,
@@ -498,7 +372,7 @@ mod imp {
         }
     }
 
-    fn write_line(stream: &mut UnixStream, line: &str) -> io::Result<()> {
+    fn write_line(stream: &mut Stream, line: &str) -> io::Result<()> {
         let mut bytes = Vec::with_capacity(line.len() + 1);
         bytes.extend_from_slice(line.as_bytes());
         bytes.push(b'\n');
@@ -508,24 +382,9 @@ mod imp {
 
     impl ToolBroker {
         pub fn start(config: BrokerConfig) -> Result<ToolBroker, BrokerError> {
-            let runtime_dir = prepare_runtime_dir(&config.runtime_dir)?;
-            let socket = runtime_dir.join("broker.sock");
-            if socket.as_os_str().len() >= MAX_SOCKET_PATH || socket.to_str().is_none() {
-                return Err(BrokerError::SocketPathTooLong(socket));
-            }
-            clear_stale(&runtime_dir, &socket)?;
-            let listener = UnixListener::bind(&socket).map_err(io_error("bind socket"))?;
-            let setup = (|| {
-                fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))
-                    .map_err(io_error("restrict socket"))?;
-                listener
-                    .set_nonblocking(true)
-                    .map_err(io_error("configure socket"))
-            })();
-            if let Err(error) = setup {
-                let _ = fs::remove_file(&socket);
-                return Err(error);
-            }
+            let runtime_dir = transport::prepare_runtime_dir(&config.runtime_dir)?;
+            let listener = transport::Listener::bind(&runtime_dir)?;
+            let socket = listener.endpoint().to_path_buf();
             let shared = Arc::new(Shared {
                 socket: socket.clone(),
                 runtime_dir,
@@ -626,14 +485,7 @@ mod imp {
             if grants.len() >= MAX_GRANTS {
                 return Err(BrokerError::TooManyGrants);
             }
-            let written = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
-                .open(&file)
-                .and_then(|mut handle| handle.write_all(&body).and_then(|()| handle.flush()));
-            if let Err(error) = written {
+            if let Err(error) = transport::create_private_file(&file, &body) {
                 let _ = fs::remove_file(&file);
                 return Err(io_error("write capability file")(error));
             }
@@ -719,7 +571,7 @@ mod imp {
                 grant.revoked.store(true, Ordering::SeqCst);
                 let _ = fs::remove_file(&grant.file);
             }
-            let _ = fs::remove_file(&shared.socket);
+            transport::remove_endpoint(&shared.socket);
         }
     }
 
@@ -729,34 +581,16 @@ mod imp {
         }
     }
 
-    fn accept_loop(shared: &Arc<Shared>, listener: &UnixListener) {
+    fn accept_loop(shared: &Arc<Shared>, listener: &transport::Listener) {
         while !shared.shutting_down() {
-            let mut poll = libc::pollfd {
-                fd: listener.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            // SAFETY: one valid pollfd.
-            let ready = unsafe { libc::poll(&mut poll, 1, 100) };
-            if ready <= 0 {
-                continue;
-            }
-            let stream = match listener.accept() {
-                Ok((stream, _)) => stream,
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(_) => {
-                    thread::sleep(Duration::from_millis(10));
+            let stream = match listener.accept(IDLE_TICK) {
+                Accepted::Peer(stream) => stream,
+                Accepted::Refused => {
+                    shared.rejected_auth.fetch_add(1, Ordering::SeqCst);
                     continue;
                 }
+                Accepted::Idle => continue,
             };
-            // BSDs hand out sockets that inherit O_NONBLOCK from the listener.
-            if stream.set_nonblocking(false).is_err() {
-                continue;
-            }
-            if peer_uid(&stream).ok() != Some(euid()) {
-                shared.rejected_auth.fetch_add(1, Ordering::SeqCst);
-                continue;
-            }
             if shared.live_connections.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
                 shared.live_connections.fetch_sub(1, Ordering::SeqCst);
                 let mut stream = stream;
@@ -770,8 +604,8 @@ mod imp {
                 );
                 continue;
             }
-            // A second descriptor for the same socket lets `shutdown()` wake a thread
-            // blocked in a read or write without waiting for the peer.
+            // A second handle for the same stream lets `shutdown()` wake a thread blocked
+            // in a read or write without waiting for the peer.
             let Ok(closer) = stream.try_clone() else {
                 shared.live_connections.fetch_sub(1, Ordering::SeqCst);
                 continue;
@@ -826,7 +660,7 @@ mod imp {
         secret: String,
     }
 
-    fn serve_connection(shared: &Arc<Shared>, mut stream: UnixStream) {
+    fn serve_connection(shared: &Arc<Shared>, mut stream: Stream) {
         let conn = Arc::new(ConnShared {
             dropped: AtomicBool::new(false),
             executing: AtomicBool::new(false),
@@ -841,10 +675,10 @@ mod imp {
             .queue
             .lock()
             .retain(|job| !Arc::ptr_eq(&job.conn, &conn));
-        let _ = stream.shutdown(std::net::Shutdown::Both);
+        transport::finish(stream);
     }
 
-    fn authenticate(shared: &Arc<Shared>, stream: &mut UnixStream) -> Option<Arc<Grant>> {
+    fn authenticate(shared: &Arc<Shared>, stream: &mut Stream) -> Option<Arc<Grant>> {
         // The hello line has its own small limit: an oversized or newline-less drip is
         // rejected before any newline arrives.
         let mut reader = LineReader::new(MAX_HELLO_BYTES);
@@ -874,7 +708,12 @@ mod imp {
                 Ok(LineRead::Eof) | Err(_) => return None,
             }
         };
-        let rejected = |stream: &mut UnixStream, error: ToolError| {
+        // A pipe client's token can only be read once it has sent something.
+        if !transport::verify_peer(stream) {
+            shared.rejected_auth.fetch_add(1, Ordering::SeqCst);
+            return None;
+        }
+        let rejected = |stream: &mut Stream, error: ToolError| {
             let _ = write_line(stream, &error_line(None, &error));
         };
         let unauthorized = || {
@@ -918,7 +757,7 @@ mod imp {
 
     fn connection_loop(
         shared: &Arc<Shared>,
-        stream: &mut UnixStream,
+        stream: &mut Stream,
         conn: &Arc<ConnShared>,
         grant: &Arc<Grant>,
     ) {
@@ -1118,41 +957,6 @@ mod imp {
             }
         };
         let _ = job.reply.send(result);
-    }
-}
-
-#[cfg(not(unix))]
-mod imp {
-    use super::*;
-
-    #[derive(Debug)]
-    pub struct ToolBroker {
-        unsupported: std::convert::Infallible,
-    }
-
-    impl ToolBroker {
-        pub fn start(_config: BrokerConfig) -> Result<ToolBroker, BrokerError> {
-            Err(BrokerError::Unsupported)
-        }
-        pub fn grant(
-            &self,
-            _binding: ToolBinding,
-            _ttl: Duration,
-        ) -> Result<ToolGrant, BrokerError> {
-            match self.unsupported {}
-        }
-        pub fn revoke(&self, _task: &TaskIdentity) {
-            match self.unsupported {}
-        }
-        pub fn socket_path(&self) -> &Path {
-            match self.unsupported {}
-        }
-        pub fn stats(&self) -> BrokerStats {
-            match self.unsupported {}
-        }
-        pub fn shutdown(&self) {
-            match self.unsupported {}
-        }
     }
 }
 

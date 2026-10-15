@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Agent tool broker on Windows"
-status: pending
+status: in-progress
 priority: P1
 effort: "3-5d"
 dependencies: []
@@ -27,11 +27,22 @@ Agents on Windows get the same project tools (build, preview, inspect through `s
 
 ## Todo
 
-- [ ] Scout transports
-- [ ] Transport trait
-- [ ] Named-pipe transport with SID checks
-- [ ] Fallback limited to real failures
-- [ ] Windows tests
+- [x] Scout transports
+- [x] Transport trait
+- [x] Named-pipe transport with SID checks
+- [x] Fallback limited to real failures
+- [ ] Windows tests (green on this Windows VM; Windows CI, and Linux and macOS CI for the unchanged Unix path, need a push)
+
+## Progress (2026-10-15)
+
+- **Transport.** `agent_tools::transport` holds everything platform-specific: listener, stream, client connect, the private runtime directory and the private capability files. The broker and client cores are now platform-neutral, and `BrokerError::Unsupported` and `ClientError::Unsupported` are gone. **Deviation:** it is a module with one implementation per platform under the same names, not a trait object. Nothing dispatches dynamically, so a trait would only add indirection. The Unix half is the previous code moved unchanged (cross-checked with clippy for Linux and macOS in a scratch crate; `studio-engine` itself cannot be cross-built here because of `alsa-sys`).
+- **Named pipe.** `\\.\pipe\fframes-studio-<uuid>`, created with `FILE_FLAG_FIRST_PIPE_INSTANCE`, byte mode, overlapped I/O and `PIPE_REJECT_REMOTE_CLIENTS`. Its descriptor is `O:<user>D:P(A;;GA;;;<user>)` (an elevated administrator's default owner would be `Administrators`). One instance always listens, so the name never disappears between two clients.
+- **Peer check.** After the hello line the server reads the client token through `ImpersonateNamedPipeClient` (a client cannot be impersonated before it sends anything). It refuses another user, a restricted token and an AppContainer. **Deviation:** the plan named `GetNamedPipeClientProcessId`; impersonation reads the token of the connection itself, without the PID-reuse race. The client opens the pipe with `SECURITY_IDENTIFICATION` and checks that the server process runs as the current user.
+- **Runtime directory and capability files** are created with an owner-and-only-ACE descriptor of the current user. They are verified on the opened handle: no reparse point, owned by the current user, and every allow ACE names that user. The directory is not canonicalized, which would add a `\\?\` prefix. Because the pipe name is random, an exclusive delete-on-close `broker.lock` marks a live broker in the directory.
+- **Close semantics.** Ending a connection after its replies only closes the handle; `DisconnectNamedPipe` (which discards unread replies) is used only by `shutdown()`.
+- **Tests on this VM.** The whole `app/tests/agent_tools` suite (39 tests: limits, drippers, shutdown, CLI and MCP subprocesses) now runs on Windows too. Its file-mode, symlink and socket-path cases stay Unix-only, with Windows counterparts next to them. The transport unit tests assert on the handle that the pipe DACL grants only the current user and that `GetNamedPipeInfo` reports `PIPE_REJECT_REMOTE_CLIENTS`; they also cover private files and directories, a junction, a second listener, timeouts and close. `a_client_under_a_restricted_token_is_refused_by_the_token_check` launches `studio-tools` with `CreateProcessAsUserW` under a restricted token whose restricting SIDs include the user, so the DACL lets it in and the broker's token check must refuse it (`rejected_auth` = 1, exit code 3). Disabling the `IsTokenRestricted` check makes that test fail. AppContainer is not exercised: creating its profile is a lasting change on the host.
+- **Agent turn.** The scripted agent has an `mcp_call` script field: it starts the MCP server named in `session/new` and calls a tool. `app/tests/agent_project_tools.rs` (not platform-gated) checks that a turn gets this task's `project_context` from the broker and that the capability ends with the task.
+- **Fallback.** No platform gate is left on the tool route; the "no project tools" notes only report a missing helper, a disabled policy or a real start failure.
 
 ## Success criteria
 

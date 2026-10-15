@@ -89,11 +89,29 @@ fn client_refuses_unsafe_or_malformed_capability_files() {
     };
 
     let link = dir.path().join("link.json");
+    #[cfg(unix)]
     symlink(&cap.file, &link).unwrap();
+    #[cfg(windows)]
+    {
+        let made = Command::new("cmd")
+            .args(["/C", "mklink"])
+            .arg(&link)
+            .arg(&cap.file)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{made:?}");
+    }
     message(BrokerClient::connect(&link));
 
     let readable = private_copy(dir.path(), "group.json", &good, 0o640);
-    assert!(message(BrokerClient::connect(&readable)).contains("0600"));
+    let refused = message(BrokerClient::connect(&readable));
+    #[cfg(unix)]
+    assert!(refused.contains("0600"), "{refused}");
+    #[cfg(windows)]
+    assert!(
+        refused.contains("grants access to") || refused.contains("is not owned"),
+        "{refused}"
+    );
     let world = private_copy(dir.path(), "world.json", &good, 0o604);
     message(BrokerClient::connect(&world));
 
@@ -127,14 +145,21 @@ fn client_refuses_unsafe_or_malformed_capability_files() {
     message(BrokerClient::connect(dir.path()));
 
     // Owned by someone else (only checkable when the test runs as root).
-    let foreign = private_copy(dir.path(), "foreign.json", &good, 0o600);
-    if std::os::unix::fs::chown(&foreign, Some(65534), None).is_ok() {
-        assert!(message(BrokerClient::connect(&foreign)).contains("owned"));
+    #[cfg(unix)]
+    {
+        let foreign = private_copy(dir.path(), "foreign.json", &good, 0o600);
+        if std::os::unix::fs::chown(&foreign, Some(65534), None).is_ok() {
+            assert!(message(BrokerClient::connect(&foreign)).contains("owned"));
+        }
     }
 
     // A well-formed file naming a socket nobody serves is "unreachable", not "unusable".
     let mut dangling: Value = serde_json::from_slice(&good).unwrap();
-    dangling["socket"] = json!(dir.path().join("nobody-home.sock").to_str().unwrap());
+    #[cfg(unix)]
+    let nobody = dir.path().join("nobody-home.sock");
+    #[cfg(windows)]
+    let nobody = PathBuf::from(r"\\.\pipe\fframes-studio-nobody-home");
+    dangling["socket"] = json!(nobody.to_str().unwrap());
     let dangling = private_copy(
         dir.path(),
         "dangling.json",

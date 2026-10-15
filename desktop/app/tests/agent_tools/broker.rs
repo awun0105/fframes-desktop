@@ -49,10 +49,24 @@ fn capability_socket_and_runtime_dir_are_private() {
         .broker
         .grant(draft(&task), Duration::from_secs(60))
         .unwrap();
-    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode(&h.runtime), 0o700);
-    assert_eq!(mode(h.broker.socket_path()), 0o600);
-    assert_eq!(mode(&grant.capability_file), 0o600);
+    #[cfg(unix)]
+    {
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&h.runtime), 0o700);
+        assert_eq!(mode(h.broker.socket_path()), 0o600);
+        assert_eq!(mode(&grant.capability_file), 0o600);
+    }
+    // The DACLs themselves are asserted by the transport's unit tests.
+    #[cfg(windows)]
+    {
+        let endpoint = h.broker.socket_path().to_str().unwrap();
+        assert!(
+            endpoint.starts_with(r"\\.\pipe\fframes-studio-"),
+            "{endpoint}"
+        );
+        transport::open_private_file(&grant.capability_file).unwrap();
+        assert!(!h.runtime.join("broker.sock").exists());
+    }
 
     let cap = Cap::read(&grant.capability_file);
     let file_name = grant.capability_file.file_name().unwrap().to_str().unwrap();
@@ -98,12 +112,39 @@ fn insecure_runtime_directories_are_refused() {
 
     let created = dir.path().join("a").join("b");
     let broker = start_in(&created, &backend, &liveness).unwrap();
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(&created).unwrap().permissions().mode() & 0o777,
         0o700
     );
     drop(broker);
 
+    #[cfg(windows)]
+    {
+        // Inherited from the temp directory: administrators and SYSTEM may open it.
+        let shared = dir.path().join("shared");
+        fs::create_dir(&shared).unwrap();
+        let error = start_in(&shared, &backend, &liveness).unwrap_err();
+        assert!(
+            matches!(error, BrokerError::InsecureRuntimeDir { .. }),
+            "{error}"
+        );
+        let junction = dir.path().join("junction");
+        let made = Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&created)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{made:?}");
+        let error = start_in(&junction, &backend, &liveness).unwrap_err();
+        assert!(
+            matches!(error, BrokerError::InsecureRuntimeDir { .. }),
+            "{error}"
+        );
+    }
+
+    #[cfg(unix)]
     for (name, mode) in [("group", 0o750), ("world", 0o705), ("groupwrite", 0o770)] {
         let path = dir.path().join(name);
         fs::create_dir(&path).unwrap();
@@ -119,16 +160,19 @@ fn insecure_runtime_directories_are_refused() {
         );
     }
 
-    let real = dir.path().join("real");
-    fs::create_dir(&real).unwrap();
-    fs::set_permissions(&real, fs::Permissions::from_mode(0o700)).unwrap();
-    let link = dir.path().join("link");
-    symlink(&real, &link).unwrap();
-    let error = start_in(&link, &backend, &liveness).unwrap_err();
-    assert!(
-        matches!(error, BrokerError::InsecureRuntimeDir { .. }),
-        "{error}"
-    );
+    #[cfg(unix)]
+    {
+        let real = dir.path().join("real");
+        fs::create_dir(&real).unwrap();
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o700)).unwrap();
+        let link = dir.path().join("link");
+        symlink(&real, &link).unwrap();
+        let error = start_in(&link, &backend, &liveness).unwrap_err();
+        assert!(
+            matches!(error, BrokerError::InsecureRuntimeDir { .. }),
+            "{error}"
+        );
+    }
 
     let file = dir.path().join("file");
     fs::write(&file, b"x").unwrap();
@@ -138,12 +182,16 @@ fn insecure_runtime_directories_are_refused() {
         "{error}"
     );
 
-    let long = dir.path().join("x".repeat(120));
-    let error = start_in(&long, &backend, &liveness).unwrap_err();
-    assert!(
-        matches!(error, BrokerError::SocketPathTooLong(_)),
-        "{error}"
-    );
+    // Only unix socket addresses are length-limited.
+    #[cfg(unix)]
+    {
+        let long = dir.path().join("x".repeat(120));
+        let error = start_in(&long, &backend, &liveness).unwrap_err();
+        assert!(
+            matches!(error, BrokerError::SocketPathTooLong(_)),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -545,10 +593,10 @@ fn shutdown_cancels_joins_and_removes_socket_and_capabilities() {
     gate.wait_entered(1);
     assert!(h.broker.stats().live_threads >= TOOL_WORKERS + 2);
     let socket = h.broker.socket_path().to_path_buf();
-    assert!(socket.exists());
+    assert!(endpoint_exists(&socket));
 
     h.broker.shutdown();
-    assert!(!socket.exists(), "the socket file is removed");
+    assert!(!endpoint_exists(&socket), "the socket file is removed");
     assert!(
         !cap.file.exists() && !second.file.exists(),
         "capability files are removed"
@@ -563,7 +611,7 @@ fn shutdown_cancels_joins_and_removes_socket_and_capabilities() {
         "the in-flight call was cancelled"
     );
     assert!(wire.recv().is_none(), "established connections are closed");
-    assert!(UnixStream::connect(&socket).is_err());
+    assert!(raw_connect(&socket).is_err());
     assert!(matches!(
         h.broker.grant(draft(&task), Duration::from_secs(1)),
         Err(BrokerError::ShutDown)
@@ -588,7 +636,7 @@ fn dropping_the_broker_shuts_it_down() {
     let socket = broker.socket_path().to_path_buf();
     let _held = Cap::read(&grant.capability_file).wire();
     drop(broker);
-    assert!(!socket.exists());
+    assert!(!endpoint_exists(&socket));
     assert!(!grant.capability_file.exists());
     assert_eq!(
         fs::read_dir(&runtime).unwrap().count(),
@@ -597,7 +645,7 @@ fn dropping_the_broker_shuts_it_down() {
     );
     // The same runtime directory can host a new broker straight away.
     let again = start_in(&runtime, &backend, &liveness).unwrap();
-    assert!(again.socket_path().exists());
+    assert!(endpoint_exists(again.socket_path()));
 }
 
 #[test]
@@ -694,6 +742,170 @@ fn at_most_eight_connections_are_served() {
     wait_until("a free connection slot", || {
         h.broker.stats().live_connections == 7
     });
+    assert!(
+        cap.wire()
+            .call(1, "timeline", json!({}))
+            .get("result")
+            .is_some()
+    );
+}
+
+/// A client that the pipe's DACL lets in (its restricting SIDs include the user) but whose
+/// token is restricted is refused by the broker's own check of the client token.
+#[cfg(windows)]
+#[test]
+fn a_client_under_a_restricted_token_is_refused_by_the_token_check() {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE},
+        Security::{
+            CreateRestrictedToken, CreateWellKnownSid, GetTokenInformation, SECURITY_MAX_SID_SIZE,
+            SID_AND_ATTRIBUTES, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_GROUPS, TOKEN_QUERY,
+            TOKEN_USER, TokenLogonSid, TokenUser, WinAuthenticatedUserSid, WinBuiltinUsersSid,
+            WinRestrictedCodeSid, WinWorldSid,
+        },
+        System::Threading::{
+            CREATE_NO_WINDOW, CreateProcessAsUserW, GetCurrentProcess, GetExitCodeProcess,
+            OpenProcessToken, PROCESS_INFORMATION, STARTUPINFOW, WaitForSingleObject,
+        },
+    };
+
+    let h = harness();
+    let cap = h.grant(&task());
+    // SAFETY: plain Win32 calls with valid out-parameters; every handle is closed below.
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        assert_ne!(
+            OpenProcessToken(
+                GetCurrentProcess(),
+                TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
+                &mut token,
+            ),
+            0
+        );
+        let mut user = vec![0u64; 64];
+        let mut length = 0u32;
+        assert_ne!(
+            GetTokenInformation(
+                token,
+                TokenUser,
+                user.as_mut_ptr().cast(),
+                (user.len() * 8) as u32,
+                &mut length,
+            ),
+            0
+        );
+        let user_sid = (*user.as_ptr().cast::<TOKEN_USER>()).User.Sid;
+        let well_known = |kind| {
+            let mut sid = vec![0u8; SECURITY_MAX_SID_SIZE as usize];
+            let mut size = sid.len() as u32;
+            assert_ne!(
+                CreateWellKnownSid(
+                    kind,
+                    std::ptr::null_mut(),
+                    sid.as_mut_ptr().cast(),
+                    &mut size
+                ),
+                0
+            );
+            sid
+        };
+        // The logon SID opens the window station and desktop, without which the child
+        // cannot even initialize its DLLs.
+        let mut logon = vec![0u64; 64];
+        assert_ne!(
+            GetTokenInformation(
+                token,
+                TokenLogonSid,
+                logon.as_mut_ptr().cast(),
+                (logon.len() * 8) as u32,
+                &mut length,
+            ),
+            0
+        );
+        let logon_sid = (*logon.as_ptr().cast::<TOKEN_GROUPS>()).Groups[0].Sid;
+        let mut others: Vec<Vec<u8>> = [
+            WinWorldSid,
+            WinBuiltinUsersSid,
+            WinAuthenticatedUserSid,
+            WinRestrictedCodeSid,
+        ]
+        .into_iter()
+        .map(well_known)
+        .collect();
+        let restricting: Vec<SID_AND_ATTRIBUTES> = [user_sid, logon_sid]
+            .into_iter()
+            .chain(others.iter_mut().map(|sid| sid.as_mut_ptr().cast()))
+            .map(|sid| SID_AND_ATTRIBUTES {
+                Sid: sid,
+                Attributes: 0,
+            })
+            .collect();
+        let mut restricted: HANDLE = std::ptr::null_mut();
+        assert_ne!(
+            CreateRestrictedToken(
+                token,
+                0,
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                restricting.len() as u32,
+                restricting.as_ptr(),
+                &mut restricted,
+            ),
+            0,
+            "{}",
+            std::io::Error::last_os_error()
+        );
+        let command = format!(
+            "\"{}\" --capability \"{}\" project_context",
+            env!("CARGO_BIN_EXE_studio-tools"),
+            cap.file.display()
+        );
+        let mut command: Vec<u16> = std::ffi::OsStr::new(&command)
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let startup = STARTUPINFOW {
+            cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+            ..std::mem::zeroed()
+        };
+        let mut process: PROCESS_INFORMATION = std::mem::zeroed();
+        assert_ne!(
+            CreateProcessAsUserW(
+                restricted,
+                std::ptr::null(),
+                command.as_mut_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                CREATE_NO_WINDOW,
+                std::ptr::null(),
+                std::ptr::null(),
+                &startup,
+                &mut process,
+            ),
+            0,
+            "{}",
+            std::io::Error::last_os_error()
+        );
+        WaitForSingleObject(process.hProcess, 30_000);
+        let mut code = 0u32;
+        assert_ne!(GetExitCodeProcess(process.hProcess, &mut code), 0);
+        for handle in [process.hProcess, process.hThread, restricted, token] {
+            CloseHandle(handle);
+        }
+        assert_eq!(
+            code, 3,
+            "studio-tools must report the broker as unavailable"
+        );
+    }
+    wait_until("the restricted client is refused", || {
+        h.broker.stats().rejected_auth == 1
+    });
+    assert_eq!(h.backend.call_count(), 0);
+    // The unrestricted user still gets through.
     assert!(
         cap.wire()
             .call(1, "timeline", json!({}))

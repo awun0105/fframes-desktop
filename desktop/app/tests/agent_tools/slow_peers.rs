@@ -112,11 +112,34 @@ fn an_oversized_hello_is_rejected_at_the_limit_before_any_newline() {
     assert_eq!(h.backend.call_count(), 0);
 }
 
+/// A bare endpoint standing in for the broker, and a function that waits for one client.
+#[cfg(unix)]
+fn fake_broker(dir: &Path) -> (PathBuf, impl FnOnce() -> RawStream + Send + 'static) {
+    let socket = dir.join("fake.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    (socket, move || listener.accept().unwrap().0)
+}
+
+#[cfg(windows)]
+fn fake_broker(dir: &Path) -> (PathBuf, impl FnOnce() -> RawStream + Send + 'static) {
+    let runtime = transport::prepare_runtime_dir(&dir.join("rt")).unwrap();
+    let listener = transport::Listener::bind(&runtime).unwrap();
+    let endpoint = listener.endpoint().to_path_buf();
+    (endpoint, move || {
+        let _runtime = runtime;
+        loop {
+            if let transport::Accepted::Peer(stream) = listener.accept(Duration::from_millis(100)) {
+                stream.set_read_timeout(Some(WAIT)).unwrap();
+                break stream;
+            }
+        }
+    })
+}
+
 #[test]
 fn a_client_call_against_a_dripping_reply_fails_at_its_deadline() {
     let dir = short_tempdir();
-    let socket = dir.path().join("fake.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
+    let (socket, accept) = fake_broker(dir.path());
     let capability = private_copy(
         dir.path(),
         "cap-fake.json",
@@ -131,7 +154,7 @@ fn a_client_call_against_a_dripping_reply_fails_at_its_deadline() {
         0o600,
     );
     let server = thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
+        let stream = accept();
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut writer = stream;
         let mut line = String::new();
@@ -211,5 +234,5 @@ fn shutdown_with_live_drippers_is_bounded_and_peers_see_the_close() {
     let stats = h.broker.stats();
     assert_eq!(stats.live_connections, 0);
     assert_eq!(stats.live_threads, 0);
-    assert!(!h.broker.socket_path().exists());
+    assert!(!endpoint_exists(h.broker.socket_path()));
 }

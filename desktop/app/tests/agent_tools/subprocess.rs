@@ -52,6 +52,25 @@ fn cmdline(child: &Child) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+#[cfg(windows)]
+fn cmdline(child: &Child) -> String {
+    let query = format!(
+        "(Get-CimInstance Win32_Process -Filter 'ProcessId={}').CommandLine",
+        child.id()
+    );
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &query])
+        .output()
+        .expect("powershell is available");
+    assert!(
+        output.status.success(),
+        "powershell could not inspect child argv"
+    );
+    let line = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    assert!(!line.is_empty(), "the child is alive");
+    line
+}
+
 struct McpChild {
     child: Reaped,
     stdin: Option<std::process::ChildStdin>,

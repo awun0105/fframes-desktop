@@ -21,13 +21,17 @@ ROOT/plan.json (`{"turns":[...],"default":{...}}`, re-read per prompt) supplies
 `default`, else {"text":"done","write":{"edit.txt":"edited"}}).
 
 Script fields, applied in this order (all optional):
-  delay_ms, wait_file, text, thought, tool, tool_updates, tool_interleave, permission,
+  delay_ms, wait_file, text, thought, tool, tool_updates, tool_interleave, mcp_call, permission,
   write, write_b64, append, delete, mkdir, helper, escape, stderr,
   flood, flood_tools, wait_file_late, linger, malformed, crash, hang, stop_reason
 See the per-field handling in `run_script` below.
 
+`mcp_call` `{"name": TOOL, "arguments": {..}}` starts the session's first MCP server the
+way an agent does (its command, args and env from `session/new`), calls the tool over
+MCP stdio and records the `tools/call` response in mcp-call.json.
+
 Evidence files in ROOT: starts, session-params-<n>.json, session-params.json,
-calls.jsonl, prompt-counter, prompts.jsonl, permission-<id>.json, cancel.json,
+calls.jsonl, mcp-call.json, prompt-counter, prompts.jsonl, permission-<id>.json, cancel.json,
 cancels.jsonl, helper.pid, escape.pid, set-mode.json, set-config.json.
 
 Gates (files in ROOT the test creates): if `hold-session` exists, `session/new` is answered
@@ -71,6 +75,7 @@ OPTIONS = {
 }
 mode_id = "code"
 model_value = "fast"
+mcp_servers = []  # `session/new` params.mcpServers
 LINGER = False  # set by a `linger` script: ignore SIGTERM and stdin EOF
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -187,7 +192,7 @@ def reader():
 
 
 def handle(line):
-    global active, cancelled, mode_id, model_value
+    global active, cancelled, mode_id, model_value, mcp_servers
     if line is None:
         while LINGER:
             time.sleep(1)
@@ -220,6 +225,7 @@ def handle(line):
             "authMethods": [],
         }})
     elif method == "session/new":
+        mcp_servers = params.get("mcpServers") or []
         record("session-params.json", params)
         record(f"session-params-{start_index}.json", params)
         cwd = params.get("cwd")
@@ -359,6 +365,33 @@ def request_permission(spec):
     return result.get("outcome") or {"outcome": "error"}
 
 
+def mcp_call(spec):
+    server = mcp_servers[0]
+    env = dict(os.environ)
+    env.update({item["name"]: item["value"] for item in server.get("env", [])})
+    child = subprocess.Popen(
+        [server["command"], *server.get("args", [])],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        env=env, text=True, encoding="utf-8",
+    )
+
+    def rpc(message):
+        child.stdin.write(json.dumps(message) + "\n")
+        child.stdin.flush()
+        if "id" in message:
+            return json.loads(child.stdout.readline())
+
+    rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2025-06-18", "capabilities": {},
+        "clientInfo": {"name": "scripted-agent", "version": "test"}}})
+    rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    response = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+        "name": spec["name"], "arguments": spec.get("arguments", {})}})
+    child.stdin.close()
+    child.wait(timeout=30)
+    record("mcp-call.json", response)
+
+
 def write_text(path, data, mode="w"):
     target = os.path.join(os.getcwd(), path)
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -401,6 +434,9 @@ def run_script(script):
                 for _ in range(extra):
                     update({"sessionUpdate": "tool_call_update", "toolCallId": card["id"], "status": "in_progress"})
                 update({"sessionUpdate": "tool_call_update", "toolCallId": card["id"], "status": "completed"})
+
+    if "mcp_call" in script:
+        mcp_call(script["mcp_call"])
 
     for path, data in script.get("write_early", {}).items():
         write_text(path, data)

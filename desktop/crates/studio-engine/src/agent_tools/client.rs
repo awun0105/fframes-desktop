@@ -3,20 +3,19 @@
 //! A client is created from a *capability file* written by the app-owned broker
 //! ([`super::broker`]): `{"version":1,"socket":..,"capability":..,"secret":..}`. Only the
 //! file path ever travels on argv or through the environment; the secret stays in the
-//! 0600 file and is never printed, logged, put in an error or exposed through `Debug`.
+//! private file and is never printed, logged, put in an error or exposed through `Debug`.
 //!
-//! The wire protocol is newline-delimited JSON over a unix stream: a `hello` line, then
+//! The wire protocol is newline-delimited JSON over the broker's local stream (a unix
+//! socket, or a named pipe on Windows, see [`super::transport`]): a `hello` line, then
 //! one `{"id":N,"method":..,"params":..}` request answered by one
 //! `{"id":N,"result":..}` / `{"id":N,"error":{"code","message"}}` line. A client has a
 //! single call in flight; replies are read through a bounded line reader.
 //!
 //! This module also owns the whole `studio-tools` command-line behavior
 //! ([`run_cli`]) so the binary stays a three-line `main`.
-#[cfg(unix)]
 use super::{MAX_REQUEST_BYTES, MAX_TEXT_REPLY_BYTES};
 use super::{TOOL_NAMES, ToolError, ToolErrorCode, tool_descriptions};
 use serde_json::{Value, json};
-#[cfg(unix)]
 use std::fmt;
 use std::{
     ffi::OsString,
@@ -36,14 +35,10 @@ pub const EXIT_TOOL_ERROR: i32 = 1;
 pub const EXIT_USAGE: i32 = 2;
 pub const EXIT_UNAVAILABLE: i32 = 3;
 
-#[cfg(unix)]
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(unix)]
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
-#[cfg(unix)]
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 /// A reply is at most the bounded JSON text plus the framing around it.
-#[cfg(unix)]
 const MAX_REPLY_LINE_BYTES: usize = MAX_TEXT_REPLY_BYTES + 4096;
 
 /// Why a client could not be created.
@@ -59,8 +54,6 @@ pub enum ClientError {
     Rejected(ToolError),
     #[error("broker protocol error: {0}")]
     Protocol(String),
-    #[error("the broker client is not supported on this platform")]
-    Unsupported,
 }
 
 impl ClientError {
@@ -193,17 +186,14 @@ impl LineReader {
 }
 
 /// The capability secret between reading the file and sending the hello. Never printed.
-#[cfg(unix)]
 struct Secret(String);
 
-#[cfg(unix)]
 impl fmt::Debug for Secret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Secret(<redacted>)")
     }
 }
 
-#[cfg(unix)]
 #[derive(Debug)]
 struct CapabilityFile {
     socket: PathBuf,
@@ -211,7 +201,6 @@ struct CapabilityFile {
     secret: Secret,
 }
 
-#[cfg(unix)]
 fn parse_capability(bytes: &[u8]) -> Result<CapabilityFile, ClientError> {
     // Deliberately no serde error text: it could echo parts of the file.
     let malformed = || ClientError::CapabilityFile("malformed capability file".into());
@@ -242,7 +231,6 @@ fn parse_capability(bytes: &[u8]) -> Result<CapabilityFile, ClientError> {
     })
 }
 
-#[cfg(unix)]
 fn hello_line(capability: &CapabilityFile) -> Result<Vec<u8>, ClientError> {
     let mut line = serde_json::to_vec(&json!({
         "hello": {"capability": capability.capability, "secret": capability.secret.0}
@@ -252,30 +240,18 @@ fn hello_line(capability: &CapabilityFile) -> Result<Vec<u8>, ClientError> {
     Ok(line)
 }
 
-#[cfg(unix)]
 fn broker_error(value: &Value) -> Option<ToolError> {
     serde_json::from_value(value.get("error")?.clone()).ok()
 }
 
-#[cfg(unix)]
 mod imp {
     use super::*;
-    use std::{
-        fs::OpenOptions,
-        os::{
-            fd::{FromRawFd, OwnedFd},
-            unix::{
-                ffi::OsStrExt,
-                fs::{MetadataExt, OpenOptionsExt},
-                net::UnixStream,
-            },
-        },
-    };
+    use crate::agent_tools::transport::{self, Stream};
 
     /// One authenticated connection to the broker with a single call in flight.
     #[derive(Debug)]
     pub struct BrokerClient {
-        stream: UnixStream,
+        stream: Stream,
         reader: LineReader,
         next_id: u64,
         call_timeout: Duration,
@@ -284,10 +260,10 @@ mod imp {
 
     impl BrokerClient {
         /// Read the capability file (refusing symlinks, files not owned by us and files
-        /// readable by group/world), connect with a timeout and perform the hello.
+        /// anyone else can read), connect with a timeout and perform the hello.
         pub fn connect(capability_file: &Path) -> Result<Self, ClientError> {
             let capability = read_capability(capability_file)?;
-            let stream = connect_unix(&capability.socket, CONNECT_TIMEOUT)
+            let stream = transport::connect(&capability.socket, CONNECT_TIMEOUT)
                 .map_err(|error| ClientError::Unreachable(error.to_string()))?;
             stream
                 .set_write_timeout(Some(WRITE_TIMEOUT))
@@ -435,42 +411,10 @@ mod imp {
 
     fn read_capability(path: &Path) -> Result<CapabilityFile, ClientError> {
         let unusable = |reason: String| ClientError::CapabilityFile(reason);
-        // O_NOFOLLOW refuses a symlink at the final component; all checks then run on
-        // the opened descriptor so nothing can be swapped between check and read.
-        let file = OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-            .open(path)
-            .map_err(|error| {
-                unusable(format!(
-                    "cannot open {} (symlinks are refused): {error}",
-                    path.display()
-                ))
-            })?;
+        let file = transport::open_private_file(path).map_err(unusable)?;
         let meta = file
             .metadata()
             .map_err(|error| unusable(format!("cannot stat {}: {error}", path.display())))?;
-        // SAFETY: geteuid has no preconditions and cannot fail.
-        let euid = unsafe { libc::geteuid() };
-        if !meta.is_file() {
-            return Err(unusable(format!(
-                "{} is not a regular file",
-                path.display()
-            )));
-        }
-        if meta.uid() != euid {
-            return Err(unusable(format!(
-                "{} is not owned by the current user",
-                path.display()
-            )));
-        }
-        if meta.mode() & 0o077 != 0 {
-            return Err(unusable(format!(
-                "{} is accessible by group or others (mode {:o}); expected 0600",
-                path.display(),
-                meta.mode() & 0o777
-            )));
-        }
         if meta.len() > MAX_CAPABILITY_FILE_BYTES as u64 {
             return Err(unusable(format!(
                 "{} exceeds {MAX_CAPABILITY_FILE_BYTES} bytes",
@@ -488,157 +432,6 @@ mod imp {
             )));
         }
         parse_capability(&bytes)
-    }
-
-    /// `connect(2)` with a deadline (std has no timeout for unix sockets).
-    fn connect_unix(path: &Path, timeout: Duration) -> io::Result<UnixStream> {
-        let bytes = path.as_os_str().as_bytes();
-        // SAFETY: an all-zero sockaddr_un is a valid value.
-        let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
-        if bytes.len() >= addr.sun_path.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "socket path is too long",
-            ));
-        }
-        addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
-        for (dst, src) in addr.sun_path.iter_mut().zip(bytes) {
-            *dst = *src as libc::c_char;
-        }
-        // SAFETY: plain syscalls on a descriptor we create and own; `fd` closes it on
-        // every exit path.
-        let (fd, raw) = unsafe {
-            let raw = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0);
-            if raw < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            (OwnedFd::from_raw_fd(raw), raw)
-        };
-        set_flags(raw, true)?;
-        let deadline = Instant::now() + timeout;
-        let length = std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t;
-        loop {
-            // SAFETY: `addr` is a fully initialized sockaddr_un of `length` bytes.
-            let rc = unsafe {
-                libc::connect(
-                    raw,
-                    std::ptr::addr_of!(addr).cast::<libc::sockaddr>(),
-                    length,
-                )
-            };
-            if rc == 0 {
-                break;
-            }
-            let error = io::Error::last_os_error();
-            match error.raw_os_error() {
-                Some(libc::EINTR) => {}
-                // A full listen backlog; retry until the deadline.
-                Some(libc::EAGAIN) => {
-                    if Instant::now() >= deadline {
-                        return Err(io::Error::new(io::ErrorKind::TimedOut, "connect timed out"));
-                    }
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-                Some(libc::EINPROGRESS) => {
-                    wait_connected(raw, deadline)?;
-                    break;
-                }
-                _ => return Err(error),
-            }
-        }
-        set_flags(raw, false)?;
-        Ok(UnixStream::from(fd))
-    }
-
-    fn set_flags(raw: i32, nonblocking: bool) -> io::Result<()> {
-        // SAFETY: fcntl on a valid descriptor with integer arguments.
-        unsafe {
-            if libc::fcntl(raw, libc::F_SETFD, libc::FD_CLOEXEC) < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            let flags = libc::fcntl(raw, libc::F_GETFL);
-            if flags < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            let flags = if nonblocking {
-                flags | libc::O_NONBLOCK
-            } else {
-                flags & !libc::O_NONBLOCK
-            };
-            if libc::fcntl(raw, libc::F_SETFL, flags) < 0 {
-                return Err(io::Error::last_os_error());
-            }
-        }
-        Ok(())
-    }
-
-    fn wait_connected(raw: i32, deadline: Instant) -> io::Result<()> {
-        loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            let mut poll = libc::pollfd {
-                fd: raw,
-                events: libc::POLLOUT,
-                revents: 0,
-            };
-            // SAFETY: one valid pollfd.
-            let ready =
-                unsafe { libc::poll(&mut poll, 1, remaining.as_millis().min(60_000) as i32) };
-            if ready < 0 {
-                let error = io::Error::last_os_error();
-                if error.kind() == io::ErrorKind::Interrupted {
-                    continue;
-                }
-                return Err(error);
-            }
-            if ready == 0 {
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "connect timed out"));
-            }
-            let mut code: libc::c_int = 0;
-            let mut length = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
-            // SAFETY: `code`/`length` are valid out-parameters for SO_ERROR.
-            let rc = unsafe {
-                libc::getsockopt(
-                    raw,
-                    libc::SOL_SOCKET,
-                    libc::SO_ERROR,
-                    std::ptr::addr_of_mut!(code).cast(),
-                    &mut length,
-                )
-            };
-            if rc < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            return if code == 0 {
-                Ok(())
-            } else {
-                Err(io::Error::from_raw_os_error(code))
-            };
-        }
-    }
-}
-
-#[cfg(not(unix))]
-mod imp {
-    use super::*;
-
-    #[derive(Debug)]
-    pub struct BrokerClient {
-        unsupported: std::convert::Infallible,
-    }
-
-    impl BrokerClient {
-        pub fn connect(_capability_file: &Path) -> Result<Self, ClientError> {
-            Err(ClientError::Unsupported)
-        }
-        pub fn with_call_timeout(self, _timeout: Duration) -> Self {
-            match self.unsupported {}
-        }
-        pub fn call(&mut self, _method: &str, _params: Value) -> Result<Value, ToolError> {
-            match self.unsupported {}
-        }
-        pub fn try_call(&mut self, _method: &str, _params: Value) -> Result<Value, CallFailure> {
-            match self.unsupported {}
-        }
     }
 }
 

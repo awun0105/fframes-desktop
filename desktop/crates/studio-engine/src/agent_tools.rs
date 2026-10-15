@@ -22,6 +22,8 @@ pub mod backend;
 pub mod broker;
 pub mod client;
 pub mod mcp;
+#[doc(hidden)]
+pub mod transport;
 
 pub const TOOL_NAMES: [&str; 9] = [
     "project_context",
