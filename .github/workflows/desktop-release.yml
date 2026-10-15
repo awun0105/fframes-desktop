@@ -510,4 +510,5 @@ jobs:
 
       - name: Dry run summary
         if: inputs.dry_run == true
-        run: echo "Dry run: $RELEASE_TAG would publish $ELIGIBLE_TARGETS; nothing was published."
+        run: |
+          echo "Dry run: $RELEASE_TAG would publish $ELIGIBLE_TARGETS; nothing was published."
