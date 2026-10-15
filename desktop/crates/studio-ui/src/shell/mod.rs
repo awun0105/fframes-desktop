@@ -38,7 +38,7 @@ use studio_project::ProjectId;
 use studio_proto::CommandId;
 use studio_theme::Theme;
 
-use crate::agent::{ConversationPanel, PanelEvent};
+use crate::agent::{AgentSetupPage, ConversationPanel, PanelEvent};
 use crate::app_state::{AppEvent, AppState};
 use crate::kit::{EditorButton, Icon, IconButton, IconButtonSize, MenuState};
 use crate::{
@@ -146,6 +146,7 @@ pub struct StudioShell {
     viewport: [f32; 2],
     /// The settings frame shows in place of the editor.
     settings_open: bool,
+    settings_page: settings::SettingsPage,
     settings_writer: Arc<settings::SettingsWriter>,
     /// The appearance the cached header last rendered with, for the telemetry.
     header_appearance: std::cell::Cell<Option<studio_theme::Appearance>>,
@@ -161,6 +162,8 @@ pub struct StudioShell {
     /// failed (or has not finished) keeps the old preview playing under this label.
     awaiting_preview: Option<String>,
     panel: gpui::Entity<ConversationPanel>,
+    /// The settings frame's Agent page, drawn by `panel`.
+    setup_page: gpui::Entity<AgentSetupPage>,
     _panel_subscription: gpui::Subscription,
     preset_panel: gpui::Entity<PresetPanel>,
     _preset_subscription: gpui::Subscription,
@@ -264,7 +267,9 @@ impl StudioShell {
         let panel_subscription =
             cx.subscribe_in(&panel, window, |shell, _, event, window, cx| match event {
                 PanelEvent::Leave => window.focus(&shell.focus, cx),
+                PanelEvent::OpenSetup => shell.open_agent_setup(cx),
             });
+        let setup_page = cx.new(|cx| AgentSetupPage::new(&panel, cx));
         let preset_panel = cx.new(|cx| PresetPanel::new(window, cx));
         let preset_subscription =
             cx.subscribe_in(&preset_panel, window, |shell, _, event, window, cx| {
@@ -389,6 +394,7 @@ impl StudioShell {
             audio_note: "Audio output not prepared".into(),
             awaiting_preview: None,
             panel,
+            setup_page,
             _panel_subscription: panel_subscription,
             preset_panel,
             _preset_subscription: preset_subscription,
@@ -416,6 +422,7 @@ impl StudioShell {
             section_bounds: HashMap::new(),
             viewport: [0., 0.],
             settings_open: false,
+            settings_page: settings::SettingsPage::default(),
             settings_writer: Arc::default(),
             header_appearance: std::cell::Cell::new(None),
             overflow_open: false,

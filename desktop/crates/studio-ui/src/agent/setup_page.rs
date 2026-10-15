@@ -1,9 +1,47 @@
-//! The Setup tab: providers, the adapter description and writer containment.
+//! The settings frame's Agent page: providers, the adapter description and writer
+//! containment. The fields, their state and their telemetry stay the panel's;
+//! [`AgentSetupPage`] only renders them where the settings frame puts the page.
 
 use super::*;
 
+/// The settings frame's Agent page, drawn by the panel it belongs to.
+pub struct AgentSetupPage {
+    panel: Entity<ConversationPanel>,
+    _panel_changed: gpui::Subscription,
+}
+
+impl AgentSetupPage {
+    pub fn new(panel: &Entity<ConversationPanel>, cx: &mut Context<Self>) -> Self {
+        Self {
+            panel: panel.clone(),
+            _panel_changed: cx.observe(panel, |_, _, cx| cx.notify()),
+        }
+    }
+}
+
+impl Render for AgentSetupPage {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.panel
+            .update(cx, |panel, cx| panel.render_setup_page(window, cx))
+    }
+}
+
 impl ConversationPanel {
-    pub(super) fn setup_tab(
+    fn render_setup_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        self.theme.refresh(window, cx);
+        let Some(snapshot) = self.snapshot.clone() else {
+            return div()
+                .flex()
+                .flex_col()
+                .gap(px(METRICS.space_2))
+                .child(self.line("Open or create a project to set up its agent."))
+                .into_any_element();
+        };
+        let controls = derive_controls(&snapshot, self.prompt_is_empty(cx), self.sdk_ready);
+        self.setup_page(snapshot, &controls, cx)
+    }
+
+    fn setup_page(
         &mut self,
         snapshot: Arc<WorkflowSnapshot>,
         controls: &Controls,
@@ -11,15 +49,7 @@ impl ConversationPanel {
     ) -> AnyElement {
         let configured = snapshot.adapter.provider.is_some();
         let g = guidance(&snapshot.adapter.readiness, configured);
-        let mut column = div()
-            .id("agent-setup-tab")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap(px(8.))
-            .p(px(12.));
+        let mut column = div().id("agent-setup-page").flex().flex_col().gap(px(8.));
         column = column.child(
             self.section(&g.headline)
                 .children(g.steps.iter().map(|s| self.line(s.clone()))),
@@ -206,6 +236,15 @@ impl ConversationPanel {
             // The handler reads THIS field's composition state: an active IME composition
             // keeps Enter/Tab/Escape (candidate selection and cancellation) in the field.
             let field = input.clone();
+            let probe = Self::bounds_probe(&ElementId::Name(format!("setup-{label}").into()), cx)
+                .map(|probe| {
+                    let report = probe.into_bounds_handler();
+                    canvas(move |bounds, _, cx| report(bounds, cx), |_, _, _, _| {})
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                });
             div()
                 .flex()
                 .flex_col()
@@ -213,6 +252,8 @@ impl ConversationPanel {
                 .child(self.line(label))
                 .child(
                     div()
+                        .relative()
+                        .children(probe)
                         .on_key_down(cx.listener(
                             move |this, event: &gpui::KeyDownEvent, window, cx| {
                                 this.key_in_field(&field, event, false, window, cx);

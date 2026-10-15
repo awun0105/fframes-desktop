@@ -1,5 +1,5 @@
-//! The native agent panel: setup and readiness, a virtualized conversation, review,
-//! Undo and recovery. It renders immutable [`WorkflowSnapshot`]s and sends commands; it
+//! The native agent panel: readiness, a virtualized conversation, review, Undo and
+//! recovery, and the settings frame's Agent page ([`AgentSetupPage`]). It renders immutable [`WorkflowSnapshot`]s and sends commands; it
 //! never touches the filesystem, the adapter, hashing or compilation (the workflow's
 //! threads do), and it never holds a lock across a frame.
 //!
@@ -16,9 +16,11 @@ mod commands;
 pub mod controls;
 mod project_tab;
 pub mod provider_setup;
-mod setup_tab;
+mod setup_page;
 pub mod transcript;
 mod widgets;
+
+pub use setup_page::AgentSetupPage;
 
 use transcript::rows;
 
@@ -147,6 +149,8 @@ const COMPOSER_INSET: f32 = 4.;
 pub enum PanelEvent {
     /// Escape in an input: focus returns to the shell.
     Leave,
+    /// The settings button: the shell opens the settings frame's Agent page.
+    OpenSetup,
 }
 
 impl EventEmitter<PanelEvent> for ConversationPanel {}
@@ -155,7 +159,6 @@ impl EventEmitter<PanelEvent> for ConversationPanel {}
 enum Tab {
     Chat,
     Project,
-    Setup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,7 +187,7 @@ pub struct Attachment {
     pub paths: AppPaths,
     /// The shell's open serial (hand-offs and history pages carry it).
     pub serial: u64,
-    /// The saved adapter description (what the Setup tab starts with).
+    /// The saved adapter description (what the Agent settings page starts with).
     pub adapter: Option<AdapterFile>,
     /// The app-local provider registry; defaults are shown when no registry exists yet.
     pub registry: Option<provider_profiles::ProviderRegistry>,
@@ -707,6 +710,9 @@ fn probed_button(id: &ElementId) -> Option<&str> {
                     | "agent-undo"
                     | "agent-tab-Chat"
                     | "agent-tab-Project"
+                    | "agent-open-setup"
+                    | "agent-save-adapter"
+                    | "setup-Label"
             ) =>
         {
             Some(name.as_ref())
@@ -819,8 +825,15 @@ impl Render for ConversationPanel {
         let rail = self
             .segment_rail()
             .child(self.tab_item(Tab::Chat, "Chat", cx))
-            .child(self.tab_item(Tab::Project, "Project", cx))
-            .child(self.tab_item(Tab::Setup, "Setup", cx));
+            .child(self.tab_item(Tab::Project, "Project", cx));
+        let open_setup = self.icon_button(
+            "agent-open-setup",
+            Icon::Settings,
+            "Agent settings",
+            Tone::Normal,
+            cx,
+            |_, _, cx| cx.emit(PanelEvent::OpenSetup),
+        );
         let new_chat = self
             .icon_button(
                 "agent-new-chat",
@@ -862,6 +875,7 @@ impl Render for ConversationPanel {
                             .items_center()
                             .gap(px(4.))
                             .child(new_chat)
+                            .child(open_setup)
                             .child(rail),
                     ),
             )
@@ -906,7 +920,6 @@ impl Render for ConversationPanel {
         let body = match self.tab {
             Tab::Chat => self.chat_tab(snapshot, &controls, cx),
             Tab::Project => self.project_tab(snapshot, &controls, cx),
-            Tab::Setup => self.setup_tab(snapshot, &controls, cx),
         };
         root.child(body)
             .children(self.render_config_menu(cx))
@@ -927,6 +940,11 @@ mod presentation_tests {
             probed_button(&"agent-tab-Project".into()),
             Some("agent-tab-Project")
         );
+        assert_eq!(
+            probed_button(&"agent-open-setup".into()),
+            Some("agent-open-setup")
+        );
+        assert_eq!(probed_button(&"setup-Label".into()), Some("setup-Label"));
         assert_eq!(probed_button(&"agent-tab-Setup".into()), None);
         assert_eq!(probed_button(&"agent-discard".into()), None);
         assert_eq!(

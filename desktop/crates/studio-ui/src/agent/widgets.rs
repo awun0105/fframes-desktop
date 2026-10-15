@@ -4,7 +4,7 @@ use super::*;
 
 impl ConversationPanel {
     /// Key routing for one text field. The composition state is the field's own, read at
-    /// the moment of the key: the prompt and every Setup field share this one path.
+    /// the moment of the key: the prompt and every setup field share this one path.
     pub(super) fn key_in_field(
         &mut self,
         field: &Entity<TextInputState>,
@@ -126,11 +126,16 @@ impl ConversationPanel {
         action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> IconButton {
         let theme = self.theme;
-        let button = IconButton::editor(&theme, id, glyph.path())
+        let id: ElementId = id.into();
+        let probe = Self::bounds_probe(&id, cx);
+        let mut button = IconButton::editor(&theme, id, glyph.path())
             .editor_size(IconButtonSize::Small)
             .label(label)
             .tooltip(&theme, label)
             .on_click(Self::click(cx, action));
+        if let Some(probe) = probe {
+            button = button.on_bounds(probe.into_bounds_handler());
+        }
         match tone {
             Tone::Normal => button,
             Tone::Primary => button.accent(&theme),

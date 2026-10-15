@@ -30,7 +30,7 @@ pub fn guidance(readiness: &AdapterReadiness, configured: bool) -> Guidance {
             headline: "No agent adapter configured".into(),
             steps: vec![
                 "Install an Agent Client Protocol (ACP v1) adapter by following its provider's instructions.".into(),
-                "In Setup, enter its executable (an absolute path), arguments and the NAMES of the environment variables it reads for sign-in, then Save.".into(),
+                "In Settings › Agent, enter its executable (an absolute path), arguments and the NAMES of the environment variables it reads for sign-in, then Save.".into(),
                 NO_AGENT_LAUNCHED.into(),
             ],
             usable: false,
@@ -69,7 +69,7 @@ pub fn guidance(readiness: &AdapterReadiness, configured: bool) -> Guidance {
                 headline: "Sign-in required".into(),
                 steps: vec![
                     "Sign in with the agent's own tool (for example run `claude` or `codex` once and log in), then Check adapter again. The agent stays selected.".into(),
-                    "Or set the environment variables the provider documents and add their NAMES under sign-in variable names in Setup, then Save (values are read from the app's environment and never stored).".into(),
+                    "Or set the environment variables the provider documents and add their NAMES under sign-in variable names in Settings › Agent, then Save (values are read from the app's environment and never stored).".into(),
                     auth_methods_line(methods),
                 ],
                 usable: false,
@@ -85,7 +85,7 @@ pub fn guidance(readiness: &AdapterReadiness, configured: bool) -> Guidance {
             AdapterStatus::MissingExecutable { searched } => Guidance {
                 headline: "Adapter executable not found".into(),
                 steps: vec![
-                    "Use Detect agents in Setup to find or install it, or set its absolute path there.".into(),
+                    "Use Detect agents in Settings › Agent to find or install it, or set its absolute path there.".into(),
                     format!(
                         "Searched: {}",
                         if searched.is_empty() {
@@ -246,7 +246,7 @@ fn blocked_reason(snapshot: &WorkflowSnapshot, sdk_ready: bool) -> Option<String
     if matches!(snapshot.adapter.readiness, AdapterReadiness::NotConfigured)
         && snapshot.adapter.provider.is_none()
     {
-        return Some("Configure an agent adapter in Setup first.".into());
+        return Some("Configure an agent adapter in Settings › Agent first.".into());
     }
     if !sdk_ready {
         return Some(
@@ -779,7 +779,7 @@ mod tests {
                 .blocked
                 .as_deref()
                 .unwrap()
-                .contains("Setup")
+                .contains("Settings › Agent")
         );
         assert!(!controls.check_adapter);
         assert!(controls.stop.is_none());
@@ -1360,7 +1360,7 @@ mod tests {
 
     #[test]
     fn a_setup_field_in_composition_keeps_enter_tab_and_escape() {
-        // Every field (prompt and Setup alike) routes through one path that passes THAT
+        // Every field (prompt and setup alike) routes through one path that passes THAT
         // field's composition state: while composing, nothing submits, moves focus or leaves.
         let plain = KeyMods::default();
         for key in ["enter", "tab", "escape"] {

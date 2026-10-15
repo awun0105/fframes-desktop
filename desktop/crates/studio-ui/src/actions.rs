@@ -64,6 +64,8 @@ actions!(
         ImportSdkBundle,
         /// Look for installed agents and their ACP adapters, without starting them.
         DetectAgents,
+        /// Open the settings frame on the agent's setup page.
+        OpenAgentSetup,
         /// Move the keyboard focus to the agent prompt.
         FocusPrompt,
         /// Move the keyboard focus to the preview.

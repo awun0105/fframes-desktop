@@ -1,6 +1,7 @@
 //! The settings frame, shown in the window in place of the editor (Cap opens a second
 //! window). The header's Settings button opens it and its Back row returns to the editor.
-//! The Appearance page picks the theme and saves it with the app's settings.
+//! The Appearance page picks the theme and saves it with the app's settings; the Agent
+//! page is the agent panel's adapter setup.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -22,6 +23,29 @@ const THEMES: [(AppTheme, &str); 3] = [
     (AppTheme::Dark, "Dark"),
 ];
 
+/// A page of the settings frame, in the order of its nav column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum SettingsPage {
+    #[default]
+    Appearance,
+    Agent,
+}
+
+impl SettingsPage {
+    const ALL: [SettingsPage; 2] = [SettingsPage::Appearance, SettingsPage::Agent];
+
+    fn nav_item(self, selected: bool) -> SettingsNavItem {
+        match self {
+            SettingsPage::Appearance => {
+                SettingsNavItem::new("settings-appearance", "Appearance", Icon::Palette, selected)
+            }
+            SettingsPage::Agent => {
+                SettingsNavItem::new("settings-agent", "Agent", Icon::Bot, selected)
+            }
+        }
+    }
+}
+
 /// Saves the theme choices one at a time, in the order they were made: a save that a
 /// later choice overtook is skipped.
 #[derive(Default)]
@@ -40,6 +64,12 @@ impl StudioShell {
         self.overflow_open = false;
         self.settings_open = true;
         cx.notify();
+    }
+
+    /// Opens the settings frame on the Agent page.
+    pub(super) fn open_agent_setup(&mut self, cx: &mut Context<Self>) {
+        self.settings_page = SettingsPage::Agent;
+        self.open_settings(cx);
     }
 
     pub(super) fn close_settings(&mut self, cx: &mut Context<Self>) {
@@ -77,6 +107,51 @@ impl StudioShell {
 
     pub(super) fn render_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
+        let entity = cx.entity();
+        let page = match self.settings_page {
+            SettingsPage::Appearance => self.render_appearance(cx),
+            SettingsPage::Agent => self.setup_page.clone().into_any_element(),
+        };
+        let mut frame = SettingsFrame::settings(
+            &theme,
+            "settings",
+            SettingsPage::ALL
+                .iter()
+                .map(|page| page.nav_item(*page == self.settings_page))
+                .collect(),
+        )
+        .on_select({
+            let entity = entity.clone();
+            move |index, _, cx| {
+                if let Some(page) = SettingsPage::ALL.get(*index) {
+                    entity.update(cx, |shell, cx| {
+                        shell.settings_page = *page;
+                        cx.notify();
+                    });
+                }
+            }
+        })
+        .on_back({
+            let entity = entity.clone();
+            move |_, cx| entity.update(cx, |shell, cx| shell.close_settings(cx))
+        })
+        .children([page]);
+        if let Some(probe) = self.bounds_probe(&gpui::ElementId::Name("settings-back".into()), cx) {
+            frame = frame.on_back_bounds(probe.into_bounds_handler());
+        }
+        Card::editor(&theme)
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .overflow_hidden()
+            .child(frame)
+            .child(box_probe("settings", cx))
+            .into_any_element()
+    }
+
+    /// The Appearance page: the theme.
+    fn render_appearance(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
         let current = studio_theme::current_preference(cx);
         let entity = cx.entity();
         let options = THEMES
@@ -102,7 +177,7 @@ impl StudioShell {
                 });
             });
         }
-        let appearance = Section::settings(
+        Section::settings(
             &theme,
             "Appearance",
             Some("Follow the system's light or dark appearance, or pick one."),
@@ -117,33 +192,8 @@ impl StudioShell {
                 )
                 .into_any_element(),
             ],
-        );
-        let mut frame = SettingsFrame::settings(
-            &theme,
-            "settings",
-            vec![SettingsNavItem::new(
-                "settings-appearance",
-                "Appearance",
-                Icon::Palette,
-                true,
-            )],
         )
-        .on_back({
-            let entity = entity.clone();
-            move |_, cx| entity.update(cx, |shell, cx| shell.close_settings(cx))
-        })
-        .children([appearance.into_any_element()]);
-        if let Some(probe) = self.bounds_probe(&gpui::ElementId::Name("settings-back".into()), cx) {
-            frame = frame.on_back_bounds(probe.into_bounds_handler());
-        }
-        Card::editor(&theme)
-            .relative()
-            .flex_1()
-            .min_h_0()
-            .overflow_hidden()
-            .child(frame)
-            .child(box_probe("settings", cx))
-            .into_any_element()
+        .into_any_element()
     }
 }
 
@@ -176,6 +226,16 @@ mod tests {
         save_theme(&writer, 2, AppTheme::Dark, &paths).unwrap();
         save_theme(&writer, 1, AppTheme::Light, &paths).unwrap();
         assert_eq!(AppSettings::load(&paths).theme, AppTheme::Dark);
+    }
+
+    #[test]
+    fn the_pages_are_appearance_then_agent() {
+        let ids: Vec<_> = SettingsPage::ALL
+            .iter()
+            .map(|page| page.nav_item(false).id)
+            .collect();
+        assert_eq!(ids, ["settings-appearance", "settings-agent"]);
+        assert_eq!(SettingsPage::default(), SettingsPage::Appearance);
     }
 
     #[test]

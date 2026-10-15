@@ -1,4 +1,4 @@
-//! Provider selection, Detect agents, Install adapter and turn-on: the Setup tab's
+//! Provider selection, Detect agents, Install adapter and turn-on: the Agent settings page's
 //! "Providers" and "Detect agents" sections.
 //!
 //! * [`TurnOn`] is the one state a Select or Install adapter click moves through (save, then
@@ -502,7 +502,7 @@ impl ConversationPanel {
         cx.notify();
     }
 
-    /// Fills the Setup fields with a profile whose adapter was detected or installed, using
+    /// Fills the setup fields with a profile whose adapter was detected or installed, using
     /// the absolute path that was found, and saves them through the normal save path as a
     /// turn-on of that profile.
     pub fn use_detected(&mut self, profile_id: &str, cx: &mut Context<Self>) {

@@ -142,7 +142,7 @@ impl ConversationPanel {
         cx.notify();
     }
 
-    /// Saves the Setup fields. The qualification of the adapter (hashing its executable and
+    /// Saves the setup fields. The qualification of the adapter (hashing its executable and
     /// reading the ledger) and the file write both run on background threads; at most one
     /// save is in flight (a second click is refused until it completes), the running
     /// workflow is only reconfigured while idle, and only the in-flight save's completion

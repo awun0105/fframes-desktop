@@ -263,7 +263,13 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
     let snapshot = workflow.snapshot();
     assert_eq!(snapshot.adapter.readiness, AdapterReadiness::NotConfigured);
     let controls = derive_controls(&snapshot, false, true);
-    assert!(controls.submit.blocked.unwrap().contains("Setup"));
+    assert!(
+        controls
+            .submit
+            .blocked
+            .unwrap()
+            .contains("Settings › Agent")
+    );
     assert!(!controls.check_adapter);
     assert!(!controls::guidance(&snapshot.adapter.readiness, false).usable);
     // A damaged description is reported, never silently ignored: the workflow still opens,
