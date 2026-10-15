@@ -806,7 +806,10 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
                 }
             };
             if let Some(key) = key {
+                // A key of another timing generation describes another layout; the worker
+                // would draw this one's frame under it.
                 if key.identity == *c.ready.identity()
+                    && key.timing_generation == c.ready.timeline.timing_generation
                     && key.frame_index < c.ready.timeline.total_frames
                 {
                     let frame = c
@@ -1039,7 +1042,7 @@ mod tests {
             scale: 0.5,
         });
         let visible = (0..40)
-            .map(|frame| ThumbnailKey::new(identity.clone(), 0.25, frame))
+            .map(|frame| ThumbnailKey::new(identity.clone(), 0, 0.25, frame))
             .collect();
         coordinator.thumbnails(visible);
         assert_eq!(coordinator.shared.lock().thumbnails.len(), 12);

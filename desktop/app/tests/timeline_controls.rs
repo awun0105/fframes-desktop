@@ -19,7 +19,7 @@ fn identity(revision: &str, generation: u64) -> PreviewIdentity {
 }
 
 fn key(frame: usize) -> ThumbnailKey {
-    ThumbnailKey::new(identity("revision", 1), 0.25, frame)
+    ThumbnailKey::new(identity("revision", 1), 0, 0.25, frame)
 }
 
 fn image(frame: usize) -> Arc<RenderImage> {
@@ -74,6 +74,20 @@ fn oversized_input_is_returned_without_flushing_cache() {
 }
 
 #[test]
+fn a_reorder_makes_the_same_index_miss_the_cache() {
+    let mut cache = ThumbnailCache::default();
+    let before = ThumbnailKey::new(identity("revision", 1), 3, 0.25, 4);
+    cache.insert(before.clone(), image(4), 8);
+    assert!(cache.get(&before).is_some());
+
+    // Same revision, worker and frame index after a timing change: the index now shows
+    // another scene frame, so it is requested again instead of served stale.
+    let after = ThumbnailKey::new(identity("revision", 1), 4, 0.25, 4);
+    assert!(cache.get(&after).is_none());
+    assert!(!cache.contains(&after));
+}
+
+#[test]
 fn replacement_retires_old_image_and_accounts_new_size() {
     let mut cache = ThumbnailCache::default();
     let old = image(0);
@@ -90,18 +104,20 @@ fn replacement_retires_old_image_and_accounts_new_size() {
 }
 
 #[test]
-fn key_separates_revision_generation_scale_frame_and_media_inventory() {
-    let base = ThumbnailKey::new(identity("r1", 1), 0.25, 4);
-    let revision = ThumbnailKey::new(identity("r2", 1), 0.25, 4);
-    let generation = ThumbnailKey::new(identity("r1", 2), 0.25, 4);
-    let scale = ThumbnailKey::new(identity("r1", 1), 0.5, 4);
-    let frame = ThumbnailKey::new(identity("r1", 1), 0.25, 5);
+fn key_separates_revision_generation_scale_frame_timing_and_media_inventory() {
+    let base = ThumbnailKey::new(identity("r1", 1), 0, 0.25, 4);
+    let revision = ThumbnailKey::new(identity("r2", 1), 0, 0.25, 4);
+    let generation = ThumbnailKey::new(identity("r1", 2), 0, 0.25, 4);
+    let scale = ThumbnailKey::new(identity("r1", 1), 0, 0.5, 4);
+    let frame = ThumbnailKey::new(identity("r1", 1), 0, 0.25, 5);
+    // A reorder, trim or split re-lays the timeline: the same index is another frame.
+    let timing = ThumbnailKey::new(identity("r1", 1), 1, 0.25, 4);
     let mut media = base.clone();
     media.media_hash = "different-media".into();
 
     assert_eq!(base.backend, "cpu");
     assert_eq!(base.media_hash, "r1");
-    for distinct in [&revision, &generation, &scale, &frame, &media] {
+    for distinct in [&revision, &generation, &scale, &frame, &timing, &media] {
         assert_ne!(&base, distinct);
     }
 }
@@ -249,7 +265,14 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     coordinator.thumbnails(
         samples
             .iter()
-            .map(|frame| ThumbnailKey::new(ready.identity().clone(), scale, *frame))
+            .map(|frame| {
+                ThumbnailKey::new(
+                    ready.identity().clone(),
+                    ready.timeline.timing_generation,
+                    scale,
+                    *frame,
+                )
+            })
             .collect(),
     );
     let mut cache = ThumbnailCache::default();

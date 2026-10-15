@@ -13,10 +13,18 @@ pub struct ThumbnailKey {
     pub scale_bits: u64,
     pub frame_index: usize,
     pub media_hash: String,
+    /// The timeline's `timing_generation`: after a reorder, trim or split the same
+    /// frame index shows another scene frame, so it is another key.
+    pub timing_generation: u64,
 }
 
 impl ThumbnailKey {
-    pub fn new(identity: PreviewIdentity, scale: f64, frame_index: usize) -> Self {
+    pub fn new(
+        identity: PreviewIdentity,
+        timing_generation: u64,
+        scale: f64,
+        frame_index: usize,
+    ) -> Self {
         let media_hash = identity.source_revision.clone();
         Self {
             identity,
@@ -24,6 +32,7 @@ impl ThumbnailKey {
             scale_bits: scale.to_bits(),
             frame_index,
             media_hash,
+            timing_generation,
         }
     }
 }

@@ -45,6 +45,16 @@ impl PreviewWorkerClient {
                 .any(|capability| capability == "editor_frame_v1")
         })
     }
+    /// Whether the worker accepts `SetTiming`. Workers built before it cannot parse the
+    /// request at all, so callers check this first and keep the code order otherwise.
+    pub fn supports_timing(&self) -> bool {
+        self.hello.as_ref().is_some_and(|hello| {
+            hello
+                .capabilities
+                .iter()
+                .any(|capability| capability == SET_TIMING_CAPABILITY)
+        })
+    }
     pub fn identity(&self) -> &PreviewIdentity {
         &self.identity
     }
@@ -161,6 +171,7 @@ impl PreviewWorkerClient {
                 PreviewResponse::PreparedAudio(r) => Some(&r.envelope),
                 PreviewResponse::AudioRead(r) => Some(&r.envelope),
                 PreviewResponse::Ack(r) => Some(&r.envelope),
+                PreviewResponse::TimingApplied(r) => Some(&r.envelope),
                 PreviewResponse::Error(r) => r.envelope.as_ref(),
                 PreviewResponse::Hello(_) => None,
             };
@@ -222,6 +233,7 @@ impl PreviewWorkerClient {
                 | (PreviewRequest::Inspect(_), PreviewResponse::Inspect(_))
                 | (PreviewRequest::PrepareAudio(_), PreviewResponse::PreparedAudio(_))
                 | (PreviewRequest::ReleaseAudio(_), PreviewResponse::Ack(_))
+                | (PreviewRequest::SetTiming(_), PreviewResponse::TimingApplied(_))
                 | (PreviewRequest::Shutdown(_), PreviewResponse::Ack(_)) => (),
                 _ => return Err(invalid("Unexpected typed preview destination")),
             }
@@ -365,6 +377,49 @@ impl PreviewWorkerClient {
             PreviewResponse::Inspect(r) if r.diagnostics.len() <= MAX_DIAGNOSTICS => Ok(r),
             _ => Err(invalid("Invalid inspection response")),
         }
+    }
+    /// Applies a timing document (`None`: code order) and returns the timeline laid out
+    /// with it. A rejected document leaves the worker's previous timing in place and
+    /// returns the worker's reason. Prepared audio describes the previous layout, so the
+    /// caller prepares it again.
+    pub fn set_timing(
+        &mut self,
+        timing_json: Option<String>,
+        timing_generation: u64,
+    ) -> Result<PreviewTimelineResponse, WorkerClientError> {
+        if !self.supports_timing() {
+            return Err(invalid("Preview worker does not support timing documents"));
+        }
+        if timing_json
+            .as_ref()
+            .is_some_and(|json| json.len() > MAX_TIMING_DOC_BYTES)
+        {
+            return Err(invalid(format!(
+                "Timing document exceeds {MAX_TIMING_DOC_BYTES} bytes"
+            )));
+        }
+        let e = self.envelope()?;
+        match self
+            .exchange(
+                &PreviewRequest::SetTiming(SetTimingRequest {
+                    envelope: e.clone(),
+                    timing_generation,
+                    timing_json,
+                }),
+                &e,
+                false,
+            )?
+            .0
+        {
+            PreviewResponse::TimingApplied(applied)
+                if applied.timing_generation == timing_generation => {}
+            _ => return Err(invalid("Expected timing acknowledgment")),
+        }
+        let timeline = self.timeline()?;
+        if timeline.timing_generation != timing_generation {
+            return Err(invalid("Timeline does not reflect the applied timing"));
+        }
+        Ok(timeline)
     }
     pub fn prepare_audio(
         &mut self,
@@ -536,6 +591,119 @@ mod tests {
             assert_eq!(manager.active_count(), 0, "{case} leaked worker");
         }
     }
+    fn timing_identity() -> PreviewIdentity {
+        PreviewIdentity {
+            project_id: "p".into(),
+            open_session: "s".into(),
+            source_revision: "rev".into(),
+            worker_generation: 7,
+        }
+    }
+
+    fn timing_envelope(request_id: u64) -> PreviewEnvelope {
+        PreviewEnvelope {
+            contract_version: PREVIEW_CONTRACT_VERSION,
+            identity: timing_identity(),
+            request_id,
+        }
+    }
+
+    /// A negotiated client whose worker answers with `responses` (after Hello) in order.
+    fn scripted_worker(timing: bool, responses: Vec<PreviewResponse>) -> PreviewWorkerClient {
+        let mut capabilities: Vec<String> =
+            PREVIEW_CAPABILITIES.iter().map(|c| (*c).into()).collect();
+        if timing {
+            capabilities.push(SET_TIMING_CAPABILITY.into());
+        }
+        let hello = PreviewResponse::Hello(PreviewHelloResponse {
+            contract_version: PREVIEW_CONTRACT_VERSION,
+            supported_versions: vec![PREVIEW_CONTRACT_VERSION],
+            identity: timing_identity(),
+            request_id: 1,
+            fframes_version: "1.3.0".into(),
+            runtime_version: "0.2.0".into(),
+            sdk_version: "sdk".into(),
+            backend: "cpu".into(),
+            capabilities,
+            capability_gaps: vec![],
+            max_frame_bytes: MAX_FRAME_PAYLOAD_BYTES,
+            max_control_bytes: 1024 * 1024,
+            max_preview_width: MAX_PREVIEW_WIDTH,
+            max_preview_height: MAX_PREVIEW_HEIGHT,
+            audio_sample_rates: vec![48_000],
+            audio_sample_format: "f32le_stereo_interleaved".into(),
+        });
+        let mut framed = Vec::new();
+        for response in std::iter::once(hello).chain(responses) {
+            let bytes = serde_json::to_vec(&response).unwrap();
+            framed.extend((bytes.len() as u32).to_be_bytes());
+            framed.extend(bytes);
+        }
+        let mut transport = WorkerClient::new("rev", 7);
+        transport.attach_pipes(
+            std::io::sink(),
+            std::io::Cursor::new(framed),
+            std::io::empty(),
+        );
+        let mut worker = PreviewWorkerClient::new(transport, timing_identity());
+        worker.negotiate().unwrap();
+        worker
+    }
+
+    fn applied(request_id: u64, timing_generation: u64) -> PreviewResponse {
+        PreviewResponse::TimingApplied(TimingAppliedResponse {
+            envelope: timing_envelope(request_id),
+            timing_generation,
+            total_frames: 30,
+            orphan_clips: vec![],
+            appended_scenes: vec![],
+        })
+    }
+
+    fn laid_out(request_id: u64, timing_generation: u64) -> PreviewResponse {
+        PreviewResponse::Timeline(PreviewTimelineResponse {
+            envelope: timing_envelope(request_id),
+            fps: 10,
+            width: 32,
+            height: 18,
+            total_frames: 30,
+            duration_seconds: 3.,
+            scenes: vec![],
+            audio_tracks: vec![],
+            timing_generation,
+        })
+    }
+
+    #[test]
+    fn set_timing_returns_the_timeline_of_the_applied_generation() {
+        let mut worker = scripted_worker(true, vec![applied(2, 5), laid_out(3, 5)]);
+        assert!(worker.supports_timing());
+        let timeline = worker.set_timing(Some("{}".into()), 5).unwrap();
+        assert_eq!(timeline.timing_generation, 5);
+        // The cached timeline (used for frame requests) is the new layout too.
+        assert_eq!(worker.timeline.as_ref().unwrap().timing_generation, 5);
+    }
+
+    #[test]
+    fn set_timing_rejects_stale_generations_and_unsupported_workers() {
+        let mut stale_ack = scripted_worker(true, vec![applied(2, 4)]);
+        assert!(stale_ack.set_timing(None, 5).is_err());
+
+        let mut stale_layout = scripted_worker(true, vec![applied(2, 5), laid_out(3, 4)]);
+        assert!(stale_layout.set_timing(None, 5).is_err());
+
+        // A worker without the capability cannot parse the request: nothing is sent.
+        let mut old = scripted_worker(false, vec![]);
+        assert!(!old.supports_timing());
+        assert!(old.set_timing(None, 1).is_err());
+        assert_eq!(old.next_request, 1);
+
+        let mut bounded = scripted_worker(true, vec![]);
+        let oversized = "x".repeat(MAX_TIMING_DOC_BYTES + 1);
+        assert!(bounded.set_timing(Some(oversized), 1).is_err());
+        assert_eq!(bounded.next_request, 1);
+    }
+
     #[test]
     fn request_counter_exhaustion_does_not_wrap() {
         let transport = WorkerClient::new("rev", 7);

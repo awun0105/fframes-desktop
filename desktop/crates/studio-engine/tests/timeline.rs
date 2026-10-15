@@ -4,6 +4,7 @@ use studio_engine::timeline::*;
 
 fn report(total_frames: usize) -> PreviewTimelineResponse {
     PreviewTimelineResponse {
+        timing_generation: 0,
         envelope: PreviewEnvelope {
             contract_version: PREVIEW_CONTRACT_VERSION,
             identity: PreviewIdentity {
@@ -26,6 +27,7 @@ fn report(total_frames: usize) -> PreviewTimelineResponse {
 
 fn scene(id: &str, index: usize, start: usize, end: usize) -> PreviewSceneInfo {
     PreviewSceneInfo {
+        clip: None,
         instance_id: format!("revision-7:{id}"),
         editor_instance_key: None,
         index,

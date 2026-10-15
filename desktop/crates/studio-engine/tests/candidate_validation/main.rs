@@ -118,6 +118,7 @@ fn timeline(
     tracks: &[(f64, f64)],
 ) -> PreviewTimelineResponse {
     PreviewTimelineResponse {
+        timing_generation: 0,
         envelope: envelope(revision),
         fps: 30,
         width: 4,
@@ -128,6 +129,7 @@ fn timeline(
             .iter()
             .enumerate()
             .map(|(i, (s, e))| PreviewSceneInfo {
+                clip: None,
                 instance_id: format!("scene-{i}"),
                 editor_instance_key: None,
                 index: i,

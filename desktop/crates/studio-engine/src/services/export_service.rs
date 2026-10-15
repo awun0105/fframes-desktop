@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File},
-    io::{self, Read},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process::Stdio,
     sync::{
@@ -9,11 +9,17 @@ use std::{
         mpsc::{self, Receiver, SyncSender},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::FrozenExportSource;
-use fframes_media::{AudioDecoder, FFmpegDecoder};
+use crate::build_materialization::MaterializedBuild;
+use fframes_media::{AudioDecoder, FFmpegDecoder, probe_streams};
+use fframes_studio_protocol::MAX_TIMING_DOC_BYTES;
+use fframes_studio_protocol::export::{
+    EXPORT_CAPABILITIES_FLAG, EXPORT_CAPABILITIES_VERSION, EXPORT_FLAG, ExportCapabilities,
+    ExportContainer, ExportSettings,
+};
 use studio_bootstrap::{ProcessTreeManager, SpawnOptions};
 
 use super::{
@@ -24,6 +30,8 @@ use super::{
 const PROGRESS_LINE_LIMIT: usize = 64 * 1024;
 const DIAGNOSTIC_LIMIT: usize = 32;
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
+const CAPABILITIES_LIMIT: u64 = 64 * 1024;
+const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(30);
 const VERIFY_FRAME_RATE: usize = 30;
 const EXPORT_ACTIVE: u8 = 0;
 const EXPORT_CANCELLED: u8 = 1;
@@ -99,11 +107,16 @@ pub struct ExportRequest {
     pub sdk: PathBuf,
     pub builds: PathBuf,
     pub destination: PathBuf,
+    /// Container, codec, size and frame rate. Anything but the default needs a worker
+    /// that reports export capabilities; older workers only export the default.
+    pub settings: ExportSettings,
+    /// The timing document to export with; `None` exports the scenes in code order.
+    pub timing_json: Option<String>,
 }
 
 /// Compiles and renders a frozen revision to an exclusive sibling temporary file.
-/// A final destination is created only after the child closed and decoded the MP4.
-pub fn export_mp4(
+/// A final destination is created only after the child closed and decoded the video.
+pub fn export_video(
     request: ExportRequest,
     service: BuildService,
     processes: ProcessTreeManager,
@@ -115,6 +128,8 @@ pub fn export_mp4(
         sdk,
         builds,
         destination,
+        settings,
+        timing_json,
     } = request;
     let revision = source.revision().as_str().to_owned();
     progress(ExportProgress::Started {
@@ -156,8 +171,18 @@ pub fn export_mp4(
     if processes.is_shutdown() || control.is_cancelled() {
         return Err("export cancelled after compilation".into());
     }
+    if !settings.is_default() || timing_json.is_some() {
+        let capabilities = export_capabilities(&build, &processes)?;
+        capabilities
+            .accepts(&settings)
+            .map_err(|error| format!("cannot export with these settings: {error}"))?;
+        if timing_json.is_some() && !capabilities.timing {
+            return Err("this project's worker cannot export edited timing".into());
+        }
+    }
+    let timing_file = timing_json.as_deref().map(write_timing_file).transpose()?;
 
-    let destination = prepare_destination(&destination)?;
+    let destination = prepare_destination(&destination, settings.container)?;
     if destination.exists() {
         return Err(format!(
             "destination already exists; choose another file: {}",
@@ -169,7 +194,7 @@ pub fn export_mp4(
         .ok_or_else(|| "export destination has no parent directory".to_owned())?;
     let named_temporary = tempfile::Builder::new()
         .prefix(".fframes-export-")
-        .suffix(".mp4")
+        .suffix(&format!(".{}", settings.container.extension()))
         .tempfile_in(parent)
         .map_err(|error| format!("could not create export temporary file: {error}"))?;
     let temporary_path = named_temporary.path().to_owned();
@@ -177,11 +202,14 @@ pub fn export_mp4(
     fs::remove_file(&temporary_path)
         .map_err(|error| format!("could not prepare export temporary file: {error}"))?;
 
-    let mut options = SpawnOptions::new(worker_binary(&build));
-    options.args(["--export-v1", "--output"]);
+    let mut options = worker_options(&build);
+    options.args([EXPORT_FLAG, "--output"]);
     options.arg(&temporary_path);
-    options.current_dir(build.manifest.parent().unwrap_or(&build.root));
-    options.env = build.environment.build_child_environment();
+    options.args(settings.to_args());
+    if let Some(timing_file) = &timing_file {
+        options.arg("--timing-file");
+        options.arg(timing_file);
+    }
     options.stdin(Stdio::null());
     options.stdout(Stdio::null());
     options.stderr(Stdio::piped());
@@ -253,7 +281,7 @@ pub fn export_mp4(
         let _ = fs::remove_file(&temporary_path);
         return Err("export output is empty or is not a complete MP4".into());
     }
-    if let Err(error) = verify_mp4(&temporary_path) {
+    if let Err(error) = verify_export(&temporary_path, &settings) {
         let _ = fs::remove_file(&temporary_path);
         return Err(error);
     }
@@ -299,11 +327,106 @@ pub fn export_mp4(
     Ok(())
 }
 
-fn verify_mp4(path: &Path) -> Result<(), String> {
+fn worker_options(build: &MaterializedBuild) -> SpawnOptions {
+    let mut options = SpawnOptions::new(worker_binary(build));
+    options.current_dir(build.manifest.parent().unwrap_or(&build.root));
+    options.env = build.environment.build_child_environment();
+    options
+}
+
+/// Asks the worker what it can export. Workers from before export settings exit with an
+/// error on the flag, which refuses the settings instead of exporting the default.
+fn export_capabilities(
+    build: &MaterializedBuild,
+    processes: &ProcessTreeManager,
+) -> Result<ExportCapabilities, String> {
+    let legacy = || {
+        "this project's SDK exports only MP4 in code order; migrate the project to change \
+         export settings or timing"
+            .to_owned()
+    };
+    let mut options = worker_options(build);
+    options.arg(EXPORT_CAPABILITIES_FLAG);
+    options.stdin(Stdio::null());
+    options.stdout(Stdio::piped());
+    options.stderr(Stdio::null());
+    let child = processes
+        .spawn(options)
+        .map_err(|error| format!("could not start the export renderer: {error}"))?;
+    let stdout = child.lock().child_mut().stdout.take();
+    let Some(stdout) = stdout else {
+        let _ = child.lock().terminate_verified(Duration::from_millis(500));
+        return Err("export renderer did not provide its capabilities stream".into());
+    };
+    let reader = thread::spawn(move || {
+        let mut output = Vec::new();
+        let _ = stdout.take(CAPABILITIES_LIMIT).read_to_end(&mut output);
+        output
+    });
+    let started = Instant::now();
+    let status = loop {
+        match child.lock().try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < CAPABILITIES_TIMEOUT && !processes.is_shutdown() => {
+                thread::sleep(POLL_INTERVAL)
+            }
+            Ok(None) => {
+                let _ = child.lock().terminate_verified(Duration::from_millis(500));
+                return Err("export renderer did not report its capabilities in time".into());
+            }
+            Err(error) => {
+                let _ = child.lock().terminate_verified(Duration::from_millis(500));
+                return Err(format!("could not read export renderer status: {error}"));
+            }
+        }
+    };
+    let output = reader.join().unwrap_or_default();
+    if !status.success() {
+        return Err(legacy());
+    }
+    let capabilities: ExportCapabilities = serde_json::from_slice(&output).map_err(|_| legacy())?;
+    if capabilities.version != EXPORT_CAPABILITIES_VERSION {
+        return Err(format!(
+            "export renderer reports capabilities version {}; this app reads {}",
+            capabilities.version, EXPORT_CAPABILITIES_VERSION
+        ));
+    }
+    Ok(capabilities)
+}
+
+/// Writes the timing document for the worker to read; it is removed when dropped.
+fn write_timing_file(json: &str) -> Result<tempfile::TempPath, String> {
+    if json.len() > MAX_TIMING_DOC_BYTES {
+        return Err(format!(
+            "timing document is {} bytes; the limit is {MAX_TIMING_DOC_BYTES}",
+            json.len()
+        ));
+    }
+    let mut file = tempfile::Builder::new()
+        .prefix(".fframes-timing-")
+        .suffix(".json")
+        .tempfile()
+        .map_err(|error| format!("could not create the export timing file: {error}"))?;
+    file.write_all(json.as_bytes())
+        .and_then(|()| file.flush())
+        .map_err(|error| format!("could not write the export timing file: {error}"))?;
+    Ok(file.into_temp_path())
+}
+
+fn verify_export(path: &Path, settings: &ExportSettings) -> Result<(), String> {
     // Verify in the app process: a successful worker exit and its own decoder check
     // are not sufficient evidence for publishing the output.
+    let streams = probe_streams(path)
+        .map_err(|error| format!("export output is not a decodable video: {error:?}"))?;
+    let codec = settings.codec.stream_codec_name();
+    if streams.video_codec.as_deref() != Some(codec) {
+        return Err(format!(
+            "export output holds {} video instead of {codec}",
+            streams.video_codec.as_deref().unwrap_or("no")
+        ));
+    }
     let mut video = unsafe { FFmpegDecoder::new(path, VERIFY_FRAME_RATE, 1) }
-        .map_err(|error| format!("export output is not a decodable MP4: {error:?}"))?;
+        .map_err(|error| format!("export output is not a decodable video: {error:?}"))?;
     let decoded_video = unsafe { video.decode_up_to(0) }
         .map_err(|error| format!("export video stream could not be decoded: {error:?}"))?;
     if !decoded_video {
@@ -372,9 +495,10 @@ fn join_progress_reader(
     drain_progress(receiver, diagnostics, progress);
 }
 
-fn prepare_destination(path: &Path) -> Result<PathBuf, String> {
-    if path.extension().and_then(|value| value.to_str()) != Some("mp4") {
-        return Err("choose a destination ending in .mp4".into());
+fn prepare_destination(path: &Path, container: ExportContainer) -> Result<PathBuf, String> {
+    let extension = container.extension();
+    if path.extension().and_then(|value| value.to_str()) != Some(extension) {
+        return Err(format!("choose a destination ending in .{extension}"));
     }
     let parent = path
         .parent()
@@ -497,13 +621,17 @@ mod tests {
     }
 
     #[test]
-    fn export_destination_must_be_mp4_in_an_existing_parent() {
+    fn export_destination_must_match_the_container_in_an_existing_parent() {
         let temporary = tempfile::tempdir().unwrap();
+        let mp4 = ExportContainer::Mp4;
         let target = temporary.path().join("movie.mp4");
         let expected = temporary.path().canonicalize().unwrap().join("movie.mp4");
-        assert_eq!(prepare_destination(&target).unwrap(), expected);
-        assert!(prepare_destination(&temporary.path().join("movie.mov")).is_err());
-        assert!(prepare_destination(&temporary.path().join("missing/movie.mp4")).is_err());
+        assert_eq!(prepare_destination(&target, mp4).unwrap(), expected);
+        assert!(prepare_destination(&temporary.path().join("movie.mov"), mp4).is_err());
+        assert!(prepare_destination(&temporary.path().join("missing/movie.mp4"), mp4).is_err());
+        assert!(prepare_destination(&target, ExportContainer::Webm).is_err());
+        let webm = temporary.path().join("movie.webm");
+        assert!(prepare_destination(&webm, ExportContainer::Webm).is_ok());
     }
 
     #[test]
@@ -517,9 +645,9 @@ mod tests {
         .unwrap();
 
         assert!(
-            verify_mp4(&path)
+            verify_export(&path, &ExportSettings::default())
                 .unwrap_err()
-                .contains("not a decodable MP4")
+                .contains("not a decodable video")
         );
         assert!(!temporary.path().join("published.mp4").exists());
     }
@@ -566,7 +694,7 @@ mod tests {
                 .unwrap()
                 .has_audio_stream()
         );
-        verify_mp4(&path).unwrap();
+        verify_export(&path, &ExportSettings::default()).unwrap();
 
         let length = fs::metadata(&path).unwrap().len();
         fs::OpenOptions::new()
@@ -575,7 +703,7 @@ mod tests {
             .unwrap()
             .set_len(length / 2)
             .unwrap();
-        let error = verify_mp4(&path).unwrap_err();
+        let error = verify_export(&path, &ExportSettings::default()).unwrap_err();
         assert!(
             error.contains("ended before its requested"),
             "truncated MP4 must fail its frame-position check, got: {error}"

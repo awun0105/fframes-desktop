@@ -47,6 +47,7 @@ fn frame(t: &OperationTag, position: usize, serial: u64) -> PreviewFrame {
 }
 fn ready(t: &OperationTag, position: usize, serial: u64, total: usize) -> ReadyPreview {
     let timeline = PreviewTimelineResponse {
+        timing_generation: 0,
         envelope: envelope(t, 2),
         fps: 30,
         width: 2,

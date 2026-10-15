@@ -19,7 +19,7 @@ use crate::containment::OwnershipPolicy;
 use crate::presets::{Catalog, PresetReport};
 use crate::providers::host::{HostInbox, WorkflowWake};
 use crate::services::build_service::BuildService;
-use crate::services::export_service::{ExportControl, ExportProgress, ExportRequest, export_mp4};
+use crate::services::export_service::{ExportControl, ExportProgress, ExportRequest, export_video};
 use crate::services::preview_coordinator::BuildSpec;
 use crate::services::teardown::{Teardown, TeardownReport};
 use crate::{JobResult, OperationTag, ProjectState, ReadyPreview};
@@ -276,12 +276,14 @@ impl EngineHandle {
                 let result = source
                     .map_err(|error| error.to_string())
                     .and_then(|source| {
-                        export_mp4(
+                        export_video(
                             ExportRequest {
                                 source,
                                 sdk,
                                 builds: paths.builds(),
                                 destination,
+                                settings: Default::default(),
+                                timing_json: None,
                             },
                             service,
                             processes,

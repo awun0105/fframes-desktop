@@ -118,7 +118,14 @@ impl TimelineView {
         self.viewport
             .thumbnail_frames(model)
             .into_iter()
-            .map(|frame| ThumbnailKey::new(model.report().envelope.identity.clone(), scale, frame))
+            .map(|frame| {
+                ThumbnailKey::new(
+                    model.report().envelope.identity.clone(),
+                    model.report().timing_generation,
+                    scale,
+                    frame,
+                )
+            })
             .filter(|key| !self.cache.contains(key))
             .collect()
     }
@@ -942,6 +949,7 @@ impl Render for TimelineView {
         for frame in self.viewport.thumbnail_frames(model) {
             let key = ThumbnailKey::new(
                 model.report().envelope.identity.clone(),
+                model.report().timing_generation,
                 thumbnail_scale(model),
                 frame,
             );

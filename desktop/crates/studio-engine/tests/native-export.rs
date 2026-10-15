@@ -160,7 +160,7 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
         BuildLimits, BuildService, Subscriber, SubscriberKind,
     };
     use studio_engine::services::export_service::{
-        ExportControl, ExportProgress, ExportRequest, export_mp4,
+        ExportControl, ExportProgress, ExportRequest, export_video,
     };
     use studio_engine::services::worker_project::{CargoCompiler, compile_portable_worker_via};
 
@@ -220,12 +220,14 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
     let cancelled_source = controller.freeze_export_source().unwrap();
     let cancelled_control = Arc::new(ExportControl::default());
     let callback_control = cancelled_control.clone();
-    let cancelled = export_mp4(
+    let cancelled = export_video(
         ExportRequest {
             source: cancelled_source,
             sdk: sdk.clone(),
             builds: builds.clone(),
             destination: cancelled_destination.clone(),
+            settings: Default::default(),
+            timing_json: None,
         },
         service.clone(),
         processes.clone(),
@@ -251,12 +253,14 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
     let raced_source = controller.freeze_export_source().unwrap();
     let callback_destination = raced_destination.clone();
     let mut created_destination = false;
-    let raced = export_mp4(
+    let raced = export_video(
         ExportRequest {
             source: raced_source,
             sdk: sdk.clone(),
             builds: builds.clone(),
             destination: raced_destination.clone(),
+            settings: Default::default(),
+            timing_json: None,
         },
         service.clone(),
         processes.clone(),
@@ -284,6 +288,29 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
     );
     fs::remove_file(&raced_destination).unwrap();
 
+    // The generated worker predates export settings, so anything but the default is
+    // refused before rendering instead of silently exporting MPEG-4 in code order.
+    let refused_destination = temporary.path().join("refused.mp4");
+    let refused = export_video(
+        ExportRequest {
+            source: controller.freeze_export_source().unwrap(),
+            sdk: sdk.clone(),
+            builds: builds.clone(),
+            destination: refused_destination.clone(),
+            settings: fframes_studio_protocol::export::ExportSettings {
+                codec: fframes_studio_protocol::export::ExportCodec::H264,
+                ..Default::default()
+            },
+            timing_json: None,
+        },
+        service.clone(),
+        processes.clone(),
+        Arc::new(ExportControl::default()),
+        |_| {},
+    );
+    assert!(refused.unwrap_err().contains("migrate the project"));
+    assert!(!refused_destination.exists());
+
     let frozen = controller.freeze_export_source().unwrap();
     assert_eq!(frozen.revision(), &revision);
 
@@ -296,15 +323,17 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
     let destination = temporary.path().join("video.mp4");
     let control = Arc::new(ExportControl::default());
     let mut progress = Vec::new();
-    export_mp4(
+    export_video(
         ExportRequest {
             source: frozen,
             sdk: sdk.clone(),
             builds: builds.clone(),
             destination: destination.clone(),
+            settings: Default::default(),
+            timing_json: None,
         },
-        service,
-        processes,
+        service.clone(),
+        processes.clone(),
         control,
         |event| progress.push(event),
     )
