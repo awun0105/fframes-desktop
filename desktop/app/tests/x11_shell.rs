@@ -62,22 +62,25 @@ impl Drop for Owned {
 /// found), with state and age, to name a process that outlives its owner.
 fn process_tree(root: u32) -> String {
     let Ok(output) = Command::new("ps")
-        .args(["-eo", "pid=,ppid=,pgid=,stat=,etimes=,args="])
+        .args(["-eo", "pid=,ppid=,pgid=,sid=,stat=,etimes=,args="])
         .output()
     else {
         return "ps could not run".to_owned();
     };
     let text = String::from_utf8_lossy(&output.stdout);
-    let rows: Vec<(u32, u32, u32, &str)> = text
+    let rows: Vec<(u32, u32, u64, &str)> = text
         .lines()
         .filter_map(|line| {
             let mut fields = line.split_whitespace();
             let pid = fields.next()?.parse().ok()?;
             let ppid = fields.next()?.parse().ok()?;
-            let pgid = fields.next()?.parse().ok()?;
-            Some((pid, ppid, pgid, line.trim()))
+            let elapsed = fields.nth(3)?.parse().ok()?;
+            Some((pid, ppid, elapsed, line.trim()))
         })
         .collect();
+    let Some(&(_, _, root_elapsed, _)) = rows.iter().find(|row| row.0 == root) else {
+        return format!("the studio ({root}) is not running");
+    };
     let mut tree = vec![root];
     loop {
         let known = tree.len();
@@ -90,16 +93,24 @@ fn process_tree(root: u32) -> String {
             break;
         }
     }
-    let groups: Vec<u32> = rows
+    // Everything started since the studio, so a process that left its tree (a group
+    // member whose parent exited) shows up as well.
+    let since: Vec<&str> = rows
         .iter()
-        .filter(|row| tree.contains(&row.0))
-        .map(|row| row.2)
-        .collect();
-    rows.iter()
-        .filter(|row| tree.contains(&row.0) || groups.contains(&row.2))
+        .filter(|row| {
+            !tree.contains(&row.0) && row.2 <= root_elapsed && row.0 != std::process::id()
+        })
         .map(|row| row.3)
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect();
+    format!(
+        "pid ppid pgid sid stat etimes args\n{}\nstarted since the studio, outside its tree:\n{}",
+        rows.iter()
+            .filter(|row| tree.contains(&row.0))
+            .map(|row| row.3)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        since.join("\n")
+    )
 }
 
 fn spawn(command: &mut Command) -> Owned {
