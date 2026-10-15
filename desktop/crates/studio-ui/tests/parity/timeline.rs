@@ -170,3 +170,22 @@ fn zoom_doubles_and_halves(cx: &mut gpui::TestAppContext) {
     let back = back["timeline"]["pixels_per_second"].as_f64().unwrap();
     assert!((back - fitted).abs() < 1e-6, "{zoomed} -> {back}");
 }
+
+#[gpui::test]
+fn the_fit_button_fits_a_zoomed_timeline_again(cx: &mut gpui::TestAppContext) {
+    let pixels_per_second = |t: &Value| t["timeline"]["pixels_per_second"].as_f64().unwrap();
+    let fit_button = |t: &Value| {
+        let b = t["buttons"]["timeline-fit"].as_array()?;
+        let at = |i: usize| b[i].as_f64().map(|v| v as f32);
+        Some((at(0)? + at(2)? / 2., at(1)? + at(3)? / 2.))
+    };
+    let mut studio = Studio::displayed(cx);
+    studio.report_button_bounds();
+    let fitted = studio.wait("the fit button measured", |t| fit_button(t).is_some());
+    let fitted_scale = pixels_per_second(&fitted);
+    studio.dispatch(ZoomIn);
+    studio.dispatch(ZoomIn);
+    let zoomed = studio.wait("zoomed in", |t| pixels_per_second(t) == 4. * fitted_scale);
+    studio.click(fit_button(&zoomed).unwrap());
+    studio.wait("fitted again", |t| pixels_per_second(t) == fitted_scale);
+}

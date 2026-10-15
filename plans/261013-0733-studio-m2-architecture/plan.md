@@ -50,7 +50,7 @@ desktop/app        thin binary: runtime setup, window, bins studio-tools / studi
 | 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 6-9d | 2, 3 | Done (Windows): the views and the shell are in `studio-ui`, split into sections, with the parity suite; the keymap, Cap's layout, the Windows caption and the settings frame with its Appearance page. Adapter setup joins the frame in phase 6. Not verified: macOS, and real-input checks of the title bar on Windows (a drag, the hover colours, and section renders under real mouse moves) |
 | 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | Done |
 | 6 | [Agent panel on a transcript row model](./phase-06-transcript-row-model.md) | 3-5d | 4, 5, 7 | Pending |
-| 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Pending |
+| 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Done (release dry run left to the user; full CI runs fail on the X11 task test's process cleanup, a separate fix) |
 | 8 | [Split the remaining oversize files](./phase-08-split-oversize-files.md) | 3-4d | 1 | In progress |
 
 Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) re-checked phases 2, 4 and 6: the kit and theme port verbatim, but the layout and the transcript are rewrites against snapshots, so phases 4 and 6 grew.

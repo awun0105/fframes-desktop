@@ -1,6 +1,7 @@
 //! Build, preview and export services: start, cancel, failure surfaced.
 use crate::harness::Studio;
 use std::{
+    fs,
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
@@ -51,6 +52,39 @@ fn a_failed_build_is_shown(cx: &mut gpui::TestAppContext) {
             .contains("cannot find value `title`"),
         "{failed:#}"
     );
+}
+
+#[gpui::test]
+fn a_failed_rebuild_keeps_the_displayed_preview_until_a_build_succeeds(
+    cx: &mut gpui::TestAppContext,
+) {
+    let mut studio = Studio::displayed(cx);
+    let shown = studio.telemetry();
+    let displayed = shown["displayed_revision"].clone();
+    let source = shown["current_source_revision"].clone();
+    let file = studio.project_file("src/lib.rs");
+    let original = fs::read(&file).unwrap();
+    fs::write(&file, [&original[..], b"\n// edited\n"].concat()).unwrap();
+    studio.wait("the edit is seen", |t| {
+        t["current_source_revision"] != source && t["busy"] == false
+    });
+    studio.compiler.fail.store(true, Ordering::SeqCst);
+    studio.dispatch(BuildPreview);
+    let failed = studio.wait("rebuild failed", |t| t["preview"]["status"] == "error");
+    assert_eq!(failed["displayed_revision"], displayed, "{failed:#}");
+    assert_eq!(failed["audio_identity_matches"], true, "{failed:#}");
+    // Restoring the source is seen without a build.
+    fs::write(&file, &original).unwrap();
+    studio.wait("the restored source is seen", |t| {
+        t["current_source_revision"] == source && t["busy"] == false
+    });
+    studio.compiler.fail.store(false, Ordering::SeqCst);
+    studio.dispatch(BuildPreview);
+    let rebuilt = studio.wait("rebuilt", |t| {
+        t["preview"]["status"] == "displayed" && t["busy"] == false
+    });
+    assert_eq!(rebuilt["displayed_revision"], displayed, "{rebuilt:#}");
+    assert_eq!(rebuilt["audio_identity_matches"], true, "{rebuilt:#}");
 }
 
 /// The fake worker cannot encode MP4, so a finished export is left to the native export

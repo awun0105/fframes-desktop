@@ -1029,6 +1029,24 @@ mod tests {
     }
 
     #[test]
+    fn at_most_twelve_thumbnails_wait_however_many_are_visible() {
+        let identity = inspection(vec![], false).envelope.identity;
+        let coordinator = PreviewCoordinator::new(ProcessTreeManager::new());
+        coordinator.shared.lock().desired = Some(SeekIntent {
+            identity: identity.clone(),
+            serial: 1,
+            position: 0,
+            scale: 0.5,
+        });
+        let visible = (0..40)
+            .map(|frame| ThumbnailKey::new(identity.clone(), 0.25, frame))
+            .collect();
+        coordinator.thumbnails(visible);
+        assert_eq!(coordinator.shared.lock().thumbnails.len(), 12);
+        assert_eq!(coordinator.metrics().thumbnail_queue_high_water, 12);
+    }
+
+    #[test]
     fn cancelled_build_result_cannot_become_current_after_a_new_build_starts() {
         let old = OperationTag {
             project: "p".to_owned().try_into().unwrap(),

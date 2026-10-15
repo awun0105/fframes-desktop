@@ -3,7 +3,7 @@
 //!
 //! A settings value never qualifies anything. Ownership is derived from the installed
 //! qualification ledger (`<data>/qualification/m3-results.json` with its `evidence/`
-//! directory, the bundle `desktop/qualification/` of a harness run) and only when every one
+//! directory) and only when every one
 //! of these holds, otherwise it stays [`WriterOwnership::Unknown`] with a stated reason:
 //!
 //! * the ledger is an M3 ledger whose adapter identity is a real (non-fixture) adapter
