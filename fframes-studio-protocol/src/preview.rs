@@ -12,6 +12,9 @@ pub const MAX_EDITOR_METADATA_BYTES: usize = 1024 * 1024;
 pub const MAX_AUDIO_READ_BYTES: usize = 256 * 1024;
 pub const MAX_PREPARED_AUDIO_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 pub const MAX_PREPARED_AUDIO_CACHE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+/// Upper bound on a serialized timing document; equals `fframes::MAX_TIMING_DOC_BYTES`.
+/// Escaped into a `SetTimingRequest` it stays below the 1 MiB control message limit.
+pub const MAX_TIMING_DOC_BYTES: usize = 512 * 1024;
 pub const PREVIEW_CAPABILITIES: &[&str] = &[
     "preview_identity_v1",
     "scaled_frame_v1",
@@ -19,7 +22,10 @@ pub const PREVIEW_CAPABILITIES: &[&str] = &[
     "prepared_audio_v1",
 ];
 /// Additive preview features that older M2 workers may omit without losing playback.
-pub const OPTIONAL_PREVIEW_CAPABILITIES: &[&str] = &["editor_frame_v1"];
+pub const OPTIONAL_PREVIEW_CAPABILITIES: &[&str] = &["editor_frame_v1", SET_TIMING_CAPABILITY];
+/// The worker accepts `PreviewRequest::SetTiming`. Clients send it only when the Hello
+/// response lists this capability: an older worker cannot parse the request.
+pub const SET_TIMING_CAPABILITY: &str = "set_timing_v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PreviewIdentity {
@@ -86,6 +92,38 @@ pub struct PreviewSceneInfo {
     pub end_frame: usize,
     pub start_seconds: f32,
     pub end_seconds: f32,
+    /// Timing key and trims of this clip; absent from workers without `set_timing_v1`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip: Option<PreviewClipTiming>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreviewClipTiming {
+    /// The scene's key in timing documents.
+    pub timing_key: String,
+    /// Occurrence of the scene among the clips (0 unless split).
+    pub clip_index: usize,
+    pub trim_start_frames: usize,
+    pub trim_end_frames: usize,
+}
+/// Replaces the timing document of the preview. `timing_json` is a `fframes::TimingDoc`
+/// of at most [`MAX_TIMING_DOC_BYTES`] (`None` restores the code order); the worker
+/// rejects the whole document on any error and keeps the previous timing and generation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetTimingRequest {
+    pub envelope: PreviewEnvelope,
+    /// Chosen by the client; later timelines report it so stale layouts can be fenced.
+    pub timing_generation: u64,
+    pub timing_json: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimingAppliedResponse {
+    pub envelope: PreviewEnvelope,
+    pub timing_generation: u64,
+    pub total_frames: usize,
+    /// Clip keys that match no code scene; skipped.
+    pub orphan_clips: Vec<String>,
+    /// Code scenes missing from the document; appended untrimmed.
+    pub appended_scenes: Vec<String>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PreviewAudioTrackInfo {
@@ -104,6 +142,10 @@ pub struct PreviewTimelineResponse {
     pub duration_seconds: f32,
     pub scenes: Vec<PreviewSceneInfo>,
     pub audio_tracks: Vec<PreviewAudioTrackInfo>,
+    /// Generation of the timing this layout was resolved with: 0 for the code order or
+    /// the startup document, else the last applied `SetTimingRequest::timing_generation`.
+    #[serde(default)]
+    pub timing_generation: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -423,6 +465,7 @@ mod editor_metadata_tests {
             end_frame: 1,
             start_seconds: 0.0,
             end_seconds: 1.0,
+            clip: None,
         })
         .unwrap();
         scene.as_object_mut().unwrap().remove("editor_instance_key");
@@ -587,6 +630,7 @@ pub enum PreviewRequest {
     ReadAudio(ReadAudioRequest),
     CancelAudio(ArtifactRequest),
     ReleaseAudio(ArtifactRequest),
+    SetTiming(SetTimingRequest),
     Shutdown(PreviewEnvelope),
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -598,6 +642,7 @@ pub enum PreviewResponse {
     Inspect(InspectResponse),
     PreparedAudio(PreparedAudioDescriptor),
     AudioRead(AudioReadResponse),
+    TimingApplied(TimingAppliedResponse),
     Ack(PreviewAck),
     Error(PreviewError),
 }
