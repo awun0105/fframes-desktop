@@ -50,15 +50,15 @@ desktop/app        thin binary: runtime setup, window, bins studio-tools / studi
 | 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 6-9d | 2, 3 | Done (Windows): the views and the shell are in `studio-ui`, split into sections, with the parity suite; the keymap, Cap's layout, the Windows caption and the settings frame with its Appearance page. Adapter setup joins the frame in phase 6. Not verified: macOS, and real-input checks of the title bar on Windows (a drag, the hover colours, and section renders under real mouse moves) |
 | 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | Done |
 | 6 | [Agent panel on a transcript row model](./phase-06-transcript-row-model.md) | 3-5d | 4, 5, 7 | Done (Windows): `studio-ui/src/agent` with transcript rows and stick-to-bottom; the panel is the sidebar's default Agent tab and adapter setup is the settings frame's Agent page |
-| 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Done (release dry run left to the user; full CI runs fail on the X11 task test's process cleanup, a separate fix) |
+| 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Done (release dry run left to the user). The full CI run 38695521718 passes on Linux and Windows, including the X11 task test: its cleanup wait failed on a stale published count of owned processes, which the agent actor now rechecks |
 | 8 | [Split the remaining oversize files](./phase-08-split-oversize-files.md) | 3-4d | 1 | Done: the size gate prints nothing |
 
 Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) re-checked phases 2, 4 and 6: the kit and theme port verbatim, but the layout and the transcript are rewrites against snapshots, so phases 4 and 6 grew.
 
 ## Success criteria
 
-- [ ] Parity tests, `cargo test` and `just clippy` pass after each phase.
+- [x] Parity tests, `cargo test` and `just clippy` pass after each phase. Verified on the final tree (full CI run 38695521718 on Linux and Windows, plus local runs); earlier phases were checked locally as they landed.
 - [x] No `.rs` file under `desktop/` exceeds 1,500 lines (merge gate 6).
 - [x] `studio-engine`, `studio-proto` and `studio-harness` have no `gpui` dependency (`cargo tree -p <crate> -e normal | grep -c gpui` is 0).
-- [ ] UI crates hold no `Mutex<Controller>` and no agent or preview polling; the 16 ms playback tick (which reads the audio snapshot) stays until M4 phase 6; the engine may keep internal locking.
-- [ ] The bounds-probe harness, qualification scripts and their CI jobs are gone; containment, writer qualification (`qualify-writer`, until M3 phase 4) and the release gate replacement work.
+- [x] UI crates hold no `Mutex<Controller>` and no agent or preview polling; the 16 ms playback tick (which reads the audio snapshot) stays until M4 phase 6; the engine may keep internal locking. The panel reads the agent snapshot only when the workflow wakes the window; the tick forwards the playhead and thumbnail requests and keeps an 8 s fallback build for an accepted source that never got a preview.
+- [ ] The bounds-probe harness, qualification scripts and their CI jobs are gone; containment, writer qualification (`qualify-writer`, until M3 phase 4) and the release gate replacement work. The harness, scripts and jobs are gone and the release gate tests pass in CI; open until the user runs the release dry run.
