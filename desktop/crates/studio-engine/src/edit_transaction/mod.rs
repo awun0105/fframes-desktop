@@ -258,6 +258,9 @@ pub enum TransactionKind {
     /// shares the durable file-set protocol but is never accepted task history: replay
     /// keeps it out of [`crate::journal::TaskReplay::committed`].
     Preset,
+    /// A Studio-originated project migration or its undo (see
+    /// [`crate::project_migration`]); like [`TransactionKind::Preset`], never task history.
+    Migration,
 }
 
 /// A validated task revision: what one accepted agent edit (or Undo) did to the source.
@@ -300,6 +303,10 @@ pub struct TaskRevisionRecord {
     /// was. Older records never carry it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<crate::preset_state::PresetProvenance>,
+    /// Present exactly on [`TransactionKind::Migration`] records: the raw `studio.json`
+    /// the migration (or its undo) replaced after the file set, and what it wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub migration: Option<crate::project_migration::ManifestSwap>,
 }
 
 impl TaskRevisionRecord {
@@ -717,6 +724,8 @@ pub struct RecordSeed {
     pub reverses: Vec<FileDelta>,
     /// Provenance of a Studio preset mutation.
     pub preset: Option<crate::preset_state::PresetProvenance>,
+    /// The manifest replacement of a project migration.
+    pub migration: Option<crate::project_migration::ManifestSwap>,
 }
 
 fn split_path(path: &str) -> (&str, &str) {
@@ -1066,6 +1075,7 @@ pub fn plan(
         validation_report_sha256: seed.validation_report_sha256,
         committed_unix: 0,
         preset: seed.preset,
+        migration: seed.migration,
     };
     Ok(TransactionIntent {
         format: TASK_FORMAT,

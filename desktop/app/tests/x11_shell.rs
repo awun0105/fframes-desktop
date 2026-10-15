@@ -1150,7 +1150,7 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
         "Native canvas selection",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        "0.1.0",
+        manifest.studio_runtime_version(),
     )
     .unwrap();
     assert!(sdk.join("compatibility.json").is_file());
@@ -1212,7 +1212,7 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     let title = objects
         .iter()
         .find(|object| {
-            object["identity"]["scene_instance_key"] == "starter-video"
+            object["identity"]["scene_instance_key"] == "intro"
                 && object["identity"]["component_key"] == "starter-title"
                 && object["identity"]["object_key"] == "headline"
                 && object["identity"]["repeat_key"] == "primary"

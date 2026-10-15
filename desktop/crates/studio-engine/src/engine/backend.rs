@@ -5,7 +5,10 @@ use crate::presets::{Catalog, PresetCommand, PresetReport, PresetView};
 use crate::project_presentation::ProjectPresentation;
 use crate::services::{build_service::BuildService, preview_coordinator::BuildSpec};
 use crate::{
-    Controller, app_paths::AppPaths, build_materialization::sdk_pin, containment::OwnershipPolicy,
+    Controller,
+    app_paths::AppPaths,
+    build_materialization::{framework_for, sdk_pin},
+    containment::OwnershipPolicy,
     store::Store,
 };
 use parking_lot::Mutex;
@@ -70,6 +73,11 @@ pub enum Command {
     Independent(PathBuf),
     /// A style-preset operation, fenced by the source revision the UI last showed.
     Preset(PresetCommand, Option<studio_project::SourceRevision>),
+    /// Migrates the open project to the current framework of the selected SDK, fenced by
+    /// the source revision the UI last showed.
+    Migrate(Option<studio_project::SourceRevision>),
+    /// Undoes the open project's last migration, fenced the same way.
+    UndoMigration(Option<studio_project::SourceRevision>),
 }
 pub struct Backend {
     pub paths: Option<AppPaths>,
@@ -86,6 +94,9 @@ pub struct Backend {
     pub sdk_home: Option<PathBuf>,
     pub sdk: String,
     pub agent_sdk: Option<AgentSdk>,
+    /// The manifest of the SDK the open project builds with (the project's selection or
+    /// the active installation), whether or not it verified.
+    pub selected_sdk: Option<CompatibilityManifest>,
     pub closed: Arc<AtomicBool>,
     pub processes: studio_bootstrap::ProcessTreeManager,
     pub build_spec: Option<BuildSpec>,
@@ -123,6 +134,14 @@ impl Backend {
                     .compatibility
                     .as_ref()
                     .ok_or_else(|| self.compatibility_error.clone())?;
+                // The template's worker exports and plays timing documents, which SDKs
+                // without a runtime version do not have.
+                if compatibility.runtime_version.is_none() {
+                    return Err(
+                        "This SDK predates Studio's timeline; install the current SDK to create a project"
+                            .into(),
+                    );
+                }
                 let name = path
                     .file_name()
                     .and_then(|s| s.to_str())
@@ -132,7 +151,7 @@ impl Backend {
                     name,
                     sdk_pin(compatibility),
                     &compatibility.fframes_version,
-                    "0.1.0",
+                    compatibility.studio_runtime_version(),
                 )
                 .map_err(|e| e.to_string())?;
                 self.open(&path, &paths)?;
@@ -347,6 +366,32 @@ impl Backend {
                     return Err(refusal);
                 }
             }
+            Command::Migrate(expected) => {
+                let compatibility = self
+                    .selected_sdk
+                    .clone()
+                    .ok_or("Install or select the current SDK to migrate this project")?;
+                let controller = self.current()?;
+                let mut controller = controller.lock();
+                let expected = expected.unwrap_or_else(|| controller.state().source().clone());
+                let outcome = controller
+                    .migrate_project(&expected, &compatibility)
+                    .map_err(|e| e.to_string())?;
+                controller.add_recovery_notice(&outcome.notes);
+                drop(controller);
+                self.check_sdk();
+            }
+            Command::UndoMigration(expected) => {
+                let controller = self.current()?;
+                let mut controller = controller.lock();
+                let expected = expected.unwrap_or_else(|| controller.state().source().clone());
+                let outcome = controller
+                    .undo_migration(&expected)
+                    .map_err(|e| e.to_string())?;
+                controller.add_recovery_notice(&outcome.notes);
+                drop(controller);
+                self.check_sdk();
+            }
         }
         Ok(())
     }
@@ -398,6 +443,7 @@ impl Backend {
     }
     pub fn check_sdk(&mut self) {
         self.agent_sdk = None;
+        self.selected_sdk = None;
         let sdk = self
             .controller
             .as_ref()
@@ -429,7 +475,10 @@ impl Backend {
         self.sdk = match (sdk, selected) {
             (Some(path), Some(selected)) => {
                 let selected = match selected {
-                    Ok(manifest) => manifest,
+                    Ok(manifest) => {
+                        self.selected_sdk = Some(manifest.clone());
+                        manifest
+                    }
                     Err(error) => {
                         self.sdk = format!("SDK failed: {error}; select a complete installed SDK");
                         return;
@@ -438,7 +487,7 @@ impl Backend {
                 if self
                     .controller
                     .as_ref()
-                    .is_some_and(|c| c.lock().project.manifest.sdk != sdk_pin(&selected))
+                    .is_some_and(|c| framework_for(&c.lock().project.manifest, &selected).is_none())
                 {
                     self.sdk = "Incompatible SDK pin; select the project's compatible SDK".into();
                     return;
@@ -489,8 +538,16 @@ impl Backend {
         // One short look at the controller; the workflow's job threads may hold it too.
         let open = self.controller.as_ref().map(|c| {
             let mut controller = c.lock();
+            let mut project = ProjectPresentation::from_controller(&controller);
+            if let Some(compatibility) = &self.selected_sdk {
+                project.migration = controller.migration_status(compatibility);
+            } else if project.timing != crate::TimingEditing::Enabled {
+                project.migration = crate::ProjectMigration::Blocked(
+                    "Install or select the current SDK to migrate this project".into(),
+                );
+            }
             (
-                ProjectPresentation::from_controller(&controller),
+                project,
                 controller.state().clone(),
                 controller.processes.clone(),
                 PresetView::capture(&mut controller, &self.catalog),
@@ -559,7 +616,7 @@ mod tests {
             "Video",
             sdk_pin(&compatibility),
             &compatibility.fframes_version,
-            "0.1.0",
+            compatibility.studio_runtime_version(),
         )
         .unwrap();
         let mut controller = Controller::open(&root, &paths).unwrap();
@@ -579,6 +636,7 @@ mod tests {
             sdk_home: None,
             sdk: String::new(),
             agent_sdk: None,
+            selected_sdk: None,
             closed: Arc::new(AtomicBool::new(false)),
             processes: studio_bootstrap::ProcessTreeManager::new(),
             build_spec: None,
@@ -601,5 +659,37 @@ mod tests {
             fs::read(root.join("studio.json")).unwrap(),
             b"invalid source manifest"
         );
+    }
+
+    #[test]
+    fn an_sdk_without_the_timeline_runtime_cannot_create_a_project() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut compatibility = CompatibilityManifest::default_linux_x64();
+        compatibility.runtime_version = None;
+        let mut backend = Backend {
+            paths: Some(AppPaths::new(temp.path().join("history")).unwrap()),
+            controller: None,
+            session: None,
+            sessions: 0,
+            compatibility: Some(compatibility),
+            compatibility_error: String::new(),
+            sdk_home: None,
+            sdk: String::new(),
+            agent_sdk: None,
+            selected_sdk: None,
+            closed: Arc::new(AtomicBool::new(false)),
+            processes: studio_bootstrap::ProcessTreeManager::new(),
+            build_spec: None,
+            catalog: Catalog::default(),
+            preset_report: None,
+            environment: StudioEnvironment::system(),
+            app_version: "0.0.0",
+        };
+        let destination = temp.path().join("video");
+        let error = backend
+            .command(Command::Create(destination.clone()))
+            .unwrap_err();
+        assert!(error.contains("install the current SDK"), "{error}");
+        assert!(!destination.exists());
     }
 }

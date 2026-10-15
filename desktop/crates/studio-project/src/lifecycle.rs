@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     Manifest, ProjectError, ProjectPath, SourceInventory,
-    manifest::{CargoEntry, DisplayMetadata, SCHEMA_VERSION, SdkPin},
+    manifest::{CURRENT_INSTRUCTION_VERSION, CargoEntry, DisplayMetadata, SCHEMA_VERSION, SdkPin},
     paths::io_error,
 };
 
@@ -261,7 +261,7 @@ pub fn create(
             "media/DMSans-Medium.ttf".to_owned().try_into()?,
             "media/OFL.txt".to_owned().try_into()?,
         ],
-        generated_instruction_version: 1,
+        generated_instruction_version: CURRENT_INSTRUCTION_VERSION,
         video_hints: None,
         preset: None,
     };
@@ -273,8 +273,9 @@ pub fn create(
     for dep in ["fframes-studio-runtime", "fframes-studio-protocol"] {
         cargo["dependencies"][dep]["version"] = toml::Value::String(format!("={runtime_version}"));
     }
-    let files: [(&str, &[u8]); 8] = [
+    let files: [(&str, &[u8]); 9] = [
         ("src/lib.rs", include_bytes!("../templates/src/lib.rs")),
+        ("src/video.rs", include_bytes!("../templates/src/video.rs")),
         ("src/main.rs", include_bytes!("../templates/src/main.rs")),
         (
             "src/bin/studio_worker.rs",
@@ -359,7 +360,7 @@ pub fn import(root: &Path, entry: CargoEntry, sdk: SdkPin) -> Result<OpenProject
         sdk,
         entry,
         assets: vec![],
-        generated_instruction_version: 1,
+        generated_instruction_version: CURRENT_INSTRUCTION_VERSION,
         video_hints: None,
         preset: None,
     };

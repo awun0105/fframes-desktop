@@ -75,6 +75,9 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The SDK assembler exports the legacy framework from an earlier commit.
+          fetch-depth: 0
       - name: Check the release tag matches the app version
         if: github.event_name == 'push' || inputs.preview_release == true || inputs.consumer_release == true
         env:

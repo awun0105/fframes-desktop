@@ -7,7 +7,9 @@ use std::{
 use studio_project::{
     OpenProject, ProjectError, ProjectPath, SourceInventory, lifecycle::read_cargo,
 };
-use studio_sdk::{CompatibilityManifest, environment::SdkEnvironment};
+use studio_sdk::{
+    CompatibilityManifest, environment::SdkEnvironment, manifest::FRAMEWORK_REL_PATH,
+};
 
 pub struct MaterializedBuild {
     pub root: PathBuf,
@@ -24,6 +26,54 @@ pub fn sdk_pin(manifest: &CompatibilityManifest) -> studio_project::manifest::Sd
     studio_project::manifest::SdkPin {
         release: manifest.sdk_id.clone(),
         compatibility_sha256: manifest.digest(),
+    }
+}
+
+/// The framework crates inside an SDK that one project builds against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameworkSet<'a> {
+    pub fframes_version: &'a str,
+    /// Version of `fframes-studio-runtime` and `fframes-studio-protocol`.
+    pub runtime_version: &'a str,
+    /// The crates' directory inside the SDK.
+    pub rel_path: &'a str,
+}
+
+/// The framework `project` builds against in the SDK described by `compatibility`, or
+/// `None` when that SDK cannot build it. A project pinned to this SDK and generated with
+/// the current instructions uses the current framework. One generated with the first
+/// instructions keeps the SDK's legacy framework, also when it is pinned to one of the
+/// earlier SDKs that framework continues, until it is migrated.
+pub fn framework_for<'a>(
+    project: &studio_project::manifest::Manifest,
+    compatibility: &'a CompatibilityManifest,
+) -> Option<FrameworkSet<'a>> {
+    let current = FrameworkSet {
+        fframes_version: &compatibility.fframes_version,
+        runtime_version: compatibility.studio_runtime_version(),
+        rel_path: FRAMEWORK_REL_PATH,
+    };
+    let legacy = compatibility.legacy.as_ref().map(|legacy| FrameworkSet {
+        fframes_version: &legacy.fframes_version,
+        runtime_version: &legacy.runtime_version,
+        rel_path: &legacy.framework_rel_path,
+    });
+    let first_instructions = project.generated_instruction_version
+        < studio_project::manifest::CURRENT_INSTRUCTION_VERSION;
+    if project.sdk == sdk_pin(compatibility) {
+        Some(match legacy {
+            Some(legacy) if first_instructions => legacy,
+            _ => current,
+        })
+    } else if first_instructions
+        && compatibility
+            .legacy
+            .as_ref()
+            .is_some_and(|legacy| legacy.sdk_releases.contains(&project.sdk.release))
+    {
+        legacy
+    } else {
+        None
     }
 }
 
@@ -87,9 +137,9 @@ pub fn materialize_in_environment(
     compatibility
         .validate()
         .map_err(|e| error(&sdk, e.to_string()))?;
-    if project.manifest.sdk != sdk_pin(&compatibility) {
+    let Some(framework) = framework_for(&project.manifest, &compatibility) else {
         return Err(error(&sdk, "SDK pin mismatch".into()));
-    }
+    };
     if !project.worker_available {
         return Err(error(
             &project.root,
@@ -171,8 +221,8 @@ pub fn materialize_in_environment(
             &project.root,
             &root,
             Path::new(file.path.as_str()).parent().unwrap(),
-            &sdk,
-            &compatibility,
+            &sdk.join(framework.rel_path),
+            framework,
         )?;
         let cargo_path = root.join(file.path.as_str());
         let cargo_text =
@@ -228,8 +278,8 @@ fn bind(
     project_root: &Path,
     copied_root: &Path,
     package_dir: &Path,
-    sdk: &Path,
-    compatibility: &CompatibilityManifest,
+    framework_dir: &Path,
+    framework: FrameworkSet<'_>,
 ) -> Result<(), ProjectError> {
     if let Some(table) = value.as_table_mut() {
         for (key, value) in table {
@@ -294,28 +344,32 @@ fn bind(
                         ) && dep.get("workspace").and_then(toml::Value::as_bool) != Some(true)
                         {
                             let expected = if crate_name == "fframes" {
-                                compatibility.fframes_version.as_str()
+                                framework.fframes_version
                             } else {
-                                "0.1.0"
+                                framework.runtime_version
                             };
                             let version = dep
                                 .as_str()
                                 .or_else(|| dep.get("version").and_then(toml::Value::as_str));
-                            if version.is_some_and(|v| v.trim_start_matches('=') != expected) {
+                            // Every framework crate names its exact release, so a project
+                            // never builds against a different one than it was written for.
+                            if version.is_none_or(|v| v.trim_start_matches('=') != expected) {
                                 return Err(ProjectError::new(
                                     project_root.join(package_dir),
                                     name,
-                                    "dependency version does not match SDK",
+                                    format!(
+                                        "dependency version does not match SDK framework {expected}"
+                                    ),
                                     "Select an SDK matching this version",
                                 ));
                             }
                             if dep.is_str() {
                                 *dep = toml::Value::Table(toml::map::Map::new());
                             }
-                            let framework = sdk.join("framework/framework").join(&crate_name);
-                            if !framework.join("Cargo.toml").is_file() {
+                            let crate_dir = framework_dir.join(&crate_name);
+                            if !crate_dir.join("Cargo.toml").is_file() {
                                 return Err(ProjectError::new(
-                                    framework,
+                                    crate_dir,
                                     name,
                                     "SDK crate missing",
                                     "Install the complete compatible SDK",
@@ -323,7 +377,7 @@ fn bind(
                             }
                             dep.as_table_mut().unwrap().insert(
                                 "path".into(),
-                                toml::Value::String(framework.to_string_lossy().into_owned()),
+                                toml::Value::String(crate_dir.to_string_lossy().into_owned()),
                             );
                         }
                     }
@@ -334,8 +388,8 @@ fn bind(
                     project_root,
                     copied_root,
                     package_dir,
-                    sdk,
-                    compatibility,
+                    framework_dir,
+                    framework,
                 )?;
             }
         }

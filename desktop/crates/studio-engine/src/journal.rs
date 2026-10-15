@@ -293,27 +293,27 @@ pub struct TaskReplay {
 
 impl TaskReplay {
     /// Committed *task* revisions in commit order: the source of the history projection.
-    /// Studio preset mutations are committed transactions too, but never task history.
+    /// Studio preset mutations and migrations are committed transactions too, but never
+    /// task history.
     pub fn committed(&self) -> Vec<TaskRevisionRecord> {
-        self.transactions
-            .iter()
-            .filter_map(|t| match &t.status {
-                TxStatus::Committed(record) if record.kind != TransactionKind::Preset => {
-                    Some((**record).clone())
-                }
-                _ => None,
-            })
-            .collect()
+        self.committed_where(|kind| matches!(kind, TransactionKind::Apply | TransactionKind::Undo))
     }
 
     /// Committed Studio preset mutations in commit order.
     pub fn committed_presets(&self) -> Vec<TaskRevisionRecord> {
+        self.committed_where(|kind| kind == TransactionKind::Preset)
+    }
+
+    /// Committed project migrations and their undos in commit order.
+    pub fn committed_migrations(&self) -> Vec<TaskRevisionRecord> {
+        self.committed_where(|kind| kind == TransactionKind::Migration)
+    }
+
+    fn committed_where(&self, kind: impl Fn(TransactionKind) -> bool) -> Vec<TaskRevisionRecord> {
         self.transactions
             .iter()
             .filter_map(|t| match &t.status {
-                TxStatus::Committed(record) if record.kind == TransactionKind::Preset => {
-                    Some((**record).clone())
-                }
+                TxStatus::Committed(record) if kind(record.kind) => Some((**record).clone()),
                 _ => None,
             })
             .collect()
@@ -613,6 +613,7 @@ mod tests {
                 validation_report_sha256: "0".repeat(64),
                 committed_unix: 0,
                 preset: None,
+                migration: None,
             },
         }
     }

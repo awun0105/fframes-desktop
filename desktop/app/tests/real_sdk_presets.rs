@@ -286,7 +286,7 @@ fn real_sdk_preset_snapshots_render_distinctly_and_survive_reopen_and_relocation
         "Preset relocation",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        "0.1.0",
+        manifest.studio_runtime_version(),
     )
     .unwrap();
     // The scaffold ships its own DM Sans in `media/`; drop it (and its manifest entry) so the
@@ -392,7 +392,7 @@ fn real_sdk_preset_snapshots_render_distinctly_and_survive_reopen_and_relocation
         "Legacy",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        "0.1.0",
+        manifest.studio_runtime_version(),
     )
     .unwrap();
     fs::remove_dir_all(legacy_root.join("style")).unwrap();
@@ -423,6 +423,10 @@ fn real_sdk_preset_snapshots_render_distinctly_and_survive_reopen_and_relocation
             .contains("styles"),
         "the legacy Cargo manifest is the pre-M4 template"
     );
+    // Generated with the first instructions, so the SDK builds it with its legacy framework.
+    let mut legacy_manifest = studio_project::open(&legacy_root).unwrap().manifest;
+    legacy_manifest.generated_instruction_version = 1;
+    studio_project::lifecycle::write_manifest(&legacy_root, &legacy_manifest).unwrap();
     let mut legacy = Controller::open(&legacy_root, &paths).unwrap();
     assert!(legacy.project_style().is_none());
     assert!(!legacy_root.join("style").exists());

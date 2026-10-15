@@ -12,7 +12,7 @@ fn create_test_project(root: &std::path::Path) {
         "Export source",
         studio_engine::build_materialization::sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        compatibility.studio_runtime_version(),
     )
     .unwrap();
 }
@@ -152,7 +152,7 @@ fn export_refuses_a_newer_unvalidated_live_source() {
 }
 
 #[test]
-#[ignore = "requires assembled Linux SDK_BUNDLE and compiles/renders the actual generated worker"]
+#[ignore = "requires assembled SDK_BUNDLE and compiles/renders the actual generated worker"]
 fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio() {
     use studio_bootstrap::ProcessTreeManager;
     use studio_engine::build_materialization::sdk_pin;
@@ -172,10 +172,10 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
         "Native export qualification",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        "0.1.0",
+        manifest.studio_runtime_version(),
     )
     .unwrap();
-    let source_path = root.join("src/lib.rs");
+    let source_path = root.join("src/video.rs");
     let template = fs::read_to_string(&source_path).unwrap();
     let audio_map = r#"fframes::AudioMap::from([(
             "tone.wav",
@@ -276,10 +276,10 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
         created_destination,
         "renderer must have started before the race"
     );
+    let raced = raced.unwrap_err();
     assert!(
-        raced
-            .unwrap_err()
-            .contains("destination appeared during export")
+        raced.contains("destination appeared during export"),
+        "{raced}"
     );
     assert_eq!(
         fs::read(&raced_destination).unwrap(),
@@ -288,28 +288,54 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
     );
     fs::remove_file(&raced_destination).unwrap();
 
-    // The generated worker predates export settings, so anything but the default is
-    // refused before rendering instead of silently exporting MPEG-4 in code order.
-    let refused_destination = temporary.path().join("refused.mp4");
-    let refused = export_video(
+    // The template's scenes (intro 3s, story 4s, outro 3s) play in timeline.json's order
+    // and trims, at the requested size and frame rate.
+    let timed_destination = temporary.path().join("timed.mp4");
+    export_video(
         ExportRequest {
             source: controller.freeze_export_source().unwrap(),
             sdk: sdk.clone(),
             builds: builds.clone(),
-            destination: refused_destination.clone(),
+            destination: timed_destination.clone(),
             settings: fframes_studio_protocol::export::ExportSettings {
-                codec: fframes_studio_protocol::export::ExportCodec::H264,
+                scale: 0.5,
+                fps: Some(15),
                 ..Default::default()
             },
-            timing_json: None,
+            timing_json: Some(
+                r#"{"version":1,"clips":[
+                    {"key":"outro","trim_start_frames":0,"trim_end_frames":60},
+                    {"key":"story","trim_start_frames":60,"trim_end_frames":0},
+                    {"key":"intro","trim_start_frames":0,"trim_end_frames":30}]}"#
+                    .into(),
+            ),
         },
         service.clone(),
         processes.clone(),
         Arc::new(ExportControl::default()),
         |_| {},
+    )
+    .unwrap();
+    let timed = probe(&timed_destination);
+    let video = timed["streams"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stream| stream["codec_type"] == "video")
+        .unwrap();
+    assert_eq!(
+        (&video["width"], &video["height"]),
+        (&960.into(), &540.into())
     );
-    assert!(refused.unwrap_err().contains("migrate the project"));
-    assert!(!refused_destination.exists());
+    assert_eq!(video["r_frame_rate"], "15/1");
+    // Outro 1s, story 2s, intro 2s: every scene of a new project is an editable clip (a
+    // key that matched no scene would leave that scene untrimmed and the video longer).
+    let seconds: f64 = timed["format"]["duration"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((seconds - 5.).abs() < 0.1, "{seconds}s instead of 5s");
 
     let frozen = controller.freeze_export_source().unwrap();
     assert_eq!(frozen.revision(), &revision);
@@ -346,24 +372,7 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
     );
     assert!(progress.iter().any(|event| matches!(event, ExportProgress::Complete { revision: exported, .. } if exported == revision.as_str())));
 
-    let probe = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "stream=codec_type,codec_name,width,height",
-            "-of",
-            "json",
-        ])
-        .arg(&destination)
-        .output()
-        .expect("ffprobe is installed in Linux export qualification environment");
-    assert!(
-        probe.status.success(),
-        "{}",
-        String::from_utf8_lossy(&probe.stderr)
-    );
-    let streams: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+    let streams = probe(&destination);
     let streams = streams["streams"].as_array().unwrap();
     assert!(streams.iter().any(|stream| stream["codec_type"] == "video"));
     assert!(streams.iter().any(|stream| stream["codec_type"] == "audio"));
@@ -412,4 +421,161 @@ fn linux_export_renders_the_frozen_saved_revision_to_decodable_video_and_audio()
         String::from_utf8_lossy(&strip.stderr)
     );
     assert!(strip_path.is_file());
+
+    // A project of the earlier SDKs builds with the SDK's legacy framework. Its worker
+    // predates export settings (this scaffold predates export altogether), so anything
+    // but the default is refused before rendering instead of silently exporting MPEG-4
+    // in code order.
+    let legacy_root = temporary.path().join("legacy");
+    legacy_project(&legacy_root, &manifest);
+    let legacy_controller = Controller::open(&legacy_root, &paths).unwrap();
+    let legacy_build = compile_portable_worker_via(
+        &service,
+        Subscriber::new(SubscriberKind::Validation, "legacy export"),
+        &legacy_controller.project,
+        &sdk,
+        manifest.clone(),
+        &builds,
+        &processes,
+    )
+    .unwrap();
+    let legacy_cargo = fs::read_to_string(legacy_build.root.join("Cargo.toml")).unwrap();
+    assert!(legacy_cargo.contains("framework-legacy"), "{legacy_cargo}");
+    let mut legacy_controller = legacy_controller;
+    let revision = legacy_controller.state().source().clone();
+    let build = legacy_controller.begin_job(JobKind::Build).unwrap();
+    legacy_controller
+        .complete(&build, JobResult::Built(revision))
+        .unwrap();
+    let refused_destination = temporary.path().join("refused.mp4");
+    let refused = export_video(
+        ExportRequest {
+            source: legacy_controller.freeze_export_source().unwrap(),
+            sdk: sdk.clone(),
+            builds: builds.clone(),
+            destination: refused_destination.clone(),
+            settings: fframes_studio_protocol::export::ExportSettings {
+                scale: 0.5,
+                ..Default::default()
+            },
+            timing_json: None,
+        },
+        service.clone(),
+        processes.clone(),
+        Arc::new(ExportControl::default()),
+        |_| {},
+    );
+    assert!(refused.unwrap_err().contains("migrate the project"));
+    assert!(!refused_destination.exists());
+
+    // Migrated, the same project builds with the current framework and exports with
+    // settings and a timing document; its source in src/lib.rs is untouched.
+    let lib = fs::read(legacy_root.join("src/lib.rs")).unwrap();
+    let source = legacy_controller.state().source().clone();
+    legacy_controller
+        .migrate_project(&source, &manifest)
+        .unwrap();
+    assert_eq!(fs::read(legacy_root.join("src/lib.rs")).unwrap(), lib);
+    let migrated_build = compile_portable_worker_via(
+        &service,
+        Subscriber::new(SubscriberKind::Validation, "migrated export"),
+        &legacy_controller.project,
+        &sdk,
+        manifest.clone(),
+        &builds,
+        &processes,
+    )
+    .unwrap();
+    let migrated_cargo = fs::read_to_string(migrated_build.root.join("Cargo.toml")).unwrap();
+    assert!(
+        !migrated_cargo.contains("framework-legacy"),
+        "{migrated_cargo}"
+    );
+    let revision = legacy_controller.state().source().clone();
+    let build = legacy_controller.begin_job(JobKind::Build).unwrap();
+    legacy_controller
+        .complete(&build, JobResult::Built(revision))
+        .unwrap();
+    // Like any source change, the migration is exported once it is saved.
+    legacy_controller.checkpoint().unwrap();
+    let migrated_destination = temporary.path().join("migrated.mp4");
+    export_video(
+        ExportRequest {
+            source: legacy_controller.freeze_export_source().unwrap(),
+            sdk: sdk.clone(),
+            builds: builds.clone(),
+            destination: migrated_destination.clone(),
+            settings: fframes_studio_protocol::export::ExportSettings {
+                scale: 0.5,
+                ..Default::default()
+            },
+            // The scaffold has no scenes, so its timing document has no clips.
+            timing_json: Some(r#"{"version":1,"clips":[]}"#.into()),
+        },
+        service,
+        processes,
+        Arc::new(ExportControl::default()),
+        |_| {},
+    )
+    .unwrap();
+    let migrated = probe(&migrated_destination);
+    let video = migrated["streams"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stream| stream["codec_type"] == "video")
+        .unwrap();
+    assert_eq!(
+        (&video["width"], &video["height"]),
+        (&960.into(), &540.into())
+    );
+}
+
+/// The checked-in project of the earlier template, generated with the first instructions.
+fn legacy_project(root: &Path, manifest: &CompatibilityManifest) -> studio_project::OpenProject {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/tests/fixtures/pre_m4_project");
+    let mut project = studio_project::create(
+        root,
+        "Legacy",
+        studio_engine::build_materialization::sdk_pin(manifest),
+        &manifest.fframes_version,
+        manifest.studio_runtime_version(),
+    )
+    .unwrap();
+    fs::remove_dir_all(root.join("style")).unwrap();
+    fs::remove_file(root.join("src/video.rs")).unwrap();
+    for file in [
+        "AGENTS.md",
+        "Cargo.toml",
+        "src/lib.rs",
+        "src/main.rs",
+        "src/bin/studio_worker.rs",
+    ] {
+        fs::copy(fixture.join(file), root.join(file)).unwrap();
+    }
+    project.manifest.generated_instruction_version = 1;
+    studio_project::lifecycle::write_manifest(root, &project.manifest).unwrap();
+    studio_project::open(root).unwrap()
+}
+
+fn probe(path: &Path) -> serde_json::Value {
+    let probe = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,codec_name,width,height,r_frame_rate:format=duration",
+            "-of",
+            "json",
+        ])
+        .arg(path)
+        .output()
+        .expect("ffprobe is installed in the export qualification environment");
+    assert!(
+        probe.status.success(),
+        "{}",
+        String::from_utf8_lossy(&probe.stderr)
+    );
+    serde_json::from_slice(&probe.stdout).unwrap()
 }

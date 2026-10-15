@@ -63,13 +63,14 @@ fn generated_title_identity_geometry_and_source_anchor_survive_managed_render() 
         "M5 managed selection fixture",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        "0.1.0",
+        manifest.studio_runtime_version(),
     )
     .expect("generate current Studio starter project");
 
     let manager = ProcessTreeManager::new();
-    let builds =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/m5-managed-selection-builds");
+    // Short enough for the Windows linker: build-script objects nest about 230 characters
+    // below this directory.
+    let builds = temporary.path().join("builds");
     let build = worker_project::compile_portable_worker(
         &project,
         &sdk,
@@ -158,7 +159,7 @@ fn generated_title_identity_geometry_and_source_anchor_survive_managed_render() 
         .objects
         .iter()
         .find(|object| {
-            object.identity.scene_instance_key == "starter-video"
+            object.identity.scene_instance_key == "intro"
                 && object.identity.component_key == "starter-title"
                 && object.identity.object_key == "headline"
                 && object.identity.repeat_key == "primary"

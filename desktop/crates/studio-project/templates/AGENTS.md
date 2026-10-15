@@ -1,4 +1,4 @@
-# Studio project instructions — version 1
+# Studio project instructions — version 2
 
 Rust and media are the portable source of truth. Keep assets inside media/ and
 ship their licenses. Use the bundled DM Sans font for reproducible text.

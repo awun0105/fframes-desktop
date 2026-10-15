@@ -197,10 +197,12 @@ fn selected_title_prompt_apply_undo_and_reopen_round_trips_identity() {
     assert_eq!(prompts.len(), 1);
     let prompt = prompts[0]["text"].as_str().unwrap();
     assert!(
-        prompt.contains("Requested scope: Element headline"),
+        prompt.contains(
+            "Requested scope: Element scene=intro component=starter-title object=headline"
+        ),
         "{prompt}"
     );
-    assert!(prompt.contains("scene=starter-video"), "{prompt}");
+    assert!(prompt.contains("scene=intro"), "{prompt}");
     assert!(prompt.contains("component=starter-title"), "{prompt}");
     assert!(
         prompt.contains("marker=Some(\"studio-title-source-anchor\")"),
@@ -257,7 +259,7 @@ fn measured_starter_title_scope(
         &project,
         &world.sdk,
         world.manifest.clone(),
-        &world._temp.path().join("m5-selected-title-builds"),
+        &world._temp.path().join("builds"),
         &manager,
     )
     .expect("compile the generated starter using the managed SDK");
@@ -279,7 +281,7 @@ fn measured_starter_title_scope(
         .objects
         .into_iter()
         .find(|object| {
-            object.identity.scene_instance_key == "starter-video"
+            object.identity.scene_instance_key == "intro"
                 && object.identity.component_key == "starter-title"
                 && object.identity.object_key == "headline"
                 && object.identity.repeat_key == "primary"

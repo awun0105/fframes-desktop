@@ -29,6 +29,7 @@ impl StudioShell {
             !self.busy,
             project.is_some(),
             project.is_some_and(|p| p.draft.is_some()),
+            project.is_some_and(|p| p.migration_undo),
         )
     }
 
@@ -99,6 +100,10 @@ impl StudioShell {
                     cx.reveal_path(&project.checkpoint);
                 }
             }
+            OverflowAction::UndoMigration => {
+                let source = project.map(|p| p.source);
+                self.dispatch(Command::UndoMigration(source), cx);
+            }
         }
     }
 
@@ -141,6 +146,7 @@ enum OverflowAction {
     Restore,
     RevealDraft,
     RevealCheckpoint,
+    UndoMigration,
 }
 
 impl OverflowAction {
@@ -152,6 +158,7 @@ impl OverflowAction {
             Self::Restore => "restore",
             Self::RevealDraft => "draft",
             Self::RevealCheckpoint => "reveal-checkpoint",
+            Self::UndoMigration => "undo-migration",
         }
     }
 
@@ -162,21 +169,32 @@ impl OverflowAction {
             Self::Restore => "Restore as copy…",
             Self::RevealDraft => "Reveal retained draft",
             Self::RevealCheckpoint => "Reveal checkpoint",
+            Self::UndoMigration => "Undo migration",
         }
     }
 }
 
 /// Every overflow entry with whether it is available now, under the enable rules the
 /// buttons had: refresh needs an idle shell; checkpoint and restore need an idle shell and
-/// a project; the draft needs a retained draft; the checkpoint reveal needs a project.
-/// Unavailable entries stay in the menu as disabled rows.
-fn overflow_actions(idle: bool, has_project: bool, has_draft: bool) -> Vec<(OverflowAction, bool)> {
+/// a project; the draft needs a retained draft; the checkpoint reveal needs a project;
+/// undoing the migration needs an idle shell and a migration to undo. Unavailable entries
+/// stay in the menu as disabled rows.
+fn overflow_actions(
+    idle: bool,
+    has_project: bool,
+    has_draft: bool,
+    migration_undo: bool,
+) -> Vec<(OverflowAction, bool)> {
     vec![
         (OverflowAction::Refresh, idle),
         (OverflowAction::Checkpoint, idle && has_project),
         (OverflowAction::Restore, idle && has_project),
         (OverflowAction::RevealDraft, has_project && has_draft),
         (OverflowAction::RevealCheckpoint, has_project),
+        (
+            OverflowAction::UndoMigration,
+            idle && has_project && migration_undo,
+        ),
     ]
 }
 
@@ -203,10 +221,10 @@ mod tests {
     #[test]
     fn a_click_on_an_action_that_became_unavailable_is_inert() {
         use OverflowAction::*;
-        let idle = overflow_actions(true, true, false);
+        let idle = overflow_actions(true, true, false, false);
         assert_eq!(enabled_overflow_action(&idle, 1), Some(Checkpoint));
         // The shell went busy after the menu opened.
-        let busy = overflow_actions(false, true, false);
+        let busy = overflow_actions(false, true, false, false);
         assert_eq!(enabled_overflow_action(&busy, 1), None);
         assert_eq!(enabled_overflow_action(&busy, 4), Some(RevealCheckpoint));
         assert_eq!(enabled_overflow_action(&busy, 9), None);
@@ -216,51 +234,55 @@ mod tests {
     fn overflow_actions_follow_the_old_enable_rules() {
         use OverflowAction::*;
         assert_eq!(
-            overflow_actions(true, true, true),
+            overflow_actions(true, true, true, false),
             vec![
                 (Refresh, true),
                 (Checkpoint, true),
                 (Restore, true),
                 (RevealDraft, true),
-                (RevealCheckpoint, true)
+                (RevealCheckpoint, true),
+                (UndoMigration, false)
             ]
         );
         assert_eq!(
-            overflow_actions(true, true, false),
+            overflow_actions(true, true, false, false),
             vec![
                 (Refresh, true),
                 (Checkpoint, true),
                 (Restore, true),
                 (RevealDraft, false),
-                (RevealCheckpoint, true)
+                (RevealCheckpoint, true),
+                (UndoMigration, false)
             ]
         );
         assert_eq!(
-            overflow_actions(true, false, false),
+            overflow_actions(true, false, false, false),
             vec![
                 (Refresh, true),
                 (Checkpoint, false),
                 (Restore, false),
                 (RevealDraft, false),
-                (RevealCheckpoint, false)
+                (RevealCheckpoint, false),
+                (UndoMigration, false)
             ]
         );
         assert_eq!(
-            overflow_actions(false, true, false),
+            overflow_actions(false, true, false, false),
             vec![
                 (Refresh, false),
                 (Checkpoint, false),
                 (Restore, false),
                 (RevealDraft, false),
-                (RevealCheckpoint, true)
+                (RevealCheckpoint, true),
+                (UndoMigration, false)
             ]
         );
         assert!(
-            overflow_actions(false, false, false)
+            overflow_actions(false, false, false, false)
                 .iter()
                 .all(|(_, on)| !on)
         );
-        let ids: Vec<_> = overflow_actions(true, true, true)
+        let ids: Vec<_> = overflow_actions(true, true, true, false)
             .iter()
             .map(|(a, _)| a.id())
             .collect();
@@ -271,8 +293,13 @@ mod tests {
                 "checkpoint",
                 "restore",
                 "draft",
-                "reveal-checkpoint"
+                "reveal-checkpoint",
+                "undo-migration"
             ]
         );
+        // Undoing a migration needs one to undo and an idle shell.
+        use OverflowAction::UndoMigration;
+        assert!(overflow_actions(true, true, false, true).contains(&(UndoMigration, true)));
+        assert!(overflow_actions(false, true, false, true).contains(&(UndoMigration, false)));
     }
 }

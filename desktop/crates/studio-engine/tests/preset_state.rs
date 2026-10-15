@@ -30,7 +30,7 @@ fn light() -> Fx {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        compatibility.studio_runtime_version(),
     )
     .unwrap();
     Fx { temp, root, paths }

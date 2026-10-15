@@ -27,8 +27,10 @@ use std::{
 };
 use studio_project::{OpenProject, checkpoint::Checkpoints, revision::FileKind};
 
+mod migration;
 mod preset;
 mod promotion;
+pub use migration::{MigrationOutcome, ProjectMigration, TimingEditing};
 pub use preset::{PresetMutation, PresetOutcome};
 pub use promotion::{CompletionOutcome, Promotion, UndoPreparation};
 
@@ -86,6 +88,8 @@ pub struct Controller {
     agent_scope: Option<AgentScope>,
     agent: AgentTaskManager,
     drafts: DraftStore,
+    /// Committed project migrations and their undos, oldest first.
+    migrations: Vec<crate::edit_transaction::TaskRevisionRecord>,
 }
 
 /// The process scope of one agent task, keyed by the task that owns it so cleanup can
@@ -193,6 +197,7 @@ impl Controller {
             (project, source_degraded) = open_source(root)?;
         }
         let task_records = task_replay.committed();
+        let migrations = task_replay.committed_migrations();
         let history_was_available = previous.is_some();
         if let Some(previous) = &previous {
             // A relocated project must still hold what the history last saw (judged
@@ -349,8 +354,10 @@ impl Controller {
             agent_scope: None,
             agent,
             drafts,
+            migrations,
         };
         controller.heal_manifest_reference();
+        controller.heal_migration_manifest();
         Ok(controller)
     }
     /// Read-only look at everything app-local that decides whether this project can be
@@ -478,7 +485,8 @@ impl Controller {
                 manifest_path.display()
             ))
         })?;
-        if self.project.manifest.sdk != crate::build_materialization::sdk_pin(&manifest) {
+        if crate::build_materialization::framework_for(&self.project.manifest, &manifest).is_none()
+        {
             return Err(EngineError::Diagnostic(
                 "SDK pin mismatch; select the project's compatible SDK".into(),
             ));

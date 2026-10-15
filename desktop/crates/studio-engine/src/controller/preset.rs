@@ -140,6 +140,7 @@ impl Controller {
             remove_dirs: Vec::new(),
             reverses: Vec::new(),
             preset: Some(plan.provenance.clone()),
+            migration: None,
         };
         let intent = match plan_transaction(
             &self.project.root,
@@ -260,7 +261,7 @@ impl Controller {
 }
 
 /// Writes the after bytes into a draft copy of the current source.
-fn write_changes(draft: &Path, changes: &[FileChange]) -> std::io::Result<()> {
+pub(super) fn write_changes(draft: &Path, changes: &[FileChange]) -> std::io::Result<()> {
     for change in changes {
         let target = draft.join(change.path.as_str());
         match &change.bytes {

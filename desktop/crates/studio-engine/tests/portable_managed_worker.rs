@@ -27,7 +27,7 @@ fn portable_project_builds_after_source_and_sdk_relocation() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        compatibility.studio_runtime_version(),
     )
     .unwrap();
     let original = temp.path().join("test.txt");

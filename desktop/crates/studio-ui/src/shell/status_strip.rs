@@ -1,6 +1,7 @@
 //! The notices under the header and the status strip: errors and the current job.
 
 use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Styled, div, px};
+use studio_engine::ProjectMigration;
 use studio_engine::engine::backend::Command;
 use studio_engine::services::export_service::ExportProgress;
 use studio_theme::{METRICS, TextStyle, text_style};
@@ -106,6 +107,40 @@ impl StudioShell {
             notices.push(
                 Notice::new("recovery-notice", Tone::Warning, text.clone()).into_any_element(),
             );
+        }
+        match &p.migration {
+            ProjectMigration::Current => (),
+            ProjectMigration::Available => {
+                let source = p.source.clone();
+                notices.push(
+                    Notice::new(
+                        "migration",
+                        Tone::Info,
+                        "This project uses the earlier framework · migrate it to edit timing and export settings",
+                    )
+                    .details(
+                        "Migration updates Cargo.toml, the Studio worker, src/main.rs, AGENTS.md and studio.json; your scenes in src/lib.rs stay as they are. Undo it from More actions.",
+                    )
+                    .action(self.action_button(
+                        "migrate-project",
+                        "Migrate project",
+                        enabled,
+                        false,
+                        None,
+                        cx,
+                        move |s, cx| s.dispatch(Command::Migrate(Some(source.clone())), cx),
+                    ))
+                    .into_any_element(),
+                );
+            }
+            ProjectMigration::Blocked(reason) => notices.push(
+                Notice::new(
+                    "migration",
+                    Tone::Warning,
+                    format!("This project uses the earlier framework · {reason}"),
+                )
+                .into_any_element(),
+            ),
         }
         notices
     }

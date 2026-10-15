@@ -15,7 +15,7 @@ fn relocation_relinks_but_duplicate_existing_id_is_never_attached() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        compatibility.studio_runtime_version(),
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();
@@ -65,7 +65,7 @@ fn both_unversioned_histories_reopen_relocate_and_export_without_rewriting_check
                 "Video",
                 sdk_pin(&compatibility),
                 &compatibility.fframes_version,
-                "0.1.0",
+                compatibility.studio_runtime_version(),
             )
             .unwrap();
             let controller = Controller::open(&root, &paths).unwrap();

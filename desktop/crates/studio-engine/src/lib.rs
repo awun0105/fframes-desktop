@@ -18,6 +18,7 @@ pub mod playback_clock;
 pub mod preset_state;
 pub mod presets;
 pub mod preview_state;
+pub mod project_migration;
 pub mod project_presentation;
 pub mod providers;
 pub mod sdk_setup;
@@ -35,8 +36,8 @@ pub use agent_task::{
 };
 pub use canvas_selection::*;
 pub use controller::{
-    CompletionOutcome, Controller, DraftPreparationChoice, PresetMutation, PresetOutcome,
-    Promotion, RecoveryStatus, UndoPreparation,
+    CompletionOutcome, Controller, DraftPreparationChoice, MigrationOutcome, PresetMutation,
+    PresetOutcome, ProjectMigration, Promotion, RecoveryStatus, TimingEditing, UndoPreparation,
 };
 pub use edit_transaction::{
     ApplyGate, Boundary, ConflictReport, Fault, FileDelta, FileState, NoHooks, PlanError,

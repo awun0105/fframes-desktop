@@ -16,7 +16,7 @@ fn complete_foundation_flow_retains_source_assets_draft_and_checkpoint() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        compatibility.studio_runtime_version(),
     )
     .unwrap();
     let asset = temp.path().join("asset.dat");

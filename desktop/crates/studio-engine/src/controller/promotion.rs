@@ -318,6 +318,7 @@ impl Controller {
             remove_dirs: Vec::new(),
             reverses: Vec::new(),
             preset: None,
+            migration: None,
         };
         let publication = Publication {
             captured,
@@ -513,7 +514,11 @@ impl Controller {
         })
     }
 
-    fn write_object(&self, target: &std::path::Path, state: &FileState) -> Result<(), EngineError> {
+    pub(super) fn write_object(
+        &self,
+        target: &std::path::Path,
+        state: &FileState,
+    ) -> Result<(), EngineError> {
         fs::create_dir_all(target.parent().expect("draft paths have parents"))?;
         match fs::remove_file(target) {
             Ok(()) => (),
@@ -595,6 +600,7 @@ impl Controller {
             remove_dirs: preparation.remove_dirs.clone(),
             reverses: preparation.reverses.clone(),
             preset: None,
+            migration: None,
         };
         let publication = Publication {
             captured,

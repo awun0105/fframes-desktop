@@ -129,6 +129,9 @@ mod renderer;
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::*;
 
+/// The version of this crate, for workers that report which fframes they were built with.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 // Methods that we are not pub use ::* should be declared here:
 pub mod animation;
 pub mod diagnostics;

@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use crate::{ProjectPath, revision::excluded};
 
 pub const SCHEMA_VERSION: u32 = 1;
+/// Version of the generated instructions and Studio integration (worker, timing opt-in)
+/// a new project gets. Projects below it build against the SDK's legacy framework until
+/// they are migrated.
+pub const CURRENT_INSTRUCTION_VERSION: u32 = 2;
 pub const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 
 /// Corrective diagnostics retain a native filename and a portable field name.

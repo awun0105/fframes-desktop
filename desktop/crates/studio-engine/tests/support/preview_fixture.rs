@@ -23,7 +23,7 @@ pub fn create(root: &Path, manifest: &CompatibilityManifest) {
         "Timeline and audio fixture",
         studio_engine::build_materialization::sdk_pin(manifest),
         &manifest.fframes_version,
-        "0.1.0",
+        manifest.studio_runtime_version(),
     )
     .unwrap();
     fs::write(root.join("src/lib.rs"), SOURCE).unwrap();

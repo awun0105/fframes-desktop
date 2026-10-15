@@ -39,11 +39,15 @@ class ArtifactTests(unittest.TestCase):
         raw = json.loads((assembly.ROOT / "desktop/packaging/sdk/phase-zero-sdk.json").read_text())
         self.assertNotIn("preview_contract_versions", raw)
         canonical = json.dumps(raw, separators=(",", ":"))
-        self.assertEqual(__import__("hashlib").sha256(canonical.encode()).hexdigest(), "ea63cd1fcc3487be84bf7100cc219b8498585e29a3dc8b908f3e418f8f85884a")
+        self.assertEqual(__import__("hashlib").sha256(canonical.encode()).hexdigest(), "69844c9c836606ee4ad359616e359af1d1f9bba9c03f29d323ed2d41eee53ffd")
         fframes_version = tomllib.loads((assembly.ROOT / "fframes/Cargo.toml").read_text())["package"]["version"]
         cargo_fframes_version = tomllib.loads((assembly.ROOT / "cargo-fframes/Cargo.toml").read_text())["package"]["version"]
         self.assertEqual(raw["fframes_version"], fframes_version)
         self.assertEqual(raw["cargo_fframes_version"], cargo_fframes_version)
+        runtime_version = tomllib.loads((assembly.ROOT / "fframes-studio-runtime/Cargo.toml").read_text())["package"]["version"]
+        protocol_version = tomllib.loads((assembly.ROOT / "fframes-studio-protocol/Cargo.toml").read_text())["package"]["version"]
+        self.assertEqual(raw["runtime_version"], runtime_version)
+        self.assertEqual(protocol_version, runtime_version)
         fixture = assembly.ROOT / "desktop/fixtures/annotated-video-overlay"
         fixture_manifest = tomllib.loads((fixture / "Cargo.toml").read_text())
         fixture_lock = tomllib.loads((fixture / "Cargo.lock").read_text())
