@@ -57,6 +57,51 @@ impl Drop for Owned {
     }
 }
 
+/// `ps` rows of `root`, its descendants and every process sharing a process group with
+/// them (owned children run in their own groups; a reparented group member is still
+/// found), with state and age, to name a process that outlives its owner.
+fn process_tree(root: u32) -> String {
+    let Ok(output) = Command::new("ps")
+        .args(["-eo", "pid=,ppid=,pgid=,stat=,etimes=,args="])
+        .output()
+    else {
+        return "ps could not run".to_owned();
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let rows: Vec<(u32, u32, u32, &str)> = text
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let pid = fields.next()?.parse().ok()?;
+            let ppid = fields.next()?.parse().ok()?;
+            let pgid = fields.next()?.parse().ok()?;
+            Some((pid, ppid, pgid, line.trim()))
+        })
+        .collect();
+    let mut tree = vec![root];
+    loop {
+        let known = tree.len();
+        for &(pid, ppid, _, _) in &rows {
+            if tree.contains(&ppid) && !tree.contains(&pid) {
+                tree.push(pid);
+            }
+        }
+        if tree.len() == known {
+            break;
+        }
+    }
+    let groups: Vec<u32> = rows
+        .iter()
+        .filter(|row| tree.contains(&row.0))
+        .map(|row| row.2)
+        .collect();
+    rows.iter()
+        .filter(|row| tree.contains(&row.0) || groups.contains(&row.2))
+        .map(|row| row.3)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn spawn(command: &mut Command) -> Owned {
     use std::os::unix::process::CommandExt;
     command.process_group(0);
@@ -560,9 +605,20 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     // Only the worker of the displayed preview is still owned: no adapter, no tool worker.
     // The task's evidence workers are released when it ends; their teardown is
     // asynchronous, so wait for it instead of sampling one instant.
-    telemetry.wait("only the displayed worker to remain owned", |v| {
-        v["panel"]["owned_processes"].as_u64().unwrap_or(0) <= 1
-    });
+    let deadline = Instant::now() + WAIT;
+    while telemetry
+        .read()
+        .is_none_or(|v| v["panel"]["owned_processes"].as_u64().unwrap_or(0) > 1)
+    {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for only the displayed worker to remain owned; \
+             processes of the studio:\n{}\nlast panel: {:?}",
+            process_tree(_app.0.id()),
+            telemetry.read().map(|v| v["panel"].clone())
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
     // The scripted peer was started for the one task (Undo launches no agent).
     let starts = fs::read_to_string(evidence.join("starts")).unwrap_or_default();
     assert_eq!(starts.lines().count(), 1, "{starts:?}");
