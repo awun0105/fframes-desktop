@@ -54,6 +54,14 @@ impl ConversationPanel {
             self.section(&g.headline)
                 .children(g.steps.iter().map(|s| self.line(s.clone()))),
         );
+        // The panel header, where notices usually show, is out of view behind the frame.
+        if let Some(notice) = &self.notice {
+            column = column.child(Notice::new(
+                "agent-setup-notice",
+                UiTone::Warning,
+                notice.clone(),
+            ));
+        }
         if let Some(error) = &self.settings_error {
             column = column.child(Notice::new(
                 "agent-settings-error",
