@@ -272,30 +272,34 @@ impl EngineHandle {
                     ));
                     return;
                 };
-                let (source, timing_json) = {
+                let prepared = {
                     let controller = controller.lock();
-                    let source = controller.freeze_export_source();
-                    (source, controller.timing_for_export())
+                    controller
+                        .freeze_export_source()
+                        .map_err(|error| error.to_string())
+                        .and_then(|source| {
+                            controller
+                                .timing_for_export()
+                                .map(|timing| (source, timing))
+                        })
                 };
                 drop(controller);
-                let result = source
-                    .map_err(|error| error.to_string())
-                    .and_then(|source| {
-                        export_video(
-                            ExportRequest {
-                                source,
-                                sdk,
-                                builds: paths.builds(),
-                                destination,
-                                settings: Default::default(),
-                                timing_json,
-                            },
-                            service,
-                            processes,
-                            control.clone(),
-                            send,
-                        )
-                    });
+                let result = prepared.and_then(|(source, timing_json)| {
+                    export_video(
+                        ExportRequest {
+                            source,
+                            sdk,
+                            builds: paths.builds(),
+                            destination,
+                            settings: Default::default(),
+                            timing_json,
+                        },
+                        service,
+                        processes,
+                        control.clone(),
+                        send,
+                    )
+                });
                 if let Err(error) = result {
                     send(if control.is_cancelled() {
                         ExportProgress::Cancelled

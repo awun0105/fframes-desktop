@@ -35,8 +35,9 @@ use studio_bootstrap::ProcessTreeManager;
 use studio_project::{checkpoint::Checkpoints, revision::TIMING_FILE};
 use studio_sdk::CompatibilityManifest;
 
-/// The timing generation a candidate's worker plays its own `timeline.json` under.
-const CANDIDATE_TIMING_GENERATION: u64 = 1;
+/// The timing generation a candidate's worker plays its own `timeline.json` under; no
+/// session reaches it, so a cached frame of this layout never matches a session retime.
+const CANDIDATE_TIMING_GENERATION: u64 = u64::MAX;
 
 pub struct CandidateRunConfig {
     pub service: BuildService,

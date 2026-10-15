@@ -211,7 +211,7 @@ fn timing_edit_after_a_build_still_exports_and_plays_the_edited_document() {
     c.freeze_export_source().unwrap();
     assert_eq!(
         c.timing_for_export(),
-        None,
+        Ok(None),
         "no clips export the code order"
     );
 
@@ -227,9 +227,25 @@ fn timing_edit_after_a_build_still_exports_and_plays_the_edited_document() {
         .expect("a timing edit keeps the built code exportable");
     assert_eq!(frozen.revision(), c.state().accepted());
     assert_eq!(frozen.live_source_warning(), None);
-    let exported = TimingDoc::from_json(&c.timing_for_export().unwrap()).unwrap();
+    let exported = TimingDoc::from_json(&c.timing_for_export().unwrap().unwrap()).unwrap();
     assert_eq!(exported, live(&f));
     assert_eq!(exported.clips[2].trim_end_frames, 5);
+}
+
+#[test]
+fn timing_export_refuses_built_code_that_was_never_saved_or_an_invalid_document() {
+    let f = fixture();
+    let mut c = opened(&f);
+    fs::write(f.root.join("src/lib.rs"), "// unsaved code\n").unwrap();
+    built(&mut c);
+    let error = c.freeze_export_source().err().expect("refused").to_string();
+    assert!(error.contains("unsaved, unvalidated source"), "{error}");
+
+    let f = fixture();
+    fs::write(f.root.join(TIMING_FILE), "{ not json").unwrap();
+    let c = Controller::open(&f.root, &f.paths).unwrap();
+    let error = c.timing_for_export().unwrap_err();
+    assert!(error.contains(TIMING_FILE), "{error}");
 }
 
 #[test]

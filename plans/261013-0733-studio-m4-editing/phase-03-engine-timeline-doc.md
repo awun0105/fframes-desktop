@@ -79,7 +79,12 @@ Cap `editor_edits.rs`: snapshot history; `pause()`/`resume()` bracket a drag int
   before, but accepts it when its build revision equals the current one, so timing
   edits after a build or publication do not block an export. The worker reads only
   `--timing-file`, so the frozen tree's `timeline.json` is never played; the export
-  plays the session's document (`timing_for_export`, `None` without clips).
+  plays the session's document (`timing_for_export`: `None` without clips, an error for
+  an invalid document). A candidate's worker uses timing generation `u64::MAX`, which
+  no session reaches.
+- **Publication.** An agent edit that publishes a new `timeline.json` reloads the session
+  on the next scan with its own notice; the export and later edits use the published
+  document.
 - **Promotion.** `learn_timeline` also accepts the adopted preview of the current
   promotion, whose tag carries the task generation; editing is enabled after an agent
   publication without a rebuild.

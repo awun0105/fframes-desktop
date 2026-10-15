@@ -21,6 +21,8 @@ use studio_project::revision::TIMING_FILE;
 
 /// Shown when the live file changed under the session.
 const CHANGED_OUTSIDE: &str = "timeline.json changed outside the studio; the timeline was reloaded and its undo history cleared";
+/// Shown when an agent edit published a new document.
+const PUBLISHED_BY_AGENT: &str = "An agent edit published a new timeline.json; the timeline was reloaded and its undo history cleared";
 
 impl Controller {
     /// Whether the timeline can be edited now, with the reason when it cannot.
@@ -104,13 +106,14 @@ impl Controller {
     }
 
     /// The document an export plays: `None` (the code order) unless it has clips, so a
-    /// project whose worker cannot export timing still exports without an edit.
-    pub fn timing_for_export(&self) -> Option<String> {
-        self.timing
+    /// project whose worker cannot export timing still exports without an edit. An
+    /// invalid document refuses the export with its reason.
+    pub fn timing_for_export(&self) -> Result<Option<String>, String> {
+        let doc = self
+            .timing
             .doc()
-            .ok()
-            .filter(|doc| !doc.clips.is_empty())
-            .map(TimingDoc::to_json)
+            .map_err(|error| format!("{error}; fix or remove {TIMING_FILE} to export"))?;
+        Ok((!doc.clips.is_empty()).then(|| doc.to_json()))
     }
 
     /// Applies one timeline command. Edits outside a gesture are written at once; inside
@@ -264,8 +267,18 @@ impl Controller {
             .timing_file()
             .map(|file| file.sha256.clone());
         if !self.timing.is_known(live.as_deref()) {
+            let state = self.state();
+            let published = state
+                .task_history()
+                .head()
+                .is_some_and(|record| record.published == *state.source());
+            let reason = if published {
+                PUBLISHED_BY_AGENT
+            } else {
+                CHANGED_OUTSIDE
+            };
             let root = self.project.root.clone();
-            self.timing.reload(&root, CHANGED_OUTSIDE.into());
+            self.timing.reload(&root, reason.into());
         }
     }
 }

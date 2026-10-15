@@ -189,6 +189,101 @@ fn the_adopted_preview_of_a_promotion_enables_timeline_editing() {
     assert_eq!(c.timeline_snapshot().editing, TimingEditing::Enabled);
 }
 
+/// The timeline of `t` with scenes `intro` (30 frames), `main` (60) and `outro` (30).
+fn three_scenes(t: &OperationTag) -> PreviewTimelineResponse {
+    let mut start = 0;
+    let scenes = [("intro", 30), ("main", 60), ("outro", 30)]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (key, frames))| {
+            let scene = PreviewSceneInfo {
+                instance_id: format!("scene-{index}"),
+                editor_instance_key: Some(key.into()),
+                index,
+                name: key.into(),
+                full_name: key.into(),
+                start_frame: start,
+                end_frame: start + frames,
+                start_seconds: start as f32 / 30.,
+                end_seconds: (start + frames) as f32 / 30.,
+                clip: Some(PreviewClipTiming {
+                    timing_key: key.into(),
+                    clip_index: 0,
+                    trim_start_frames: 0,
+                    trim_end_frames: 0,
+                    scene_index: Some(index),
+                    scene_frames: Some(frames),
+                }),
+            };
+            start += frames;
+            scene
+        })
+        .collect();
+    PreviewTimelineResponse {
+        scenes,
+        ..ready(t, 0, 0, 120).timeline
+    }
+}
+
+const PUBLISHED_TIMING: &str = "{\"version\":1,\"clips\":[{\"key\":\"outro\",\"trim_start_frames\":0,\"trim_end_frames\":0},{\"key\":\"intro\",\"trim_start_frames\":0,\"trim_end_frames\":0}]}\n";
+
+#[test]
+fn a_published_timeline_json_is_what_the_session_exports_and_edits() {
+    use studio_engine::timing::{TimelineCommand, TimingDoc, TrimEdge};
+    let f = fixture();
+    let mut c = open_retrying(&f.root, &f.paths).unwrap();
+    let base = c.begin_job(JobKind::Build).unwrap();
+    c.complete(&base, JobResult::Built(base.base_source.clone()))
+        .unwrap();
+    c.learn_timeline(&base, &three_scenes(&base));
+    let (_context, captured, report) = validated(&f, &mut c, "reorder", |draft| {
+        fs::write(draft.join("timeline.json"), PUBLISHED_TIMING).unwrap()
+    });
+    let CompletionOutcome::Applied(promotion) =
+        c.complete_validated_task(&captured, &report).unwrap()
+    else {
+        panic!("auto apply")
+    };
+    c.reconcile().unwrap();
+    let published = TimingDoc::from_json(PUBLISHED_TIMING).unwrap();
+    let exported = c.timing_for_export().unwrap().expect("published clips");
+    assert_eq!(TimingDoc::from_json(&exported).unwrap(), published);
+    let notice = c.timeline_snapshot().notice.expect("history cleared");
+    assert!(notice.starts_with("An agent edit published"), "{notice}");
+
+    let auth = promotion.authorization.clone().unwrap();
+    c.learn_timeline(auth.tag(), &three_scenes(auth.tag()));
+    c.timeline_command(TimelineCommand::Trim {
+        clip: 0,
+        edge: TrimEdge::End,
+        frames: 5,
+    })
+    .unwrap();
+    let live =
+        TimingDoc::from_json(&fs::read_to_string(f.root.join("timeline.json")).unwrap()).unwrap();
+    assert_eq!(live.clips[0].key, "outro");
+    assert_eq!(live.clips[0].trim_end_frames, 5);
+}
+
+#[test]
+fn export_refuses_a_published_edit_whose_code_changed_since() {
+    let (f, mut c, _promotion, _p, _base) = applied();
+    fs::write(
+        f.root.join("src/lib.rs"),
+        "// changed after the publication\n",
+    )
+    .unwrap();
+    c.reconcile().unwrap();
+    let build = c.begin_job(JobKind::Build).unwrap();
+    c.complete(&build, JobResult::Built(build.base_source.clone()))
+        .unwrap();
+    let error = c.freeze_export_source().err().expect("refused").to_string();
+    assert!(
+        error.contains("is not the current project source"),
+        "{error}"
+    );
+}
+
 #[test]
 fn any_later_source_change_revokes_the_authorization() {
     let (f, mut c, promotion, mut p, _base) = applied();
