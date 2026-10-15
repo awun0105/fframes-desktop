@@ -87,7 +87,8 @@ struct Observation {
     telemetry: Option<PathBuf>,
     /// Test-only injection for fixtures (never reachable from the product entry or the
     /// settings file): treats the adapter's writers as process-group contained WITHOUT
-    /// qualification evidence, and the panel says so.
+    /// qualification evidence, and the panel says so. Debug builds only: a release build
+    /// refuses it and exits.
     #[arg(
         long = "observe-test-writer-containment",
         value_name = "LABEL",
@@ -177,11 +178,22 @@ fn observed(observation: Observation) -> Option<Observed> {
     else {
         return None;
     };
-    let test_ownership = test_writer_containment.map(|label| {
-        studio_bootstrap::WriterOwnership::ProcessGroupContained {
-            qualification: format!("test-injection:{label}"),
+    // A release build never injects ownership: the capture gate must rest on the
+    // containment the launch verified.
+    let test_ownership = match test_writer_containment {
+        None => None,
+        Some(label) if cfg!(debug_assertions) => {
+            Some(studio_bootstrap::WriterOwnership::ProcessGroupContained {
+                qualification: format!("test-injection:{label}"),
+            })
         }
-    });
+        Some(_) => {
+            eprintln!(
+                "--observe-test-writer-containment is a test injection and only exists in debug builds"
+            );
+            std::process::exit(2);
+        }
+    };
     Some(Observed {
         project,
         output,
