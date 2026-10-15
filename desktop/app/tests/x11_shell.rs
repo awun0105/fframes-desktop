@@ -316,15 +316,51 @@ fn button_centre(value: &Value, name: &str) -> (u32, u32) {
 }
 
 /// Clicks a button or tab by the bounds the panel measured once they stopped changing.
+/// The agent tab is short in a 1280x800 window and its tabs scroll: a control below or
+/// above the tab's box is wheeled into view first.
 fn click_panel_button(screen: &Screen, window: &str, telemetry: &Telemetry, name: &str) {
-    let measured = telemetry.settled(name, |v| v["panel"]["buttons"][name].clone());
-    let (x, y) = button_centre(&measured["panel"], name);
-    // The panel scrolls, so a measured control can sit outside the 1280x800 window.
-    assert!(
-        x < 1280 && y < 800,
-        "the {name} button is outside the window: {measured}"
-    );
-    screen.click(window, (x, y));
+    for _ in 0..40 {
+        let measured = telemetry.settled(name, |v| {
+            let (button, agent) = (&v["panel"]["buttons"][name], &v["sections"]["agent"]);
+            if button.is_null() || agent.is_null() {
+                Value::Null
+            } else {
+                serde_json::json!([button, agent])
+            }
+        });
+        let (x, y) = button_centre(&measured["panel"], name);
+        let agent = measured["sections"]["agent"]
+            .as_array()
+            .unwrap_or_else(|| panic!("no measured agent tab: {measured}"));
+        let at = |i: usize| agent[i].as_f64().expect("finite bounds");
+        let (top, bottom) = (at(1), at(1) + at(3));
+        let wheel = if f64::from(y) > bottom - 4. {
+            "5"
+        } else if f64::from(y) < top + 4. {
+            "4"
+        } else {
+            assert!(
+                x < 1280 && y < 800,
+                "the {name} button is outside the window: {measured}"
+            );
+            screen.click(window, (x, y));
+            return;
+        };
+        let centre = (
+            (at(0) + at(2) / 2.).round() as u32,
+            ((top + bottom) / 2.).round() as u32,
+        );
+        screen.xdotool(&[
+            "mousemove",
+            "--window",
+            window,
+            &centre.0.to_string(),
+            &centre.1.to_string(),
+            "click",
+            wheel,
+        ]);
+    }
+    panic!("the {name} button never scrolled into the agent tab");
 }
 
 fn click_prompt(screen: &Screen, window: &str, telemetry: &Telemetry) {

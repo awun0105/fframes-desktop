@@ -108,3 +108,50 @@ fn the_sections_fill_their_boxes(cx: &mut gpui::TestAppContext) {
         "agent {agent:?} in the sidebar {sidebar:?}"
     );
 }
+
+fn inside(t: &Value, area: &[f64; 4], control: &Value) -> bool {
+    let Some(b) = control.as_array() else {
+        panic!("not measured: {control} in {:#}", t["panel"]);
+    };
+    let b: Vec<f64> = b.iter().map(|v| v.as_f64().unwrap()).collect();
+    b[0] >= area[0]
+        && b[1] >= area[1]
+        && b[0] + b[2] <= area[0] + area[2] + 0.5
+        && b[1] + b[3] <= area[1] + area[3] + 0.5
+}
+
+/// In a 1280x800 window the sidebar's Agent tab is short: its tabs, the pinned composer
+/// and the review policy control still lie inside it.
+#[gpui::test]
+fn the_agent_tab_keeps_its_controls_in_a_short_window(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::with_agent(cx);
+    studio.resize(1280., 800.);
+    studio.report_button_bounds();
+    let t = studio.wait("the agent tab measured", |t| {
+        t["panel"]["buttons"]["agent-tab-Project"].is_array()
+            && t["panel"]["prompt_bounds"].is_array()
+            && t["viewport"][1].as_f64() == Some(800.)
+    });
+    let agent = bounds(&t, "agent");
+    for control in [
+        &t["panel"]["buttons"]["agent-tab-Chat"],
+        &t["panel"]["buttons"]["agent-tab-Project"],
+        &t["panel"]["prompt_bounds"],
+    ] {
+        assert!(
+            inside(&t, &agent, control),
+            "{control} outside the agent tab {agent:?}"
+        );
+    }
+    let tab = &t["panel"]["buttons"]["agent-tab-Project"];
+    let at = |i: usize| tab[i].as_f64().unwrap() as f32;
+    studio.click((at(0) + at(2) / 2., at(1) + at(3) / 2.));
+    let t = studio.wait("the Project tab", |t| {
+        t["panel"]["buttons"]["agent-policy"].is_array()
+    });
+    let policy = &t["panel"]["buttons"]["agent-policy"];
+    assert!(
+        inside(&t, &agent, policy),
+        "{policy} outside the agent tab {agent:?}"
+    );
+}

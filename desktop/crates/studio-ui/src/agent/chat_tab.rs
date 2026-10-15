@@ -231,13 +231,17 @@ impl ConversationPanel {
         controls: &Controls,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        // Everything above the composer shrinks (the transcript first) and is clipped when
+        // the panel is short; the composer stays pinned at the bottom.
         let mut column = div()
             .flex_1()
             .min_h_0()
+            .overflow_hidden()
             .flex()
             .flex_col()
             .gap(px(8.))
-            .p(px(12.));
+            .px(px(12.))
+            .pt(px(12.));
         let g = guidance(
             &snapshot.adapter.readiness,
             snapshot.adapter.provider.is_some(),
@@ -462,8 +466,20 @@ impl ConversationPanel {
             }
             column = column.child(queue);
         }
-        column
-            .child(self.prompt_form(controls, cx))
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(column)
+            .child(
+                div()
+                    .flex_none()
+                    .px(px(12.))
+                    .pt(px(8.))
+                    .pb(px(12.))
+                    .child(self.prompt_form(controls, cx)),
+            )
             .into_any_element()
     }
 

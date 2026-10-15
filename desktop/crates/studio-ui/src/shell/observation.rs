@@ -76,6 +76,7 @@ impl StudioShell {
                         "canvas": shell.canvas_telemetry(),
                         "buttons": serde_json::to_value(&shell.button_bounds)
                             .unwrap_or(serde_json::Value::Null),
+                        "sections": serde_json::json!(shell.section_bounds),
                         "ruler_bounds": shell.timeline.read(cx).qualification_metrics()["ruler_bounds"].clone(),
                         "timeline_selection": shell.timeline.read(cx).qualification_metrics()["selection"].clone(),
                     })
