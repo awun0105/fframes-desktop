@@ -69,3 +69,18 @@ fn selecting_pauses_playback(cx: &mut gpui::TestAppContext) {
         t["playing"] == false && selected(t) == Some("title")
     });
 }
+
+#[gpui::test]
+fn a_click_on_an_empty_stage_reports_nothing(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::open(cx);
+    let t = studio.telemetry();
+    assert!(t["displayed_revision"].is_null());
+    let at = |i: usize| {
+        (t["canvas"]["canvas_origin"][i].as_f64().unwrap()
+            + t["canvas"]["canvas_extent"][i].as_f64().unwrap() / 2.) as f32
+    };
+    studio.click((at(0), at(1)));
+    studio.press("c");
+    let t = studio.settle(std::time::Duration::from_millis(200));
+    assert!(t["canvas"]["message"].is_null(), "{}", t["canvas"]);
+}

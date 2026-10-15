@@ -342,6 +342,10 @@ impl StudioShell {
     /// Selects the object at canvas `point` (`cycle`: the next one under it) and makes the
     /// selection the agent's task scope.
     pub(super) fn select_canvas(&mut self, point: (f64, f64), cycle: bool, cx: &mut Context<Self>) {
+        // An empty stage has nothing to select; its own message says how to get a preview.
+        if self.displayed.is_none() {
+            return;
+        }
         if let Err(error) = self.canvas.select_at(point.0, point.1, cycle) {
             self.canvas.message = Some(error.to_string());
         }
@@ -411,6 +415,9 @@ impl StudioShell {
     }
 
     pub(super) fn cycle_canvas_selection(&mut self, cx: &mut Context<Self>) {
+        if self.displayed.is_none() {
+            return;
+        }
         if let Err(error) = self.canvas.cycle_last_hit() {
             self.canvas.message = Some(error.to_string());
         }
@@ -500,9 +507,11 @@ impl StudioShell {
                     if let Some(preview) = &self.preview {
                         preview.cancel_build();
                     }
-                    self.error = Some(format!(
-                        "Audio preparation failed; prior preview retained: {error}"
-                    ));
+                    self.error = Some(if self.displayed.is_some() {
+                        format!("Audio preparation failed; prior preview retained: {error}")
+                    } else {
+                        format!("Audio preparation failed: {error}")
+                    });
                     if self.resume_install {
                         self.resume_install = false;
                         self.toggle_playback(cx);
@@ -628,18 +637,7 @@ impl StudioShell {
     fn render_player_toolbar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
         let palette = theme.editor;
-        let (label, tone) = match &self.preview_state.status {
-            studio_engine::PreviewStatus::Building => {
-                ("Building/preparing · prior preview retained", Tone::Info)
-            }
-            studio_engine::PreviewStatus::Preparing => {
-                ("Preparing matching frame and audio", Tone::Info)
-            }
-            studio_engine::PreviewStatus::Error(_) => {
-                ("Preview failed · prior preview retained", Tone::Warning)
-            }
-            _ => ("CPU preview · shaders unsupported", Tone::Neutral),
-        };
+        let (label, tone) = preview_badge(&self.preview_state.status, self.displayed.is_some());
         let audio_label = self.output.as_ref().map_or_else(
             || self.audio_note.clone(),
             |output| {
@@ -950,3 +948,47 @@ impl StudioShell {
 }
 
 const CANVAS_HINT: &str = "Select: click · Rectangle: Shift-drag · Cycle: Alt-click/C · Zoom: Ctrl-wheel · Pan: middle-drag · Fit: 0";
+
+/// The player toolbar's preview badge. "Prior preview retained" only when a preview is on
+/// screen to retain.
+fn preview_badge(status: &studio_engine::PreviewStatus, retained: bool) -> (&'static str, Tone) {
+    match status {
+        studio_engine::PreviewStatus::Building if retained => {
+            ("Building/preparing · prior preview retained", Tone::Info)
+        }
+        studio_engine::PreviewStatus::Building => ("Building preview", Tone::Info),
+        studio_engine::PreviewStatus::Preparing => {
+            ("Preparing matching frame and audio", Tone::Info)
+        }
+        studio_engine::PreviewStatus::Error(_) if retained => {
+            ("Preview failed · prior preview retained", Tone::Warning)
+        }
+        studio_engine::PreviewStatus::Error(_) => ("Preview failed", Tone::Warning),
+        _ => ("CPU preview · shaders unsupported", Tone::Neutral),
+    }
+}
+
+#[cfg(test)]
+mod badge_tests {
+    use studio_engine::PreviewStatus;
+
+    use super::preview_badge;
+
+    #[test]
+    fn the_badge_mentions_a_retained_preview_only_when_one_is_displayed() {
+        let building = PreviewStatus::Building;
+        let failed = PreviewStatus::Error("boom".into());
+        assert_eq!(preview_badge(&building, false).0, "Building preview");
+        assert_eq!(preview_badge(&failed, false).0, "Preview failed");
+        assert!(
+            preview_badge(&building, true)
+                .0
+                .contains("prior preview retained")
+        );
+        assert!(
+            preview_badge(&failed, true)
+                .0
+                .contains("prior preview retained")
+        );
+    }
+}
