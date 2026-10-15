@@ -2,10 +2,9 @@
 //!
 //! The headless parity suite (`studio-ui/tests/parity`, GPUI's `TestAppContext`) drives the shell
 //! through its actions; this test covers what a headless window cannot, exercising the
-//! hand-off wiring the way the M0/M2 native qualifications did: the real
-//! `fframes-studio qualify-m3` binary on an owned Xvfb, driven with xdotool, observed
-//! through its redacted telemetry file. It covers what pure tests cannot: the prompt's
-//! native input path, `StudioShell::adopt_promotion` adopting the staged preview on the UI
+//! hand-off wiring: the real `fframes-studio studio` binary with its hidden observation
+//! flags on an owned Xvfb, driven with xdotool, observed through its redacted telemetry
+//! file. It covers what pure tests cannot: the prompt's native input path, `StudioShell::adopt_promotion` adopting the staged preview on the UI
 //! thread, the fresh audio epoch and the matching video/audio install, the accepted-awaiting
 //! label clearing exactly when the matching preview shows, and Undo's hand-off back.
 //!
@@ -18,7 +17,7 @@
 //! ```
 //!
 //! Requires `Xvfb` and `xdotool`. The window is 1280x800 at the origin. Every click target
-//! is the measured bounds the app reports while qualifying (the agent tabs and the Undo
+//! is the measured bounds the app reports while observed (the agent tabs and the Undo
 //! button included), so layout changes never move a click off its control.
 #![cfg(unix)]
 
@@ -344,7 +343,7 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     }
     // The adapter description exactly as the Setup tab saves it. Writer containment is
     // never a setting: the shell below is started with the explicit test-only injection
-    // (`--test-writer-containment`), which the panel labels as not a qualification.
+    // (`--observe-test-writer-containment`), which the panel labels as not a qualification.
     fs::write(
         data.join("fframes-studio/agent-adapter.json"),
         serde_json::json!({
@@ -379,11 +378,11 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     let log = fs::File::create(temp.path().join("studio.log")).unwrap();
     let _app = spawn(
         Command::new(env!("CARGO_BIN_EXE_fframes-studio"))
-            .args(["qualify-m3", "--project"])
+            .args(["studio", "--observe-project"])
             .arg(&project)
-            .arg("--telemetry")
+            .arg("--observe-telemetry")
             .arg(&telemetry.0)
-            .args(["--test-writer-containment", "x11-scripted-peer"])
+            .args(["--observe-test-writer-containment", "x11-scripted-peer"])
             .env("DISPLAY", &screen.display)
             .env("HOME", &home)
             .env("XDG_DATA_HOME", &data)
@@ -554,36 +553,6 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     assert_eq!(starts.lines().count(), 1, "{starts:?}");
 }
 
-impl Screen {
-    /// A PNG of the whole X screen (xwd, converted by ffmpeg) into a qualification evidence
-    /// directory when configured; otherwise nothing is captured.
-    fn screenshot(&self, name: &str) {
-        let directory = std::env::var_os("M5_NATIVE_EVIDENCE")
-            .or_else(|| std::env::var_os("M4_NATIVE_EVIDENCE"))
-            .map(PathBuf::from);
-        let Some(dir) = directory else {
-            return;
-        };
-        fs::create_dir_all(&dir).unwrap();
-        let raw = dir.join(format!("{name}.xwd"));
-        let capture = Command::new("xwd")
-            .env("DISPLAY", &self.display)
-            .args(["-root", "-silent", "-out"])
-            .arg(&raw)
-            .status()
-            .expect("xwd");
-        assert!(capture.success(), "xwd -root");
-        let convert = Command::new("ffmpeg")
-            .args(["-y", "-loglevel", "error", "-i"])
-            .arg(&raw)
-            .arg(dir.join(format!("{name}.png")))
-            .status()
-            .expect("ffmpeg");
-        assert!(convert.success(), "ffmpeg xwd -> png");
-        let _ = fs::remove_file(raw);
-    }
-}
-
 fn scope_of(value: &Value) -> Option<&str> {
     value["panel"]["task_scope"].as_str()
 }
@@ -666,11 +635,11 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     let log = fs::File::create(temp.path().join("studio.log")).unwrap();
     let _app = spawn(
         Command::new(env!("CARGO_BIN_EXE_fframes-studio"))
-            .args(["qualify-m3", "--project"])
+            .args(["studio", "--observe-project"])
             .arg(&project)
-            .arg("--telemetry")
+            .arg("--observe-telemetry")
             .arg(&telemetry.0)
-            .args(["--test-writer-containment", "x11-scripted-peer"])
+            .args(["--observe-test-writer-containment", "x11-scripted-peer"])
             .env("DISPLAY", &screen.display)
             .env("HOME", &home)
             .env("XDG_DATA_HOME", &data)
@@ -718,7 +687,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             .is_some_and(|s| s.starts_with("Scene "))
     });
     let scene_label = scene["panel"]["submit_scope"].as_str().unwrap().to_owned();
-    screen.screenshot("scene-selected-before-submit");
     // Validated changes wait for the user: the review shows before and after evidence.
     click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
     let policy = telemetry.settled("the review-policy button", |v| {
@@ -757,7 +725,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             .is_some_and(|a| !a.is_empty()),
         "{frozen}"
     );
-    screen.screenshot("scene-task-frozen-before-evidence");
     let review = telemetry.wait("the candidate to await review with after evidence", |v| {
         phase(v) == "Waiting for your review" && v["panel"]["after_evidence"]["state"] == "Ready"
     });
@@ -790,7 +757,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
         !project.join("notes.txt").exists(),
         "nothing is applied before review"
     );
-    screen.screenshot("scene-task-review-before-and-after");
     let review = telemetry.settled("the Apply button", |v| {
         v["panel"]["buttons"]["agent-apply"].clone()
     });
@@ -835,7 +801,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
                 .is_some_and(|s| s.starts_with("Frames ["))
     });
     let range_label = range["panel"]["submit_scope"].as_str().unwrap().to_owned();
-    screen.screenshot("range-selected-before-submit");
     click_prompt(&screen, &window, &telemetry);
     screen.xdotool(&[
         "type",
@@ -850,7 +815,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             && v["panel"]["before_evidence"]["state"] == "Ready"
     });
     assert_eq!(frozen["panel"]["task_scope"], range_label, "{frozen}");
-    screen.screenshot("range-task-frozen-before-evidence");
     telemetry.wait("the AutoApply range candidate evidence", |v| {
         scope_of(v) == Some(range_label.as_str())
             && v["panel"]["after_evidence"]["state"] == "Ready"
@@ -881,7 +845,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             && accepted["panel"]["after_evidence"]["artifacts"].is_array(),
         "the terminal AutoApply task retains both evidence references: {accepted}"
     );
-    screen.screenshot("range-task-review-before-and-after");
     assert!(project.join("notes2.txt").is_file());
 
     // The stale-scope case needs a candidate that waits for an explicit review action.
@@ -945,7 +908,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     let stale = telemetry.wait("the queued scope to be marked stale", |v| {
         v["panel"]["queue_stale"] == 1
     });
-    screen.screenshot("stale-queued-scope");
     assert_eq!(stale["panel"]["queue"], 1, "{stale}");
     fs::write(evidence.join("go"), "go").unwrap();
     telemetry.wait("the held task to await review", |v| {
@@ -974,7 +936,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             .is_some_and(|codes| codes.iter().any(|code| code == "stale_task_scope")),
         "{refused}"
     );
-    screen.screenshot("stale-queued-scope-refused");
     let prompts = fs::read_to_string(evidence.join("prompts.jsonl")).unwrap();
     assert_eq!(
         prompts.lines().count(),
@@ -1026,15 +987,12 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
 /// location. It also exercises keyboard cycling, pointer-centred zoom, pan and rectangle
 /// fallback through native X11 input.
 #[test]
-#[ignore = "requires SDK_BUNDLE, Xvfb, xdotool, xwd and ffmpeg; native managed-SDK canvas interaction"]
+#[ignore = "requires SDK_BUNDLE, Xvfb and xdotool; native managed-SDK canvas interaction"]
 fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_nonsemantic() {
     let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     assert!(
-        tool_available("Xvfb")
-            && tool_available("xdotool")
-            && tool_available("xwd")
-            && tool_available("ffmpeg"),
-        "Xvfb, xdotool, xwd and ffmpeg are required"
+        tool_available("Xvfb") && tool_available("xdotool"),
+        "Xvfb and xdotool are required"
     );
     let bundle = PathBuf::from(std::env::var_os("SDK_BUNDLE").expect("SDK_BUNDLE"));
     let manifest = CompatibilityManifest::from_json_str(
@@ -1042,7 +1000,7 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     )
     .unwrap();
     let temporary = tempfile::Builder::new()
-        .prefix("fft-m5-x11")
+        .prefix("fft-canvas-x11")
         .tempdir_in("/tmp")
         .unwrap();
     let artifacts: Vec<_> = manifest
@@ -1063,7 +1021,7 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     let project = temporary.path().join("video");
     studio_project::create(
         &project,
-        "M5 native canvas selection",
+        "Native canvas selection",
         sdk_pin(&manifest),
         &manifest.fframes_version,
         "0.1.0",
@@ -1071,9 +1029,7 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     .unwrap();
     assert!(sdk.join("compatibility.json").is_file());
 
-    let data = std::env::var_os("M5_NATIVE_DATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| temporary.path().join("data"));
+    let data = temporary.path().join("data");
     let runtime = temporary.path().join("runtime");
     fs::create_dir_all(data.join("fframes-studio")).unwrap();
     fs::create_dir_all(&runtime).unwrap();
@@ -1087,9 +1043,9 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     let log = fs::File::create(temporary.path().join("studio.log")).unwrap();
     let _app = spawn(
         Command::new(env!("CARGO_BIN_EXE_fframes-studio"))
-            .args(["qualify-m3", "--project"])
+            .args(["studio", "--observe-project"])
             .arg(&project)
-            .arg("--telemetry")
+            .arg("--observe-telemetry")
             .arg(&telemetry.0)
             .env("DISPLAY", &screen.display)
             .env("HOME", &home)
@@ -1171,7 +1127,6 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
         value["canvas"]["selection"]["identity"] == title["identity"]
     });
     assert_eq!(cycled["canvas"]["selection"]["identity"], title["identity"]);
-    screen.screenshot("m5-managed-title-selected");
 
     let before_zoom = cycled["canvas"]["image_bounds"]["width"].as_f64().unwrap();
     screen.xdotool(&[
@@ -1297,5 +1252,4 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     assert_eq!(rectangle["canvas"]["metadata_status"], "Supported");
     assert!(rectangle["canvas"]["rectangle"]["width"].as_f64().unwrap() > 0.);
     assert!(rectangle["canvas"]["rectangle"]["height"].as_f64().unwrap() > 0.);
-    screen.screenshot("m5-nonsemantic-rectangle-scope");
 }

@@ -4,11 +4,7 @@
 use clap::{Parser, Subcommand};
 use fframes_studio::StudioSpikeApp;
 use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, point, px, size};
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
-use studio_sdk::{CompatibilityManifest, SdkInstaller};
+use std::{path::PathBuf, time::Duration};
 
 /// Longest `qualify-writer --timeout` accepted (one day).
 const MAX_WRITER_TIMEOUT_SECS: u64 = 24 * 60 * 60;
@@ -29,6 +25,8 @@ struct Cli {
 enum Command {
     /// Open the native project workspace (the default).
     Studio {
+        #[command(flatten)]
+        observation: Observation,
         /// The packaged launchers forward their own arguments after `studio`; the
         /// workspace takes none, so they are accepted and ignored rather than keeping the
         /// window from opening.
@@ -38,21 +36,6 @@ enum Command {
     /// Open the native GPUI spike window.
     #[command(long_flag = "spike-ui")]
     SpikeUi,
-    /// Build a project's preview and record playback telemetry (M2 harness).
-    QualifyM2 {
-        #[command(flatten)]
-        observation: Observation,
-    },
-    /// Open a project and record the agent panel's redacted state (M3 harness).
-    QualifyM3 {
-        #[command(flatten)]
-        observation: Observation,
-        /// Test-only injection for fixtures (never reachable from the product entry or the
-        /// settings file): treats the adapter's writers as process-group contained WITHOUT
-        /// qualification evidence, and the panel says so.
-        #[arg(long, value_name = "LABEL", hide = true)]
-        test_writer_containment: Option<String>,
-    },
     /// Measure whether the configured adapter's writer processes stay inside their task
     /// scope, and record the result in the installed qualification ledger.
     QualifyWriter {
@@ -76,28 +59,42 @@ enum Command {
         #[arg(long, value_name = "DIR", requires = "development")]
         out: Option<PathBuf>,
     },
-    /// Install an SDK bundle and run the native presentation qualification.
-    QualifyPresentation {
-        #[arg(long, value_name = "DIR")]
-        bundle: PathBuf,
-        #[arg(long, value_name = "DIR")]
-        sdk_home: PathBuf,
-        #[arg(long, value_name = "DIR")]
-        project: PathBuf,
-        #[arg(long, value_name = "FILE")]
-        output: PathBuf,
-    },
 }
 
-/// The project and telemetry file of an observation entry.
+/// Hidden observation of the studio for test harnesses: opens a project and writes the
+/// shell's redacted state to a telemetry file. It never changes what the studio does,
+/// except that the test injection may stand in for writer containment evidence. The
+/// names are long so that no argument a launcher forwards matches them.
 #[derive(Debug, clap::Args)]
 struct Observation {
     /// Project folder to open.
-    #[arg(long, value_name = "DIR", value_parser = existing_dir)]
-    project: PathBuf,
+    #[arg(
+        long = "observe-project",
+        value_name = "DIR",
+        value_parser = existing_dir,
+        requires = "telemetry",
+        hide = true
+    )]
+    project: Option<PathBuf>,
     /// Telemetry file to write; it must not exist yet.
-    #[arg(long, value_name = "FILE", value_parser = fresh_path)]
-    telemetry: PathBuf,
+    #[arg(
+        long = "observe-telemetry",
+        value_name = "FILE",
+        value_parser = fresh_path,
+        requires = "project",
+        hide = true
+    )]
+    telemetry: Option<PathBuf>,
+    /// Test-only injection for fixtures (never reachable from the product entry or the
+    /// settings file): treats the adapter's writers as process-group contained WITHOUT
+    /// qualification evidence, and the panel says so.
+    #[arg(
+        long = "observe-test-writer-containment",
+        value_name = "LABEL",
+        requires = "telemetry",
+        hide = true
+    )]
+    test_writer_containment: Option<String>,
 }
 
 fn existing_dir(value: &str) -> Result<PathBuf, String> {
@@ -118,12 +115,6 @@ fn fresh_path(value: &str) -> Result<PathBuf, String> {
     }
 }
 
-struct PresentationQualification {
-    sdk_home: PathBuf,
-    project: PathBuf,
-    output: PathBuf,
-    manifest: CompatibilityManifest,
-}
 /// Reattaches the terminal a command was typed in, so subcommand output and errors stay
 /// visible. Redirected handles (files, pipes) are already valid and are left alone.
 #[cfg(windows)]
@@ -152,56 +143,50 @@ fn main() {
             std::process::exit(code);
         }
     };
-    match cli.command.unwrap_or(Command::Studio {
-        _forwarded: Vec::new(),
-    }) {
-        Command::Studio { .. } => run_studio(None),
-        Command::SpikeUi => run_spike_ui(None),
-        Command::QualifyM2 {
-            observation: Observation { project, telemetry },
-        } => run_studio(Some(Qualification::Playback {
-            project,
-            output: telemetry,
-        })),
-        Command::QualifyM3 {
-            observation: Observation { project, telemetry },
-            test_writer_containment,
-        } => {
-            let test_ownership = test_writer_containment.map(|label| {
-                studio_bootstrap::WriterOwnership::ProcessGroupContained {
-                    qualification: format!("test-injection:{label}"),
-                }
-            });
-            run_studio(Some(Qualification::AgentPanel {
-                project,
-                output: telemetry,
-                test_ownership,
-            }))
-        }
-        Command::QualifyWriter {
+    match cli.command {
+        None => run_studio(None),
+        Some(Command::Studio { observation, .. }) => run_studio(observed(observation)),
+        Some(Command::SpikeUi) => run_spike_ui(),
+        Some(Command::QualifyWriter {
             profile,
             timeout,
             development: _,
             out,
-        } => qualify_writer(studio_engine::containment::qualify_writer::Options {
+        }) => qualify_writer(studio_engine::containment::qualify_writer::Options {
             profile,
             timeout: Duration::from_secs(timeout),
             // clap ties --out and --development together.
             development_out: out,
         }),
-        Command::QualifyPresentation {
-            bundle,
-            sdk_home,
-            project,
-            output,
-        } => match prepare_presentation(bundle, sdk_home, project, output) {
-            Ok(qualification) => run_spike_ui(Some(qualification)),
-            Err(error) => {
-                eprintln!("Qualification failed: {error}");
-                std::process::exit(1);
-            }
-        },
     }
+}
+
+/// What the studio observes; clap makes the project and the telemetry file come together.
+struct Observed {
+    project: PathBuf,
+    output: PathBuf,
+    test_ownership: Option<studio_bootstrap::WriterOwnership>,
+}
+
+fn observed(observation: Observation) -> Option<Observed> {
+    let Observation {
+        project: Some(project),
+        telemetry: Some(output),
+        test_writer_containment,
+    } = observation
+    else {
+        return None;
+    };
+    let test_ownership = test_writer_containment.map(|label| {
+        studio_bootstrap::WriterOwnership::ProcessGroupContained {
+            qualification: format!("test-injection:{label}"),
+        }
+    });
+    Some(Observed {
+        project,
+        output,
+        test_ownership,
+    })
 }
 
 fn qualify_writer(options: studio_engine::containment::qualify_writer::Options) {
@@ -231,62 +216,7 @@ fn qualify_writer(options: studio_engine::containment::qualify_writer::Options) 
     }
 }
 
-/// Installs the bundle's SDK into `sdk_home`; relative paths are taken from the current
-/// folder.
-fn prepare_presentation(
-    bundle: PathBuf,
-    sdk_home: PathBuf,
-    project: PathBuf,
-    output: PathBuf,
-) -> Result<PresentationQualification, Box<dyn std::error::Error>> {
-    let bundle = bundle.canonicalize()?;
-    let current = std::env::current_dir()?;
-    let sdk_home = current.join(sdk_home);
-    let project = current.join(project);
-    let output = current.join(output);
-    if output.exists() {
-        return Err("Evidence output already exists".into());
-    }
-    let manifest = CompatibilityManifest::from_json_str(&std::fs::read_to_string(
-        bundle.join("compatibility.json"),
-    )?)?;
-    let artifacts: Vec<_> = manifest
-        .artifacts
-        .iter()
-        .map(|artifact| {
-            (
-                artifact.clone(),
-                bundle.join(artifact.url.trim_start_matches("file://")),
-            )
-        })
-        .collect();
-    SdkInstaller::new(&sdk_home).install_from_local_artifacts_for_app(
-        &manifest,
-        &artifacts,
-        env!("CARGO_PKG_VERSION"),
-    )?;
-    Ok(PresentationQualification {
-        sdk_home,
-        project,
-        output,
-        manifest,
-    })
-}
-
-/// Observation entries of the production shell (telemetry files for the external
-/// harnesses; they never change behavior).
-enum Qualification {
-    /// M2: build the preview and record playback telemetry.
-    Playback { project: PathBuf, output: PathBuf },
-    /// M3: open the project and record the agent panel's redacted state.
-    AgentPanel {
-        project: PathBuf,
-        output: PathBuf,
-        test_ownership: Option<studio_bootstrap::WriterOwnership>,
-    },
-}
-
-fn run_studio(qualification: Option<Qualification>) {
+fn run_studio(observation: Option<Observed>) {
     gpui_platform::application()
         .with_assets(fframes_studio::assets::Assets)
         .run(move |cx: &mut App| {
@@ -320,18 +250,13 @@ fn run_studio(qualification: Option<Qualification>) {
                                 cx,
                             );
                             studio_theme::bind_window(window, cx);
-                            match qualification {
-                                Some(Qualification::Playback { project, output }) => {
-                                    shell.start_qualification(project, output, cx)
-                                }
-                                Some(Qualification::AgentPanel {
-                                    project,
-                                    output,
-                                    test_ownership,
-                                }) => {
-                                    shell.start_agent_telemetry(project, output, test_ownership, cx)
-                                }
-                                None => (),
+                            if let Some(Observed {
+                                project,
+                                output,
+                                test_ownership,
+                            }) = observation
+                            {
+                                shell.start_agent_telemetry(project, output, test_ownership, cx)
                             }
                             shell
                         })
@@ -350,10 +275,7 @@ fn run_studio(qualification: Option<Qualification>) {
         });
 }
 
-fn run_spike_ui(qualification: Option<PresentationQualification>) {
-    let evidence_output = qualification
-        .as_ref()
-        .map(|qualification| qualification.output.clone());
+fn run_spike_ui() {
     gpui_platform::application().run(move |cx: &mut App| {
         studio_ui::kit::bind_text_input_keys(cx);
         let bounds = Bounds::centered(None, size(px(1000.), px(1000.)), cx);
@@ -371,53 +293,6 @@ fn run_spike_ui(qualification: Option<PresentationQualification>) {
                 cx.new(|cx| {
                     let mut app = StudioSpikeApp::new(window, cx);
                     app.load_initial_frame(window, cx);
-                    if let Some(qualification) = qualification {
-                        app.setup_view.update(cx, |view, _| {
-                            view.sdk_home = qualification.sdk_home;
-                            view.manifest = qualification.manifest;
-                        });
-                        app.worker_project_root = Some(qualification.project);
-                        app.qualification_output = Some(qualification.output);
-                        app.launch_real_worker(cx);
-                        cx.spawn(async move |this, cx| {
-                            let deadline = Instant::now() + Duration::from_secs(120);
-                            loop {
-                                cx.background_executor()
-                                    .timer(Duration::from_millis(100))
-                                    .await;
-                                let waiting = this
-                                    .update(cx, |app, cx| {
-                                        if !app.worker_busy {
-                                            if app.worker_client.is_some() {
-                                                app.start_stress_test(cx);
-                                            } else {
-                                                app.abort_stress(
-                                                    format!(
-                                                        "Worker startup failed: {}",
-                                                        app.worker_status
-                                                    ),
-                                                    cx,
-                                                );
-                                            }
-                                            return false;
-                                        }
-                                        if Instant::now() >= deadline {
-                                            app.abort_stress(
-                                                "Worker startup exceeded deadline".into(),
-                                                cx,
-                                            );
-                                            return false;
-                                        }
-                                        true
-                                    })
-                                    .unwrap_or(false);
-                                if !waiting {
-                                    break;
-                                }
-                            }
-                        })
-                        .detach();
-                    }
                     app
                 })
             },
@@ -425,28 +300,6 @@ fn run_spike_ui(qualification: Option<PresentationQualification>) {
         .expect("failed to open window");
         cx.activate(true);
     });
-    if let Some(output) = evidence_output {
-        let verified = std::fs::read(&output)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .is_some_and(|record| {
-                record["completed"] == true
-                    && record["confirmed_presentations"] == 1000
-                    && record["paint_submissions"] == 1000
-                    && record["verified_render_requests"] == 2000
-                    && record["failure"].is_null()
-            });
-        if !verified {
-            let details = std::fs::read_to_string(&output).unwrap_or_else(|e| {
-                format!(
-                    "Could not read evidence output from {}: {e}",
-                    output.display()
-                )
-            });
-            eprintln!("Native presentation qualification did not complete: {details}");
-            std::process::exit(1);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -518,42 +371,63 @@ mod tests {
         assert!(parse(&["qualify-writer", "--unknown"]).is_err());
     }
 
+    fn observation(args: &[&str]) -> Result<Observation, clap::Error> {
+        match parse(args)?.command {
+            Some(Command::Studio { observation, .. }) => Ok(observation),
+            other => panic!("expected studio, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn observation_entries_need_an_existing_project_and_a_fresh_telemetry_file() {
+    fn the_studio_observation_needs_an_existing_project_and_a_fresh_telemetry_file() {
         let dir = tempfile::tempdir().unwrap();
         let project = dir.path().to_str().unwrap();
         let fresh = dir.path().join("telemetry.json");
         let fresh = fresh.to_str().unwrap();
-        for command in ["qualify-m2", "qualify-m3"] {
-            assert!(parse(&[command, "--project", project, "--telemetry", fresh]).is_ok());
-            // The project folder itself exists, so it is not a fresh telemetry file.
-            assert!(parse(&[command, "--project", project, "--telemetry", project]).is_err());
-            assert!(parse(&[command, "--project", fresh, "--telemetry", fresh]).is_err());
-            assert!(parse(&[command, "--project", project]).is_err());
-        }
-        let Some(Command::QualifyM3 {
-            test_writer_containment,
-            ..
-        }) = parse(&[
-            "qualify-m3",
-            "--project",
+        let observed = observation(&[
+            "studio",
+            "--observe-project",
             project,
-            "--telemetry",
+            "--observe-telemetry",
             fresh,
-            "--test-writer-containment",
+            "--observe-test-writer-containment",
             "fixture",
         ])
-        .unwrap()
-        .command
-        else {
-            panic!("qualify-m3");
+        .unwrap();
+        assert_eq!(observed.project.as_deref(), Some(dir.path()));
+        assert_eq!(observed.telemetry.as_deref(), Some(fresh.as_ref()));
+        assert_eq!(observed.test_writer_containment.as_deref(), Some("fixture"));
+        // The project folder itself exists, so it is not a fresh telemetry file.
+        let both = |project: &str, telemetry: &str| {
+            observation(&[
+                "studio",
+                "--observe-project",
+                project,
+                "--observe-telemetry",
+                telemetry,
+            ])
         };
-        assert_eq!(test_writer_containment.as_deref(), Some("fixture"));
+        assert!(both(project, project).is_err());
+        assert!(both(fresh, fresh).is_err());
+        // Each needs the other; the test injection needs an observation.
+        assert!(observation(&["studio", "--observe-project", project]).is_err());
+        assert!(observation(&["studio", "--observe-telemetry", fresh]).is_err());
+        assert!(observation(&["studio", "--observe-test-writer-containment", "x"]).is_err());
+    }
+
+    #[test]
+    fn the_observation_is_hidden_and_launcher_arguments_still_open_the_studio() {
+        let forwarded =
+            observation(&["studio", "--from-launcher", "--project", "file.txt"]).unwrap();
+        assert!(forwarded.project.is_none() && forwarded.telemetry.is_none());
         let help = Cli::command()
-            .find_subcommand_mut("qualify-m3")
+            .find_subcommand_mut("studio")
             .unwrap()
             .render_long_help()
             .to_string();
-        assert!(!help.contains("test-writer-containment"));
+        assert!(!help.contains("observe"), "{help}");
+        for removed in ["qualify-m2", "qualify-m3", "qualify-presentation"] {
+            assert!(parse(&[removed]).is_err(), "{removed}");
+        }
     }
 }

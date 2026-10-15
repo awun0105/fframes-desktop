@@ -3,9 +3,9 @@ mod header;
 mod keymap;
 mod layout;
 mod left_column;
+mod observation;
 mod overflow;
 mod player;
-mod qualification;
 mod sections;
 mod settings;
 mod status_strip;
@@ -198,7 +198,7 @@ struct AgentHost {
     /// A revision the preview now displays, still to be reported.
     displayed: Option<String>,
     /// Who may say a writer is contained: validated qualification evidence only, except
-    /// for the explicit test injection of the `qualify-m3` observation entry.
+    /// for the explicit test injection of the studio's observation entry.
     ownership: OwnershipPolicy,
 }
 

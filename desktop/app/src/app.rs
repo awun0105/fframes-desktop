@@ -1,4 +1,3 @@
-use crate::presentation_stress::PresentationStress;
 use crate::preview_element::PreviewElement;
 use crate::selection_spike::{DisplayedSourceFrame, SelectedElementInfo, SelectionSpike};
 use gpui::{
@@ -30,18 +29,12 @@ pub struct StudioSpikeApp {
     pub status_message: String,
     pub worker_client: Option<WorkerClient>,
     pub worker_status: String,
-    pub pending_stress_image: Option<std::sync::Arc<RenderImage>>,
-    pub stress: PresentationStress,
-    pub stress_completion: Option<(u64, usize)>,
-    pub stress_painted: Option<(u64, usize)>,
+    pub pending_image: Option<std::sync::Arc<RenderImage>>,
     pub preview_bounds: Option<Bounds<Pixels>>,
     pub displayed_source: Option<DisplayedSourceFrame>,
     pub pending_source: Option<DisplayedSourceFrame>,
     pub selected_source: Option<SelectedElementInfo>,
     pub worker_project_root: Option<std::path::PathBuf>,
-    pub stress_test_start: Option<Instant>,
-    pub stress_metrics: crate::stress_metrics::StressMetrics,
-    pub qualification_output: Option<std::path::PathBuf>,
     pub displayed_setup_frame: Option<std::path::PathBuf>,
 }
 
@@ -81,9 +74,6 @@ impl StudioSpikeApp {
             |app, panel, _: &crate::agent_spike::CandidateReady, cx| {
                 let candidate = panel.update(cx, |panel, _| panel.candidate.take());
                 if let Some(candidate) = candidate {
-                    app.stress.stop();
-                    app.stress_completion = None;
-                    app.stress_painted = None;
                     if let Some(mut old) = app.worker_client.take() {
                         let _ = old.force_crash();
                     }
@@ -99,7 +89,7 @@ impl StudioSpikeApp {
                     app.pending_source = Some(candidate.source);
                     app.selected_source = None;
                     app.worker_client = Some(candidate.worker);
-                    app.pending_stress_image = Some(candidate.image);
+                    app.pending_image = Some(candidate.image);
                     app.status_message = "Agent candidate ready for source inspection".into();
                     cx.notify();
                 }
@@ -122,24 +112,18 @@ impl StudioSpikeApp {
             status_message: "Ready".to_string(),
             worker_client: None,
             worker_status: "Disconnected".to_string(),
-            pending_stress_image: None,
-            stress: PresentationStress::default(),
-            stress_completion: None,
-            stress_painted: None,
+            pending_image: None,
             preview_bounds: None,
             displayed_source: None,
             pending_source: None,
             selected_source: None,
             worker_project_root: None,
-            stress_test_start: None,
-            stress_metrics: Default::default(),
-            qualification_output: None,
             displayed_setup_frame: None,
         }
     }
 
     pub fn launch_real_worker(&mut self, cx: &mut Context<Self>) {
-        if self.worker_busy || self.stress.active || self.agent_spike.read(cx).active {
+        if self.worker_busy || self.agent_spike.read(cx).active {
             return;
         }
         if let Some(mut old) = self.worker_client.take() {
@@ -191,7 +175,7 @@ impl StudioSpikeApp {
     }
 
     pub fn step_real_worker_frame(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.stress.active || self.agent_spike.read(cx).active {
+        if self.agent_spike.read(cx).active {
             return;
         }
         let epoch = self.worker_epoch;
@@ -232,7 +216,7 @@ impl StudioSpikeApp {
                     Ok((image, header, elements, duration)) => {
                         app.dimensions = (header.width, header.height);
                         app.frame_index = target + 1;
-                        app.pending_stress_image = Some(image);
+                        app.pending_image = Some(image);
                         app.last_conversion_duration = duration;
                         app.selected_source = None;
                         app.displayed_source = None;
@@ -269,258 +253,6 @@ impl StudioSpikeApp {
 
     pub fn restart_worker(&mut self, cx: &mut Context<Self>) {
         self.launch_real_worker(cx);
-    }
-
-    pub fn start_stress_test(&mut self, cx: &mut Context<Self>) {
-        if self.stress.active || self.worker_busy || self.agent_spike.read(cx).active {
-            return;
-        }
-        if self.worker_client.is_none() {
-            self.status_message =
-                "Connect a real worker before starting presentation stress".into();
-            cx.notify();
-            return;
-        }
-        self.stress.start();
-        self.stress_metrics = crate::stress_metrics::StressMetrics {
-            release_baseline: self.image_manager.dropped_count(),
-            host_rss_baseline_bytes: crate::stress_metrics::resident_bytes(std::process::id()),
-            last_heartbeat: Some(Instant::now()),
-            last_completion: Some(Instant::now()),
-            ..Default::default()
-        };
-        let run = self.stress.run;
-        cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(50))
-                    .await;
-                let active = this
-                    .update(cx, |app, cx| {
-                        if !app.stress.active || app.stress.run != run {
-                            return false;
-                        }
-                        app.stress_metrics.heartbeat();
-                        if app
-                            .stress_metrics
-                            .last_completion
-                            .is_some_and(|last| last.elapsed() > Duration::from_secs(45))
-                            || app
-                                .stress_test_start
-                                .is_some_and(|start| start.elapsed() > Duration::from_secs(600))
-                        {
-                            app.abort_stress(
-                                "Presentation stress exceeded its completion deadline".into(),
-                                cx,
-                            );
-                            return false;
-                        }
-                        true
-                    })
-                    .unwrap_or(false);
-                if !active {
-                    break;
-                }
-            }
-        })
-        .detach();
-        self.stress_test_start = Some(Instant::now());
-        self.status_message = "Seeking and presenting 1,000 real worker images...".into();
-        self.displayed_source = None;
-        self.pending_source = None;
-        self.selected_source = None;
-        self.schedule_next_stress_frame(cx);
-    }
-
-    fn schedule_next_stress_frame(&mut self, cx: &mut Context<Self>) {
-        let Some(token) = self.stress.admit() else {
-            return;
-        };
-        let Some(mut worker) = self.worker_client.take() else {
-            self.abort_stress("Worker unavailable".into(), cx);
-            return;
-        };
-        self.worker_busy = true;
-        let epoch = self.worker_epoch;
-        let project = self.worker_project_root.clone();
-        self.stress_metrics.queue_high_water = self.stress_metrics.queue_high_water.max(1);
-        let task = cx.background_executor().spawn(async move {
-            let result = (|| -> Result<_, String> {
-                let render_start = Instant::now();
-                let target = (token.1 * 37) % 150;
-                let first = worker
-                    .request_seek(target)
-                    .ok_or("Seek already in flight")?;
-                // Exercise actual latest-wins dispatch over two completed requests.
-                worker.request_seek((target + 11) % 150);
-                worker.request_seek((target + 23) % 150);
-                let next = worker
-                    .request_render_frame(first)
-                    .map_err(|e| e.to_string())?
-                    .ok_or("Pending seek missing")?;
-                if worker
-                    .request_render_frame(next)
-                    .map_err(|e| e.to_string())?
-                    .is_some()
-                {
-                    return Err("Unexpected pending seek".into());
-                }
-                let header = worker
-                    .latest_header()
-                    .cloned()
-                    .ok_or("Frame header missing")?;
-                let elements = worker
-                    .request_elements(&header)
-                    .map_err(|e| e.to_string())?;
-                let render_ms = render_start.elapsed().as_secs_f64() * 1_000.;
-                let conversion_start = Instant::now();
-                let image = create_render_image(
-                    &header,
-                    worker.latest_pixels().ok_or("Frame pixels missing")?,
-                )
-                .map_err(|e| e.to_string())?;
-                let conversion_ms = conversion_start.elapsed().as_secs_f64() * 1_000.;
-                let host_rss = crate::stress_metrics::resident_bytes(std::process::id());
-                let worker_rss = worker
-                    .process_id()
-                    .and_then(crate::stress_metrics::resident_bytes);
-                Ok((
-                    image,
-                    header,
-                    elements,
-                    render_ms,
-                    conversion_ms,
-                    host_rss,
-                    worker_rss,
-                ))
-            })();
-            (worker, result)
-        });
-        cx.spawn(async move |this, cx| {
-            let (worker, result) = task.await;
-            let _ = this.update(cx, |app, cx| {
-                if app.worker_epoch != epoch || !app.stress.active || app.stress.run != token.0 {
-                    return;
-                }
-                app.worker_busy = false;
-                app.worker_client = Some(worker);
-                match result {
-                    Ok((
-                        image,
-                        header,
-                        elements,
-                        render_ms,
-                        conversion_ms,
-                        host_rss,
-                        worker_rss,
-                    )) => {
-                        app.dimensions = (header.width, header.height);
-                        app.pending_stress_image = Some(image);
-                        app.stress_completion = Some(token);
-                        app.pending_source = project.map(|project_root| DisplayedSourceFrame {
-                            header,
-                            elements,
-                            project_root,
-                        });
-                        app.stress_metrics.verified_render_requests += 2;
-                        app.stress_metrics.coalesced_seeks += 2;
-                        app.stress_metrics.render_transfer_ms += render_ms;
-                        app.stress_metrics.conversion_ms += conversion_ms;
-                        app.stress_metrics.sample_memory(host_rss, worker_rss);
-                    }
-                    Err(error) => app.abort_stress(format!("Stress worker failed: {error}"), cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub fn abort_stress(&mut self, error: String, cx: &mut Context<Self>) {
-        self.stress.stop();
-        self.stress_completion = None;
-        self.stress_painted = None;
-        self.pending_stress_image = None;
-        self.pending_source = None;
-        self.worker_epoch += 1;
-        self.worker_busy = false;
-        let worker = self.worker_client.take();
-        // Cleanup owns the old domain; a reconnect cannot be killed by this task.
-        let manager = std::mem::replace(&mut self.process_tree, ProcessTreeManager::new());
-        cx.background_executor()
-            .spawn(async move {
-                manager.terminate_all(Duration::from_millis(300));
-                drop(worker);
-            })
-            .detach();
-        self.stress_metrics.failure = Some(error.clone());
-        self.status_message = error;
-        self.persist_stress(cx);
-    }
-
-    fn persist_stress(&mut self, cx: &mut Context<Self>) {
-        self.stress_metrics.native_input_observed = self.text_input.read(cx).text().to_owned();
-        self.stress_metrics.selected_source = self.selected_source.clone();
-        self.stress_metrics.confirmed_presentations = self.stress.confirmed;
-        self.stress_metrics.completed = self.stress.confirmed == PresentationStress::TARGET
-            && self.stress_metrics.failure.is_none();
-        self.stress_metrics.elapsed_ms = self
-            .stress_test_start
-            .map(|start| start.elapsed().as_secs_f64() * 1_000.)
-            .unwrap_or_default();
-        self.stress_metrics.release_requests = self
-            .image_manager
-            .dropped_count()
-            .saturating_sub(self.stress_metrics.release_baseline);
-        self.stress_metrics.release_failures = self.image_manager.release_failures();
-        let output = self
-            .qualification_output
-            .clone()
-            .or_else(|| std::env::var_os("FFRAMES_STRESS_OUTPUT").map(std::path::PathBuf::from));
-        if let Some(output) = output {
-            let result = serde_json::to_vec_pretty(&self.stress_metrics)
-                .map_err(|e| e.to_string())
-                .and_then(|bytes| std::fs::write(&output, bytes).map_err(|e| e.to_string()));
-            if let Err(error) = result {
-                eprintln!("Evidence write to {} failed: {error}", output.display());
-                self.status_message = format!("Evidence write failed: {error}");
-            }
-        }
-        if self.qualification_output.is_some() {
-            cx.quit();
-        }
-    }
-
-    pub fn confirm_stress_frame(&mut self, token: (u64, usize), cx: &mut Context<Self>) {
-        if !self.stress.acknowledge(token.0, token.1) {
-            return;
-        }
-        self.stress_completion = None;
-        self.stress_painted = None;
-        self.stress_metrics.last_completion = Some(Instant::now());
-        self.stress_metrics.confirmed_presentations = self.stress.confirmed;
-        self.stress_metrics.managed_current_images_high_water = self
-            .stress_metrics
-            .managed_current_images_high_water
-            .max(self.image_manager.resident_count());
-        if self.stress.active {
-            self.status_message = format!(
-                "Confirmed {}/1,000 GPUI presentations",
-                self.stress.confirmed
-            );
-            self.schedule_next_stress_frame(cx);
-        } else {
-            self.status_message = format!(
-                "Confirmed 1,000 GPUI presentations in {:?}; resident {}, evictions {}",
-                self.stress_test_start
-                    .map(|s| s.elapsed())
-                    .unwrap_or_default(),
-                self.image_manager.resident_count(),
-                self.image_manager.dropped_count()
-            );
-            self.persist_stress(cx);
-        }
-        cx.notify();
     }
 
     pub fn select_preview(&mut self, position: gpui::Point<Pixels>, cx: &mut Context<Self>) {
@@ -566,9 +298,6 @@ impl StudioSpikeApp {
     }
 
     pub fn step_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.stress.active {
-            return;
-        }
         self.displayed_source = None;
         self.pending_source = None;
         self.selected_source = None;
@@ -609,16 +338,15 @@ impl StudioSpikeApp {
 
 impl Render for StudioSpikeApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Present any pending stress test image on the real painted frame boundary
-        if let Some(img) = self.pending_stress_image.take() {
+        // Present a pending worker image on the real painted frame boundary.
+        if let Some(img) = self.pending_image.take() {
             self.image_manager.replace_image(img, window);
             self.replacement_count += 1;
         }
 
         // The setup image is a bootstrap preview; source inspection requires worker metadata.
         let setup_state = self.setup_view.read(cx).state.clone();
-        if !self.stress.active
-            && let studio_ui::setup_view::SetupState::Rendered { ref frame_path, .. } = setup_state
+        if let studio_ui::setup_view::SetupState::Rendered { ref frame_path, .. } = setup_state
             && self.displayed_setup_frame.as_ref() != Some(frame_path)
             && let Ok(bytes) = std::fs::read(frame_path)
             && let Ok(image) = image::load_from_memory(&bytes)
@@ -759,7 +487,6 @@ impl Render for StudioSpikeApp {
                                         app: cx.entity(),
                                         image: current_image,
                                         dimensions: self.dimensions,
-                                        completion: self.stress_completion,
                                     }),
                             )
                             .child(
@@ -854,21 +581,6 @@ impl Render for StudioSpikeApp {
                                 this.step_frame(window, cx);
                             }))
                             .child("Step Reference Frame"),
-                    )
-                    .child(
-                        div()
-                            .id("btn-stress")
-                            .px_3()
-                            .py_1()
-                            .bg(rgb(0x059669))
-                            .text_color(white())
-                            .text_xs()
-                            .rounded_sm()
-                            .cursor_pointer()
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.start_stress_test(cx);
-                            }))
-                            .child("1,000 Confirmed Presentations"),
                     )
                     .child(
                         div()

@@ -199,7 +199,7 @@ pub enum Containment {
 pub enum OwnershipPolicy {
     /// Production: only validated evidence qualifies.
     Validated,
-    /// Test-only injection for fixtures (the `qualify-m3` observation entry): the given
+    /// Test-only injection for fixtures (the studio's observation entry): the given
     /// ownership is used as is and labelled as injected everywhere it is shown.
     TestInjected(WriterOwnership),
 }
@@ -681,8 +681,8 @@ mod tests {
     }
 
     #[test]
-    fn the_launch_digest_matches_the_harness_vector_and_binds_every_part() {
-        // The same vector is computed by scripts/qualify-m3-agent.py.
+    fn the_launch_digest_matches_its_pinned_vector_and_binds_every_part() {
+        // A pinned vector, so any change to how the digest is computed is deliberate.
         assert_eq!(identity().digest(), DIGEST);
         let changed = |f: &dyn Fn(&mut LaunchIdentity)| {
             let mut id = identity();

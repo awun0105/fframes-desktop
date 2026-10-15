@@ -134,7 +134,8 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn('p.parent()?.parent()?.join("sdk")', sdk_setup)
         main = (assembly.ROOT / "desktop/app/src/main.rs").read_text()
         self.assertIn('#![cfg_attr(windows, windows_subsystem = "windows")]', main)
-        self.assertIn(".unwrap_or(Command::Studio {", main)
+        # The shortcut passes no command: that must open the studio, not the spike.
+        self.assertIn("None => run_studio(None),", main)
 
     def test_windows_installer_rejects_incomplete_packages_before_compiling(self):
         with tempfile.TemporaryDirectory() as temporary:

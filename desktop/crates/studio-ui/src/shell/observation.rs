@@ -1,5 +1,5 @@
-//! What the shell reports to hosts that observe it: telemetry for the native qualification
-//! and the test harnesses, and element bounds.
+//! What the shell reports to hosts that observe it: telemetry for the test harnesses and
+//! the bounds of the controls they click.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -22,60 +22,7 @@ impl StudioShell {
         cx.notify();
     }
 
-    /// Observe the production shell while the external harness sends native input.
-    /// File serialization/writes stay off the UI thread and are awaited (no queue).
-    pub fn start_qualification(
-        &mut self,
-        project: PathBuf,
-        output: PathBuf,
-        cx: &mut Context<Self>,
-    ) {
-        self.qualifying = true;
-        // The cached sections render again with their bounds probes.
-        cx.notify();
-        cx.spawn(async move |this, cx| {
-            let mut stage = 0;
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(10))
-                    .await;
-                let Ok(value) = this.update(cx, |shell, cx| {
-                    if !shell.busy && stage == 0 {
-                        shell.dispatch(Command::Open(project.clone()), cx);
-                        stage = 1;
-                    } else if !shell.busy && stage == 1 && shell.presentation.project.is_some() {
-                        shell.dispatch(Command::Build, cx);
-                        stage = 2;
-                    }
-                    shell.qualification_snapshot(cx)
-                }) else {
-                    break;
-                };
-                let path = output.clone();
-                let result = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let temporary = path.with_extension("tmp");
-                        std::fs::write(
-                            &temporary,
-                            serde_json::to_vec(&value).map_err(std::io::Error::other)?,
-                        )?;
-                        std::fs::rename(temporary, path)
-                    })
-                    .await;
-                if let Err(error) = result {
-                    let _ = this.update(cx, |shell, cx| {
-                        shell.error = Some(format!("Qualification telemetry: {error}"));
-                        cx.notify();
-                    });
-                    break;
-                }
-            }
-        })
-        .detach();
-    }
-
-    /// M3 observation entry: opens `project` and writes the agent panel's redacted state
+    /// The studio's observation entry: opens `project` and writes the agent panel's redacted state
     /// (phase, counts, bounds; never prompts or message text) to `output` every 250 ms.
     /// Nothing is launched and no command is sent; an operator drives the real panel.
     ///
@@ -159,7 +106,7 @@ impl StudioShell {
         .detach();
     }
 
-    /// Redacted playback identity for the M3 observation: revisions are 12-hex prefixes,
+    /// Redacted playback identity for the observation entry: revisions are 12-hex prefixes,
     /// the audio digest is the prepared mix's hash prefix; nothing here is project text.
     fn preview_telemetry(&self) -> serde_json::Value {
         let prefix = |text: &str| text.chars().take(12).collect::<String>();
@@ -202,7 +149,7 @@ impl StudioShell {
         })
     }
 
-    /// Bounded native-selection observations for the opt-in qualification telemetry.
+    /// Bounded native-selection observations for the opt-in telemetry.
     /// Only semantic keys and geometry are recorded; authored source and image bytes are not.
     fn canvas_telemetry(&self) -> serde_json::Value {
         let metadata = self
@@ -281,11 +228,11 @@ impl StudioShell {
         })
     }
 
-    /// The shell's redacted state for hosts that observe the app (native qualification,
-    /// harnesses): the qualification snapshot plus the preview, canvas, timeline, agent
+    /// The shell's redacted state for hosts that observe the app (test harnesses): the
+    /// snapshot plus the preview, canvas, timeline, agent
     /// panel and job state. Revisions are prefixes; no project text or image bytes.
     pub fn telemetry(&self, cx: &gpui::App) -> serde_json::Value {
-        let mut value = self.qualification_snapshot(cx);
+        let mut value = self.snapshot(cx);
         value["project_open"] = self.presentation.project.is_some().into();
         if let Some(project) = &self.presentation.project {
             value["accepted_revision"] = project.accepted.as_str().into();
@@ -336,7 +283,7 @@ impl StudioShell {
         value
     }
 
-    fn qualification_snapshot(&self, cx: &gpui::App) -> serde_json::Value {
+    fn snapshot(&self, cx: &gpui::App) -> serde_json::Value {
         let thumbnails = self.timeline.read(cx).qualification_metrics();
         let mut buttons = serde_json::to_value(&self.button_bounds).expect("finite geometry");
         buttons["timeline-fit"] = thumbnails["fit_bounds"].clone();
@@ -364,8 +311,8 @@ impl StudioShell {
         })
     }
 
-    /// Bounds reporter for the buttons native qualification clicks; `None` outside
-    /// qualification and for every other button.
+    /// Bounds reporter for the buttons a harness clicks; `None` unless bounds are reported,
+    /// and for every other button.
     pub(super) fn bounds_probe(
         &self,
         id: &gpui::ElementId,

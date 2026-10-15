@@ -1,18 +1,16 @@
 use crate::app::StudioSpikeApp;
 use gpui::{
-    App, Bounds, Context, Corners, Element, ElementId, Entity, GlobalElementId, IntoElement,
-    LayoutId, Pixels, RenderImage, Style, Window, point, px, relative, size,
+    App, Bounds, Corners, Element, ElementId, Entity, GlobalElementId, IntoElement, LayoutId,
+    Pixels, RenderImage, Style, Window, point, px, relative, size,
 };
 use std::sync::Arc;
 use studio_theme::{METRICS, Theme};
 
-/// Paints the actual image, then acknowledges it on GPUI's next frame callback.
-/// This observes GPUI presentation submission, not a physical-display GPU fence.
+/// Paints the current image letterboxed into the element's bounds.
 pub struct PreviewElement {
     pub app: Entity<StudioSpikeApp>,
     pub image: Option<Arc<RenderImage>>,
     pub dimensions: (u32, u32),
-    pub completion: Option<(u64, usize)>,
 }
 
 impl IntoElement for PreviewElement {
@@ -96,61 +94,13 @@ impl Element for PreviewElement {
             window.paint_quad(ring);
         }
         match painted {
-            Ok(()) => {
-                self.app.update(cx, |app, cx| {
-                    if let Some(source) = app.pending_source.take() {
-                        app.displayed_source = Some(source);
-                    }
-                    if self.completion.is_some_and(|token| token.1 == 0)
-                        && let Some(output) = &app.qualification_output
-                        && let Some(source) = &app.displayed_source
-                        && let Some(title) = source
-                            .elements
-                            .iter()
-                            .find(|element| element.element_id == "intro.title")
-                        && let Some(input) = app.text_input.read(cx).text_bounds()
-                    {
-                        // Native automation uses painted geometry, including the
-                        // letterbox transform, rather than a timer or fixed pixels.
-                        let readiness = serde_json::json!({
-                            "generation": source.header.worker_generation,
-                            "source_revision": source.header.source_revision,
-                            "input_click": [f32::from(input.left()) + 10., f32::from(input.top()) + 10.],
-                            "source_click": [
-                                f32::from(image_bounds.left()) + (title.bounds.x + title.bounds.width.min(100.) / 2.) * scale,
-                                f32::from(image_bounds.top()) + (title.bounds.y + title.bounds.height / 2.) * scale
-                            ]
-                        });
-                        let ready = output.with_extension("ready.json");
-                        let temporary = ready.with_extension("tmp");
-                        if let Ok(bytes) = serde_json::to_vec(&readiness) {
-                            let _ = std::fs::write(&temporary, bytes)
-                                .and_then(|_| std::fs::rename(&temporary, &ready));
-                        }
-                    }
-                });
-                if let Some(token) = self.completion {
-                    let should_schedule = self.app.update(cx, |app, _| {
-                        if app.stress_painted == Some(token) {
-                            false
-                        } else {
-                            app.stress_painted = Some(token);
-                            app.stress_metrics.paint_submissions += 1;
-                            true
-                        }
-                    });
-                    if should_schedule {
-                        let app = self.app.downgrade();
-                        window.on_next_frame(move |_, cx| {
-                            let _ = app.update(cx, |app, cx: &mut Context<StudioSpikeApp>| {
-                                app.confirm_stress_frame(token, cx)
-                            });
-                        });
-                    }
+            Ok(()) => self.app.update(cx, |app, _| {
+                if let Some(source) = app.pending_source.take() {
+                    app.displayed_source = Some(source);
                 }
-            }
+            }),
             Err(error) => self.app.update(cx, |app, cx| {
-                app.abort_stress(format!("Image presentation failed: {error}"), cx);
+                app.status_message = format!("Image presentation failed: {error}");
                 cx.notify();
             }),
         }
