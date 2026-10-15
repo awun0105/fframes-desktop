@@ -17,7 +17,7 @@ use studio_engine::services::export_service::{ExportControl, ExportProgress};
 use studio_engine::services::preview_coordinator::{PreviewCoordinator, SeekIntent};
 
 use super::{Picker, StudioShell};
-use crate::panels::conversation::Attachment;
+use crate::agent::Attachment;
 use crate::preset_panel::{PresetEvent, PresetPick};
 
 impl StudioShell {

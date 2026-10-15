@@ -4,7 +4,7 @@ use tempfile::TempDir;
 
 #[test]
 fn a_detected_adapter_file_maps_to_its_launch_and_names_what_is_missing() {
-    use studio_ui::panels::conversation::provider_setup::{DetectedLaunch, detected_launch};
+    use studio_ui::agent::provider_setup::{DetectedLaunch, detected_launch};
     let temp = TempDir::new().unwrap();
     let script = temp.path().join("adapter.js");
     std::fs::write(&script, "").unwrap();
@@ -30,7 +30,7 @@ fn a_detected_adapter_file_maps_to_its_launch_and_names_what_is_missing() {
 #[test]
 fn turn_on_shows_readiness_only_on_the_row_it_turned_on() {
     use studio_engine::providers::provider_profiles::DetectionState as D;
-    use studio_ui::panels::conversation::provider_setup::{RowStatus as R, TurnOn};
+    use studio_ui::agent::provider_setup::{RowStatus as R, TurnOn};
     let mut turn_on = TurnOn::default();
     assert_eq!(turn_on.row_status("a", D::Ready), R::Detected(D::Ready));
 
@@ -74,9 +74,7 @@ fn turn_on_shows_readiness_only_on_the_row_it_turned_on() {
 #[test]
 fn an_install_cancelled_after_npm_finished_is_not_turned_on() {
     use studio_harness::adapter_install::{InstallError, InstalledAdapter};
-    use studio_ui::panels::conversation::provider_setup::{
-        InstallFinished, InstallOutcome as O, InstallTracker,
-    };
+    use studio_ui::agent::provider_setup::{InstallFinished, InstallOutcome as O, InstallTracker};
     let installed = || -> Result<InstalledAdapter, InstallError> {
         Ok(InstalledAdapter {
             node: "/n/node".into(),
@@ -120,7 +118,7 @@ fn an_install_cancelled_after_npm_finished_is_not_turned_on() {
 
 #[test]
 fn leaving_the_project_stops_the_install_and_drops_its_result() {
-    use studio_ui::panels::conversation::provider_setup::{InstallTracker, ScanTracker};
+    use studio_ui::agent::provider_setup::{InstallTracker, ScanTracker};
     let mut tracker = InstallTracker::default();
     let (ticket, flag) = tracker.begin("claude").unwrap();
     tracker.abandon();

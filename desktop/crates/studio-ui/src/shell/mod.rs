@@ -38,9 +38,9 @@ use studio_project::ProjectId;
 use studio_proto::CommandId;
 use studio_theme::Theme;
 
+use crate::agent::{ConversationPanel, PanelEvent};
 use crate::app_state::{AppEvent, AppState};
 use crate::kit::{EditorButton, Icon, IconButton, IconButtonSize, MenuState};
-use crate::panels::conversation::{ConversationPanel, PanelEvent};
 use crate::{
     canvas_view::CanvasViewState,
     frame_image::ImagePresentationManager,
