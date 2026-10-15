@@ -302,6 +302,8 @@ pub fn install_adapter(
     cancel: &AtomicBool,
     timeout: Duration,
 ) -> Result<InstalledAdapter, InstallError> {
+    // npm, and the adapter started from the installed entry, get a path without the verbatim prefix.
+    let adapters = &studio_bootstrap::external_path(adapters);
     if let Some(installed) = find_installed(adapters, package, &tools.node) {
         return Ok(installed);
     }
@@ -672,6 +674,22 @@ mod tests {
             find_installed(&f.adapters, &FAKE, &f.tools.node),
             Some(installed)
         );
+    }
+
+    /// A canonicalized app data folder (`\\?\C:\...`) reaches npm and the installed entry
+    /// as a plain path: npm's `realpath` never ends on a verbatim one.
+    #[cfg(windows)]
+    #[test]
+    fn a_verbatim_adapters_folder_reaches_npm_as_a_plain_path() {
+        let mut f = fixture(&format!("echo %~3>\"%~dp0prefix.txt\"\r\n{SUCCESS}"));
+        std::fs::create_dir_all(&f.adapters).unwrap();
+        f.adapters = std::fs::canonicalize(&f.adapters).unwrap();
+        assert!(f.adapters.to_string_lossy().starts_with(r"\\?\"));
+        let installed = install(&f, &AtomicBool::new(false)).unwrap();
+        let prefix = std::fs::read_to_string(f.tools.npm.with_file_name("prefix.txt")).unwrap();
+        assert!(!prefix.starts_with(r"\\?\"), "{prefix}");
+        assert!(!installed.entry.to_string_lossy().starts_with(r"\\?\"));
+        assert!(installed.entry.is_file());
     }
 
     #[test]

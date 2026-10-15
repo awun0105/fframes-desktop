@@ -3,28 +3,9 @@ use std::path::{Path, PathBuf};
 use studio_bootstrap::ChildEnvironment;
 
 fn child_path(path: &Path) -> String {
-    let path = path.to_string_lossy();
-    #[cfg(windows)]
-    {
-        normalize_windows_verbatim_prefix(&path).into_owned()
-    }
-    #[cfg(not(windows))]
-    {
-        path.into_owned()
-    }
-}
-
-#[cfg(any(windows, test))]
-fn normalize_windows_verbatim_prefix(path: &str) -> std::borrow::Cow<'_, str> {
-    if let Some(unc_path) = path.strip_prefix(r"\\?\UNC\") {
-        return format!(r"\\{unc_path}").into();
-    }
-    if let Some(drive_path) = path.strip_prefix(r"\\?\")
-        && drive_path.as_bytes().get(1) == Some(&b':')
-    {
-        return drive_path.into();
-    }
-    path.into()
+    studio_bootstrap::external_path(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[derive(Debug, Clone)]
@@ -183,22 +164,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn windows_verbatim_paths_are_normalized_for_external_toolchains() {
-        assert_eq!(
-            normalize_windows_verbatim_prefix(r"\\?\C:\sdk\ffmpeg"),
-            r"C:\sdk\ffmpeg"
-        );
-        assert_eq!(
-            normalize_windows_verbatim_prefix(r"\\?\UNC\server\share\sdk"),
-            r"\\server\share\sdk"
-        );
-        assert_eq!(
-            normalize_windows_verbatim_prefix(r"C:\sdk\ffmpeg"),
-            r"C:\sdk\ffmpeg"
-        );
-    }
-
-    #[test]
     fn test_sdk_environment_construction() {
         let manifest = CompatibilityManifest::default_linux_x64();
         let sdk_env =
@@ -224,9 +189,12 @@ mod tests {
         let builds = temp.path().join("builds");
         std::fs::create_dir(&builds).unwrap();
         let builds = std::fs::canonicalize(builds).unwrap();
-        let expected_sdk = normalize_windows_verbatim_prefix(&sdk.to_string_lossy()).into_owned();
+        let expected_sdk =
+            studio_bootstrap::normalize_windows_verbatim_prefix(&sdk.to_string_lossy())
+                .into_owned();
         let expected_builds =
-            normalize_windows_verbatim_prefix(&builds.to_string_lossy()).into_owned();
+            studio_bootstrap::normalize_windows_verbatim_prefix(&builds.to_string_lossy())
+                .into_owned();
         let expected_ffmpeg = format!(r"{}\ffmpeg", expected_sdk);
         let expected_target = expected_builds.as_str();
         let expected_toolchain = format!(r"{}\toolchain\bin", expected_sdk);
