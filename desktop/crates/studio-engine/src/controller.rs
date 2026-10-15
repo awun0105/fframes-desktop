@@ -411,7 +411,6 @@ impl Controller {
 
     /// Makes the next lifecycle append fail exactly like a full disk. Tests only.
     #[doc(hidden)]
-    #[cfg(unix)]
     pub fn simulate_lifecycle_full_disk(&mut self) -> std::io::Result<()> {
         self.journal.simulate_full_disk()
     }

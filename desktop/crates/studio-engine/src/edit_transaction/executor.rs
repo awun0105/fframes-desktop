@@ -1,12 +1,14 @@
-//! Linux execution and recovery of file-set transactions (see the parent module docs).
+//! Execution and recovery of file-set transactions (see the parent module docs).
 use super::*;
 use crate::journal::{ReplayedTransaction, TxStatus};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, io::Write as _, time::SystemTime};
-use studio_project::publish::{Dir, EntryKind, EntryStat, FileId, fstat, hash_reader};
+use studio_project::publish::{
+    Dir, EntryKind, EntryStat, FileId, fstat, hard_link_refusal, hash_reader,
+};
 
 /// Moving a name an editor controls (displacing an original, taking a published file
-/// down) is always one atomic `renameat2`: the link-based pair is never used for it,
+/// down) is always one atomic no-replace rename: the link-based pair is never used for it,
 /// whatever an older intent recorded as its mechanism.
 const LIVE: NoClobber = NoClobber::Renameat2;
 
@@ -119,17 +121,14 @@ fn now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// `dev:ino` as journalled in the `StageCreated` progress detail.
+/// `volume:file` (decimal) as journalled in the `StageCreated` progress detail; format-2
+/// details (`dev:ino`) decode to the same identity.
 fn encode_id(id: FileId) -> String {
-    format!("{}:{}", id.dev, id.ino)
+    id.to_string()
 }
 
 fn decode_id(detail: &str) -> Option<FileId> {
-    let (dev, ino) = detail.split_once(':')?;
-    Some(FileId {
-        dev: dev.parse().ok()?,
-        ino: ino.parse().ok()?,
-    })
+    detail.parse().ok()
 }
 
 /// Hashes the first `limit` bytes written and discards the rest.
@@ -491,6 +490,11 @@ impl<'a> Machine<'a> {
                 op.delta.path,
                 live.describe()
             )));
+        }
+        if let Seen::File { stat, .. } = &live
+            && let Some(reason) = hard_link_refusal(stat)
+        {
+            return Err(Fail::Conflict(format!("{}: {reason}", op.delta.path)));
         }
         self.dir_unmoved(&dir, op)?;
         // One atomic syscall: the live name is never linked-then-unlinked.

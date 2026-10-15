@@ -51,33 +51,23 @@ use crate::{
     EngineError, candidate_validation::BuildIdentity, journal::TaskJournal, state::OpenSession,
 };
 use serde::{Deserialize, Serialize};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use std::collections::BTreeSet;
 use std::{collections::BTreeMap, io, path::Path};
 use studio_project::{
     SourceInventory, SourceRevision, checkpoint::Checkpoints, revision::SourceFile,
 };
 
-#[cfg(target_os = "linux")]
 pub use studio_project::publish::{FileId, NoClobber};
 
-/// Stand-ins so the data model compiles everywhere; only Linux can execute.
-#[cfg(not(target_os = "linux"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct FileId {
-    pub dev: u64,
-    pub ino: u64,
-}
-#[cfg(not(target_os = "linux"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NoClobber {
-    Renameat2,
-    Link,
-}
-
-/// Explicit format version of every event in the task journal.
-pub const TASK_FORMAT: u32 = 2;
+/// Explicit format version of every event the task journal writes.
+///
+/// Format 3 widened [`FileId`] to a volume id plus a 128-bit file id (`volume`, `file`;
+/// format 2 wrote `dev`, `ino`). Format-2 lines still replay, so a journal may mix both;
+/// builds from before format 3 refuse a journal that holds a format-3 line.
+pub const TASK_FORMAT: u32 = 3;
+/// The oldest task-journal format that still replays.
+pub const OLDEST_TASK_FORMAT: u32 = 2;
 /// Most file operations one transaction may carry (the intent is a single journal line).
 pub const MAX_FILE_OPS: usize = 2048;
 const MAX_SUMMARY_CHARS: usize = 512;
@@ -234,7 +224,7 @@ pub fn touched_conflicts(deltas: &[FileDelta], current: &SourceInventory) -> Vec
 /// whose permission bits differ from the bits the edit left (a `chmod` since). Legacy
 /// records that never knew the bits are not examined. Only touches the filesystem to
 /// `lstat` the recorded paths.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub fn mode_conflicts(root: &Path, deltas: &[FileDelta]) -> Vec<PathConflict> {
     use studio_project::publish::Dir;
     let Ok(root_dir) = Dir::open_root(root) else {
@@ -260,7 +250,7 @@ pub fn mode_conflicts(root: &Path, deltas: &[FileDelta]) -> Vec<PathConflict> {
         .collect()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn mode_conflicts(_root: &Path, _deltas: &[FileDelta]) -> Vec<PathConflict> {
     Vec::new()
 }
@@ -427,13 +417,13 @@ pub struct TransactionIntent {
 }
 
 impl TransactionIntent {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn dir_id(&self, path: &str) -> Option<FileId> {
         self.dirs.iter().find(|d| d.path == path).map(|d| d.id)
     }
 
     /// Whether the revision itself removes (and, on rollback, recreates) `path`.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn is_vacated(&self, path: &str) -> bool {
         self.ops
             .iter()
@@ -701,7 +691,7 @@ impl ApplyGate {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub fn probe_apply_gate(root: &Path) -> ApplyGate {
     match studio_project::publish::Dir::open_root(root) {
         Err(e) => ApplyGate::Blocked(format!("{}: {e}", root.display())),
@@ -712,10 +702,10 @@ pub fn probe_apply_gate(root: &Path) -> ApplyGate {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn probe_apply_gate(_root: &Path) -> ApplyGate {
     ApplyGate::Blocked(
-        "no-clobber source publication is only proven on Linux; this platform's Apply stays blocked until its primitives are qualified".into(),
+        "no-clobber source publication is only proven on Linux and Windows; this platform's Apply stays blocked until its primitives are qualified".into(),
     )
 }
 
@@ -745,12 +735,12 @@ pub struct RecordSeed {
     pub preset: Option<crate::preset_state::PresetProvenance>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn split_path(path: &str) -> (&str, &str) {
     path.rsplit_once('/').unwrap_or(("", path))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn conflict(path: &str, reason: impl Into<String>) -> PlanError {
     PlanError::Conflict {
         path: path.to_owned(),
@@ -758,12 +748,12 @@ fn conflict(path: &str, reason: impl Into<String>) -> PlanError {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn exec_mode(base: u32) -> u32 {
     base | ((base & 0o444) >> 2)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn plain_mode(base: u32) -> u32 {
     base & !0o111
 }
@@ -772,7 +762,7 @@ fn plain_mode(base: u32) -> u32 {
 /// original's exact permission bits (a content-only replacement of a `0744` file stays
 /// `0744`); a flip adds or removes the executable bits following the readable classes;
 /// new files get the portable defaults.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn after_mode(before_mode: Option<u32>, executable: bool) -> u32 {
     match before_mode {
         Some(mode) if (mode & 0o111 != 0) == executable => mode,
@@ -793,7 +783,7 @@ pub const LINK_REFUSED: &str = "linkat+unlinkat cannot move a live project file 
 ///
 /// `forced` simulates a filesystem where only that mechanism exists: `Link` is refused
 /// ([`LINK_REFUSED`]) because it can never move a live name.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub fn plan(
     root: &Path,
     current: &SourceInventory,
@@ -803,7 +793,7 @@ pub fn plan(
 ) -> Result<TransactionIntent, PlanError> {
     use studio_project::{
         paths::{TxRole, is_transaction_internal_name, transaction_file_name},
-        publish::{Dir, EntryKind, probe_no_clobber},
+        publish::{Dir, EntryKind, hard_link_refusal, probe_no_clobber},
     };
     if forced == Some(NoClobber::Link) {
         return Err(PlanError::GateBlocked(LINK_REFUSED.into()));
@@ -985,6 +975,9 @@ pub fn plan(
                         "changed outside the task since it was scanned",
                     ));
                 }
+                if let Some(reason) = hard_link_refusal(&stat) {
+                    return Err(conflict(&delta.path, reason));
+                }
                 (Some(stat.id), Some(stat.mode))
             }
         };
@@ -1099,7 +1092,7 @@ pub fn plan(
     })
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn plan(
     _root: &Path,
     _current: &SourceInventory,
@@ -1113,17 +1106,17 @@ pub fn plan(
     }
 }
 
-// ---- execution (Linux) -----------------------------------------------------------------
+// ---- execution -------------------------------------------------------------------------
 
 /// Executes and recovers transactions against one project root.
 pub struct Executor<'a> {
-    #[cfg(target_os = "linux")]
-    inner: linux::Machine<'a>,
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(any(target_os = "linux", windows))]
+    inner: executor::Machine<'a>,
+    #[cfg(not(any(target_os = "linux", windows)))]
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 impl<'a> Executor<'a> {
     pub fn new(
         root: &'a Path,
@@ -1132,7 +1125,7 @@ impl<'a> Executor<'a> {
         hooks: &'a dyn TransactionHooks,
     ) -> Result<Self, EngineError> {
         Ok(Self {
-            inner: linux::Machine::new(root, checkpoints, journal, hooks)?,
+            inner: executor::Machine::new(root, checkpoints, journal, hooks)?,
         })
     }
 
@@ -1153,7 +1146,7 @@ impl<'a> Executor<'a> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 impl<'a> Executor<'a> {
     pub fn new(
         _root: &'a Path,
@@ -1177,8 +1170,8 @@ impl<'a> Executor<'a> {
     }
 }
 
-#[cfg(target_os = "linux")]
-mod linux;
+#[cfg(any(target_os = "linux", windows))]
+mod executor;
 
 #[cfg(test)]
 mod tests {
@@ -1316,7 +1309,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn published_modes_keep_permissions_and_follow_the_executable_state() {
         assert_eq!(after_mode(Some(0o600), true), 0o700);
         assert_eq!(after_mode(Some(0o644), true), 0o755);
@@ -1327,7 +1320,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn an_unchanged_executable_status_keeps_the_full_mode() {
         // Executable already (any x bit counts) and staying executable: untouched.
         assert_eq!(after_mode(Some(0o744), true), 0o744);
@@ -1370,6 +1363,60 @@ mod tests {
                 .unwrap()
                 .contains("_mode")
         );
+    }
+
+    #[test]
+    fn planned_operations_keep_wide_file_ids_and_read_format_2_ids() {
+        let op = FileOp {
+            index: 0,
+            delta: delta_without_modes(),
+            kind: OpKind::Replace,
+            dir: "sub".into(),
+            name: "a.txt".into(),
+            before_id: Some(FileId {
+                volume: u64::MAX,
+                file: u128::MAX - 7,
+            }),
+            new_dirs: vec![],
+            defer_stage: false,
+            vacates: vec![VacatedDir {
+                path: "gone".into(),
+                id: FileId {
+                    volume: 3,
+                    file: u128::from(u64::MAX) + 1,
+                },
+                mode: 0o755,
+            }],
+            slot_dir: None,
+            mechanism: NoClobber::Renameat2,
+            recovery: RecoveryPaths {
+                stage: "s".into(),
+                original: "o".into(),
+                rollback: "r".into(),
+            },
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert_eq!(serde_json::from_str::<FileOp>(&json).unwrap(), op);
+        // A format-2 operation names the identity `dev` / `ino`.
+        let older = json
+            .replace(
+                &format!(r#""volume":{},"file":"{}""#, u64::MAX, u128::MAX - 7),
+                r#""dev":2049,"ino":77"#,
+            )
+            .replace(
+                &format!(r#""volume":3,"file":"{}""#, u128::from(u64::MAX) + 1),
+                r#""dev":3,"ino":9"#,
+            );
+        assert!(older.contains(r#""ino":77"#) && older.contains(r#""ino":9"#));
+        let read: FileOp = serde_json::from_str(&older).unwrap();
+        assert_eq!(
+            read.before_id,
+            Some(FileId {
+                volume: 2049,
+                file: 77
+            })
+        );
+        assert_eq!(read.vacates[0].id, FileId { volume: 3, file: 9 });
     }
 
     fn delta_without_modes() -> FileDelta {

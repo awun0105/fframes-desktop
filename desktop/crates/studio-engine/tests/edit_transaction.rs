@@ -1,16 +1,12 @@
 //! Apply / Undo behaviour: durable task revisions, policy, fences and the interleavings
 //! an uncooperative editor can produce around each publication step. Crash-boundary
 //! coverage lives in `task_recovery.rs`.
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", windows))]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;
 
-use std::{
-    fs,
-    os::unix::fs::{MetadataExt, PermissionsExt},
-    sync::Arc,
-};
+use std::{fs, sync::Arc};
 use studio_engine::{
     Boundary, CompletionOutcome, Controller, EngineError, PromotionError, ReviewPolicy, TaskState,
     TransactionKind, UndoStatus,
@@ -70,19 +66,13 @@ fn apply_publishes_a_multi_file_set_as_a_validated_task_revision() {
         "created\n"
     );
     assert!(!f.root.join("old.txt").exists());
-    assert_eq!(
-        fs::metadata(f.root.join("run.sh")).unwrap().mode() & 0o7777,
-        0o755
-    );
-    assert_eq!(
-        fs::metadata(f.root.join("notes.txt")).unwrap().mode() & 0o7777,
-        0o644
-    );
+    assert_eq!(mode_at(&f.root.join("run.sh")), EXEC_MODE);
+    assert_eq!(mode_at(&f.root.join("notes.txt")), 0o644);
     assert!(internal_files(&f.root).is_empty());
     let after = snapshot(&f.root);
     assert_eq!(outside_task(&before, &after, TOUCHED), Vec::<String>::new());
     // The private file kept its 0600 mode and the Git metadata is byte-identical.
-    assert_eq!(after["private.txt"].mode, 0o600);
+    assert_eq!(after["private.txt"].mode, PRIVATE_MODE);
     assert_eq!(
         differences(
             &before
@@ -128,25 +118,25 @@ fn apply_publishes_a_multi_file_set_as_a_validated_task_revision() {
     );
     let mut changed: Vec<_> = record.changed_paths().collect();
     changed.sort_unstable();
-    assert_eq!(
-        changed,
-        [
-            "added.txt",
-            "media/new/clip.txt",
-            "notes.txt",
-            "old.txt",
-            "run.sh"
-        ]
-    );
+    // Windows has no executable bit, so the mode-only change to run.sh is no change there.
+    let mut expected = vec!["added.txt", "media/new/clip.txt", "notes.txt", "old.txt"];
+    if cfg!(unix) {
+        expected.push("run.sh");
+    }
+    assert_eq!(changed, expected);
     let delta = |p: &str| record.changes.iter().find(|d| d.path == p).unwrap();
     assert!(delta("added.txt").before.is_none() && delta("added.txt").after.is_some());
     assert!(delta("old.txt").after.is_none() && delta("old.txt").before.is_some());
-    let mode = delta("run.sh");
-    assert_eq!(
-        mode.before.as_ref().unwrap().sha256,
-        mode.after.as_ref().unwrap().sha256
-    );
-    assert!(!mode.before.as_ref().unwrap().executable && mode.after.as_ref().unwrap().executable);
+    if cfg!(unix) {
+        let mode = delta("run.sh");
+        assert_eq!(
+            mode.before.as_ref().unwrap().sha256,
+            mode.after.as_ref().unwrap().sha256
+        );
+        assert!(
+            !mode.before.as_ref().unwrap().executable && mode.after.as_ref().unwrap().executable
+        );
+    }
 
     // The task finished accepted, the draft is marked accepted, and the install
     // authorization names the published candidate, not the task base.
@@ -341,7 +331,7 @@ fn undo_reverses_only_its_own_files_and_keeps_unrelated_external_edits() {
         fs::write(d.join("notes.txt"), "agent notes\n").unwrap();
         fs::write(d.join("added.txt"), "added\n").unwrap();
         fs::remove_file(d.join("old.txt")).unwrap();
-        fs::set_permissions(d.join("run.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+        set_mode(&d.join("run.sh"), 0o755);
     });
     // The user edits an unrelated file and creates a new one afterwards.
     fs::write(f.root.join("private.txt"), "my later edit\n").unwrap();
@@ -369,19 +359,13 @@ fn undo_reverses_only_its_own_files_and_keeps_unrelated_external_edits() {
         "to be deleted\n"
     );
     assert!(!f.root.join("added.txt").exists());
-    assert_eq!(
-        fs::metadata(f.root.join("run.sh")).unwrap().mode() & 0o7777,
-        0o644
-    );
+    assert_eq!(mode_at(&f.root.join("run.sh")), 0o644);
     // Unrelated external changes survive, with their permissions.
     assert_eq!(
         fs::read_to_string(f.root.join("private.txt")).unwrap(),
         "my later edit\n"
     );
-    assert_eq!(
-        fs::metadata(f.root.join("private.txt")).unwrap().mode() & 0o7777,
-        0o600
-    );
+    assert_eq!(mode_at(&f.root.join("private.txt")), PRIVATE_MODE);
     assert_eq!(
         fs::read_to_string(f.root.join("scratch.txt")).unwrap(),
         "scratch\n"
@@ -714,8 +698,7 @@ fn directory_swaps_and_links_halt_without_following() {
         |b| matches!(b, Boundary::BeforeDisplace(_)),
         move || {
             fs::rename(root.join("sub"), root.join("sub-moved")).unwrap();
-            std::os::unix::fs::symlink(root.parent().unwrap().join("outside"), root.join("sub"))
-                .unwrap();
+            symlink_dir(&root.parent().unwrap().join("outside"), &root.join("sub"));
         },
     );
     c.set_transaction_hooks(hooks.hooks());
@@ -738,7 +721,9 @@ fn directory_swaps_and_links_halt_without_following() {
 
 #[test]
 fn links_and_special_files_at_a_destination_are_refused_at_planning() {
-    for variant in ["symlink", "fifo", "directory"] {
+    // Windows has no FIFO; its other link kind, a junction, takes that place.
+    let special = if cfg!(windows) { "junction" } else { "fifo" };
+    for variant in ["symlink", special, "directory"] {
         let f = fixture();
         let mut c = Controller::open(&f.root, &f.paths).unwrap();
         let (_, captured, report) = validated(&f, &mut c, "edit", |d| {
@@ -748,8 +733,20 @@ fn links_and_special_files_at_a_destination_are_refused_at_planning() {
         // Between validation and publication the destination becomes something else.
         match variant {
             "symlink" => {
-                std::os::unix::fs::symlink("/etc/passwd", f.root.join("added.txt")).unwrap()
+                // A live link to a file outside the project.
+                fs::write(
+                    f.temp.path().join("outside.txt"),
+                    "outside
+",
+                )
+                .unwrap();
+                symlink_file(
+                    &f.temp.path().join("outside.txt"),
+                    &f.root.join("added.txt"),
+                )
             }
+            #[cfg(windows)]
+            "junction" => junction(f.temp.path(), &f.root.join("added.txt")),
             "fifo" => {
                 let made = std::process::Command::new("mkfifo")
                     .arg(f.root.join("added.txt"))

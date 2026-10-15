@@ -428,14 +428,14 @@ fn an_unsupported_task_journal_changes_no_history_file_even_with_an_old_database
     fs::write(&lifecycle, &torn).unwrap();
     // ... and a task journal written by a newer Studio.
     let mut future = fs::read(&tasks).unwrap();
-    future.extend_from_slice(b"{\"format\":3,\"sequence\":99}\n");
+    future.extend_from_slice(b"{\"format\":4,\"sequence\":99}\n");
     fs::write(&tasks, &future).unwrap();
 
     let tree = snapshot(&f.root);
     let everything = tree_bytes(&f.paths.data);
     let error = Controller::open(&f.root, &f.paths).err().unwrap();
     assert!(
-        matches!(error, EngineError::NewerFormat { found: 3, .. }),
+        matches!(error, EngineError::NewerFormat { found: 4, .. }),
         "{error}"
     );
     // No migration (so no backup), no quarantine file, no new byte anywhere.

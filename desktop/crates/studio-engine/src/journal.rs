@@ -1,8 +1,8 @@
 use crate::{
     EngineError,
     edit_transaction::{
-        ConflictReport, Progress, TASK_FORMAT, TaskEvent, TaskRevisionRecord, TransactionIntent,
-        TransactionKind,
+        ConflictReport, OLDEST_TASK_FORMAT, Progress, TASK_FORMAT, TaskEvent, TaskRevisionRecord,
+        TransactionIntent, TransactionKind,
     },
     store::Record,
 };
@@ -134,6 +134,17 @@ fn scan_lifecycle(
     ))
 }
 
+/// A handle every write to which fails, for the simulated full disk.
+#[cfg(target_os = "linux")]
+fn failing_writer(_journal: &std::path::Path) -> std::io::Result<File> {
+    OpenOptions::new().write(true).open("/dev/full")
+}
+
+#[cfg(not(target_os = "linux"))]
+fn failing_writer(journal: &std::path::Path) -> std::io::Result<File> {
+    OpenOptions::new().read(true).open(journal)
+}
+
 impl Journal {
     pub fn open(path: PathBuf) -> Result<(Self, Replay), EngineError> {
         let file = OpenOptions::new()
@@ -171,12 +182,13 @@ impl Journal {
     pub fn is_failed(&self) -> bool {
         self.failed
     }
-    /// Redirects further appends to `/dev/full`, so the next write fails exactly like a
-    /// full disk (`ENOSPC`). For tests of the failure handling only.
+    /// Makes the next append fail like a full disk. For tests of the failure handling
+    /// only. Linux redirects appends to `/dev/full` (`ENOSPC`); elsewhere there is no such
+    /// device, so appends go to a read-only handle of the journal itself and fail
+    /// (`EBADF`, `ERROR_ACCESS_DENIED`), leaving the file unchanged either way.
     #[doc(hidden)]
-    #[cfg(unix)]
     pub fn simulate_full_disk(&mut self) -> std::io::Result<()> {
-        self.file = OpenOptions::new().write(true).open("/dev/full")?;
+        self.file = failing_writer(&self.path)?;
         Ok(())
     }
     pub fn intent(&mut self, record: &Record) -> Result<String, EngineError> {
@@ -227,12 +239,13 @@ impl Journal {
     }
 }
 
-// ---- task journal (format 2) --------------------------------------------------------------
+// ---- task journal (formats 2 and 3) -------------------------------------------------------
 //
 // `tasks.jsonl` records file-set transactions. Every line carries an explicit `format`
-// (`TASK_FORMAT`); the lifecycle journal above keeps its own version-1 records
-// untouched, so previously written history stays readable. A line from a newer
-// format is refused without truncating or rewriting anything.
+// (`TASK_FORMAT`, 3; format-2 lines still replay, see `TASK_FORMAT`); the lifecycle
+// journal above keeps its own version-1 records untouched, so previously written
+// history stays readable. A line from a newer format is refused without truncating or
+// rewriting anything.
 
 const TASK_MAX_ENTRY_BYTES: usize = 4 * 1024 * 1024;
 
@@ -437,7 +450,8 @@ fn scan_task_journal(
                 supported: TASK_FORMAT,
             });
         }
-        if header.format != TASK_FORMAT {
+        // Format 2 differs only in the `FileId` field names, which still decode.
+        if header.format < OLDEST_TASK_FORMAT {
             return Err(corrupt(&format!("unsupported format {}", header.format)));
         }
         let entry: TaskEntry = serde_json::from_slice(&line).map_err(|e| corrupt(&e))?;
@@ -603,6 +617,107 @@ mod tests {
         }
     }
 
+    /// Rewrites every `{"volume": v, "file": f}` object into the format-2 `{"dev", "ino"}`.
+    fn as_format_2(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                if map.len() == 2 && map.contains_key("volume") && map.contains_key("file") {
+                    let volume = map.remove("volume").unwrap();
+                    let file = map.remove("file").unwrap();
+                    map.insert("dev".into(), volume);
+                    map.insert("ino".into(), file);
+                }
+                map.values_mut().for_each(as_format_2);
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(as_format_2),
+            _ => (),
+        }
+    }
+
+    #[test]
+    fn a_format_2_journal_with_a_pending_transaction_replays_and_takes_format_3_appends() {
+        use crate::edit_transaction::{DirIdentity, FileId, Step};
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("tasks.jsonl");
+        let mut intent = sample_intent("t1");
+        intent.format = 2;
+        intent.dirs = vec![DirIdentity {
+            path: String::new(),
+            id: FileId {
+                volume: 2049,
+                file: 4242,
+            },
+        }];
+        let stage = Progress {
+            op: Some(0),
+            step: Step::StageCreated,
+            detail: Some("2049:77".into()),
+        };
+        let mut lines = Vec::new();
+        for (sequence, event) in [
+            TaskEvent::Intent(Box::new(intent)),
+            TaskEvent::Progress(stage),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut entry = serde_json::to_value(TaskEntry {
+                format: 2,
+                sequence: sequence as u64 + 1,
+                transaction: "t1".into(),
+                at: 1,
+                event,
+            })
+            .unwrap();
+            as_format_2(&mut entry);
+            lines.extend(serde_json::to_vec(&entry).unwrap());
+            lines.push(b'\n');
+        }
+        let written = String::from_utf8(lines.clone()).unwrap();
+        assert!(written.contains(r#""dev":2049,"ino":4242"#), "{written}");
+        assert!(!written.contains("volume"), "{written}");
+        fs::write(&path, &lines).unwrap();
+        let (mut journal, replay) = TaskJournal::open(path.clone()).unwrap();
+        let pending = replay.pending();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            pending[0].intent.dirs[0].id,
+            FileId {
+                volume: 2049,
+                file: 4242
+            }
+        );
+        assert_eq!(
+            pending[0].progress[0]
+                .detail
+                .as_deref()
+                .map(str::parse::<FileId>),
+            Some(Ok(FileId {
+                volume: 2049,
+                file: 77
+            }))
+        );
+        // Recovery appends in the current format after the format-2 lines.
+        journal
+            .append(
+                "t1",
+                &TaskEvent::RolledBack {
+                    reason: "recovered".into(),
+                },
+            )
+            .unwrap();
+        drop(journal);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.lines()
+                .last()
+                .unwrap()
+                .starts_with(&format!("{{\"format\":{TASK_FORMAT},"))
+        );
+        let (_, replay) = TaskJournal::open(path).unwrap();
+        assert!(replay.pending().is_empty());
+    }
+
     #[test]
     fn task_journal_replays_intent_progress_and_terminal_events() {
         let tmp = tempfile::tempdir().unwrap();
@@ -665,14 +780,14 @@ mod tests {
     fn a_newer_task_journal_is_refused_without_being_changed() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("tasks.jsonl");
-        let newer = b"{\"format\":3,\"sequence\":1,\"future\":true}\n";
+        let newer = b"{\"format\":4,\"sequence\":1,\"future\":true}\n";
         fs::write(&path, newer).unwrap();
         let error = TaskJournal::open(path.clone()).err().unwrap();
         assert!(
             matches!(
                 error,
                 EngineError::NewerFormat {
-                    found: 3,
+                    found: 4,
                     supported: TASK_FORMAT,
                     ..
                 }
@@ -727,12 +842,11 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), newer);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn disk_full_writer_refuses_further_appends_until_reopen() {
         let tmp = tempfile::tempdir().unwrap();
         let (mut journal, _) = Journal::open(tmp.path().join("journal")).unwrap();
-        journal.file = OpenOptions::new().write(true).open("/dev/full").unwrap();
+        journal.simulate_full_disk().unwrap();
         assert!(journal.commit("test").is_err());
         assert!(
             journal

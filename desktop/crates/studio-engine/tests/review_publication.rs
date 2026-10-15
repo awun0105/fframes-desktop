@@ -1,7 +1,7 @@
 //! Regressions for the Stage 3 review findings on publication: partial-stage ownership
 //! (H1), root pathname fencing (H4), file <-> directory topology (H5) and exact
 //! permission bits (M1).
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", windows))]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;
@@ -10,7 +10,6 @@ use std::{
     collections::BTreeMap,
     fs,
     io::ErrorKind,
-    os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 use studio_engine::{
@@ -128,12 +127,12 @@ fn unrelated_shorter_bytes_in_the_stage_name_are_retained_as_a_conflict() {
 fn a_replaced_stage_inode_is_never_collected_even_when_its_bytes_look_right() {
     let (f, _) = crashed_while_staging();
     let stage = stage_of(&f);
-    let original = fs::metadata(&stage).unwrap().ino();
+    let original = file_id(&stage);
     // Another file takes the stage's name; its bytes are a perfect prefix.
     let replacement = f.root.join(".someone-elses-temp");
     fs::write(&replacement, "add").unwrap();
     fs::rename(&replacement, &stage).unwrap();
-    assert_ne!(fs::metadata(&stage).unwrap().ino(), original);
+    assert_ne!(file_id(&stage), original);
     let c = open_retrying(&f.root, &f.paths).unwrap();
     assert_eq!(c.recovery_status().unresolved.len(), 1);
     assert_eq!(fs::read(&stage).unwrap(), b"add");
@@ -167,7 +166,7 @@ fn a_root_swapped_for_a_link_during_publication_is_a_conflict_never_a_commit() {
         c.set_transaction_hooks(
             Tape::on(when, move || {
                 fs::rename(&root, &target).unwrap();
-                std::os::unix::fs::symlink(&target, &root).unwrap();
+                symlink_dir(&target, &root);
             })
             .hooks(),
         );
@@ -211,7 +210,7 @@ fn with_media(root: &Path) {
     fs::create_dir(root.join("clips")).unwrap();
     fs::write(root.join("clips/a.txt"), "a\n").unwrap();
     fs::write(root.join("clips/b.txt"), "b\n").unwrap();
-    fs::set_permissions(root.join("clips"), fs::Permissions::from_mode(0o750)).unwrap();
+    set_mode(&root.join("clips"), 0o750);
 }
 
 fn nothing(_: &Path) {}
@@ -461,30 +460,40 @@ fn every_boundary_of_the_undo_of_a_directory_to_file_edit_converges() {
 
 // ---- M1: exact permission bits ---------------------------------------------------------
 
-fn mode_of(root: &Path, name: &str) -> u32 {
-    fs::metadata(root.join(name)).unwrap().mode() & 0o7777
+fn mode_in(root: &Path, name: &str) -> u32 {
+    mode_at(&root.join(name))
 }
 
-fn set_mode(root: &Path, name: &str, mode: u32) {
-    fs::set_permissions(root.join(name), fs::Permissions::from_mode(mode)).unwrap();
+fn set_mode_in(root: &Path, name: &str, mode: u32) {
+    set_mode(&root.join(name), mode);
 }
 
 #[test]
 fn a_content_only_replacement_keeps_the_exact_permission_bits() {
     let f = fixture();
+    // Windows keeps one permission bit, read-only: a read-only file stays read-only.
+    let (m744, m641) = if cfg!(windows) {
+        (0o444, 0o644)
+    } else {
+        (0o744, 0o641)
+    };
     fs::write(f.root.join("m744.sh"), "#!/bin/sh\n").unwrap();
-    set_mode(&f.root, "m744.sh", 0o744);
+    set_mode_in(&f.root, "m744.sh", m744);
     // Executable only for "other": still an executable file for the inventory.
     fs::write(f.root.join("m641.txt"), "x\n").unwrap();
-    set_mode(&f.root, "m641.txt", 0o641);
+    set_mode_in(&f.root, "m641.txt", m641);
     let mut c = open_retrying(&f.root, &f.paths).unwrap();
     let (_, captured, report) = validated(&f, &mut c, "content only", |draft| {
+        // The draft copy may carry the read-only attribute; the inventory ignores it.
+        if cfg!(windows) {
+            set_mode_in(draft, "m744.sh", 0o644);
+        }
         fs::write(draft.join("m744.sh"), "#!/bin/sh\necho new\n").unwrap();
         fs::write(draft.join("m641.txt"), "y\n").unwrap();
     });
     let revision = applied(&mut c, &captured, &report);
-    assert_eq!(mode_of(&f.root, "m744.sh"), 0o744);
-    assert_eq!(mode_of(&f.root, "m641.txt"), 0o641);
+    assert_eq!(mode_in(&f.root, "m744.sh"), m744);
+    assert_eq!(mode_in(&f.root, "m641.txt"), m641);
     // The record keeps both sides for an exact inverse.
     for name in ["m744.sh", "m641.txt"] {
         let delta = revision
@@ -498,8 +507,8 @@ fn a_content_only_replacement_keeps_the_exact_permission_bits() {
     }
     // And Undo puts the same bits back.
     undo(&mut c, &revision.record.id).unwrap();
-    assert_eq!(mode_of(&f.root, "m744.sh"), 0o744);
-    assert_eq!(mode_of(&f.root, "m641.txt"), 0o641);
+    assert_eq!(mode_in(&f.root, "m744.sh"), m744);
+    assert_eq!(mode_in(&f.root, "m641.txt"), m641);
     assert_eq!(
         fs::read_to_string(f.root.join("m744.sh")).unwrap(),
         "#!/bin/sh\n"
@@ -510,16 +519,26 @@ fn a_content_only_replacement_keeps_the_exact_permission_bits() {
 fn undo_restores_the_exact_bits_the_original_had_and_refuses_after_a_later_chmod() {
     let f = fixture();
     fs::write(f.root.join("odd.sh"), "#!/bin/sh\n").unwrap();
-    // Executable for owner and other, plain read for group: dropping the executable
-    // status yields 0640, from which a derived inverse could only guess 0750.
-    set_mode(&f.root, "odd.sh", 0o741);
+    // Unix: executable for owner and other, plain read for group: dropping the
+    // executable status yields 0640, from which a derived inverse could only guess 0750.
+    // Windows has no executable bit: a read-only file is edited, stays read-only, and a
+    // later change of its read-only attribute is the permission change Undo refuses.
+    let (original, published, later) = if cfg!(windows) {
+        (0o444, 0o444, 0o644)
+    } else {
+        (0o741, 0o640, 0o600)
+    };
+    set_mode_in(&f.root, "odd.sh", original);
     let mut c = open_retrying(&f.root, &f.paths).unwrap();
     let flip = |draft: &Path| {
-        set_mode(draft, "odd.sh", 0o644);
+        set_mode_in(draft, "odd.sh", 0o644);
+        if cfg!(windows) {
+            fs::write(draft.join("odd.sh"), "#!/bin/sh\necho edited\n").unwrap();
+        }
     };
     let (_, captured, report) = validated(&f, &mut c, "drop the executable bit", flip);
     let revision = applied(&mut c, &captured, &report);
-    assert_eq!(mode_of(&f.root, "odd.sh"), 0o640);
+    assert_eq!(mode_in(&f.root, "odd.sh"), published);
     let delta = revision
         .record
         .changes
@@ -528,16 +547,20 @@ fn undo_restores_the_exact_bits_the_original_had_and_refuses_after_a_later_chmod
         .unwrap();
     assert_eq!(
         (delta.before_mode, delta.after_mode),
-        (Some(0o741), Some(0o640))
+        (Some(original), Some(published))
     );
     undo(&mut c, &revision.record.id).unwrap();
-    assert_eq!(mode_of(&f.root, "odd.sh"), 0o741, "the exact bits are back");
+    assert_eq!(
+        mode_in(&f.root, "odd.sh"),
+        original,
+        "the exact bits are back"
+    );
 
     // Apply again, then change the permissions behind the app's back (same bytes, still
     // not executable): the exact inverse is guarded and refuses.
     let (_, captured, report) = validated(&f, &mut c, "again", flip);
     let second = applied(&mut c, &captured, &report);
-    set_mode(&f.root, "odd.sh", 0o600);
+    set_mode_in(&f.root, "odd.sh", later);
     let before = snapshot(&f.root);
     let error = match c.prepare_undo(Some(&second.record.id)) {
         Err(error) => error,

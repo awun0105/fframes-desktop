@@ -1,6 +1,6 @@
 //! Crash and corruption recovery of file-set transactions: every durable boundary,
 //! idempotent replay, conflicted recovery, journal damage and projection loss.
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", windows))]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;
@@ -178,7 +178,9 @@ fn the_boundary_sequence_covers_every_durable_step() {
         }
     )));
     // Ops: 0 deletes old.txt, 1-2 create, 3-4 replace (deletes first, then creates).
-    for op in 1..5 {
+    // Windows has no executable bit, so the mode-only replacement of run.sh is not an op.
+    let ops = if cfg!(unix) { 5 } else { 4 };
+    for op in 1..ops {
         assert!(has(&|b| *b == Boundary::StageCreated(op)), "stage {op}");
         assert!(has(&|b| *b == Boundary::StageWritten(op)));
         assert!(has(&|b| *b == Boundary::StageSynced(op)));
@@ -186,12 +188,12 @@ fn the_boundary_sequence_covers_every_durable_step() {
     }
     assert!(!has(&|b| *b == Boundary::StageCreated(0)));
     // The delete and the two replacements displace; creates do not.
-    for op in [0, 3, 4] {
+    for op in [0, 3, 4].into_iter().filter(|op| *op < ops) {
         assert!(has(&|b| *b == Boundary::BeforeDisplace(op)));
         assert!(has(&|b| *b == Boundary::AfterDisplace(op)));
         assert!(has(&|b| *b == Boundary::DisplacedVerified(op)));
     }
-    for op in 1..5 {
+    for op in 1..ops {
         assert!(has(&|b| *b == Boundary::AfterPublish(op)));
         assert!(has(&|b| *b == Boundary::PublishVerified(op)));
     }
@@ -446,7 +448,7 @@ fn journal_tail_truncation_and_interior_corruption_are_handled_without_data_loss
     let intact = fs::read(&run.tasks).unwrap();
     // A torn final append is quarantined; committed history is untouched.
     let mut torn = intact.clone();
-    torn.extend_from_slice(b"{\"format\":2,\"sequence\":99,\"transa");
+    torn.extend_from_slice(b"{\"format\":3,\"sequence\":99,\"transa");
     fs::write(&run.tasks, &torn).unwrap();
     let c = open_retrying(&run.fx.root, &run.fx.paths).unwrap();
     assert!(
@@ -496,11 +498,11 @@ fn a_newer_task_journal_or_database_opens_nothing_and_changes_nothing() {
     let tree = snapshot(&run.fx.root);
     let journal = fs::read(&run.tasks).unwrap();
     let mut future = journal.clone();
-    future.extend_from_slice(b"{\"format\":3,\"sequence\":99}\n");
+    future.extend_from_slice(b"{\"format\":4,\"sequence\":99}\n");
     fs::write(&run.tasks, &future).unwrap();
     let error = open_retrying(&run.fx.root, &run.fx.paths).err().unwrap();
     assert!(
-        matches!(error, EngineError::NewerFormat { found: 3, .. }),
+        matches!(error, EngineError::NewerFormat { found: 4, .. }),
         "{error}"
     );
     assert_eq!(fs::read(&run.tasks).unwrap(), future);
@@ -533,7 +535,7 @@ fn a_newer_task_journal_or_database_opens_nothing_and_changes_nothing() {
     let diagnosis = diagnose_history(&run.fx.root, &run.fx.paths).unwrap();
     assert!(matches!(
         diagnosis.task_journal,
-        TaskJournalDiagnostics::Newer { found: 3 }
+        TaskJournalDiagnostics::Newer { found: 4 }
     ));
     assert_eq!(fs::read(&run.tasks).unwrap(), future);
     assert_eq!(fs::read(run.fx.paths.database()).unwrap(), db);
@@ -566,7 +568,7 @@ fn an_existing_version_one_installation_migrates_with_a_backup_and_keeps_its_his
         .collect();
     assert_eq!(backups.len(), 1, "{backups:?}");
     assert_eq!(fs::read_dir(&fx.paths.data).unwrap().count(), before + 1);
-    // The lifecycle journal keeps its version-1 records; the task journal uses format 2.
+    // The lifecycle journal keeps its version-1 records; the task journal keeps its own format.
     let history = fx.history(&c);
     let lifecycle = fs::read_to_string(history.join("lifecycle.jsonl")).unwrap();
     assert!(lifecycle.lines().all(|l| l.starts_with("{\"version\":1,")));
