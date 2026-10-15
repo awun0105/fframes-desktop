@@ -14,6 +14,7 @@ use super::badge::{Tone, tone_color, tone_surface};
 use super::button::IconButton;
 use super::collapsible::{Collapsible, CollapsibleState, Disclosure};
 use super::icon::{Icon, icon};
+use super::selectable;
 
 /// Tallest the expanded details grow before they scroll, so a long error
 /// never pushes the rest of the window down.
@@ -129,7 +130,7 @@ impl RenderOnce for Notice {
                             .max_h(px(DETAILS_MAX_H))
                             .overflow_y_scroll()
                             .text_color(editor.text_2)
-                            .child(text),
+                            .child(selectable(text)),
                         ),
                     ),
                 )
@@ -154,12 +155,12 @@ impl RenderOnce for Notice {
             .child(
                 text_style(div(), TextStyle::BodyStrong)
                     .text_color(editor.text_1)
-                    .child(self.title),
+                    .child(selectable(self.title)),
             )
             .children(self.body.map(|body| {
                 text_style(div(), TextStyle::Body)
                     .text_color(editor.text_2)
-                    .child(body)
+                    .child(selectable(body))
             }))
             .children(details)
             .children((!self.actions.is_empty()).then(|| {

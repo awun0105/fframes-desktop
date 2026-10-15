@@ -19,7 +19,7 @@ use studio_theme::{METRICS, TextStyle, Theme, text_style};
 use crate::kit::{
     CollapsibleSection, EditorButton, Handler, Icon, IconButton, IconButtonSize, Notice, TextInput,
     TextInputEvent, TextInputState, Tone, divider, focusable, icon, on_activate, section_title,
-    with_tooltip,
+    selectable, with_tooltip,
 };
 
 // ---- GPUI panel ------------------------------------------------------------------------
@@ -254,7 +254,7 @@ impl PresetPanel {
     fn small(text: impl Into<SharedString>, color: gpui::Rgba) -> gpui::Div {
         text_style(div(), TextStyle::Small)
             .text_color(color)
-            .child(text.into())
+            .child(selectable(text))
     }
 
     fn run(&mut self, command: PresetCommand, cx: &mut Context<Self>) {
@@ -510,12 +510,12 @@ impl Render for PresetPanel {
                                 .child(
                                     text_style(div().truncate(), TextStyle::Body)
                                         .text_color(palette.text_1)
-                                        .child(token.clone()),
+                                        .child(selectable(token.clone())),
                                 )
                                 .child(
                                     text_style(div().truncate(), TextStyle::Small)
                                         .text_color(palette.text_3)
-                                        .child(format!("{layer} · {value}")),
+                                        .child(selectable(format!("{layer} · {value}"))),
                                 ),
                         )
                         .child(

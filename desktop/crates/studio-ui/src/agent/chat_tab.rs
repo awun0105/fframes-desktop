@@ -309,15 +309,12 @@ impl ConversationPanel {
                                 .flex()
                                 .flex_col()
                                 .gap_1()
-                                .child(
-                                    text_style(div(), TextStyle::Label)
-                                        .child(format!("{name} · revision {}", view.revision)),
-                                )
+                                .child(label_text(format!("{name} · revision {}", view.revision)))
                                 .child(gpui::img(image.clone()).w(px(128.)).h(px(72.)))
                                 .child(
                                     text_style(div(), TextStyle::Label)
                                         .text_color(self.theme.editor.text_2)
-                                        .child(format!(
+                                        .child(selectable(format!(
                                             "{} · {} frames{}",
                                             artifact.label,
                                             artifact.frames.len(),
@@ -326,7 +323,7 @@ impl ConversationPanel {
                                             } else {
                                                 format!(" · edge {boundaries}")
                                             }
-                                        )),
+                                        ))),
                                 ),
                         );
                     } else {
@@ -435,9 +432,7 @@ impl ConversationPanel {
                             div()
                                 .flex()
                                 .flex_col()
-                                .child(
-                                    text_style(div(), TextStyle::Label).child(item.summary.clone()),
-                                )
+                                .child(label_text(item.summary.clone()))
                                 .children(item.scope.as_ref().map(|scope| {
                                     self.line(format!(
                                         "{scope}{}",

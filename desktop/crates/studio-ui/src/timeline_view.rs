@@ -12,7 +12,7 @@ use studio_theme::{
 use crate::frame_image::create_render_image;
 use crate::kit::{
     EditorButton, Icon, IconButton, IconButtonSize, Slider, SliderTrack, focus_ring, icon,
-    section_title,
+    section_title, selectable,
 };
 use crate::probe::BoundsProbe;
 
@@ -656,7 +656,7 @@ impl Render for TimelineView {
             return root.child(
                 text_style(div(), TextStyle::Body)
                     .text_color(colors.text_2)
-                    .child("No compiled timeline available."),
+                    .child(selectable("No compiled timeline available.")),
             );
         };
         let inset = axis_inset();
@@ -976,10 +976,10 @@ impl Render for TimelineView {
             text_style(div(), TextStyle::Small)
                 .flex_none()
                 .text_color(colors.text_3)
-                .child(format!(
+                .child(selectable(format!(
                     "{} · {selected} · drag tracks / Shift-drag for range",
                     model.time_label(self.position)
-                )),
+                ))),
         )
     }
 }

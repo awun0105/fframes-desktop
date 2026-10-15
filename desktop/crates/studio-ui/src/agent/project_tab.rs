@@ -26,7 +26,7 @@ impl ConversationPanel {
             ReviewPolicy::ManualReview => ReviewPolicy::AutoApply,
         };
         let mut review = self.section("Review")
-            .child(text_style(div(), TextStyle::Label).child(match policy {
+            .child(label_text(match policy {
                 ReviewPolicy::AutoApply => "Validated changes are applied automatically.",
                 ReviewPolicy::ManualReview => "Validated changes wait for your Apply or Discard.",
             }))
@@ -100,7 +100,7 @@ impl ConversationPanel {
             }
         }
         if let Some(handoff) = &snapshot.handoff {
-            undo = undo.child(text_style(div(), TextStyle::Label).child(match &handoff.state {
+            undo = undo.child(label_text(match &handoff.state {
                 HandoffState::AwaitingPreview { reason } => format!(
                     "Accepted {} is awaiting its preview{}. The preview still shows the previous revision.",
                     &handoff.published[..handoff.published.len().min(12)],
@@ -129,7 +129,7 @@ impl ConversationPanel {
         {
             let mut section = self.section("Recovery");
             if let Some(reason) = &recovery.suspended {
-                section = section.child(text_style(div(), TextStyle::Label).child(format!(
+                section = section.child(label_text(format!(
                     "Source changes are suspended until the project is reopened: {reason}"
                 )));
             }
@@ -146,7 +146,7 @@ impl ConversationPanel {
                 section = section.child(self.conflict_block(conflict));
             }
             if let Some(draft) = recovery.draft.as_ref().filter(|d| draft_needs_attention(d)) {
-                section = section.child(text_style(div(), TextStyle::Label).child(match &draft.state {
+                section = section.child(label_text(match &draft.state {
                     _ if draft.interrupted_by_restart => {
                         "A task was interrupted when the app last closed. Its working copy was kept and is locked until you confirm nothing is writing there.".to_owned()
                     }

@@ -1,28 +1,31 @@
-//! Text helpers over the theme's text styles, for the editor palette.
+//! Text helpers over the theme's text styles, for the editor palette. Their text can be
+//! selected and copied, except a section title's: it heads collapsible, clickable rows.
 
 use gpui::{Div, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use studio_theme::{METRICS, TextStyle, Theme, text_style};
 
+use super::selectable;
+
 /// `Label` style text in the primary text colour.
 pub fn label(theme: &Theme, text: impl Into<SharedString>) -> Div {
     text_style(div(), TextStyle::Label)
         .text_color(theme.editor.text_1)
-        .child(text.into())
+        .child(selectable(text))
 }
 
 /// `Body` style text in the secondary text colour.
 pub fn muted(theme: &Theme, text: impl Into<SharedString>) -> Div {
     text_style(div(), TextStyle::Body)
         .text_color(theme.editor.text_2)
-        .child(text.into())
+        .child(selectable(text))
 }
 
 /// `Heading` style text in the primary text colour.
 pub fn heading(theme: &Theme, text: impl Into<SharedString>) -> Div {
     text_style(div(), TextStyle::Heading)
         .text_color(theme.editor.text_1)
-        .child(text.into())
+        .child(selectable(text))
 }
 
 /// A section's title row: `Label` text in `text_2`, at least 22px high, with
@@ -47,7 +50,7 @@ pub fn field_row(theme: &Theme, label: impl Into<SharedString>, control: impl In
         .gap(px(8.))
         .min_h(px(METRICS.field_row_h))
         .text_color(theme.editor.text_1)
-        .child(div().min_w(px(96.)).flex_none().child(label.into()))
+        .child(div().min_w(px(96.)).flex_none().child(selectable(label)))
         .child(
             div()
                 .flex()

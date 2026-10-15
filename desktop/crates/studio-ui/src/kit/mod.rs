@@ -45,6 +45,7 @@ mod progress;
 mod radio_cards;
 mod segmented;
 mod select;
+mod selectable_text;
 mod selection_header;
 mod settings_frame;
 mod slider;
@@ -82,6 +83,9 @@ pub use progress::CircularProgress;
 pub use radio_cards::{RadioCard, RadioCards};
 pub use segmented::{SegmentOption, SegmentedControl, option_at, segment_target};
 pub use select::Select;
+pub use selectable_text::{
+    CopySelection, SelectableText, bind_selectable_text_keys, selectable, selected_text,
+};
 pub use selection_header::{SelectionHeader, selection_label, zoom_selection_label};
 pub use settings_frame::{SETTINGS_NAV_W, SettingsFrame, SettingsNavItem};
 pub use slider::{

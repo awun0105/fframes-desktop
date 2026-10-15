@@ -15,7 +15,7 @@ use super::{Picker, StudioShell};
 use crate::kit::{
     Badge, Card, CollapsibleSection, DISABLED_OPACITY, EditorButton, Handler, Icon, IconButton,
     IconButtonSize, StatusDot, TabRail, TabRailItem, Tone, divider, focusable, heading, icon,
-    muted, on_activate, section_title, with_tooltip,
+    muted, on_activate, section_title, selectable, with_tooltip,
 };
 
 impl StudioShell {
@@ -124,14 +124,14 @@ impl StudioShell {
             return list.child(
                 text_style(div(), TextStyle::Body)
                     .text_color(theme.editor.text_2)
-                    .child("Create or open a project to browse its files."),
+                    .child(selectable("Create or open a project to browse its files.")),
             );
         };
         if files.is_empty() {
             list = list.child(
                 text_style(div(), TextStyle::Body)
                     .text_color(theme.editor.text_2)
-                    .child(empty),
+                    .child(selectable(empty)),
             );
         }
         for file in files {
@@ -177,11 +177,11 @@ impl StudioShell {
                 text_style(div(), TextStyle::Small)
                     .flex_none()
                     .text_color(theme.editor.text_3)
-                    .child(format!(
+                    .child(selectable(format!(
                         "Showing {} of {} files",
                         p.files.len(),
                         p.file_count
-                    )),
+                    ))),
             );
         }
 
@@ -213,7 +213,7 @@ impl StudioShell {
                             .child(
                                 text_style(div().min_w_0().flex_1(), TextStyle::Small)
                                     .text_color(theme.editor.text_2)
-                                    .child(status),
+                                    .child(selectable(status)),
                             ),
                     )
                     .child(self.action_button(
@@ -319,7 +319,7 @@ impl StudioShell {
                 tab = tab.child(
                     text_style(div(), TextStyle::Small)
                         .text_color(theme.editor.text_3)
-                        .child("No style preset configured"),
+                        .child(selectable("No style preset configured")),
                 );
             }
             for file in &p.styles {
@@ -358,7 +358,7 @@ impl StudioShell {
             recents = recents.child(
                 text_style(div(), TextStyle::Body)
                     .text_color(theme.editor.text_2)
-                    .child("No recent projects"),
+                    .child(selectable("No recent projects")),
             );
         }
         for recent in self.presentation.recents.clone() {

@@ -15,7 +15,7 @@ use studio_theme::{METRICS, TextStyle, text_style};
 
 use super::sections::{Section, section_probe};
 use super::{Picker, StudioShell};
-use crate::kit::{CAPTION_BUTTON_W, Icon, IconButtonSize, icon, with_tooltip};
+use crate::kit::{CAPTION_BUTTON_W, Icon, IconButtonSize, icon, selectable};
 
 /// Room for the macOS traffic lights, inset to (20, 20) like Cap's editor.
 const TRAFFIC_LIGHTS_W: f32 = 82.;
@@ -120,20 +120,19 @@ impl StudioShell {
             .as_ref()
             .map(|p| p.name.clone())
             .unwrap_or_else(|| "fframes Studio".into());
-        let mut text = div()
-            .flex()
-            .flex_col()
-            .min_w_0()
-            .child(text_style(div().truncate(), TextStyle::Title).child(title));
+        let mut text = div().flex().flex_col().min_w_0().child(
+            text_style(div().truncate(), TextStyle::Title)
+                .child(selectable(title).over_drag_area()),
+        );
         if let Some(p) = &project {
             let path = p.root.display().to_string();
-            text = text.child(with_tooltip(
+            // Selectable rather than a tooltip: the text blocks the hover a tooltip needs,
+            // and a triple click selects the whole path however it is truncated.
+            text = text.child(
                 text_style(div().id("project-path").truncate(), TextStyle::Small)
                     .text_color(theme.editor.text_2)
-                    .child(path.clone()),
-                &theme,
-                Some(path.into()),
-            ));
+                    .child(selectable(path).over_drag_area()),
+            );
         }
         div()
             .relative()

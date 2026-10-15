@@ -26,7 +26,7 @@ impl ConversationPanel {
                         .child(
                             text_style(div(), TextStyle::Body)
                                 .text_color(palette.text_1)
-                                .child(text.clone()),
+                                .child(selectable(text.clone()).id(("agent-row-text", row.id.0))),
                         ),
                 )
                 .into_any_element(),
@@ -47,7 +47,7 @@ impl ConversationPanel {
                         .child(
                             text_style(div(), TextStyle::Body)
                                 .text_color(palette.text_1)
-                                .child(text.clone()),
+                                .child(selectable(text.clone()).id(("agent-row-text", row.id.0))),
                         ),
                 )
                 .into_any_element(),
@@ -84,7 +84,7 @@ impl ConversationPanel {
                                     .italic()
                                     .pt(px(4.))
                                     .text_color(palette.text_2)
-                                    .child(text.clone()),
+                                    .child(selectable(text.clone()).id(("agent-row-text", id))),
                             )
                             .on_toggle(move |next, _, cx| {
                                 entity.update(cx, |this, cx| {
@@ -168,7 +168,9 @@ impl ConversationPanel {
                     .child(
                         text_style(div(), TextStyle::Body)
                             .text_color(palette.text_2)
-                            .child(card.title.clone().unwrap_or_else(|| card.call_id.clone())),
+                            .child(selectable(
+                                card.title.clone().unwrap_or_else(|| card.call_id.clone()),
+                            )),
                     )
                     .children(
                         (card.updates > 1).then(|| self.line(format!("{} updates", card.updates))),

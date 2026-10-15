@@ -16,7 +16,7 @@ use super::transport::{show_total_time, transport_mode};
 use super::{PreparedInstall, StudioShell};
 use crate::actions;
 use crate::canvas_view::StageLayout;
-use crate::kit::{Badge, Card, Icon, Tone, focus_ring, icon, with_tooltip};
+use crate::kit::{Badge, Card, Icon, Tone, focus_ring, icon, selectable, with_tooltip};
 
 impl StudioShell {
     pub(super) fn detach_preview(&mut self, cx: &mut Context<Self>) {
@@ -690,7 +690,7 @@ impl StudioShell {
                     .truncate()
                     .text_right()
                     .text_color(palette.text_2)
-                    .child(audio_label),
+                    .child(selectable(audio_label)),
             )
             .child(self.action_button(
                 "next-audio-output",
@@ -898,16 +898,18 @@ impl StudioShell {
                 .child(
                     text_style(div(), TextStyle::Title)
                         .text_color(palette.text_1)
-                        .child(if self.displayed.is_some() {
+                        .child(selectable(if self.displayed.is_some() {
                             "Empty video"
                         } else {
                             "No preview available"
-                        }),
+                        })),
                 )
                 .child(
                     text_style(div(), TextStyle::Body)
                         .text_color(palette.text_2)
-                        .child("Build preview to compile the project's current source."),
+                        .child(selectable(
+                            "Build preview to compile the project's current source.",
+                        )),
                 );
         }
         let mut stage = div()

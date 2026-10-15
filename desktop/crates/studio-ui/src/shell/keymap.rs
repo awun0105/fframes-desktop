@@ -26,6 +26,7 @@ pub(super) const WORKSPACE: &str = "Workspace";
 /// the timeline's. Call once at startup, before the window opens.
 pub fn bind_keys(cx: &mut App) {
     crate::kit::bind_text_input_keys(cx);
+    crate::kit::bind_selectable_text_keys(cx);
     cx.bind_keys(key_bindings());
 }
 

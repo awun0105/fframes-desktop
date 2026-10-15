@@ -132,7 +132,7 @@ use transcript::scroll::{self, OVERDRAW_PX};
 use crate::kit::{
     Badge, Card, CollapsibleSection, EditorButton, Icon, IconButton, IconButtonSize, Menu,
     MenuItem, MenuState, Notice, Select, TextInput, TextInputEvent, TextInputState, Toggle,
-    Tone as UiTone, field_row, heading, icon, label,
+    Tone as UiTone, field_row, heading, icon, label, selectable,
 };
 use crate::probe::{self, BoundsProbe};
 
@@ -769,14 +769,19 @@ fn draft_needs_attention(draft: &studio_engine::agent::DraftNotice) -> bool {
 fn line(theme: &Theme, text: impl Into<SharedString>) -> gpui::Div {
     text_style(div(), TextStyle::Small)
         .text_color(theme.editor.text_2)
-        .child(text.into())
+        .child(selectable(text))
+}
+
+/// `Label` style text the reader can select and copy.
+fn label_text(text: impl Into<SharedString>) -> gpui::Div {
+    text_style(div(), TextStyle::Label).child(selectable(text))
 }
 
 fn history_line(theme: &Theme, entry: &HistoryEntry) -> gpui::Div {
     div()
         .flex()
         .flex_col()
-        .child(text_style(div(), TextStyle::Label).child(format!(
+        .child(label_text(format!(
             "{} · {} file{} · {}{}",
             entry.kind,
             entry.files,
@@ -867,7 +872,7 @@ impl Render for ConversationPanel {
                     .child(
                         text_style(div(), TextStyle::Title)
                             .text_color(theme.editor.text_1)
-                            .child("Agent"),
+                            .child(selectable("Agent")),
                     )
                     .child(
                         div()

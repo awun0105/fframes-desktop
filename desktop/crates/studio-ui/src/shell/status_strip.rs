@@ -6,7 +6,7 @@ use studio_engine::services::export_service::ExportProgress;
 use studio_theme::{METRICS, TextStyle, text_style};
 
 use super::StudioShell;
-use crate::kit::{Card, CollapsibleSection, Notice, StatusDot, Tone};
+use crate::kit::{Card, CollapsibleSection, Notice, StatusDot, Tone, selectable};
 
 impl StudioShell {
     /// Warning, error, export and recovery notices; empty when there is nothing to say.
@@ -126,31 +126,43 @@ impl StudioShell {
             &p.accepted.as_str()[..12],
             p.job
         );
-        let line = |text: &'static str| {
+        let line = |text: gpui::SharedString| {
             text_style(div(), TextStyle::Small)
                 .text_color(theme.editor.text_2)
-                .child(text)
+                .child(selectable(text))
         };
+        // The summary heads a clickable row, so the full ids are repeated here to copy.
         let lines = div()
             .flex()
             .flex_col()
             .gap(px(METRICS.space_1))
             .pt(px(METRICS.space_1))
-            .child(line(if p.source == p.accepted {
-                "Current source matches the saved checkpoint"
-            } else {
-                "Source changed · saved checkpoint remains available"
-            }))
-            .child(line(if p.history_available {
-                "Local history available"
-            } else {
-                "Previous machine history unavailable · source baseline saved locally"
-            }))
-            .child(line(if p.worker_available {
-                "Worker bridge available · build an immutable preview"
-            } else {
-                "Worker bridge missing · source remains navigable"
-            }));
+            .child(line(format!("Source {}", p.source.as_str()).into()))
+            .child(line(format!("Checkpoint {}", p.accepted.as_str()).into()))
+            .child(line(
+                if p.source == p.accepted {
+                    "Current source matches the saved checkpoint"
+                } else {
+                    "Source changed · saved checkpoint remains available"
+                }
+                .into(),
+            ))
+            .child(line(
+                if p.history_available {
+                    "Local history available"
+                } else {
+                    "Previous machine history unavailable · source baseline saved locally"
+                }
+                .into(),
+            ))
+            .child(line(
+                if p.worker_available {
+                    "Worker bridge available · build an immutable preview"
+                } else {
+                    "Worker bridge missing · source remains navigable"
+                }
+                .into(),
+            ));
         let entity = cx.entity();
         Some(
             Card::editor(&self.theme)

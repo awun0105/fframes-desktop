@@ -208,7 +208,7 @@ impl ConversationPanel {
             .child(
                 text_style(div(), TextStyle::Label)
                     .text_color(theme.editor.text_1)
-                    .child(title.to_owned()),
+                    .child(selectable(title.to_owned())),
             )
     }
 
@@ -227,6 +227,6 @@ impl ConversationPanel {
     pub(super) fn caption(&self, text: &str) -> gpui::Div {
         text_style(div(), TextStyle::Small)
             .text_color(self.theme.editor.text_3)
-            .child(text.to_owned())
+            .child(selectable(text.to_owned()))
     }
 }
