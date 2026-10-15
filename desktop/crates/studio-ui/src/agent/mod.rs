@@ -3,7 +3,7 @@
 //! never touches the filesystem, the adapter, hashing or compilation (the workflow's
 //! threads do), and it never holds a lock across a frame.
 //!
-//! * Rows live in a `gpui::list` (visible rows plus [`rows::OVERDRAW_PX`] of overscan are
+//! * Rows live in a `gpui::list` (visible rows plus [`transcript::scroll::OVERDRAW_PX`] of overscan are
 //!   measured and painted). [`rows`] decides which rows the list owns and how a new
 //!   snapshot becomes list operations, so streaming text and tool-card updates re-measure
 //!   in place while the reader's position holds.
@@ -103,7 +103,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, canvas, div, list, px,
 };
 use parking_lot::Mutex;
-use rows::{ListOp, OVERDRAW_PX, ResidentLimits, RowKey, Viewport};
+use rows::{ListOp, ResidentLimits, RowKey, Viewport};
 use std::{
     cell::Cell,
     collections::HashMap,
@@ -125,6 +125,7 @@ use studio_engine::providers::provider_profiles;
 use studio_engine::{DraftState, ReviewPolicy, TaskScope, app_paths::AppPaths};
 use studio_harness::driver::{ConfigKind, OptionValue, ToolStatus};
 use studio_theme::{METRICS, TextStyle, Theme, text_style};
+use transcript::scroll::{self, OVERDRAW_PX};
 
 use crate::kit::{
     Badge, Card, CollapsibleSection, EditorButton, Icon, IconButton, IconButtonSize, Menu,
@@ -537,6 +538,10 @@ impl ConversationPanel {
             "live_rows": snapshot.rows.len(),
             "older_loaded": self.older.len(),
             "hidden_newer": self.hidden_newer,
+            "scroll": {
+                "following": self.list.is_following_tail(),
+                "distance_from_bottom": scroll::distance_from_bottom(&self.list),
+            },
             "open_permissions": snapshot.resources.open_permissions,
             "owned_processes": snapshot.resources.owned_processes,
             "broker_grants": snapshot.resources.broker_grants,

@@ -263,3 +263,66 @@ fn the_agent_of_the_project_switched_to_still_updates_the_panel(cx: &mut gpui::T
     });
     assert_eq!(rows(&replied, "user").len(), 1, "{:#}", replied["panel"]);
 }
+
+fn scroll_state(t: &Value) -> (bool, f64) {
+    let scroll = &t["panel"]["scroll"];
+    (
+        scroll["following"] == true,
+        scroll["distance_from_bottom"].as_f64().unwrap(),
+    )
+}
+
+/// New rows keep the transcript at its end unless the reader scrolled up by more than
+/// the stick threshold (70 px): a 50 px nudge is pinned again by the next reply, a
+/// 150 px scroll is left where it is.
+#[gpui::test]
+fn new_rows_stay_pinned_unless_the_reader_scrolled_up_past_the_threshold(
+    cx: &mut gpui::TestAppContext,
+) {
+    let mut studio = studio_with_agent(cx);
+    fs::write(
+        studio.agent_evidence().join("plan.json"),
+        json!({"turns": [
+            {"text": REPLY, "tool": 30},
+            {"text": REPLY, "tool": 4},
+            {"text": REPLY, "tool": 4},
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let send = |studio: &mut Studio, tools: usize| {
+        studio.dispatch(FocusPrompt);
+        studio.settle(Duration::from_millis(50));
+        studio.type_text(BRIEF);
+        studio.dispatch(SubmitPrompt);
+        studio.wait("the reply's tool cards", |t| {
+            rows(t, "tool").len() == tools && scroll_state(t).1.is_finite()
+        });
+        studio.settle(Duration::from_millis(200))
+    };
+    let first = send(&mut studio, 30);
+    assert_eq!(scroll_state(&first), (true, 0.), "{:#}", first["panel"]);
+
+    let prompt = first["panel"]["prompt_bounds"].as_array().unwrap().clone();
+    let (x, y) = (
+        prompt[0].as_f64().unwrap() as f32 + 40.,
+        prompt[1].as_f64().unwrap() as f32 - 120.,
+    );
+    studio.scroll(x, y, 50., false);
+    let nudged = studio.settle(Duration::from_millis(100));
+    let (following, distance) = scroll_state(&nudged);
+    assert!(
+        !following && (40. ..=60.).contains(&distance),
+        "{:#}",
+        nudged["panel"]
+    );
+    let second = send(&mut studio, 34);
+    assert_eq!(scroll_state(&second), (true, 0.), "{:#}", second["panel"]);
+
+    studio.scroll(x, y, 150., false);
+    let away = studio.settle(Duration::from_millis(100));
+    assert!(scroll_state(&away).1 >= 140., "{:#}", away["panel"]);
+    let third = send(&mut studio, 38);
+    let (following, distance) = scroll_state(&third);
+    assert!(!following && distance > 70., "{:#}", third["panel"]);
+}

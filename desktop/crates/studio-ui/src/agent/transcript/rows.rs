@@ -1,7 +1,7 @@
 //! Pure window, paging and diff logic of the virtualized conversation list.
 //!
 //! The list element (`gpui::list`) measures and renders only the rows near the viewport
-//! (visible rows plus [`OVERDRAW_PX`] of overscan); this module decides *which rows the
+//! (visible rows plus [`super::scroll::OVERDRAW_PX`] of overscan); this module decides *which rows the
 //! list owns* and how a new snapshot turns into list mutations:
 //!
 //! * [`compose_view`] merges rows paged in from the conversation log with the workflow's
@@ -20,8 +20,6 @@
 use std::sync::Arc;
 use studio_engine::agent::{MAX_HISTORY_PAGE, MAX_RESIDENT_ROW_BYTES, MAX_RESIDENT_ROWS, Row};
 
-/// Extra pixels rendered above and below the viewport (the bounded overscan).
-pub const OVERDRAW_PX: f32 = 240.;
 /// Rows requested per history page (never above the workflow's page limit).
 pub const PAGE_ROWS: usize = if MAX_HISTORY_PAGE < 50 {
     MAX_HISTORY_PAGE

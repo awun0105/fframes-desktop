@@ -1,6 +1,7 @@
 //! The transcript list: composing the view from the snapshot and paged-in history, paging and jumping to the latest row.
 
 pub mod rows;
+pub mod scroll;
 
 use super::*;
 
@@ -11,12 +12,22 @@ impl ConversationPanel {
         };
         let view = rows::compose_view(&self.older, &snapshot.rows, ResidentLimits::default());
         let keys: Vec<RowKey> = view.rows.iter().map(RowKey::of).collect();
+        // Decided before the rows change: where the reader is now, not where the new
+        // rows would leave them.
+        let stick = keys != self.view_keys
+            && scroll::sticks(
+                self.list.is_following_tail(),
+                scroll::distance_from_bottom(&self.list),
+            );
         for op in rows::diff_rows(&self.view_keys, &keys) {
             match op {
                 ListOp::Splice { at, old, new } => self.list.splice(at..at + old, new),
                 ListOp::Remeasure { at, len } => self.list.remeasure_items(at..at + len),
                 ListOp::Reset { len } => self.list.reset(len),
             }
+        }
+        if stick && !self.list.is_following_tail() {
+            self.list.set_follow_mode(FollowMode::Tail);
         }
         self.view_rows = view.rows;
         self.view_keys = keys;
