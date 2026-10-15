@@ -292,35 +292,36 @@ impl ConversationPanel {
                 cx,
             ));
         form = form
-            .child(self.line(
-                "Writer containment is not a setting: it is derived from the qualification ledger installed in the app data folder, and only for this exact adapter and platform.",
-            ))
-            .child(self.line(
-                self.containment.as_ref().map_or_else(
-                    || "Writer containment: no adapter configured.".to_owned(),
-                    Resolution::summary,
-                ),
-            ))
+            .child(self.line(if self.saved_adapter.is_some() {
+                self.policy.summary()
+            } else {
+                "Writer containment: no adapter configured.".to_owned()
+            }))
             .child({
                 let entity = cx.entity();
                 let label = match self.mcp_choice {
                     McpChoice::Baseline => "Project tools: MCP and command line",
                     McpChoice::Unsupported => "Project tools: command line only",
                 };
-                field_row(&self.theme,
+                field_row(
+                    &self.theme,
                     label,
-                    Toggle::plain(&self.theme, "agent-mcp-toggle", self.mcp_choice == McpChoice::Baseline)
-                        .label(label)
-                        .disabled(&self.theme, !editable)
-                        .on_change(move |_, _, app| {
-                            entity.update(app, |this, cx| {
-                                this.mcp_choice = match this.mcp_choice {
-                                    McpChoice::Baseline => McpChoice::Unsupported,
-                                    McpChoice::Unsupported => McpChoice::Baseline,
-                                };
-                                cx.notify();
-                            });
-                        }),
+                    Toggle::plain(
+                        &self.theme,
+                        "agent-mcp-toggle",
+                        self.mcp_choice == McpChoice::Baseline,
+                    )
+                    .label(label)
+                    .disabled(&self.theme, !editable)
+                    .on_change(move |_, _, app| {
+                        entity.update(app, |this, cx| {
+                            this.mcp_choice = match this.mcp_choice {
+                                McpChoice::Baseline => McpChoice::Unsupported,
+                                McpChoice::Unsupported => McpChoice::Baseline,
+                            };
+                            cx.notify();
+                        });
+                    }),
                 )
             })
             .child(
@@ -368,21 +369,21 @@ impl ConversationPanel {
                     .unwrap_or_else(|| "not configured".into())
             )))
             .child(self.line(format!(
-                "Writer process model: {}",
+                "Writer containment at the last launch: {}",
                 snapshot
                     .adapter
-                    .writer_ownership
-                    .clone()
-                    .unwrap_or_else(|| "n/a".into())
+                    .last_launch
+                    .as_ref()
+                    .map_or("not launched yet", |launch| launch.ownership.as_str())
             )));
         if snapshot
             .adapter
-            .writer_ownership
-            .as_deref()
-            .is_some_and(|label| label != "process-group-contained")
+            .last_launch
+            .as_ref()
+            .is_some_and(|launch| !launch.contained)
         {
             status = status.child(self.line(
-                "This adapter is not qualified for this exact launch and platform, so its candidates cannot be captured or applied until a passed writer-containment qualification of it is installed.",
+                "The last launch of this adapter could not verify that its writer processes stay contained, so its candidates are not captured.",
             ));
         }
         if let AdapterReadiness::Checked { report, .. } = &snapshot.adapter.readiness

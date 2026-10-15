@@ -54,7 +54,7 @@ fn an_adapter_that_dies_during_startup_fails_the_task_cleanly() {
 #[test]
 fn an_unqualified_adapter_blocks_capture_and_retains_the_draft_locked() {
     let w = World::with(Options {
-        ownership: WriterOwnership::Unknown,
+        ownership: OwnershipSource::Injected(WriterOwnership::Unknown),
         ..Options::default()
     });
     let original = w.source("src/lib.rs");

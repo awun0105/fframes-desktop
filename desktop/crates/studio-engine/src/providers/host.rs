@@ -10,7 +10,7 @@ use crate::agent::{
     AdapterSettings, AgentWorkflow, BuildSettings, PreviewHandoff, PromotionHandoff, ToolSettings,
     WorkflowConfig, WorkflowError, short_runtime_dir,
 };
-use crate::containment::{OwnershipPolicy, Resolution, probe, resolve_ownership};
+use crate::containment::OwnershipPolicy;
 use crate::{Controller, app_paths::AppPaths};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -115,31 +115,23 @@ impl AdapterFile {
         Ok(())
     }
 
-    /// The workflow settings for this description. Ownership is derived from validated
-    /// qualification evidence under `policy` (this hashes the executable and reads the
-    /// ledger: call it off the UI thread) and re-derived at every task launch.
-    pub fn resolve(
-        &self,
-        paths: &AppPaths,
-        policy: &OwnershipPolicy,
-    ) -> (AdapterSettings, Resolution) {
-        let resolution = resolve_ownership(self, paths, policy);
-        let settings = AdapterSettings {
+    /// The workflow settings for this description. Under `policy` the writer's ownership
+    /// is verified at every task launch (or injected by a test harness).
+    pub fn resolve(&self, policy: &OwnershipPolicy) -> AdapterSettings {
+        AdapterSettings {
             provider: self.provider.clone(),
             adapter: AdapterConfig {
                 executable: self.executable.clone(),
                 args: self.args.clone(),
                 auth_env_names: self.auth_env_names.clone(),
             },
-            writer_ownership: resolution.ownership.clone(),
-            ownership_probe: Some(probe(self.clone(), paths.clone(), policy.clone())),
+            ownership: policy.source(),
             mcp: match self.mcp {
                 McpChoice::Baseline => McpStdioSupport::Baseline,
                 McpChoice::Unsupported => McpStdioSupport::Unsupported,
             },
             auth_method: self.auth_method.clone(),
-        };
-        (settings, resolution)
+        }
     }
 
     /// The text fields of the Setup tab for this description.
@@ -271,21 +263,6 @@ pub fn settings_path(paths: &AppPaths) -> PathBuf {
 
 pub fn registry_path(paths: &AppPaths) -> PathBuf {
     paths.data.join(REGISTRY_FILE)
-}
-
-fn load_qualification_snapshot(
-    paths: &AppPaths,
-) -> super::provider_profiles::QualificationSnapshot {
-    let path = paths
-        .data
-        .join(crate::containment::LEDGER_DIR)
-        .join(crate::containment::LEDGER_FILE_M6);
-    match std::fs::read_to_string(path) {
-        Ok(text) => super::provider_profiles::QualificationSnapshot::parse(&text)
-            .unwrap_or_else(|_| super::provider_profiles::QualificationSnapshot::invalid()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Default::default(),
-        Err(_) => super::provider_profiles::QualificationSnapshot::invalid(),
-    }
 }
 
 /// Reads the provider registry; migrates from `agent-adapter.json` if needed.
@@ -490,12 +467,8 @@ pub struct Opened {
     pub adapter: Option<AdapterFile>,
     /// The provider registry with first-party profiles.
     pub registry: Option<super::provider_profiles::ProviderRegistry>,
-    /// Display-only qualification states read from the installed M6 ledger.
-    pub qualification: super::provider_profiles::QualificationSnapshot,
     /// The saved description could not be read or is invalid.
     pub settings_error: Option<String>,
-    /// How the saved adapter's writer containment was resolved (`None` without an adapter).
-    pub resolution: Option<Resolution>,
     /// The ownership policy this workflow was opened under (saving reuses it).
     pub policy: OwnershipPolicy,
     /// Signalled when the workflow publishes a snapshot; take it before reading one.
@@ -658,7 +631,6 @@ pub fn open_workflow(
     wake: Arc<WorkflowWake>,
     policy: OwnershipPolicy,
 ) -> Opened {
-    let qualification = load_qualification_snapshot(&paths);
     let (registry, adapter, settings_error) = match load_registry(&paths) {
         Ok(Some(reg)) => {
             let adapter = reg.selected_adapter().cloned();
@@ -670,13 +642,7 @@ pub fn open_workflow(
         },
         Err(e) => (None, None, Some(e)),
     };
-    // Hashing the adapter executable and reading the qualification ledger happen here, on
-    // the opening thread.
-    let resolved = adapter.as_ref().map(|a| a.resolve(&paths, &policy));
-    let (settings, resolution) = match resolved {
-        Some((settings, resolution)) => (Some(settings), Some(resolution)),
-        None => (None, None),
-    };
+    let settings = adapter.as_ref().map(|a| a.resolve(&policy));
     let config = workflow_config(HostParams {
         paths,
         build,
@@ -690,9 +656,7 @@ pub fn open_workflow(
         result: AgentWorkflow::open(config, controller),
         adapter,
         registry,
-        qualification,
         settings_error,
-        resolution,
         policy,
         wake,
     }
@@ -702,6 +666,7 @@ pub fn open_workflow(
 mod tests {
     use super::*;
     use studio_bootstrap::WriterOwnership;
+    use studio_harness::OwnershipSource;
 
     fn file(json: &str) -> Result<Option<AdapterFile>, String> {
         AdapterFile::parse(json)
@@ -757,23 +722,14 @@ mod tests {
     }
 
     #[test]
-    fn a_minimal_description_defaults_to_baseline_mcp_and_unknown_ownership() {
-        let (_temp, paths) = data();
+    fn a_minimal_description_defaults_to_baseline_mcp_and_launch_verified_ownership() {
         let parsed = file(r#"{"executable":"/opt/adapter"}"#).unwrap().unwrap();
-        let (resolved, resolution) = parsed.resolve(&paths, &OwnershipPolicy::Validated);
+        let resolved = parsed.resolve(&OwnershipPolicy::Validated);
         assert_eq!(resolved.provider, "agent");
         assert_eq!(resolved.mcp, McpStdioSupport::Baseline);
-        assert_eq!(resolved.writer_ownership, WriterOwnership::Unknown);
-        assert!(matches!(
-            resolution.containment,
-            crate::containment::Containment::Unknown { .. }
-        ));
+        // Every launch verifies containment of the process it spawned.
+        assert_eq!(resolved.ownership, OwnershipSource::Verified);
         assert!(resolved.adapter.auth_env_names.is_empty());
-        // Every launch derives ownership again.
-        assert_eq!(
-            (resolved.ownership_probe.as_ref().unwrap())(),
-            WriterOwnership::Unknown
-        );
     }
 
     #[test]
@@ -800,17 +756,20 @@ mod tests {
 
     #[test]
     fn test_injection_is_explicit_and_labelled_and_the_default_policy_never_injects() {
-        let (_temp, paths) = data();
         let parsed = file(r#"{"executable":"/opt/adapter"}"#).unwrap().unwrap();
         let injected = WriterOwnership::ProcessGroupContained {
             qualification: "test-fixture".into(),
         };
-        let (settings, resolution) =
-            parsed.resolve(&paths, &OwnershipPolicy::TestInjected(injected.clone()));
-        assert_eq!(settings.writer_ownership, injected);
-        assert!(resolution.summary().contains("not a qualification"));
-        let (settings, _) = parsed.resolve(&paths, &OwnershipPolicy::Validated);
-        assert_eq!(settings.writer_ownership, WriterOwnership::Unknown);
+        let policy = OwnershipPolicy::TestInjected(injected.clone());
+        assert_eq!(
+            parsed.resolve(&policy).ownership,
+            OwnershipSource::Injected(injected)
+        );
+        assert!(policy.summary().contains("not a verification"));
+        assert_eq!(
+            parsed.resolve(&OwnershipPolicy::Validated).ownership,
+            OwnershipSource::Verified
+        );
     }
 
     #[test]

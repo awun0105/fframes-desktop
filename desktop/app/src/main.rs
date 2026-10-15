@@ -4,10 +4,7 @@
 use clap::{Parser, Subcommand};
 use fframes_studio::StudioSpikeApp;
 use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, point, px, size};
-use std::{path::PathBuf, time::Duration};
-
-/// Longest `qualify-writer --timeout` accepted (one day).
-const MAX_WRITER_TIMEOUT_SECS: u64 = 24 * 60 * 60;
+use std::path::PathBuf;
 
 /// fframes Studio, the native project workspace. Without a command it opens the studio.
 #[derive(Debug, Parser)]
@@ -36,29 +33,6 @@ enum Command {
     /// Open the native GPUI spike window.
     #[command(long_flag = "spike-ui")]
     SpikeUi,
-    /// Measure whether the configured adapter's writer processes stay inside their task
-    /// scope, and record the result in the installed qualification ledger.
-    QualifyWriter {
-        /// Provider profile to measure; the selected profile when omitted.
-        #[arg(long, value_name = "ID")]
-        profile: Option<String>,
-        /// Time limit for the whole run (all three scenarios), in seconds.
-        #[arg(
-            long,
-            value_name = "SECS",
-            default_value_t = 1800,
-            value_parser = clap::value_parser!(u64).range(1..=MAX_WRITER_TIMEOUT_SECS)
-        )]
-        timeout: u64,
-        /// Development run against a fixture: the evidence goes to --out, never the
-        /// installed ledger.
-        #[arg(long, requires = "out")]
-        development: bool,
-        /// Folder for the evidence of a --development run (not inside the installed
-        /// qualification folder).
-        #[arg(long, value_name = "DIR", requires = "development")]
-        out: Option<PathBuf>,
-    },
 }
 
 /// Hidden observation of the studio for test harnesses: opens a project and writes the
@@ -87,8 +61,8 @@ struct Observation {
     telemetry: Option<PathBuf>,
     /// Test-only injection for fixtures (never reachable from the product entry or the
     /// settings file): treats the adapter's writers as process-group contained WITHOUT
-    /// qualification evidence, and the panel says so. Debug builds only: a release build
-    /// refuses it and exits.
+    /// the containment check of the launch, and the panel says so. Debug builds only: a
+    /// release build refuses it and exits.
     #[arg(
         long = "observe-test-writer-containment",
         value_name = "LABEL",
@@ -137,8 +111,7 @@ fn main() {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) => {
-            // Help and version succeed; a usage error exits 1 as it always has (2 is
-            // reserved for a failed qualify-writer gate).
+            // Help and version succeed; a usage error exits 1 as it always has.
             let code = if error.use_stderr() { 1 } else { 0 };
             let _ = error.print();
             std::process::exit(code);
@@ -148,17 +121,6 @@ fn main() {
         None => run_studio(None),
         Some(Command::Studio { observation, .. }) => run_studio(observed(observation)),
         Some(Command::SpikeUi) => run_spike_ui(),
-        Some(Command::QualifyWriter {
-            profile,
-            timeout,
-            development: _,
-            out,
-        }) => qualify_writer(studio_engine::containment::qualify_writer::Options {
-            profile,
-            timeout: Duration::from_secs(timeout),
-            // clap ties --out and --development together.
-            development_out: out,
-        }),
     }
 }
 
@@ -199,33 +161,6 @@ fn observed(observation: Observation) -> Option<Observed> {
         output,
         test_ownership,
     })
-}
-
-fn qualify_writer(options: studio_engine::containment::qualify_writer::Options) {
-    let result = studio_engine::app_paths::AppPaths::system()
-        .map_err(|e| e.to_string())
-        .and_then(|paths| studio_engine::containment::qualify_writer::run(&paths, &options));
-    match result {
-        Ok((measured, path)) => {
-            println!("evidence: {}", path.display());
-            if measured.passed() {
-                println!(
-                    "PASS: {} ({}) is qualified as process-group contained on this computer.",
-                    measured.profile, measured.agent_name
-                );
-            } else {
-                println!(
-                    "FAIL: {} is not qualified; capture stays blocked.",
-                    measured.profile
-                );
-                std::process::exit(2);
-            }
-        }
-        Err(error) => {
-            eprintln!("qualify-writer: {error}");
-            std::process::exit(1);
-        }
-    }
 }
 
 fn run_studio(observation: Option<Observed>) {
@@ -346,43 +281,6 @@ mod tests {
         assert!(parse(&["unknown"]).is_err());
     }
 
-    #[test]
-    fn qualify_writer_out_and_development_require_each_other() {
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().to_str().unwrap();
-        assert!(parse(&["qualify-writer", "--out", out]).is_err());
-        assert!(parse(&["qualify-writer", "--development"]).is_err());
-        let Some(Command::QualifyWriter {
-            development,
-            out: parsed,
-            timeout,
-            ..
-        }) = parse(&["qualify-writer", "--development", "--out", out])
-            .unwrap()
-            .command
-        else {
-            panic!("qualify-writer");
-        };
-        assert!(development);
-        assert_eq!(parsed.as_deref(), Some(dir.path()));
-        assert_eq!(timeout, 1800);
-    }
-
-    #[test]
-    fn qualify_writer_timeout_is_bounded_and_flags_are_not_values() {
-        let max = MAX_WRITER_TIMEOUT_SECS.to_string();
-        let over = (MAX_WRITER_TIMEOUT_SECS + 1).to_string();
-        assert!(parse(&["qualify-writer", "--timeout", &max]).is_ok());
-        for bad in ["0", "-5", &over, "18446744073709551615", "soon"] {
-            assert!(
-                parse(&["qualify-writer", "--timeout", bad]).is_err(),
-                "{bad}"
-            );
-        }
-        assert!(parse(&["qualify-writer", "--profile", "--development"]).is_err());
-        assert!(parse(&["qualify-writer", "--unknown"]).is_err());
-    }
-
     fn observation(args: &[&str]) -> Result<Observation, clap::Error> {
         match parse(args)?.command {
             Some(Command::Studio { observation, .. }) => Ok(observation),
@@ -438,7 +336,12 @@ mod tests {
             .render_long_help()
             .to_string();
         assert!(!help.contains("observe"), "{help}");
-        for removed in ["qualify-m2", "qualify-m3", "qualify-presentation"] {
+        for removed in [
+            "qualify-m2",
+            "qualify-m3",
+            "qualify-presentation",
+            "qualify-writer",
+        ] {
             assert!(parse(&[removed]).is_err(), "{removed}");
         }
     }

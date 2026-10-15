@@ -142,8 +142,8 @@ impl ConversationPanel {
         cx.notify();
     }
 
-    /// Saves the setup fields. The qualification of the adapter (hashing its executable and
-    /// reading the ledger) and the file write both run on background threads; at most one
+    /// Saves the setup fields. The settings are resolved and the file is written on
+    /// background threads; at most one
     /// save is in flight (a second click is refused until it completes), the running
     /// workflow is only reconfigured while idle, and only the in-flight save's completion
     /// is reported. The Save button never starts the adapter.
@@ -207,9 +207,9 @@ impl ConversationPanel {
         };
         let policy = self.policy.clone();
         let resolving = {
-            let (file, paths) = (file.clone(), paths.clone());
+            let file = file.clone();
             cx.background_executor()
-                .spawn(async move { file.map(|file| file.resolve(&paths, &policy)) })
+                .spawn(async move { file.map(|file| file.resolve(&policy)) })
         };
         cx.spawn(async move |this, cx| {
             let resolved = resolving.await;
@@ -227,7 +227,7 @@ impl ConversationPanel {
         ticket: u64,
         target: Option<String>,
         file: Option<AdapterFile>,
-        resolved: Option<(studio_engine::agent::AdapterSettings, Resolution)>,
+        settings: Option<studio_engine::agent::AdapterSettings>,
         paths: AppPaths,
         cx: &mut Context<Self>,
     ) {
@@ -238,10 +238,6 @@ impl ConversationPanel {
             self.saves.finish(ticket);
             return;
         };
-        let (settings, resolution) = match resolved {
-            Some((settings, resolution)) => (Some(settings), Some(resolution)),
-            None => (None, None),
-        };
         let applied = attached.workflow.set_adapter(settings);
         if self.command(applied, cx).is_none() {
             self.saves.finish(ticket);
@@ -249,7 +245,6 @@ impl ConversationPanel {
             return;
         }
         self.saved_adapter = file.clone();
-        self.containment = resolution;
         self.settings_error = None;
         // A turn-on saves its profile by id; a plain Save goes through the label-matching
         // settings path.

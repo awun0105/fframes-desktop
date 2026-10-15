@@ -21,7 +21,7 @@ impl Run {
     }
 }
 
-/// A clean run ends verified and contained, with the configured ownership.
+/// A clean run ends verified and contained, keeping the containment verified at launch.
 fn assert_contained(outcome: &studio_harness::driver::DriverOutcome) {
     assert!(outcome.termination.verified(), "{:?}", outcome.termination);
     assert_eq!(
@@ -33,7 +33,7 @@ fn assert_contained(outcome: &studio_harness::driver::DriverOutcome) {
         "{:?}",
         outcome.escaped_pids
     );
-    assert_eq!(outcome.ownership, WriterOwnership::Unknown);
+    assert!(outcome.ownership.is_qualified(), "{:?}", outcome.ownership);
 }
 
 fn run_turn(mode: &str, prompt: &str) -> Run {

@@ -412,18 +412,8 @@ impl Actor {
             return;
         };
 
-        let (settings, resolution) = profile
-            .adapter
-            .resolve(&self.shared.paths, &self.shared.ownership_policy);
-        if !resolution.ownership.is_qualified() {
-            self.warn(format!(
-                "Provider switch to {} blocked: adapter is not qualified.",
-                target_prov
-            ));
-            self.switch_pending = Some(pending);
-            self.touch();
-            return;
-        }
+        // Containment is verified when the new adapter launches, not here.
+        let settings = profile.adapter.resolve(&self.shared.ownership_policy);
         if let Err(error) = registry.select_profile(&profile.id) {
             self.warn(format!(
                 "Provider switch blocked: could not select profile ({error})."
@@ -512,7 +502,7 @@ impl Actor {
         let launch_digest = self
             .active
             .as_ref()
-            .and_then(|active| session_launch_digest(active, &self.shared.paths).ok());
+            .and_then(|active| session_launch_digest(active).ok());
         let Some(launch_digest) = launch_digest else {
             self.warn("Session restoration disabled: exact adapter launch identity could not be verified.");
             self.session_restore = Some(SessionRestoreView {

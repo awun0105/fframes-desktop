@@ -509,8 +509,18 @@ pub struct AdapterView {
     pub provider: Option<String>,
     pub executable: Option<String>,
     pub readiness: AdapterReadiness,
-    /// Configured writer-ownership label (`process-group-contained`, `unknown`, ...).
-    pub writer_ownership: Option<String>,
+    /// The writer containment verified at this adapter's last launch in this workflow;
+    /// `None` until it is launched.
+    pub last_launch: Option<LaunchContainment>,
+}
+
+/// The writer ownership a launch established (before any demotion during the task).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaunchContainment {
+    /// `job-object-contained`, `process-group-contained`, `unknown`, ...
+    pub ownership: String,
+    /// Candidates of this launch may be captured.
+    pub contained: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

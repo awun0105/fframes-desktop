@@ -333,19 +333,9 @@ fn handoff_draft_choice(
     })
 }
 
-fn session_launch_digest(
-    active: &Active,
-    paths: &crate::app_paths::AppPaths,
-) -> Result<String, String> {
-    let description = crate::providers::host::AdapterFile {
-        provider: active.adapter.provider.clone(),
-        executable: active.launch.executable.to_string_lossy().into_owned(),
-        args: active.launch.args.clone(),
-        auth_env_names: active.launch.auth_names.clone(),
-        auth_method: active.launch.auth_method.clone(),
-        mcp: crate::providers::host::McpChoice::Baseline,
-    };
-    crate::containment::launch_identity(&description, paths).map(|identity| identity.digest())
+/// The identity of the program this task launches, binding a resumable session to it.
+fn session_launch_digest(active: &Active) -> Result<String, String> {
+    crate::containment::launch_identity(&active.launch).map(|identity| identity.digest())
 }
 
 fn split_at_boundary(text: &str, max: usize) -> (&str, &str) {
@@ -436,7 +426,7 @@ impl Actor {
                 provider: None,
                 executable: None,
                 readiness: AdapterReadiness::NotConfigured,
-                writer_ownership: None,
+                last_launch: None,
             },
             capabilities: None,
             options: Default::default(),

@@ -9,7 +9,7 @@ use crate::{
     detect::NodeEntry,
     driver::{
         AcpDriver, AgentFailure, DriverConfig, DriverLimits, DriverMode, FailureKind,
-        InitializedInfo, McpStdioSupport, Phase,
+        InitializedInfo, McpStdioSupport, OwnershipSource, Phase,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-use studio_bootstrap::{ChildEnvironment, ProcessTreeManager, WriterOwnership};
+use studio_bootstrap::{ChildEnvironment, ProcessTreeManager};
 
 /// Where an adapter executable may be found besides an absolute configured path.
 #[derive(Debug, Clone, Default)]
@@ -264,6 +264,11 @@ impl AdapterLaunch {
         }
         let mut secrets = Vec::new();
         for name in &config.auth_env_names {
+            // Never forwarded even when named: they tell a Claude-based adapter it runs
+            // nested inside another Claude Code session.
+            if is_nesting_marker(name) {
+                continue;
+            }
             if let Some(value) = lookup(name) {
                 secrets.push(value.clone());
                 env.set(name, value);
@@ -283,6 +288,13 @@ impl AdapterLaunch {
         self.auth_method = Some(method.into());
         self
     }
+}
+
+/// `CLAUDECODE` and its `CLAUDECODE_*` relatives (any case: Windows variable names are
+/// case-insensitive), set by a Claude Code terminal the studio may be started from.
+fn is_nesting_marker(name: &str) -> bool {
+    name.get(..10)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("CLAUDECODE"))
 }
 
 /// Distinct adapter readiness states surfaced to the user.
@@ -445,7 +457,7 @@ pub fn probe_adapter(
             launch,
             limits,
             resume_session: None,
-            writer_ownership: WriterOwnership::Unknown,
+            ownership: OwnershipSource::Verified,
             mode: if options.verify_session {
                 DriverMode::Full
             } else {
@@ -659,6 +671,44 @@ mod tests {
         assert_eq!(launch.env.get("ACP_OTHER"), None);
         assert_eq!(launch.secrets, vec!["sentinel-secret"]);
         assert!(!format!("{launch:?}").contains("sentinel-secret"));
+    }
+
+    #[test]
+    fn claude_code_nesting_markers_never_reach_the_adapter() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join(if cfg!(windows) {
+            "adapter.exe"
+        } else {
+            "adapter"
+        });
+        std::fs::write(&exe, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let config = AdapterConfig {
+            executable: exe.to_string_lossy().into(),
+            args: vec![],
+            auth_env_names: vec![
+                "CLAUDECODE".into(),
+                "ClaudeCode_Entrypoint".into(),
+                "CLAUDE_CODE_KEY".into(),
+            ],
+        };
+        let launch = AdapterLaunch::resolve_with_env(&config, &ExecutableSearch::default(), |_| {
+            Some("1".to_owned())
+        })
+        .unwrap();
+        let names: Vec<String> = launch.env.iter().map(|(k, _)| k.to_owned()).collect();
+        assert!(
+            !names
+                .iter()
+                .any(|k| k.to_ascii_uppercase().starts_with("CLAUDECODE")),
+            "{names:?}"
+        );
+        // Anything else named is still forwarded.
+        assert_eq!(launch.env.get("CLAUDE_CODE_KEY"), Some("1"));
     }
 
     #[test]

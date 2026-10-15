@@ -206,6 +206,8 @@ fn switching_projects_mid_turn_shows_nothing_of_the_old_turn(cx: &mut gpui::Test
     let original = source(&studio);
     send_brief(&mut studio);
     let other = studio.another_project("other");
+    // The shell ignores Open while it is still preparing the first project.
+    studio.wait("the first project ready", |t| t["busy"] == false);
     studio.dispatch(OpenProject);
     studio.choose_path(&other);
     let switched = studio.wait("the other project with its own agent", |t| {
@@ -243,6 +245,8 @@ fn the_agent_of_the_project_switched_to_still_updates_the_panel(cx: &mut gpui::T
     .unwrap();
     send_brief(&mut studio);
     let other = studio.another_project("other");
+    // The shell ignores Open while it is still preparing the first project.
+    studio.wait("the first project ready", |t| t["busy"] == false);
     studio.dispatch(OpenProject);
     studio.choose_path(&other);
     studio.wait("the other project with its own agent", |t| {

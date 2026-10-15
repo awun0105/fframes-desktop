@@ -386,7 +386,7 @@ impl Actor {
                 provider: None,
                 executable: None,
                 readiness: AdapterReadiness::NotConfigured,
-                writer_ownership: None,
+                last_launch: None,
             },
             Some(adapter) => AdapterView {
                 provider: Some(adapter.provider.clone()),
@@ -398,7 +398,7 @@ impl Actor {
                 } else {
                     AdapterReadiness::Unchecked
                 },
-                writer_ownership: Some(adapter.writer_ownership.label().to_owned()),
+                last_launch: None,
             },
         };
         self.probe_generation += 1;

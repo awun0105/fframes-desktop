@@ -16,7 +16,7 @@ pub use driver::{
     AcpInitializeResponse, AcpPermissionRequest, AcpPermissionResponse, AcpPromptChunk,
     AcpSessionRequest, AcpSessionResponse, AgentEvent, AgentEventKind, AgentFailure, DriverConfig,
     DriverError, DriverLimits, DriverMode, DriverOutcome, DriverStatus, FailureKind,
-    McpConfigError, McpStdioServer, McpStdioSupport, PromptOutcome, ServerInfo,
+    McpConfigError, McpStdioServer, McpStdioSupport, OwnershipSource, PromptOutcome, ServerInfo,
     redact_sensitive_string,
 };
 pub use supervisor::{AgentSupervisor, QualificationStatus, SupervisorError};

@@ -461,16 +461,10 @@ impl Actor {
         let identity = active.ctx.identity.clone();
         let scope = controller.lock().agent_processes(&identity);
         let scope = scope.map_err(|e| Box::new(present::engine_error(&e, true)))?;
-        // Qualification is re-derived at every launch when the host supplies a probe
-        // (hashing the executable can take a moment; this is the workflow's own thread).
-        let ownership = match &active.adapter.ownership_probe {
-            Some(probe) => probe(),
-            None => active.adapter.writer_ownership.clone(),
-        };
         let (resume_session, closure_changed) = if let Some(pending) =
             self.pending_resume_session.take()
         {
-            let launch_digest = session_launch_digest(active, &self.shared.paths).ok();
+            let launch_digest = session_launch_digest(active).ok();
             let accepted_revision = self.shared.controller.lock().state().accepted().to_string();
             if pending.provider_id == active.adapter.provider
                 && Some(pending.launch_digest) == launch_digest
@@ -492,13 +486,20 @@ impl Actor {
             launch: active.launch.clone(),
             limits,
             resume_session,
-            writer_ownership: ownership.clone(),
+            ownership: active.adapter.ownership.clone(),
             mode: DriverMode::Full,
             mcp_servers: active.mcp.iter().cloned().collect(),
             mcp_stdio: active.adapter.mcp,
         };
         let driver = AcpDriver::start(config, &scope)
             .map_err(|f| Box::new(present::provider_error(&f, true)))?;
+        // What the supervisor verified for the process it just spawned, not a claim made
+        // before the launch; observations during the task only demote it.
+        let ownership = driver.ownership();
+        self.adapter.last_launch = Some(LaunchContainment {
+            ownership: ownership.label().to_owned(),
+            contained: ownership.is_qualified(),
+        });
         let started = controller
             .lock()
             .agent_writer_started(&identity, ownership.clone());

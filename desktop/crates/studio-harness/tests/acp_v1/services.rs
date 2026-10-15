@@ -165,11 +165,7 @@ fn only_advertised_options_can_be_set_and_adapter_rejections_are_events() {
 #[cfg(unix)]
 fn helpers_inside_the_task_group_are_reaped_and_group_cleanup_is_verified() {
     let root = tempfile::tempdir().unwrap();
-    let mut cfg = config(root.path(), "spawn-helper");
-    cfg.writer_ownership = WriterOwnership::ProcessGroupContained {
-        qualification: "fixture".into(),
-    };
-    let (driver, manager) = start_with(cfg);
+    let (driver, manager) = start_with(config(root.path(), "spawn-helper"));
     ready(&driver);
     let turn = driver.prompt("go").unwrap();
     driver.wait_turn(turn, WAIT).unwrap();
@@ -188,11 +184,8 @@ fn helpers_inside_the_task_group_are_reaped_and_group_cleanup_is_verified() {
 fn a_setsid_escaped_helper_demotes_ownership_and_is_not_covered_by_group_cleanup() {
     for mode in ["escape-helper", "escape-pipes"] {
         let root = tempfile::tempdir().unwrap();
-        let mut cfg = config(root.path(), mode);
-        cfg.writer_ownership = WriterOwnership::ProcessGroupContained {
-            qualification: "claimed".into(),
-        };
-        let (driver, manager) = start_with(cfg);
+        let (driver, manager) = start_with(config(root.path(), mode));
+        assert!(driver.ownership().is_qualified(), "{mode}");
         ready(&driver);
         let turn = driver.prompt("go").unwrap();
         driver.wait_turn(turn, WAIT).unwrap();
@@ -214,9 +207,6 @@ fn a_setsid_escaped_helper_demotes_ownership_and_is_not_covered_by_group_cleanup
             survived,
             "{mode}: escaped helper must outlive group cleanup"
         );
-        // Only Linux scans for escaped descendants; macOS has no escape scan, so the
-        // demotion is not observable there.
-        #[cfg(target_os = "linux")]
         {
             assert_eq!(outcome.escaped_pids, vec![helper as u32], "{mode}");
             assert_eq!(

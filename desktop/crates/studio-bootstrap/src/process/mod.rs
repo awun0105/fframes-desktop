@@ -5,6 +5,8 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::Arc;
+#[cfg(feature = "fault-injection")]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -474,7 +476,9 @@ impl TrackedChild {
     ///   the spawn failed).
     /// - Linux and macOS: the child leads its own process group (pgid = pid, start time
     ///   pinned), and the escape scan (`/proc`, or libproc's whole process table)
-    ///   reports any descendant that leaves it.
+    ///   reports any descendant that leaves it. On Linux a leader whose start time could
+    ///   not be read is not pinned, so its group is [`WriterOwnership::Unknown`]; macOS
+    ///   refuses such a spawn.
     /// - Elsewhere no descendant scan exists, so nothing rules out a writer that left
     ///   the group: [`WriterOwnership::Unknown`].
     ///
@@ -488,6 +492,10 @@ impl TrackedChild {
                     self.pid
                 ),
             }
+        }
+        #[cfg(target_os = "linux")]
+        if self.leader_start.is_none() {
+            return WriterOwnership::Unknown;
         }
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
@@ -935,6 +943,12 @@ impl Drop for TrackedChild {
 
 /// Spawns a child process with process group ownership and app-local environment isolation.
 pub fn spawn_tracked(opts: SpawnOptions) -> Result<TrackedChild, ProcessError> {
+    spawn_checked(opts, false)
+}
+
+/// [`spawn_tracked`]; `fail_check` (fault injection only) makes the post-spawn containment
+/// check fail as the platform would.
+fn spawn_checked(opts: SpawnOptions, fail_check: bool) -> Result<TrackedChild, ProcessError> {
     let cmd_str = opts.program.to_string_lossy().to_string();
     let mut command = Command::new(&opts.program);
     command.args(&opts.args);
@@ -966,10 +980,12 @@ pub fn spawn_tracked(opts: SpawnOptions) -> Result<TrackedChild, ProcessError> {
         #[cfg(target_os = "linux")]
         let leader_start = std::fs::read_to_string(format!("/proc/{pid}/stat"))
             .ok()
+            .filter(|_| !fail_check)
             .and_then(|stat| parse_proc_stat(pid, &stat))
             .map(|entry| entry.start);
         #[cfg(target_os = "macos")]
-        let leader_start = match mac_process_start_time(pid as libc::pid_t) {
+        let leader_start = match mac_process_start_time(pid as libc::pid_t).filter(|_| !fail_check)
+        {
             Some(start) => start,
             None => {
                 // Keep the unreaped leader's pid reserved while cleaning up this just-created
@@ -1058,7 +1074,10 @@ pub fn spawn_tracked(opts: SpawnOptions) -> Result<TrackedChild, ProcessError> {
             let assign_res = AssignProcessToJobObject(job, proc_handle);
             // The child is still suspended: verify the assignment before any of its code
             // runs. A check that fails or cannot be answered ends the launch.
-            if assign_res == 0 || windows::process_in_job(proc_handle, job) != Some(true) {
+            if assign_res == 0
+                || fail_check
+                || windows::process_in_job(proc_handle, job) != Some(true)
+            {
                 let _ = TerminateProcess(proc_handle, 1);
                 CloseHandle(job);
                 return Err(ProcessError::JobAssignmentFailed {
@@ -1151,6 +1170,9 @@ pub struct ProcessTreeManager {
     ancestors: Vec<Arc<AtomicBool>>,
     parents: Vec<ChildList>,
     lifecycle: Arc<Mutex<()>>,
+    /// Spawns left whose containment check is made to fail (shared by sub-scopes).
+    #[cfg(feature = "fault-injection")]
+    containment_faults: Arc<AtomicUsize>,
 }
 
 impl ProcessTreeManager {
@@ -1161,7 +1183,16 @@ impl ProcessTreeManager {
             ancestors: Vec::new(),
             parents: Vec::new(),
             lifecycle: Arc::new(Mutex::new(())),
+            #[cfg(feature = "fault-injection")]
+            containment_faults: Arc::default(),
         }
+    }
+
+    /// Fault injection: the containment check of the next `count` spawns in this manager
+    /// or any of its scopes fails, as it would if the platform refused it.
+    #[cfg(feature = "fault-injection")]
+    pub fn fail_containment_checks(&self, count: usize) {
+        self.containment_faults.store(count, Ordering::SeqCst);
     }
 
     /// A terminal child scope cancels its descendants, not siblings. The root retains
@@ -1177,10 +1208,19 @@ impl ProcessTreeManager {
             ancestors,
             parents,
             lifecycle: Arc::clone(&self.lifecycle),
+            #[cfg(feature = "fault-injection")]
+            containment_faults: Arc::clone(&self.containment_faults),
         }
     }
 
     pub fn spawn(&self, opts: SpawnOptions) -> Result<Arc<Mutex<TrackedChild>>, ProcessError> {
+        #[cfg(feature = "fault-injection")]
+        let fail_check = self
+            .containment_faults
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok();
+        #[cfg(not(feature = "fault-injection"))]
+        let fail_check = false;
         // Serialize spawn/publication with terminal shutdown so no child can be
         // created after the shutdown sweep, including by a background installer.
         let _lifecycle = self.lifecycle.lock();
@@ -1190,7 +1230,7 @@ impl ProcessTreeManager {
                 "Process owner is shutting down".into(),
             ));
         }
-        let tracked = spawn_tracked(opts)?;
+        let tracked = spawn_checked(opts, fail_check)?;
         let arc_child = Arc::new(Mutex::new(tracked));
         // Prune exited children whose groups/jobs are also dead
         list.retain(|c| {

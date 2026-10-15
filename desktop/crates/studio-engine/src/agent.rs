@@ -60,14 +60,12 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_bootstrap::ProcessTreeManager;
 use studio_harness::{
-    AdapterConfig, DriverLimits, ExecutableSearch, McpStdioSupport, driver::OptionValue,
+    AdapterConfig, DriverLimits, ExecutableSearch, McpStdioSupport, OwnershipSource,
+    driver::OptionValue,
 };
 use studio_project::ProjectId;
-
-/// See [`AdapterSettings::ownership_probe`].
-pub type OwnershipProbe = Arc<dyn Fn() -> WriterOwnership + Send + Sync>;
 
 /// The one adapter a project talks to (provider-owned setup; values of auth variables are
 /// never stored here, only their names).
@@ -76,14 +74,10 @@ pub struct AdapterSettings {
     /// Label carried by driver events and rows.
     pub provider: String,
     pub adapter: AdapterConfig,
-    /// How this adapter's writer descendants are owned. Only an explicit qualification
-    /// result may be `ProcessGroupContained`; anything else blocks candidate capture.
-    pub writer_ownership: WriterOwnership,
-    /// Re-derives the ownership at every task launch (on the workflow's own thread), for a
-    /// host that qualifies adapters from evidence: a replaced executable or ledger then
-    /// never keeps a stale qualification. When present its answer replaces
-    /// `writer_ownership` for that launch; `writer_ownership` is what is shown before one.
-    pub ownership_probe: Option<OwnershipProbe>,
+    /// Where the writer's ownership comes from at each launch: the containment the
+    /// supervisor verified for the spawned adapter (production), or a test injection.
+    /// Anything but a contained ownership blocks candidate capture.
+    pub ownership: OwnershipSource,
     /// Host policy for stdio MCP (`Unsupported` = CLI route only).
     pub mcp: McpStdioSupport,
     /// Advertised authentication method to select explicitly, if the adapter needs one.
@@ -351,7 +345,7 @@ impl AgentWorkflow {
                 provider: None,
                 executable: None,
                 readiness: AdapterReadiness::NotConfigured,
-                writer_ownership: None,
+                last_launch: None,
             },
             capabilities: None,
             options: Default::default(),

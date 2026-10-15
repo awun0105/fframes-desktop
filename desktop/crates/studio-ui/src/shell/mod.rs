@@ -200,8 +200,8 @@ struct AgentHost {
     playhead: usize,
     /// A revision the preview now displays, still to be reported.
     displayed: Option<String>,
-    /// Who may say a writer is contained: validated qualification evidence only, except
-    /// for the explicit test injection of the studio's observation entry.
+    /// Who may say a writer is contained: the containment verified at each launch,
+    /// except for the explicit test injection of the studio's observation entry.
     ownership: OwnershipPolicy,
 }
 

@@ -13,7 +13,9 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use studio_harness::{AdapterConfig, ExecutableSearch, McpStdioSupport, driver::OptionValue};
+use studio_harness::{
+    AdapterConfig, ExecutableSearch, McpStdioSupport, OwnershipSource, driver::OptionValue,
+};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 use studio_engine::{
     AgentTaskId, Boundary, CanvasTaskSelection, CanvasTaskSelectionKind, CompiledScope, Controller,
@@ -90,7 +92,9 @@ struct Options {
     /// The `studio-mcp` helper is configured / the `studio-tools` helper is configured.
     mcp_helper: bool,
     cli_helper: bool,
-    ownership: WriterOwnership,
+    /// The writer's ownership: injected (the default, a contained fixture) or the
+    /// containment the supervisor verifies at launch.
+    ownership: OwnershipSource,
     handoff: Option<Arc<dyn PreviewHandoff>>,
     row_limits: Option<studio_engine::agent::log::RowLimits>,
     hooks: Option<Arc<dyn TransactionHooks>>,
@@ -115,7 +119,7 @@ impl Default for Options {
             mcp: McpStdioSupport::Baseline,
             mcp_helper: true,
             cli_helper: true,
-            ownership: qualified(),
+            ownership: OwnershipSource::Injected(qualified()),
             handoff: None,
             row_limits: None,
             hooks: None,
@@ -271,11 +275,12 @@ impl World {
         if self.options.adapter {
             config.adapter = Some(self.adapter_settings());
         }
-        config.ownership_policy = Some(
-            studio_engine::containment::OwnershipPolicy::TestInjected(
-                self.options.ownership.clone(),
-            ),
-        );
+        config.ownership_policy = Some(match &self.options.ownership {
+            OwnershipSource::Verified => studio_engine::containment::OwnershipPolicy::Validated,
+            OwnershipSource::Injected(ownership) => {
+                studio_engine::containment::OwnershipPolicy::TestInjected(ownership.clone())
+            }
+        });
         config
     }
 
@@ -303,8 +308,7 @@ impl World {
                     vec![]
                 },
             },
-            writer_ownership: self.options.ownership.clone(),
-            ownership_probe: None,
+            ownership: self.options.ownership.clone(),
             mcp: self.options.mcp,
             auth_method: None,
         }

@@ -27,9 +27,9 @@ impl StudioShell {
     /// Nothing is launched and no command is sent; an operator drives the real panel.
     ///
     /// `test_ownership` is the explicit test-only injection for fixtures: with it the
-    /// adapter's writers count as that ownership WITHOUT any qualification evidence (the
-    /// panel says so); without it only validated evidence can qualify an adapter, exactly
-    /// as in the product.
+    /// adapter's writers count as that ownership WITHOUT the containment check of the
+    /// launch (the panel says so); without it only the containment verified at launch
+    /// counts, exactly as in the product.
     pub fn start_agent_telemetry(
         &mut self,
         project: PathBuf,

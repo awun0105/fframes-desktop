@@ -562,7 +562,7 @@ impl ReplyTracker {
 
 // ---- settings saves ----------------------------------------------------------------------------
 
-/// At most one adapter-settings save is in flight (resolving the qualification, applying it
+/// At most one adapter-settings save is in flight (resolving the settings, applying them
 /// to the workflow, writing the file). A second Save while one is pending is refused and
 /// only the completion of the in-flight save is ever reported, so overlapping saves can
 /// neither interleave their files nor mask each other's failure.
@@ -693,7 +693,7 @@ mod tests {
                 provider: Some("fixture".into()),
                 executable: Some("/opt/adapter".into()),
                 readiness: AdapterReadiness::Unchecked,
-                writer_ownership: Some("unknown".into()),
+                last_launch: None,
             },
             capabilities: None,
             options: Default::default(),

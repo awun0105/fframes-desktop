@@ -291,16 +291,16 @@ fn two_retained_queued_briefs_explicit_clear() {
 }
 
 #[test]
-fn unqualified_adapter_switch_is_blocked() {
+fn a_switch_to_an_unknown_provider_is_blocked() {
     let w = World::new();
 
-    // Initiate switch to a non-existent or unqualified provider ID
+    // Initiate a switch to a provider ID the registry does not have.
     w.wf()
         .initiate_switch("unqualified-provider-xyz")
         .expect("initiate ok");
     w.wait("switch pending", |s| s.switch_pending.is_some());
 
-    // Attempting continuation must be rejected because adapter is not qualified
+    // Continuing must be rejected: there is no profile to switch to.
     w.wf()
         .choose_handoff_continuation(
             studio_engine::agent::model::HandoffChoice::RestartFromAccepted,
@@ -312,7 +312,7 @@ fn unqualified_adapter_switch_is_blocked() {
     let s = w.snap();
     assert!(
         s.switch_pending.is_some(),
-        "switch must remain pending when target provider is not qualified"
+        "switch must remain pending when the target provider does not exist"
     );
 }
 

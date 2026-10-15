@@ -27,7 +27,6 @@ use std::{
 };
 use studio_engine::agent::{AdapterReadiness, UndoView};
 use studio_engine::app_paths::AppPaths;
-use studio_engine::containment::Resolution;
 use studio_engine::providers::{
     host::{self, AdapterFile},
     provider_profiles::{self, DetectRowAction, DetectionScan, DetectionState},
@@ -376,9 +375,9 @@ impl ConversationPanel {
         let adapter = profile.adapter.clone();
         let policy = self.policy.clone();
         let resolving = {
-            let (adapter, paths) = (adapter.clone(), paths.clone());
+            let adapter = adapter.clone();
             cx.background_executor()
-                .spawn(async move { adapter.resolve(&paths, &policy) })
+                .spawn(async move { adapter.resolve(&policy) })
         };
         cx.spawn(async move |this, cx| {
             let resolved = resolving.await;
@@ -395,7 +394,7 @@ impl ConversationPanel {
         ticket: u64,
         registry: provider_profiles::ProviderRegistry,
         adapter: AdapterFile,
-        resolved: (studio_engine::agent::AdapterSettings, Resolution),
+        resolved: studio_engine::agent::AdapterSettings,
         paths: AppPaths,
         cx: &mut Context<Self>,
     ) {
@@ -406,7 +405,7 @@ impl ConversationPanel {
             self.saves.finish(ticket);
             return;
         };
-        if let Err(error) = attached.workflow.set_adapter(Some(resolved.0)) {
+        if let Err(error) = attached.workflow.set_adapter(Some(resolved)) {
             self.saves.finish(ticket);
             self.agent_setup.turn_on.finish(ticket, false);
             self.say(error.to_string(), cx);
@@ -416,7 +415,6 @@ impl ConversationPanel {
         self.fill_setup(Some(&adapter), cx);
         self.mcp_choice = adapter.mcp;
         self.saved_adapter = Some(adapter);
-        self.containment = Some(resolved.1);
         self.settings_error = None;
         let save = cx
             .background_executor()
@@ -428,10 +426,10 @@ impl ConversationPanel {
                     let turn_on = panel.agent_setup.turn_on.finish(ticket, result.is_ok());
                     panel.notice = Some(match result {
                         Ok(()) if turn_on => panel.test_turned_on(
-                            "Provider selected. It remains experimental until authentic qualification passes.",
+                            "Provider selected. Its writer containment is verified when it starts.",
                             cx,
                         ),
-                        Ok(()) => "Provider selected. It remains experimental until authentic qualification passes.".into(),
+                        Ok(()) => "Provider selected. Its writer containment is verified when it starts.".into(),
                         Err(error) => format!("Provider selected for this session, but its registry could not be saved: {error}"),
                     });
                     cx.notify();
@@ -675,33 +673,31 @@ impl ConversationPanel {
     /// The "Providers" section: one radio row per registry profile.
     /// `switch_pending`: a provider handoff waits; `selection_busy`: a task or Undo runs, so a
     /// selection becomes a stopped-writer switch.
+    /// What the provider's last launch in this session proved about its writers.
+    fn launch_status(&self, provider: &str) -> String {
+        match self.launches.get(provider) {
+            None => "Not launched yet".into(),
+            Some(launch) if launch.contained => {
+                format!("Contained at last launch ({})", launch.ownership)
+            }
+            Some(launch) => format!("Not contained at last launch ({})", launch.ownership),
+        }
+    }
+
     pub(super) fn providers_section(
         &mut self,
         switch_pending: bool,
         selection_busy: bool,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
-        let ranking_note = match self.qualification.ranking {
-            provider_profiles::QualificationRankingStatus::Recommended => format!(
-                "The M6 ledger recommends {}. Statuses below are reported by the installed ledger; writer containment is independently checked for the selected launch.",
-                self.qualification.recommended.join(" and ")
-            ),
-            provider_profiles::QualificationRankingStatus::InsufficientEvidence => {
-                "The M6 ledger reports insufficient evidence for a recommendation. Provider statuses below are ledger-reported; writer containment is independently checked for the selected launch.".to_owned()
-            }
-            provider_profiles::QualificationRankingStatus::Invalid => {
-                "The M6 ledger is invalid. No provider recommendation is shown; writer containment remains independently checked for the selected launch.".to_owned()
-            }
-        };
         let mut providers = self
             .section("Providers")
             .child(
                 self.line("Select a configured ACP provider, or start a stopped-writer handoff."),
             )
-            .child(self.line(ranking_note));
-        if let Some(notice) = &self.qualification.notice {
-            providers = providers.child(self.line(notice.clone()));
-        }
+            .child(self.line(
+                "Writer containment is verified each time a provider starts; the result of its last launch is shown below.",
+            ));
         for profile in &self.registry.profiles {
             let selected =
                 self.registry.selected_profile_id.as_deref() == Some(profile.id.as_str());
@@ -719,7 +715,7 @@ impl ConversationPanel {
             let profile_id = profile.id.clone();
             let description = format!(
                 "{} · {} · {}",
-                self.qualification.status_for(&profile.id).label(),
+                self.launch_status(&profile.adapter.provider),
                 profile.id,
                 profile.description,
             );

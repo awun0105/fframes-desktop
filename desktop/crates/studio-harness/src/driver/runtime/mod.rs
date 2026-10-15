@@ -141,13 +141,22 @@ pub struct DriverConfig {
     pub limits: DriverLimits,
     /// Restore this session instead of creating one; fails unless negotiated.
     pub resume_session: Option<String>,
-    /// Qualified writer model for this adapter; anything but a qualification result
-    /// must be `Unknown`.
-    pub writer_ownership: WriterOwnership,
+    /// Where the writer's ownership comes from.
+    pub ownership: OwnershipSource,
     pub mode: DriverMode,
     /// Task-specific stdio MCP servers; env values are added to the redaction set.
     pub mcp_servers: Vec<McpStdioServer>,
     pub mcp_stdio: McpStdioSupport,
+}
+
+/// Where a driver's writer ownership comes from.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum OwnershipSource {
+    /// The containment the process supervisor verified for the spawned adapter.
+    #[default]
+    Verified,
+    /// Injected by a test harness without any verification.
+    Injected(WriterOwnership),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,8 +184,8 @@ pub struct DriverOutcome {
     pub session: Option<String>,
     /// Verified termination of the owned task process group.
     pub termination: TerminationReport,
-    /// Configured ownership, demoted to `Detached` if an escape was observed or
-    /// containment could not be verified.
+    /// Launch ownership (see [`AcpDriver::ownership`]), demoted to `Detached` if an
+    /// escape was observed or containment could not be verified.
     pub ownership: WriterOwnership,
     pub escaped_pids: Vec<u32>,
     /// Why containment of the task's processes could not be verified (an escape scan or

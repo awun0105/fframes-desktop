@@ -115,13 +115,14 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+use studio_engine::agent::LaunchContainment;
 use studio_engine::agent::{
     AdapterReadiness, AgentWorkflow, ChangeCard, ConflictView, HandoffState, HistoryEntry,
     NoticeLevel, OutcomeKind, PermissionAnswer, PermissionCard, PermissionRef, PermissionState,
     Row, RowKind, StructuredError, TaskPhase, ToolCard, UndoView, UserSource, ValidationCard,
     WorkflowSnapshot,
 };
-use studio_engine::containment::{OwnershipPolicy, Resolution};
+use studio_engine::containment::OwnershipPolicy;
 use studio_engine::providers::host::{self, AdapterFields, AdapterFile, McpChoice};
 use studio_engine::providers::provider_profiles;
 use studio_engine::{DraftState, ReviewPolicy, TaskScope, app_paths::AppPaths};
@@ -191,11 +192,7 @@ pub struct Attachment {
     pub adapter: Option<AdapterFile>,
     /// The app-local provider registry; defaults are shown when no registry exists yet.
     pub registry: Option<provider_profiles::ProviderRegistry>,
-    /// Display-only provider statuses read from the installed M6 ledger.
-    pub qualification: provider_profiles::QualificationSnapshot,
     pub settings_error: Option<String>,
-    /// How the saved adapter's writer containment was derived.
-    pub resolution: Option<Resolution>,
     pub policy: OwnershipPolicy,
 }
 
@@ -268,11 +265,11 @@ pub struct ConversationPanel {
     setup: SetupForm,
     saved_adapter: Option<AdapterFile>,
     registry: provider_profiles::ProviderRegistry,
-    qualification: provider_profiles::QualificationSnapshot,
+    /// The writer containment each provider (by its adapter label) established at its
+    /// last launch while the studio runs; never stored.
+    launches: HashMap<String, LaunchContainment>,
     settings_error: Option<String>,
-    /// How the saved adapter's writer containment was derived (shown read-only).
-    containment: Option<Resolution>,
-    /// Who may say a writer is contained (production: validated evidence only).
+    /// Who may say a writer is contained (production: the containment verified at launch).
     policy: OwnershipPolicy,
     saves: SaveTracker,
     mcp_choice: McpChoice,
@@ -367,9 +364,8 @@ impl ConversationPanel {
             },
             saved_adapter: None,
             registry: provider_profiles::ProviderRegistry::default(),
-            qualification: provider_profiles::QualificationSnapshot::default(),
+            launches: HashMap::new(),
             settings_error: None,
-            containment: None,
             policy: OwnershipPolicy::Validated,
             saves: SaveTracker::default(),
             mcp_choice: McpChoice::Baseline,
@@ -409,9 +405,7 @@ impl ConversationPanel {
             serial,
             adapter,
             registry,
-            qualification,
             settings_error,
-            resolution,
             policy,
         } = attachment;
         self.detach(cx);
@@ -422,11 +416,9 @@ impl ConversationPanel {
         });
         self.mcp_choice = adapter.as_ref().map_or(McpChoice::Baseline, |a| a.mcp);
         self.registry = registry.unwrap_or_default();
-        self.qualification = qualification;
         self.fill_setup(adapter.as_ref(), cx);
         self.saved_adapter = adapter;
         self.settings_error = settings_error;
-        self.containment = resolution;
         self.policy = policy;
         self.tab = Tab::Chat;
         self.poll(cx);
@@ -437,7 +429,6 @@ impl ConversationPanel {
     pub fn detach(&mut self, cx: &mut Context<Self>) {
         self.attached = None;
         self.snapshot = None;
-        self.qualification = provider_profiles::QualificationSnapshot::default();
         self.task_scope = None;
         self.scope_error = None;
         self.reset_transcript();
@@ -592,6 +583,11 @@ impl ConversationPanel {
             if snapshot.chat != self.chat {
                 self.chat = snapshot.chat;
                 self.reset_transcript();
+            }
+            if let (Some(provider), Some(launch)) =
+                (&snapshot.adapter.provider, &snapshot.adapter.last_launch)
+            {
+                self.launches.insert(provider.clone(), launch.clone());
             }
             self.snapshot = Some(snapshot);
             self.after_snapshot(cx);

@@ -9,14 +9,16 @@ use std::{
     sync::{Arc, Barrier, LazyLock},
     time::{Duration, Instant},
 };
-use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_bootstrap::ProcessTreeManager;
+#[cfg(unix)]
+use studio_bootstrap::WriterOwnership;
 use studio_harness::{
     AdapterConfig,
     discovery::{AdapterLaunch, ExecutableSearch},
     driver::{
         AcpDriver, AgentEvent, AgentEventKind, ConfigKind, DriverConfig, DriverError, DriverLimits,
-        DriverMode, FailureKind, McpStdioServer, McpStdioSupport, OptionValue, PermissionId,
-        PermissionReply, Phase, StopReasonKind,
+        DriverMode, FailureKind, McpStdioServer, McpStdioSupport, OptionValue, OwnershipSource,
+        PermissionId, PermissionReply, Phase, StopReasonKind,
     },
 };
 
@@ -60,7 +62,7 @@ fn config(root: &Path, mode: &str) -> DriverConfig {
         launch,
         limits: DriverLimits::default(),
         resume_session: None,
-        writer_ownership: WriterOwnership::Unknown,
+        ownership: OwnershipSource::Verified,
         mode: DriverMode::Full,
         mcp_servers: vec![],
         mcp_stdio: McpStdioSupport::Baseline,
@@ -328,9 +330,6 @@ fn a_completion_that_cannot_be_queued_is_never_published_as_success() {
 fn shutdown_of_a_wedged_connection_uses_the_bounded_fallback_and_demotes_ownership() {
     let root = tempfile::tempdir().unwrap();
     let mut cfg = config(root.path(), "wedge-init");
-    cfg.writer_ownership = WriterOwnership::ProcessGroupContained {
-        qualification: "claimed".into(),
-    };
     cfg.limits.shutdown_grace = Duration::from_millis(200);
     let (driver, manager) = start_with(cfg);
     let helper: i32 = wait_for(|| {
@@ -359,9 +358,6 @@ fn shutdown_of_a_wedged_connection_uses_the_bounded_fallback_and_demotes_ownersh
         "fallback is bounded: {took:?}"
     );
     assert!(outcome.termination.verified(), "{:?}", outcome.termination);
-    // Only Linux scans for escaped descendants; macOS has no escape scan, so the
-    // demotion is not observable there.
-    #[cfg(target_os = "linux")]
     {
         assert_eq!(outcome.escaped_pids, vec![helper as u32]);
         assert_eq!(

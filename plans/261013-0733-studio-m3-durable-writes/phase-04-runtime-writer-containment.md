@@ -1,9 +1,9 @@
 ---
 phase: 4
 title: "Runtime writer containment"
-status: pending
+status: in-progress
 priority: P1
-effort: "4-6d"
+effort: "2d (re-estimated after the scout: the Job Object launch, the escape scans and the capture gate already existed)"
 dependencies: []
 ---
 
@@ -39,14 +39,30 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Verification before resume, cancel-before-terminate test, `CLAUDECODE*` filter, extension check
+- [x] Verification before resume, cancel-before-terminate test, `CLAUDECODE*` filter, extension check
 
-- [ ] Scout
-- [ ] Windows Job Object mode
-- [ ] Runtime verification replaces the ledger
-- [ ] Launch identity kept
-- [ ] Ledger code removed
-- [ ] Containment tests on three platforms
+- [x] Scout
+- [x] Windows Job Object mode
+- [x] Runtime verification replaces the ledger
+- [x] Launch identity kept
+- [x] Ledger code removed
+- [ ] Containment tests on three platforms (green on this Windows VM; Linux and macOS CI need a push)
+
+## Progress (2026-10-15)
+
+- **Windows verification before resume.** `spawn_tracked` checks `IsProcessInJob` after `AssignProcessToJobObject` while the adapter is still suspended; a failed or unanswerable check terminates it and fails the launch (`JobAssignmentFailed`), so there is no writer. Breakaway stays refused (only test builds set `BREAKAWAY_OK`). Quiescence already required an empty job (accounting query in `terminate_verified`).
+- **Runtime ownership.** `TrackedChild::containment()` reports what the spawn verified: `JobObjectContained` on Windows, `ProcessGroupContained` on Linux and macOS (own group, pinned leader, escape scan; macOS got a whole-table libproc scan), `Unknown` elsewhere. **Addition:** on Linux a leader whose start time cannot be read is not pinned, so that launch is `Unknown`. `DriverConfig.writer_ownership` became `ownership: OwnershipSource` (`Verified`, or `Injected` for `OwnershipPolicy::TestInjected`); `AcpDriver::start` takes the ownership from the spawned child and `AcpDriver::ownership()` exposes it; the workflow passes that to `agent_writer_started`. Observations still only demote.
+- **Removed:** `containment::qualify_writer`, the `qualify-writer` subcommand, the ledger verifier (`resolve_ownership`, `resolve_with`, `verify_m3`/`verify_m6`, `LEDGER_*`, `Platform`), `AdapterSettings::ownership_probe`, `Resolution`, `QualificationSnapshot` and its ranking. The success grep is empty.
+- **Launch identity** now hashes the program the launch actually runs (`AdapterLaunch`: the resolved executable, for an npm shim the interpreter with its script as an argument), so the resume digest matches what was started. **Behaviour change:** a saved session of an npm-shim adapter refuses to resume once after this change (its digest now names `node` and the script); native executables keep their digest.
+- **Display. Deviation:** the last-launch result is kept in the workflow snapshot (`AdapterView::last_launch`, reset when the adapter changes) and, per provider label, in the agent panel's memory, instead of in the provider host: the workflow is where the launch happens, and the host keeps no state across launches. The provider list shows "Contained at last launch (...)", "Not contained at last launch (...)" or "Not launched yet"; the ranking and recommendation are gone.
+- **Behaviour change:** a provider switch no longer refuses a target as "not qualified" up front; its containment is verified when it launches, like any task.
+- **Adapter environment:** `CLAUDECODE` and `CLAUDECODE_*` (any case) are never forwarded, even when listed as sign-in names. **Correction to the plan's premise:** `ChildEnvironment::apply_to_command` already calls `env_clear()` and the allowlist never carried them, so an inherited `CLAUDECODE` never reached adapters; the filter guards the sign-in-name route, the only one left. Windows adapter files were already limited to `.exe`, `.cmd`, `.bat` and `.com`.
+- **Fault injection:** `studio-bootstrap` feature `fault-injection` (enabled only from `fframes-studio`'s dev-dependencies) makes the next N containment checks fail through each platform's real path: Windows and macOS refuse the launch, Linux records `Unknown`.
+- The fault is consumed by the next spawn in the controller's scopes; in these tests that is the adapter, because tool workers and MCP servers are started by the agent inside its own scope and builds run after the turn.
+- Tests: `app/tests/agent_writer_containment.rs` (not platform-gated) runs the scripted agent under `OwnershipPolicy::Validated` with no ledger. The writer is `job-object-contained` on this VM, its helper grandchild is gone before capture, and the candidate is captured and applied. A failed check gives no captured candidate. Stop delivers `session/cancel` to the running agent before its processes are terminated. Bootstrap, harness and engine unit tests cover the fault path, the env filter and the launch identity.
+- Opening a project no longer hashes the adapter or reads a ledger, so the agent panel attaches sooner. Two parity tests then sent Open while the shell was still preparing the first project (Open is ignored while busy) and now wait for an idle shell first.
+- **Residual risk:** work a pre-existing service does for the adapter (COM, Task Scheduler and WMI on Windows; `systemd-run` and D-Bus activation on Linux; `launchd` on macOS) runs outside the job or group and is not observed.
+- **Known failure, owned by phase 3:** `app/tests/agent_workflow_apply_gate.rs` still expects Apply to be blocked off Linux. Since Windows publication landed, the candidate is applied on this VM, so the test fails here until phase 3 rewrites it.
 
 ## Success criteria
 

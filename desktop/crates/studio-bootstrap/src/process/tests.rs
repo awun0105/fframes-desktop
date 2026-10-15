@@ -111,6 +111,42 @@ fn a_launch_reports_the_containment_this_platform_can_verify() {
         .expect("terminate gracefully");
 }
 
+/// A failed containment check never yields a contained writer: Windows and macOS refuse
+/// the launch, Linux keeps the process but reports its ownership as unknown.
+#[test]
+#[cfg(feature = "fault-injection")]
+fn a_failed_containment_check_never_reports_a_contained_launch() {
+    let manager = ProcessTreeManager::new();
+    let scope = manager.sub_manager();
+    let sleeper = || {
+        let mut opts = if cfg!(windows) {
+            let mut opts = SpawnOptions::new("cmd.exe");
+            opts.args(["/C", "ping -n 30 127.0.0.1 > NUL"]);
+            opts
+        } else {
+            let mut opts = SpawnOptions::new("sleep");
+            opts.arg("30");
+            opts
+        };
+        opts.stdout = Stdio::null();
+        opts.stderr = Stdio::null();
+        opts
+    };
+    manager.fail_containment_checks(1);
+    let refused = scope.spawn(sleeper());
+    if cfg!(target_os = "linux") {
+        let child = refused.expect("Linux keeps the process");
+        assert_eq!(child.lock().containment(), WriterOwnership::Unknown);
+    } else {
+        assert!(refused.is_err(), "the launch must be refused here");
+    }
+    // Only that spawn was affected.
+    let child = scope.spawn(sleeper()).expect("spawn");
+    assert!(child.lock().containment().is_qualified());
+    scope.terminate_all(Duration::from_millis(500));
+    assert_eq!(manager.active_count(), 0);
+}
+
 #[test]
 #[cfg(unix)]
 fn test_process_tree_manager_cleanup() {

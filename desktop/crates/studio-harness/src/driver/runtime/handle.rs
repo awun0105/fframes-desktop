@@ -25,7 +25,7 @@ impl AcpDriver {
             launch,
             limits,
             resume_session,
-            writer_ownership,
+            ownership,
             mode,
             mcp_servers,
             mcp_stdio,
@@ -78,10 +78,14 @@ impl AcpDriver {
                 "adapter pipes were not available",
             ));
         };
+        let ownership = match ownership {
+            OwnershipSource::Verified => child.lock().containment(),
+            OwnershipSource::Injected(ownership) => ownership,
+        };
         let queue = EventQueue::new(provider, task, limits.max_queued_events);
         let ingress = Ingress::new(INGRESS_MAX_FRAMES, INGRESS_MAX_BYTES);
         let shared = Arc::new(Shared {
-            ownership: writer_ownership,
+            ownership,
             streams: Mutex::new(Streams {
                 agent: StreamRedactor::new(redactor.clone()),
                 thought: StreamRedactor::new(redactor.clone()),
@@ -189,6 +193,13 @@ impl AcpDriver {
     pub fn wire_session_id(&self) -> Option<String> {
         let raw = self.shared.core.lock().session.clone()?;
         (self.shared.redactor.redact(&raw) == raw).then_some(raw)
+    }
+
+    /// The writer ownership established at launch: the containment the supervisor
+    /// verified for the spawned adapter, or the injected one. Later observations only
+    /// demote it, in [`DriverOutcome::ownership`].
+    pub fn ownership(&self) -> WriterOwnership {
+        self.shared.ownership.clone()
     }
 
     pub fn status(&self) -> DriverStatus {

@@ -7,7 +7,9 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
-use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_bootstrap::ProcessTreeManager;
+#[cfg(unix)]
+use studio_bootstrap::WriterOwnership;
 #[cfg(unix)]
 use studio_harness::driver::DriverOutcome;
 use studio_harness::{
@@ -18,7 +20,8 @@ use studio_harness::{
     driver::{
         AcpDriver, AgentEvent, AgentEventKind, DriverConfig, DriverError, DriverLimits, DriverMode,
         DriverStatus, FailureKind, McpConfigError, McpStdioServer, McpStdioSupport, MessageRole,
-        OptionValue, PermissionReply, PermissionResolution, Phase, PromptImage, StopReasonKind,
+        OptionValue, OwnershipSource, PermissionReply, PermissionResolution, Phase, PromptImage,
+        StopReasonKind,
     },
 };
 
@@ -72,7 +75,7 @@ fn config(root: &Path, mode: &str) -> DriverConfig {
         launch: launch(root, mode),
         limits: DriverLimits::default(),
         resume_session: None,
-        writer_ownership: WriterOwnership::Unknown,
+        ownership: OwnershipSource::Verified,
         mode: DriverMode::Full,
         mcp_servers: Vec::new(),
         mcp_stdio: McpStdioSupport::default(),

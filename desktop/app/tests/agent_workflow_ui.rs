@@ -223,10 +223,8 @@ fn opening_through_the_host_reads_the_saved_description_and_launches_no_agent() 
     let snapshot = world.snap();
     assert_eq!(snapshot.adapter.provider.as_deref(), Some("scripted"));
     assert_eq!(snapshot.adapter.readiness, AdapterReadiness::Unchecked);
-    assert_eq!(
-        snapshot.adapter.writer_ownership.as_deref(),
-        Some("process-group-contained")
-    );
+    // Containment is only ever what a launch verified, and nothing launched yet.
+    assert_eq!(snapshot.adapter.last_launch, None);
     assert_eq!(world.processes(), 0, "opening a project starts nothing");
     assert!(
         !world.agent.join("starts").exists(),
@@ -308,12 +306,12 @@ fn saving_a_description_reconfigures_an_idle_workflow_and_is_refused_while_a_tas
         provider: "other".into(),
         ..world.adapter(vec!["SOME_TOKEN_NAME".into()])
     };
-    let (settings, _) = changed.resolve(&world.paths, &world.policy());
+    let settings = changed.resolve(&world.policy());
     world.wf().set_adapter(Some(settings)).unwrap();
     world.wait("the new adapter", |s| {
         s.adapter.provider.as_deref() == Some("other")
     });
-    let (original, _) = world.adapter(vec![]).resolve(&world.paths, &world.policy());
+    let original = world.adapter(vec![]).resolve(&world.policy());
     world.wf().set_adapter(Some(original)).unwrap();
     world.wait("the original adapter", |s| {
         s.adapter.provider.as_deref() == Some("scripted")
@@ -325,7 +323,7 @@ fn saving_a_description_reconfigures_an_idle_workflow_and_is_refused_while_a_tas
     assert!(matches!(
         world
             .wf()
-            .set_adapter(Some(changed.resolve(&world.paths, &world.policy()).0)),
+            .set_adapter(Some(changed.resolve(&world.policy()))),
         Err(WorkflowError::Busy(_))
     ));
     world.wf().stop().unwrap();
@@ -567,11 +565,10 @@ fn a_real_permission_card_is_answered_once_and_closed_cards_refuse_clicks() {
 
 #[test]
 fn the_production_policy_never_lets_a_saved_adapter_claim_containment() {
-    use studio_engine::containment::Containment;
     let (mut world, inbox) = World::new();
     world.workflow.take().unwrap().close();
-    // The same saved description, opened under the production policy: no ledger is
-    // installed, so the writer stays unqualified however the file is written.
+    // The same saved description, opened under the production policy: whatever the file
+    // says, containment is only what a launch verifies.
     let opened = host::open_workflow(
         world.controller.clone(),
         world.paths.clone(),
@@ -581,22 +578,14 @@ fn the_production_policy_never_lets_a_saved_adapter_claim_containment() {
         host::WorkflowWake::new(|| ()),
         OwnershipPolicy::Validated,
     );
-    let resolution = opened.resolution.clone().expect("an adapter is saved");
-    assert!(matches!(
-        resolution.containment,
-        Containment::Unknown { .. }
-    ));
-    assert_eq!(resolution.ownership, WriterOwnership::Unknown);
+    assert!(opened.adapter.is_some(), "an adapter is saved");
     let workflow = opened.result.unwrap();
-    let snapshot = workflow.snapshot();
-    assert_eq!(
-        snapshot.adapter.writer_ownership.as_deref(),
-        Some(WriterOwnership::Unknown.label())
-    );
+    assert_eq!(workflow.snapshot().adapter.last_launch, None);
     assert!(
-        resolution
+        opened
+            .policy
             .summary()
-            .contains("Candidates from this adapter stay blocked")
+            .contains("verified every time the adapter starts")
     );
     workflow.close();
 }
@@ -634,8 +623,7 @@ fn a_long_real_conversation_pages_back_inside_the_resident_limits() {
             args: vec![agent_script(), agent.to_string_lossy().into_owned()],
             auth_env_names: vec![],
         },
-        writer_ownership: qualified(),
-        ownership_probe: None,
+        ownership: studio_harness::OwnershipSource::Injected(qualified()),
         mcp: studio_harness::McpStdioSupport::Unsupported,
         auth_method: None,
     });
