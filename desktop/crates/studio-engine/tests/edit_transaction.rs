@@ -11,6 +11,7 @@ use studio_engine::{
     Boundary, CompletionOutcome, Controller, EngineError, PromotionError, ReviewPolicy, TaskState,
     TransactionKind, UndoStatus,
     candidate_validation::{CapturedCandidate, ValidationReport},
+    edit_transaction::PlanError,
 };
 use tx_fixture::*;
 
@@ -1125,4 +1126,66 @@ fn a_filesystem_with_only_the_link_pair_blocks_apply_and_undo_without_touching_f
     ));
     assert_eq!(snapshot(&f.root), after_apply);
     assert!(internal_files(&f.root).is_empty());
+}
+
+/// The 8.3 name Windows generated for `path`, if the volume generates them.
+#[cfg(windows)]
+fn short_name(path: &std::path::Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let long: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut short = vec![0u16; 1024];
+    // SAFETY: NUL-terminated input and a buffer of the given length.
+    let len = unsafe { GetShortPathNameW(long.as_ptr(), short.as_mut_ptr(), 1024) } as usize;
+    assert!(len > 0 && len < short.len(), "GetShortPathNameW failed");
+    let short = String::from_utf16(&short[..len]).unwrap();
+    let name = short.rsplit('\\').next().unwrap().to_owned();
+    (Some(name.as_str()) != path.file_name().and_then(|n| n.to_str())).then_some(name)
+}
+
+/// A candidate path that a case-insensitive or normalising filesystem resolves into
+/// `.git`, `target` or a Studio cache is refused before anything is probed or written.
+#[test]
+fn aliases_of_protected_trees_are_refused_at_planning() {
+    let mut aliases = vec![
+        ".Git/hooks/pre-commit".to_owned(),
+        "TARGET/x.txt".to_owned(),
+        ".fframe\u{17F}/cache/x.txt".to_owned(),
+    ];
+    if cfg!(windows) {
+        // Windows: the short name of `.git` in a fixture like the one each case uses.
+        #[cfg(windows)]
+        match short_name(&fixture().root.join(".git")) {
+            Some(short) => aliases.push(format!("{short}/hooks/pre-commit")),
+            None => eprintln!("8.3 name generation is off on this volume; no short-name case"),
+        }
+    }
+    for alias in aliases {
+        let f = fixture();
+        let mut c = Controller::open(&f.root, &f.paths).unwrap();
+        let (_, captured, report) = validated(&f, &mut c, "write into a protected tree", |d| {
+            let path = d.join(&alias);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "#!/bin/sh\necho owned\n").unwrap();
+        });
+        let before = snapshot(&f.root);
+        let error = c.complete_validated_task(&captured, &report).unwrap_err();
+        let PromotionError::Plan(PlanError::Conflict { reason, .. }) = promotion(&error) else {
+            panic!("{alias}: {error}");
+        };
+        assert!(
+            reason.contains("protected") || reason.contains("alias"),
+            "{alias}: {reason}"
+        );
+        assert_eq!(snapshot(&f.root), before, "{alias}");
+        assert!(internal_files(&f.root).is_empty(), "{alias}");
+        // An unplannable delta ends the task as a conflict; the candidate and its draft
+        // are preserved for review or export, as for any other planning conflict.
+        assert_eq!(
+            c.agent_task().unwrap().state(),
+            TaskState::Conflict,
+            "{alias}"
+        );
+        assert!(c.state().task_history().entries().is_empty(), "{alias}");
+    }
 }

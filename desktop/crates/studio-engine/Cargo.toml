@@ -32,3 +32,6 @@ libc = { workspace = true }
 
 [dev-dependencies]
 studio-test-support = { path = "../studio-test-support" }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }

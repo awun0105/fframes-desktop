@@ -44,8 +44,9 @@ use windows_sys::{
             FILE_ATTRIBUTE_RECALL_ON_OPEN, FILE_ATTRIBUTE_REPARSE_POINT,
             FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE,
             FILE_DISPOSITION_FLAG_POSIX_SEMANTICS, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
-            FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, FILE_TRAVERSE, FlushFileBuffers, SYNCHRONIZE,
+            FILE_LIST_DIRECTORY, FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE,
+            FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, FlushFileBuffers,
+            GetFinalPathNameByHandleW, SYNCHRONIZE, VOLUME_NAME_NONE,
         },
         System::IO::IO_STATUS_BLOCK,
     },
@@ -84,6 +85,36 @@ fn wide(text: &str) -> Vec<u16> {
 
 fn raw(handle: &impl AsRawHandle) -> HANDLE {
     handle.as_raw_handle() as HANDLE
+}
+
+/// The last component of the handle's normalised path: the name as the filesystem stores
+/// it, with its own case and the long form of an 8.3 short name.
+fn stored_name(handle: &OwnedHandle) -> io::Result<Vec<u16>> {
+    let mut buffer = vec![0u16; 512];
+    loop {
+        // SAFETY: the handle is open and the buffer holds `len` UTF-16 units.
+        let len = unsafe {
+            GetFinalPathNameByHandleW(
+                raw(handle),
+                buffer.as_mut_ptr(),
+                buffer.len() as u32,
+                FILE_NAME_NORMALIZED | VOLUME_NAME_NONE,
+            )
+        } as usize;
+        if len == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if len < buffer.len() {
+            let path = &buffer[..len];
+            let start = path
+                .iter()
+                .rposition(|&c| c == u16::from(b'\\'))
+                .map_or(0, |i| i + 1);
+            return Ok(path[start..].to_vec());
+        }
+        // `len` is the size needed, including the terminating NUL.
+        buffer.resize(len, 0);
+    }
 }
 
 /// `NtCreateFile` of `name` relative to `root` (or absolute when `root` is `None`),
@@ -393,6 +424,13 @@ impl Dir {
     pub fn open_child(&self, name: &str) -> io::Result<Self> {
         check_component(name)?;
         let (handle, id) = open_dir_handle(Some(&self.handle), &wide(name), name)?;
+        let stored = stored_name(&handle)?;
+        if stored != wide(name) {
+            return Err(super::alias_refusal(
+                name,
+                Some(&String::from_utf16_lossy(&stored)),
+            ));
+        }
         Ok(Self {
             handle,
             id,

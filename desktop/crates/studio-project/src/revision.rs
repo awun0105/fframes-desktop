@@ -72,14 +72,12 @@ pub struct SourceInventory {
 const CURRENT_INVENTORY_VERSION: u32 = 1;
 const HASH_PREFIX: &[u8] = b"studio-source-v1\0";
 pub(crate) fn excluded(path: &str) -> bool {
-    [".git", "target", ".fframes/context", ".fframes/cache"]
-        .iter()
-        .any(|p| {
-            path == *p
-                || path
-                    .strip_prefix(p)
-                    .is_some_and(|tail| tail.starts_with('/'))
-        })
+    crate::paths::PROTECTED_TREES.iter().any(|p| {
+        path == *p
+            || path
+                .strip_prefix(p)
+                .is_some_and(|tail| tail.starts_with('/'))
+    })
 }
 fn kind(path: &str) -> FileKind {
     let name = path.rsplit('/').next().unwrap_or(path);

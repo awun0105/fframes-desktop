@@ -252,6 +252,21 @@ pub(crate) fn refusal(name: &str, stat: &EntryStat, wanted: EntryKind) -> Option
     Some(io::Error::new(kind, format!("{name:?} is {what}")))
 }
 
+/// A directory opened under `requested` that the filesystem stores under another name:
+/// a case or Unicode-normalisation variant, or an 8.3 short name (`GIT~1` for `.git`).
+/// Such a name could reach a protected tree the exact-name rules exclude, so the open
+/// fails. The kind is `InvalidInput`, never `NotFound` or `AlreadyExists`, which callers
+/// treat as ordinary states of a path.
+fn alias_refusal(requested: &str, stored: Option<&str>) -> io::Error {
+    let stored = stored.map_or_else(String::new, |s| format!(" (stored as {s:?})"));
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!(
+            "{requested:?} names a directory stored under another name{stored}: a case, Unicode or short-name alias is never followed"
+        ),
+    )
+}
+
 /// Hard links make a file reachable under names the transaction does not control: a
 /// write through another name would change bytes the transaction verified, and moving
 /// one name aside leaves the bytes live elsewhere. Such files are never displaced or

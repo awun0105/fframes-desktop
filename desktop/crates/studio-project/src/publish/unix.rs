@@ -172,12 +172,59 @@ impl Dir {
         })?;
         // SAFETY: openat returned a new descriptor we own.
         let file = unsafe { File::from_raw_fd(fd) };
+        if !self.lists_exactly(&name)? {
+            return Err(super::alias_refusal(
+                name.to_str().unwrap_or_default(),
+                None,
+            ));
+        }
         let id = fstat(&file)?.id;
         Ok(Self {
             file,
             id,
             fence: None,
         })
+    }
+
+    /// Whether this directory lists an entry with exactly `name`. A case-insensitive or
+    /// normalising directory cannot hold two names that compare equal, so when the exact
+    /// name is listed the open reached that entry and no alias of it; the comparison
+    /// is by name only, because `d_ino` and `st_ino` differ on overlayfs and mount points.
+    fn lists_exactly(&self, name: &std::ffi::CStr) -> io::Result<bool> {
+        // A fresh descriptor for the listing: `fdopendir` takes ownership of the one it
+        // is given and `closedir` closes it.
+        // SAFETY: valid directory descriptor and NUL-terminated literal.
+        let fd = check(unsafe {
+            libc::openat(
+                self.file.as_raw_fd(),
+                c".".as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+            )
+        })?;
+        // SAFETY: `fd` is a directory descriptor we own; on success the stream owns it.
+        let stream = unsafe { libc::fdopendir(fd) };
+        if stream.is_null() {
+            let error = io::Error::last_os_error();
+            // SAFETY: `fdopendir` failed, so `fd` is still ours.
+            unsafe { libc::close(fd) };
+            return Err(error);
+        }
+        let mut found = false;
+        loop {
+            // SAFETY: `stream` is open; the entry is valid until the next call.
+            let entry = unsafe { libc::readdir(stream) };
+            if entry.is_null() {
+                break;
+            }
+            // SAFETY: `d_name` is NUL-terminated.
+            if unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) } == name {
+                found = true;
+                break;
+            }
+        }
+        // SAFETY: `stream` is open and closed exactly once.
+        unsafe { libc::closedir(stream) };
+        Ok(found)
     }
 
     pub fn id(&self) -> FileId {

@@ -803,6 +803,19 @@ pub fn plan(
     if deltas.is_empty() {
         return Err(PlanError::NoChange);
     }
+    // Before any probe, open or reservation: a path that a case-insensitive or
+    // normalising filesystem resolves into a protected tree is never written.
+    if let Some((path, tree)) = deltas
+        .iter()
+        .find_map(|d| studio_project::paths::protected_tree(&d.path).map(|t| (&d.path, t)))
+    {
+        return Err(conflict(
+            path,
+            format!(
+                "resolves into the protected {tree} tree (a case, Unicode or short-name variant of it); nothing was written"
+            ),
+        ));
+    }
     if deltas.len() > MAX_FILE_OPS {
         return Err(PlanError::TooManyChanges(deltas.len()));
     }

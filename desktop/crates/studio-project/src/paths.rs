@@ -177,6 +177,45 @@ pub(crate) fn link_error(path: &Path) -> ProjectError {
     )
 }
 
+/// Trees of the project root that are never source: version control, build output and
+/// Studio's own caches. The source inventory skips exactly these names
+/// ([`crate::revision`]); [`protected_tree`] also catches their aliases.
+pub const PROTECTED_TREES: [&str; 4] = [".git", "target", ".fframes/context", ".fframes/cache"];
+
+/// The protected tree `path` falls into when its names are compared the way a
+/// case-insensitive or normalising filesystem compares them, or `None`.
+///
+/// On Windows and macOS `.Git/hooks/x`, `TARGET/x`, `.gıt/x` (dotless i) or a name with
+/// HFS+-ignorable code points opens the real `.git`; a write there would change a
+/// protected tree while the exact-name check sees ordinary source. The comparison
+/// drops the code points HFS+ ignores, applies NFKC and folds case through upper and
+/// then lower case (so `ı` and `ſ` meet `i` and `s`). It refuses such names on every OS,
+/// as Git does, so a project behaves the same wherever it is opened. 8.3 short names
+/// (`GIT~1`) cannot be recognised from the text; `publish::Dir::open_child` refuses
+/// them by comparing the stored name.
+pub fn protected_tree(path: &str) -> Option<&'static str> {
+    let folded: Vec<String> = path.split('/').map(fold_name).collect();
+    PROTECTED_TREES.into_iter().find(|tree| {
+        let tree: Vec<&str> = tree.split('/').collect();
+        folded.len() >= tree.len() && folded.iter().zip(&tree).all(|(a, b)| a == b)
+    })
+}
+
+fn fold_name(name: &str) -> String {
+    // Git's list of code points HFS+ ignores in names (`is_hfs_dotgit`).
+    let ignorable = |c: &char| {
+        matches!(
+            c,
+            '\u{200C}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{206A}'..='\u{206F}' | '\u{FEFF}'
+        )
+    };
+    let kept: String = name.chars().filter(|c| !ignorable(c)).collect();
+    icu_normalizer::ComposingNormalizerBorrowed::new_nfkc()
+        .normalize(&kept)
+        .to_uppercase()
+        .to_lowercase()
+}
+
 /// Prefix of every file the edit-transaction layer creates inside the project tree.
 pub const TX_PREFIX: &str = ".fframes-tx-";
 

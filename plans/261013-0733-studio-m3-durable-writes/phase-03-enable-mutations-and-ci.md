@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Open the gates, path aliases and CI coverage"
-status: pending
+status: in-progress
 priority: P1
 effort: "3-5d"
 dependencies: [1, 2, 4]
@@ -25,8 +25,8 @@ Edit transactions, preset apply and agent apply run on Windows and macOS, protec
 
 ## Todo
 
-- [ ] Scout
-- [ ] Protected-path alias defence with tests
+- [x] Scout
+- [x] Protected-path alias defence with tests
 - [ ] Stand-ins removed
 - [ ] `MUTATION_QUALIFIED` removed; gates open on probe
 - [ ] Apply-gate test rewritten; parity assertions flipped
@@ -36,3 +36,19 @@ Edit transactions, preset apply and agent apply run on Windows and macOS, protec
 ## Success criteria
 
 `grep -c 'target_os = "linux"' desktop/crates/studio-engine/src/edit_transaction/mod.rs` is 0 (the per-OS executor modules may keep theirs) and `grep -rn MUTATION_QUALIFIED desktop` is empty; preset apply and agent apply work by hand on this VM; the alias tests and the listed suites pass on Windows, macOS and Linux CI.
+
+## Progress (2026-10-15)
+
+### Protected-path alias defence (done before phase 4, so no gate opens without it)
+
+- `studio_project::paths::PROTECTED_TREES` is the one list; `revision::excluded()` reads it and stays an **exact** comparison. **Deviation:** folding `excluded()` itself would change which files an inventory holds, for example drop a `Target/` folder on a case-sensitive Linux volume, and make older checkpoints with such paths fail `SourceInventory::verify`.
+- `paths::protected_tree(path)` folds each component: it drops git's HFS+-ignorable code points, applies NFKC (`icu_normalizer` 2.3, already in the lock; default features off so no new crates) and maps `to_uppercase().to_lowercase()`, so `ı` and `ſ` reach `i` and `s`. `edit_transaction::plan` refuses any delta whose path folds into a protected tree, right after `deltas_between` and before any probe, open or reservation, as a `PlanError::Conflict` naming the tree. Preset apply and Undo plan through the same function. Studio itself never runs `git` in a draft or candidate, so `plan` is the one choke point. **Behaviour change:** this applies on every OS, as Git's checks do, so a delta under `Target/` or `.Git/` is refused on a case-sensitive Linux volume too.
+- **Deviation:** `ProjectPath` does not reject `~N` components; that would make scans fail on ordinary names like `notes~1.txt`. Instead `publish::Dir::open_child` compares the name a directory is stored under with the requested one and refuses a mismatch with `InvalidInput`, never `NotFound`/`AlreadyExists`, which callers treat as ordinary states:
+  - Windows uses `GetFinalPathNameByHandleW(FILE_NAME_NORMALIZED | VOLUME_NAME_NONE)`.
+  - Unix reads the parent through a fresh `openat(".")` + `fdopendir` and requires an entry with exactly the requested name. It compares by name only, because `d_ino` differs from `st_ino` on overlayfs.
+  - `open_root` and the root binding walk are not checked; `canonicalize` already normalises the root.
+  - This catches 8.3 short names (including hashed forms), case and normalisation variants that folding cannot see.
+- Tests:
+  - `studio-project/tests/protected_paths.rs`: folding cases (`.Git`, `TARGET`, `.gıt`, `.fframeſ/cache`, ZWNJ, BOM, fullwidth); `open_child(".Git")` gives `InvalidInput` on a case-insensitive volume and `NotFound` elsewhere; the volume's real 8.3 name of `.git`, read with `GetShortPathNameW`, is refused (8.3 generation is enabled on this VM's C:); the inventory still excludes exactly the four trees.
+  - `studio-engine/tests/edit_transaction.rs::aliases_of_protected_trees_are_refused_at_planning`: `.Git/hooks/pre-commit`, `TARGET/x.txt`, `.fframeſ/cache/x.txt` and the real short name. Each is refused with an unchanged tree (`.git` included), no transaction files and no task revision. The task ends `Conflict` with its candidate preserved, as for any unplannable delta.
+- Cost: `review_publication` 111.9 s and `task_recovery` 63.6 s, unchanged from before the check.
