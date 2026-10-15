@@ -308,12 +308,11 @@ fn real_failed_build_and_invalid_source_preserve_seekable_immutable_revision_and
     assert_eq!(state.displayed(), Some(r.identity()));
     assert_eq!(c.state().accepted(), &accepted);
 
-    // The new shorter worker is re-primed after a seek that races its ready event.
-    fs::write(
-        root.join("src/lib.rs"),
-        original.replace("Seconds(5.0)", "Seconds(1.0)"),
-    )
-    .unwrap();
+    // The new shorter worker is re-primed after a seek that races its ready event: its
+    // three scenes last 10 frames each, 30 in all.
+    let shorter = original.replace("Duration::Seconds(self.seconds)", "Duration::Frames(10)");
+    assert_ne!(shorter, original);
+    fs::write(root.join("src/lib.rs"), shorter).unwrap();
     c.reconcile().unwrap();
     let shorter = spec(&mut c, &sdk, &m, &paths);
     state.begin(shorter.tag.clone());

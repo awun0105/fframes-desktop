@@ -126,7 +126,10 @@ fn invalid_source_interrupts_work_and_edit_back_cannot_resurrect_it() {
         controller
             .complete(&tag, JobResult::Built(accepted.clone()))
             .unwrap();
-        assert_eq!(controller.state().built(), Some(&accepted));
+        assert_eq!(
+            controller.state().built(),
+            Some(controller.state().build_source())
+        );
         let tag = controller.begin_job(JobKind::Build).unwrap();
         let draft = controller.draft().unwrap().to_owned();
         let generation = controller.state().generation();

@@ -94,7 +94,9 @@ impl BuildKey {
         let compatibility = environment.compatibility();
         Self {
             project_id: String::from(project.manifest.project_id.clone()),
-            source_revision: project.inventory.revision.as_str().to_owned(),
+            // The timing document is applied at run time; a timing-only change reuses
+            // the build.
+            source_revision: project.inventory.build_revision().as_str().to_owned(),
             sdk_id: compatibility.sdk_id.clone(),
             compatibility_digest: compatibility.digest(),
             sdk_installation: environment.installation().to_owned(),

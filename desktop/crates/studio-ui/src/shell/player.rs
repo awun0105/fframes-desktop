@@ -28,6 +28,7 @@ impl StudioShell {
             std::thread::spawn(move || preview.close());
         }
         self.preview_session = None;
+        self.timing_sent = None;
         self.awaiting_preview = None;
         self.preview_state.close();
         self.displayed = None;
@@ -58,6 +59,9 @@ impl StudioShell {
             return;
         };
         let events = preview.events();
+        if let Some(retimed) = events.retimed {
+            self.retimed(retimed, cx);
+        }
         if let Some((key, frame)) = events.thumbnail {
             self.timeline
                 .update(cx, |v, cx| v.thumbnail(key, frame, cx));
@@ -79,6 +83,62 @@ impl StudioShell {
             error: events.error,
             ready: events.ready,
         });
+    }
+
+    /// The displayed preview laid out with a new timing document: its timeline, length and
+    /// audio change, the worker stays. Playback stops; the playhead keeps its frame number
+    /// and its frame is asked for again.
+    fn retimed(
+        &mut self,
+        retimed: Result<
+            std::sync::Arc<studio_engine::ReadyPreview>,
+            (studio_engine::OperationTag, String),
+        >,
+        cx: &mut Context<Self>,
+    ) {
+        let ready = match retimed {
+            Ok(ready) => ready,
+            Err((_, error)) => {
+                self.error = Some(format!("The timeline edit could not be previewed: {error}"));
+                cx.notify();
+                return;
+            }
+        };
+        let model = match studio_engine::TimelineModel::new(ready.timeline.clone()) {
+            Ok(model) => model,
+            Err(error) => {
+                self.error = Some(error);
+                cx.notify();
+                return;
+            }
+        };
+        if self.preview_state.retime(&ready).is_err() {
+            return;
+        }
+        let resume = self.transport.playing();
+        self.pending_ready = None;
+        self.resume_install = false;
+        if let Err(error) = self.transport.reinstall(
+            ready.timeline.fps,
+            ready.timeline.total_frames,
+            self.preview_state.position(),
+            self.clock_start.elapsed().as_secs_f64(),
+        ) {
+            self.error = Some(error.to_string());
+        }
+        self.audio.stop(self.transport.epoch());
+        self.output = None;
+        self.audio_ready_epoch = None;
+        let position = self.preview_state.position();
+        self.timeline
+            .update(cx, |v, cx| v.install(model, position, cx));
+        self.displayed = Some(ready);
+        self.thumbnails_sent = None;
+        self.request_frame(position, cx);
+        if resume {
+            self.toggle_playback(cx);
+        }
+        cx.notify();
     }
 
     /// Asks the coordinator for the timeline's visible thumbnails when they changed;
@@ -109,7 +169,7 @@ impl StudioShell {
         self.preview_gate_pending = false;
         if let Some(p) = presentation {
             self.presentation = p;
-            self.push_preset_view(cx);
+            self.push_presentation_views(cx);
         }
         if let Some((tag, e)) = error {
             self.preview_state.fail(&tag, e.clone());
@@ -121,10 +181,7 @@ impl StudioShell {
             // generation); it is installable only under the engine's current
             // authorization, never as a build of the task base.
             let promoted = state.promotion().is_some_and(|p| p.tag() == ready.tag());
-            if !promoted
-                && (ready.tag().generation != state.generation()
-                    || ready.tag().base_source != *state.source())
-            {
+            if !promoted && !state.is_current_build(ready.tag()) {
                 if let Some(preview) = &self.preview {
                     preview.cancel_build();
                 }

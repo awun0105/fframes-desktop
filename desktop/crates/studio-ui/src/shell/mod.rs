@@ -115,6 +115,8 @@ pub struct StudioShell {
     preview_wake: async_channel::Sender<()>,
     /// The thumbnails last asked of the coordinator; `None` asks again.
     thumbnails_sent: Option<Vec<ThumbnailKey>>,
+    /// The timing generation last handed to the preview coordinator.
+    timing_sent: Option<u64>,
     timeline: gpui::Entity<TimelineView>,
     _timeline_subscription: gpui::Subscription,
     transport: studio_engine::PlaybackClock,
@@ -384,6 +386,7 @@ impl StudioShell {
             preview_gate_pending: false,
             preview_wake,
             thumbnails_sent: None,
+            timing_sent: None,
             timeline,
             _timeline_subscription: timeline_subscription,
             transport: studio_engine::PlaybackClock::install(30, 0, 0, 0.)

@@ -20,6 +20,14 @@ pub struct SeekIntent {
     pub scale: f64,
 }
 
+/// The timing document the preview plays, with the generation that names its layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviewTiming {
+    /// `None` plays the code order.
+    pub json: Option<String>,
+    pub generation: u64,
+}
+
 pub struct BuildSpec {
     pub project: studio_project::OpenProject,
     pub sdk: PathBuf,
@@ -53,6 +61,14 @@ pub struct StagedParts {
     scope: ProcessTreeManager,
     boundary_inspection: InspectResponse,
     ready: Arc<ReadyPreview>,
+    /// The timing generation this worker was last asked to play; `None` until one was
+    /// applied.
+    timing_attempt: Option<u64>,
+    /// The document the worker plays (`None`: code order), to go back to when a retime
+    /// fails halfway.
+    timing_json: Option<String>,
+    /// Accounts the PCM a retimed layout prepares.
+    service: BuildService,
 }
 impl StagedParts {
     /// Seals and terminates the worker scope, verifies it, then reaps the worker client
@@ -130,6 +146,10 @@ pub struct PreviewEvents {
     pub frame: Option<PreviewFrame>,
     pub thumbnail: Option<(ThumbnailKey, PreviewFrame)>,
     pub error: Option<(OperationTag, String)>,
+    /// The displayed preview laid out with the latest [`PreviewCoordinator::set_timing`],
+    /// or why it could not be. It replaces the displayed preview's timeline, frame and
+    /// audio; the worker stays the same.
+    pub retimed: Option<Result<Arc<ReadyPreview>, (OperationTag, String)>>,
 }
 #[derive(Default, Clone, serde::Serialize)]
 pub struct PumpMetrics {
@@ -232,6 +252,9 @@ struct Mailbox {
     ready: Option<Arc<ReadyPreview>>,
     frame: Option<PreviewFrame>,
     error: Option<(OperationTag, String)>,
+    /// The timing the displayed preview and later builds should play.
+    timing: Option<PreviewTiming>,
+    retimed: Option<Result<Arc<ReadyPreview>, (OperationTag, String)>>,
     closed: bool,
     /// The listener was told about the news now waiting; it is told again only after
     /// [`PreviewCoordinator::events`] took it.
@@ -245,6 +268,7 @@ impl Mailbox {
             || self.frame.is_some()
             || self.thumbnail.is_some()
             || self.error.is_some()
+            || self.retimed.is_some()
     }
 }
 
@@ -368,6 +392,15 @@ impl PreviewCoordinator {
             s.metrics.queue_high_water = 1;
         }
     }
+    /// Plays `timing` from now on: the pump applies it to the displayed worker (preparing
+    /// its audio again) and reports the result as [`PreviewEvents::retimed`]; builds apply
+    /// it before they read their timeline.
+    pub fn set_timing(&self, timing: PreviewTiming) {
+        let mut s = self.shared.lock();
+        if !s.closed {
+            s.timing = Some(timing);
+        }
+    }
     /// Called on the coordinator's thread, never under its lock, when news (a compiled or
     /// ready candidate, a frame, a thumbnail, an error) is waiting for [`Self::events`];
     /// once until it is taken.
@@ -384,6 +417,7 @@ impl PreviewCoordinator {
             frame: s.frame.take(),
             thumbnail: s.thumbnail.take(),
             error: s.error.take(),
+            retimed: s.retimed.take(),
         }
     }
     pub fn metrics(&self) -> PumpMetrics {
@@ -455,6 +489,7 @@ impl PreviewCoordinator {
             s.closed = true;
             s.thumbnails.clear();
             s.thumbnail = None;
+            s.retimed = None;
             s.displayed_scope.take()
         };
         self.fence_build().teardown_now();
@@ -499,6 +534,7 @@ fn prepare(
             s.compiled = Some(tag.clone());
         }
         let worker = launch_preview_worker(build, preview_identity(&tag), &spec.worker)?;
+        let timing = shared.lock().timing.clone();
         prepare_preview(
             worker,
             &tag,
@@ -506,6 +542,7 @@ fn prepare(
             &spec.worker,
             &|| shared.lock().desired.clone(),
             None,
+            timing,
             &spec.service,
         )
     })();
@@ -537,7 +574,11 @@ pub(crate) fn account_prepared_audio(
 /// playhead inspection, first frame and PCM window. `prepared_audio` lets a caller that
 /// already prepared, verified and accounted the mix (candidate validation) reuse it
 /// instead of asking the worker for a second artifact; otherwise the PCM prepared here
-/// is accounted in `service`'s budget. Nothing here publishes anything.
+/// is accounted in `service`'s budget. `timing` is applied before the timeline is read
+/// (it must be `None` with `prepared_audio`, which describes the code order); a worker
+/// that cannot play it starts in code order and the pump retries it there, reporting why.
+/// Nothing here publishes anything.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_preview(
     mut worker: PreviewWorkerClient,
     tag: &OperationTag,
@@ -545,9 +586,75 @@ pub(crate) fn prepare_preview(
     worker_scope: &ProcessTreeManager,
     desired: &dyn Fn() -> Option<SeekIntent>,
     prepared_audio: Option<(PreparedAudioDescriptor, Arc<crate::PreparedAudioSource>)>,
+    timing: Option<PreviewTiming>,
     service: &BuildService,
 ) -> Result<StagedPreview, String> {
-    let timeline = worker.timeline().map_err(|e| e.to_string())?;
+    let mut timing_attempt = None;
+    let mut timing_json = None;
+    let mut timeline = None;
+    if let Some(timing) = timing {
+        if worker.supports_timing() {
+            if let Ok(applied) = worker.set_timing(timing.json.clone(), timing.generation) {
+                timing_attempt = Some(timing.generation);
+                timing_json = timing.json;
+                timeline = Some(applied);
+            }
+        } else if timing.json.is_none() {
+            timing_attempt = Some(timing.generation);
+        }
+    }
+    let timeline = match timeline {
+        Some(timeline) => timeline,
+        None => worker.timeline().map_err(|e| e.to_string())?,
+    };
+    let boundary_inspection = inspect_boundaries(&mut worker, &timeline)?;
+    let (audio, audio_source) = match prepared_audio {
+        Some(prepared) => prepared,
+        None => {
+            let audio = worker.prepare_audio(48000).map_err(|e| e.to_string())?;
+            let source = worker.retain_audio_source(&audio, || {
+                compiler.is_shutdown() || worker_scope.is_shutdown()
+            })?;
+            account_prepared_audio(service, &audio, &source)?;
+            (audio, source)
+        }
+    };
+    let desired = desired();
+    let position = desired
+        .as_ref()
+        .map_or(0, |d| d.position)
+        .min(timeline.total_frames);
+    let ready = prime(
+        &mut worker,
+        tag,
+        timeline,
+        &boundary_inspection,
+        audio,
+        Some(audio_source),
+        position,
+        desired.as_ref().map_or(0, |d| d.serial),
+        desired.as_ref().map_or(1., |d| d.scale),
+    )?;
+    if compiler.is_shutdown() || worker_scope.is_shutdown() {
+        return Err("Preview preparation cancelled".into());
+    }
+    Ok(StagedPreview::new(StagedParts {
+        worker,
+        scope: worker_scope.clone(),
+        boundary_inspection,
+        ready: Arc::new(ready),
+        timing_attempt,
+        timing_json,
+        service: service.clone(),
+    }))
+}
+
+/// Inspects the first and last frame and both edges of every scene; any error refuses
+/// the preview.
+fn inspect_boundaries(
+    worker: &mut PreviewWorkerClient,
+    timeline: &PreviewTimelineResponse,
+) -> Result<InspectResponse, String> {
     let mut boundaries = vec![];
     if timeline.total_frames > 0 {
         boundaries.extend([0, timeline.total_frames - 1]);
@@ -577,30 +684,29 @@ pub(crate) fn prepare_preview(
             boundary_inspection.diagnostics
         ));
     }
-    let (audio, audio_source) = match prepared_audio {
-        Some(prepared) => prepared,
-        None => {
-            let audio = worker.prepare_audio(48000).map_err(|e| e.to_string())?;
-            let source = worker.retain_audio_source(&audio, || {
-                compiler.is_shutdown() || worker_scope.is_shutdown()
-            })?;
-            account_prepared_audio(service, &audio, &source)?;
-            (audio, source)
-        }
-    };
-    let desired = desired();
-    let position = desired
-        .as_ref()
-        .map_or(0, |d| d.position)
-        .min(timeline.total_frames);
-    let serial = desired.as_ref().map_or(0, |d| d.serial);
-    let scale = desired.as_ref().map_or(1., |d| d.scale);
+    Ok(boundary_inspection)
+}
+
+/// The parts of a ready preview that depend on the playhead: its inspection, its frame
+/// and the PCM window there. `position` is at most the timeline's length.
+#[allow(clippy::too_many_arguments)]
+fn prime(
+    worker: &mut PreviewWorkerClient,
+    tag: &OperationTag,
+    timeline: PreviewTimelineResponse,
+    boundary_inspection: &InspectResponse,
+    audio: PreparedAudioDescriptor,
+    audio_source: Option<Arc<crate::PreparedAudioSource>>,
+    position: usize,
+    serial: u64,
+    scale: f64,
+) -> Result<ReadyPreview, String> {
     let inspection = if timeline.total_frames == 0 {
         boundary_inspection.clone()
     } else {
         inspect_installation_frame(
-            &mut worker,
-            &boundary_inspection,
+            worker,
+            boundary_inspection,
             position.min(timeline.total_frames - 1),
         )?
     };
@@ -629,17 +735,11 @@ pub(crate) fn prepare_preview(
         pcm,
         position,
         serial,
-    )?
-    .with_audio_source(audio_source)?;
-    if compiler.is_shutdown() || worker_scope.is_shutdown() {
-        return Err("Preview preparation cancelled".into());
+    )?;
+    match audio_source {
+        Some(source) => ready.with_audio_source(source),
+        None => Ok(ready),
     }
-    Ok(StagedPreview::new(StagedParts {
-        worker,
-        scope: worker_scope.clone(),
-        boundary_inspection,
-        ready: Arc::new(ready),
-    }))
 }
 
 fn publish_result(
@@ -757,6 +857,24 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
                     .map(|()| c);
                 publish_result(&mailbox, result);
             }));
+        }
+        let timing = shared.lock().timing.clone();
+        if let (Some(c), Some(timing), Some(d)) = (displayed.as_deref_mut(), timing, &desired)
+            && c.timing_attempt != Some(timing.generation)
+            && c.ready.identity() == &d.identity
+        {
+            let tag = c.ready.tag().clone();
+            let result = retime(c, timing, d)
+                .map(|()| c.ready.clone())
+                .map_err(|error| (tag, error));
+            if result.is_ok() {
+                // The retimed preview carries the frame at `d`.
+                rendered = Some(d.clone());
+            }
+            let mut s = shared.lock();
+            if !s.closed {
+                s.retimed = Some(result);
+            }
         }
         let parts: Option<&mut StagedParts> = displayed.as_deref_mut();
         if let (Some(c), Some(d)) = (parts, &desired)
@@ -905,51 +1023,78 @@ fn verify_adopted(c: &mut StagedParts, d: &SeekIntent) -> Result<(), String> {
 }
 
 fn reprime(c: &mut StagedParts, d: &SeekIntent) -> Result<(), String> {
-    let position = d.position.min(c.ready.timeline.total_frames);
-    let inspection = if c.ready.timeline.total_frames == 0 {
-        c.boundary_inspection.clone()
-    } else {
-        inspect_installation_frame(
-            &mut c.worker,
-            &c.boundary_inspection,
-            position.min(c.ready.timeline.total_frames - 1),
-        )?
-    };
-    let frame = if c.ready.timeline.total_frames == 0 {
-        None
-    } else {
-        Some(
-            c.worker
-                .frame(
-                    position.min(c.ready.timeline.total_frames - 1),
-                    d.serial,
-                    d.scale,
-                )
-                .map_err(|e| e.to_string())?,
-        )
-    };
-    let sample = (position as u128 * c.ready.audio.sample_rate as u128
-        / c.ready.timeline.fps as u128)
-        .min(c.ready.audio.sample_count as u128) as u64;
-    let length = (c.ready.audio.byte_count - sample * 8).min(MAX_AUDIO_READ_BYTES as u64) as usize;
-    let pcm = c
-        .worker
-        .read_audio(&c.ready.audio, sample * 8, length)
-        .map_err(|e| e.to_string())?;
-    let mut ready = ReadyPreview::new(
-        c.ready.tag().clone(),
+    let ready = prime(
+        &mut c.worker,
+        c.ready.tag(),
         c.ready.timeline.clone(),
-        inspection,
-        frame,
+        &c.boundary_inspection,
         c.ready.audio.clone(),
-        sample,
-        pcm,
-        position,
+        c.ready.audio_source.clone(),
+        d.position.min(c.ready.timeline.total_frames),
         d.serial,
+        d.scale,
     )?;
-    if let Some(source) = &c.ready.audio_source {
-        ready = ready.with_audio_source(source.clone())?;
+    c.ready = Arc::new(ready);
+    Ok(())
+}
+
+/// Lays the displayed worker out with `timing` and primes it at `d`: the new layout's
+/// boundaries are inspected and its audio prepared and accounted, then the previous
+/// artifact is released. A worker without timing support refuses any document but the
+/// code order. On failure the worker keeps (or is told to go back to) the layout of
+/// `c.ready`.
+fn retime(c: &mut StagedParts, timing: PreviewTiming, d: &SeekIntent) -> Result<(), String> {
+    c.timing_attempt = Some(timing.generation);
+    if !c.worker.supports_timing() {
+        return match timing.json {
+            None => Ok(()),
+            Some(_) => Err(
+                "This preview's worker cannot play timeline edits; build the preview with the current SDK"
+                    .into(),
+            ),
+        };
     }
+    let timing_json = timing.json.clone();
+    let timeline = c
+        .worker
+        .set_timing(timing.json, timing.generation)
+        .map_err(|e| e.to_string())?;
+    let position = d.position.min(timeline.total_frames);
+    let laid_out = (|| {
+        let boundary_inspection = inspect_boundaries(&mut c.worker, &timeline)?;
+        let audio = c.worker.prepare_audio(48000).map_err(|e| e.to_string())?;
+        let source = c
+            .worker
+            .retain_audio_source(&audio, || c.scope.is_shutdown())?;
+        account_prepared_audio(&c.service, &audio, &source)?;
+        let ready = prime(
+            &mut c.worker,
+            c.ready.tag(),
+            timeline,
+            &boundary_inspection,
+            audio,
+            Some(source),
+            position,
+            d.serial,
+            d.scale,
+        )?;
+        Ok::<_, String>((boundary_inspection, ready))
+    })();
+    let (boundary_inspection, ready) = match laid_out {
+        Ok(laid_out) => laid_out,
+        Err(error) => {
+            let _ = c
+                .worker
+                .set_timing(c.timing_json.clone(), c.ready.timeline.timing_generation);
+            return Err(error);
+        }
+    };
+    c.timing_json = timing_json;
+    if ready.audio.artifact_id != c.ready.audio.artifact_id {
+        // The displayed audio keeps its open file; the worker no longer needs to serve it.
+        let _ = c.worker.release_audio(c.ready.audio.artifact_id.clone());
+    }
+    c.boundary_inspection = boundary_inspection;
     c.ready = Arc::new(ready);
     Ok(())
 }

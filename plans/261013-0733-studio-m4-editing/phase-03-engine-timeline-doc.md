@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Engine timing document and edit history"
-status: pending
+status: in-progress
 priority: P1
 effort: "3-4d"
 dependencies: [1]
@@ -30,15 +30,49 @@ Cap `editor_edits.rs`: snapshot history; `pause()`/`resume()` bracket a drag int
 
 ## Todo
 
-- [ ] Scout
-- [ ] Timing revision outside the build key; export binding
-- [ ] Proto commands and event
-- [ ] Live `SetTiming`; gesture-end write; self-write hash
-- [ ] Coordinator retime lane and audio re-prepare
-- [ ] Per-session history; outside-change reload
-- [ ] Agent-task refusal
-- [ ] Tests
+- [x] Scout
+- [x] Timing revision outside the build key; export binding
+- [x] Proto commands; the timeline snapshot rides on `Presentation` instead of an event
+- [x] Live `SetTiming`; gesture-end write; self-write hash
+- [x] Coordinator retime lane and audio re-prepare
+- [x] Per-session history; outside-change reload
+- [x] Agent-task refusal
+- [x] Tests
 
 ## Success criteria
 
 `cargo test -p studio-engine timing` passes on three platforms, including the no-build assertion.
+
+## Delivery notes
+
+- **Mapping.** studio-proto has no `EngineCommand`/`EngineEvent` for project commands.
+  Timeline edits are `Command::Timeline(TimelineCommand)` in `engine/backend.rs`. The
+  snapshot (`TimelineSnapshot`: generation, document, clips, undo/redo, editing state,
+  notice) rides on `Presentation::timeline`, which every command, refresh and preview
+  gate already returns with the session id. A separate `TimelineChanged` event would
+  have duplicated that path.
+- **Timing revision.** `timeline.json` is `FileKind::Timing`. The source inventory hashes
+  it as `Other`, so stored checkpoints and revisions keep their values. The new
+  `SourceInventory::build_revision()` leaves the timing document out. Builds, worker
+  projects, materialization, export binding, preview installs and candidate build
+  identities use the build revision. A timing-only rescan changes `source` but not the
+  build, the generation or a running job.
+- **Session.** `TimingSession` on the `Controller` holds the document, its generation, the
+  file identity last loaded or written (the self-write hash) and the history. Its write
+  goes through `.fframes/cache/timing/` with no-replace renames and is recovered on
+  open. Edits share the preset rule's gates and also refuse during an agent task or
+  before a preview of the current build has reported its scenes.
+- **Retime lane.** `PreviewCoordinator::set_timing` takes the session's document. The
+  pump applies it to the displayed worker, inspects the new boundaries, prepares and
+  accounts new PCM, releases the previous artifact, and publishes
+  `PreviewEvents::retimed`. A failure after `set_timing` puts the worker back on its
+  previous document. Builds apply the document before reading their timeline.
+  Candidate previews stay in code order, because their probed audio is laid out that
+  way, and an adopted candidate is retimed by the same lane. A worker without
+  `set_timing_v1` is refused unless the document is the code order.
+- **Candidates.** A captured candidate and its report carry the build revision, so
+  validation matches the build identity. A changed `timeline.json` broadens validation
+  to the full video.
+- **Tests.** `tests/timing.rs` covers each case listed above against a synthetic
+  three-scene timeline. `tests/timing_retime.rs` (ignored, `SDK_BUNDLE`) retimes a
+  real worker built from the template.

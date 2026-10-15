@@ -100,6 +100,8 @@ pub struct ResolvedSceneClip<'a> {
     pub timing_key: String,
     /// Occurrence of the scene among the clips (0 unless the scene is split).
     pub clip_index: usize,
+    /// Position of the scene in `Video::define_scenes`.
+    pub scene_index: usize,
 }
 
 impl ResolvedSceneClip<'_> {
@@ -186,6 +188,7 @@ impl<'a> ResolvedScenesTimeline<'a> {
                 trim_end: clip.trim_end,
                 timing_key: keys[clip.scene_index].clone(),
                 clip_index: clip.clip_index,
+                scene_index: clip.scene_index,
             });
 
             // the scene duration is reuded by any overlap but we should be careful with the scenes

@@ -404,6 +404,9 @@ pub fn run_candidate_validation(
                         &scopes.worker,
                         &|| Some(desired.clone()),
                         audio,
+                        // The probed audio is laid out in code order; an adopted candidate
+                        // plays the session's timing through the displayed lane.
+                        None,
                         &config.service,
                     )
                 })

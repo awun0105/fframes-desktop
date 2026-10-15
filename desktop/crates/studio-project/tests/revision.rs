@@ -258,3 +258,43 @@ fn executable_permission_changes_revision_and_is_restored_by_draft() {
     let mode = fs::metadata(&restored_script).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o755);
 }
+
+#[test]
+fn timing_document_changes_the_source_but_not_the_build_revision() {
+    use studio_project::revision::{FileKind, TIMING_FILE};
+    let temp = tempfile::tempdir().unwrap();
+    write(temp.path(), "src/lib.rs", b"rust");
+    let without = SourceInventory::scan(temp.path()).unwrap();
+    write(temp.path(), TIMING_FILE, br#"{"version":1,"clips":[]}"#);
+    let first = SourceInventory::scan(temp.path()).unwrap();
+    assert_eq!(first.timing_file().unwrap().kind, FileKind::Timing);
+    write(
+        temp.path(),
+        TIMING_FILE,
+        br#"{"version":1,"clips":[{"key":"a","trim_start_frames":1,"trim_end_frames":0}]}"#,
+    );
+    let second = SourceInventory::scan(temp.path()).unwrap();
+    assert_ne!(first.revision, second.revision);
+    assert_eq!(first.build_revision(), second.build_revision());
+    assert_eq!(without.build_revision(), first.build_revision());
+    assert_ne!(first.build_revision(), first.revision);
+    // Only the root document is timing; a nested file of that name is ordinary source.
+    write(temp.path(), "nested/timeline.json", b"{}");
+    assert_ne!(
+        SourceInventory::scan(temp.path()).unwrap().build_revision(),
+        first.build_revision()
+    );
+}
+
+#[test]
+fn checkpoints_listing_the_timing_document_as_other_still_verify() {
+    use studio_project::revision::{FileKind, TIMING_FILE};
+    let temp = tempfile::tempdir().unwrap();
+    write(temp.path(), TIMING_FILE, br#"{"version":1,"clips":[]}"#);
+    let current = SourceInventory::scan(temp.path()).unwrap();
+    let mut recorded = current.clone();
+    recorded.files[0].kind = FileKind::Other;
+    recorded.verify().unwrap();
+    assert!(recorded.matches_revision(&current.revision));
+    assert_eq!(recorded.build_revision(), current.build_revision());
+}

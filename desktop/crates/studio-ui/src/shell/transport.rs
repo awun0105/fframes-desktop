@@ -40,6 +40,11 @@ impl StudioShell {
                     if project
                         .as_ref()
                         .is_some_and(|p| p.source.as_str() != d.identity().source_revision)
+                        && !self
+                            .presentation
+                            .state
+                            .as_ref()
+                            .is_some_and(|s| s.is_current_build(d.tag()))
                     {
                         " · prior revision"
                     } else {

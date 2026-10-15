@@ -24,7 +24,7 @@ Part of [the studio rewrite roadmap](../261013-0733-studio-rewrite-roadmap/plan.
 Accepted design from [spike S2](../261013-0733-studio-m1-foundations/reports/spike-timing-hook.md) (decided 2026-10-14), which phases 1 and 2 build on:
 
 - Trims and splits live on the resolved timeline entries, not in wrapper scenes, so `get_scene_info`'s pointer lookup keeps working. It answers with a scene's first clip and keeps the scene's own `duration_in_frames`.
-- Timing keys are `editor_instance_key()` or `name()`. Later repeats get `#2`, `#3`, … in code order.
+- Timing keys are `editor_instance_key()` or `name()`. Later repeats get `#2`, `#3`, â€¦ in code order.
 - A clip's editor key is the scene's key for its first clip, and `key#n` for later clips of a split.
 - A trimmed edge is a hard cut: the overlap applies only on untrimmed edges, and an overlap reaching before frame 0 is clamped.
 - Scene audio moves and is trimmed with its clip. Top-level `Video::audio()` music stays on video time when scenes are reordered.
@@ -47,7 +47,7 @@ Snapping (part of the confirmed editing scope) ports from Cap: `arm_drag_snap` a
 |---|-------|--------|-----------|--------|
 | 1 | [Timing hook and export options in fframes and the runtime](./phase-01-timing-doc-runtime.md) | 4-5d | none | Completed |
 | 2 | [SDK release, template and project migration](./phase-02-sdk-release-and-migration.md) | 4-6d | 1 | Completed |
-| 3 | [Engine timing document and edit history](./phase-03-engine-timeline-doc.md) | 3-4d | 1 (manual check needs 2) | Pending |
+| 3 | [Engine timing document and edit history](./phase-03-engine-timeline-doc.md) | 3-4d | 1 (manual check needs 2) | In progress |
 | 4 | [Port Cap's timeline view](./phase-04-timeline-view-port.md) | 5-7d | 3 | Pending |
 | 5 | [Trim, split, reorder and snapping](./phase-05-timeline-edit-interactions.md) | 2.5-3.5d | 2, 4 | Pending |
 | 6 | [Playback pipeline](./phase-06-playback-pump.md) | 2.5-3.5d | 3 | Pending |

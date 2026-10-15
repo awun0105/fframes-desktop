@@ -272,7 +272,11 @@ impl EngineHandle {
                     ));
                     return;
                 };
-                let source = controller.lock().freeze_export_source();
+                let (source, timing_json) = {
+                    let controller = controller.lock();
+                    let source = controller.freeze_export_source();
+                    (source, controller.timing_for_preview().0)
+                };
                 drop(controller);
                 let result = source
                     .map_err(|error| error.to_string())
@@ -284,7 +288,7 @@ impl EngineHandle {
                                 builds: paths.builds(),
                                 destination,
                                 settings: Default::default(),
-                                timing_json: None,
+                                timing_json,
                             },
                             service,
                             processes,
@@ -493,10 +497,12 @@ fn gate(engine: &Inner, news: PreviewNews) -> PreviewGated {
             }
             error = Some((tag, e));
         }
-        if let Some(ready) = &news.ready
-            && let Err(e) = c.reconcile()
-        {
-            error = Some((ready.tag().clone(), e.to_string()));
+        if let Some(ready) = &news.ready {
+            if let Err(e) = c.reconcile() {
+                error = Some((ready.tag().clone(), e.to_string()));
+            }
+            // The scenes the build reports are what the timeline edits.
+            c.learn_timeline(ready.tag(), &ready.timeline);
         }
         c.state().clone()
     });

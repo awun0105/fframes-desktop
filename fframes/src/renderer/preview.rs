@@ -233,6 +233,10 @@ pub struct SceneReport {
     pub clip_index: usize,
     pub trim_start_frames: usize,
     pub trim_end_frames: usize,
+    /// Position of the scene in `Video::define_scenes`.
+    pub scene_index: usize,
+    /// The scene's own length, before trims and without overlaps.
+    pub scene_frames: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -414,6 +418,8 @@ impl<'a, 'media: 'a, TVideo: Video> Previewer<'a, 'media, TVideo> {
                     clip_index: scene.clip_index,
                     trim_start_frames: scene.trim_start,
                     trim_end_frames: scene.trim_end,
+                    scene_index: scene.scene_index,
+                    scene_frames: scene.scene_frames,
                 })
                 .collect(),
             audio: self

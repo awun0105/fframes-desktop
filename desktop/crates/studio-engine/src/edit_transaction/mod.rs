@@ -561,6 +561,8 @@ pub enum Boundary {
     Manifest {
         after: bool,
     },
+    /// Controller-side: a step of a `timeline.json` write (no journal record).
+    TimingWrite(crate::timing::file::WriteStep),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

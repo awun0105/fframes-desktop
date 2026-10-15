@@ -25,11 +25,16 @@ use std::{
     },
     time::Duration,
 };
-use studio_project::{OpenProject, checkpoint::Checkpoints, revision::FileKind};
+use studio_project::{
+    OpenProject,
+    checkpoint::Checkpoints,
+    revision::{FileKind, TIMING_FILE},
+};
 
 mod migration;
 mod preset;
 mod promotion;
+mod timing;
 pub use migration::{MigrationOutcome, ProjectMigration, TimingEditing};
 pub use preset::{PresetMutation, PresetOutcome};
 pub use promotion::{CompletionOutcome, Promotion, UndoPreparation};
@@ -90,6 +95,8 @@ pub struct Controller {
     drafts: DraftStore,
     /// Committed project migrations and their undos, oldest first.
     migrations: Vec<crate::edit_transaction::TaskRevisionRecord>,
+    /// The timing document of this session and its edit history.
+    timing: crate::timing::TimingSession,
 }
 
 /// The process scope of one agent task, keyed by the task that owns it so cleanup can
@@ -193,7 +200,12 @@ impl Controller {
                     )),
                 })?
         };
-        if recovery.touched_source {
+        // A `timeline.json` write the process did not finish is completed before the
+        // source is trusted, like an unfinished transaction.
+        let timing_recovery = crate::timing::file::recover(&project.root).map_err(|error| {
+            format!("{TIMING_FILE} could not be recovered from an interrupted save: {error}")
+        });
+        if recovery.touched_source || matches!(timing_recovery, Ok(Some(_))) {
             (project, source_degraded) = open_source(root)?;
         }
         let task_records = task_replay.committed();
@@ -211,7 +223,7 @@ impl Controller {
         }
         let mut record = if let Some(previous) = previous {
             Record {
-                state: previous.state.reopened(project.inventory.revision.clone()),
+                state: previous.state.reopened(&project.inventory),
                 location: project.root.clone(),
                 name: project.manifest.display.name.clone(),
                 ..previous
@@ -221,7 +233,7 @@ impl Controller {
             let mut state = ProjectState::opening(
                 project.manifest.project_id.clone(),
                 OpenSession::new(),
-                project.inventory.revision.clone(),
+                &project.inventory,
                 accepted,
             );
             state.finish_open(Ok(()))?;
@@ -246,7 +258,7 @@ impl Controller {
                 JobState::Queued(_) | JobState::Running(_) | JobState::CancelRequested(_)
             )
         {
-            let mut recovered = pending.state.reopened(project.inventory.revision.clone());
+            let mut recovered = pending.state.reopened(&project.inventory);
             // Pending job intents do not alter accepted; check that invariant against committed history.
             if recovered.accepted() != record.state.accepted() {
                 recovered = record.state.clone();
@@ -325,6 +337,11 @@ impl Controller {
                 "Source degraded ({err}). Safe checkpoint export is available."
             ));
         }
+        match timing_recovery {
+            Ok(Some(note)) | Err(note) => notices.push(note),
+            Ok(None) => {}
+        }
+        let timing = crate::timing::TimingSession::load(&project.root);
         let recovery_notice = (!notices.is_empty()).then(|| notices.join(" "));
         let mut controller = Self {
             project,
@@ -355,6 +372,7 @@ impl Controller {
             agent,
             drafts,
             migrations,
+            timing,
         };
         controller.heal_manifest_reference();
         controller.heal_migration_manifest();
@@ -525,9 +543,7 @@ impl Controller {
                     Ok(_) => identity_error(),
                     Err(e) => match studio_project::open_for_recovery(&self.project.root) {
                         Ok(p) if p.manifest.project_id == *self.state().project() => {
-                            self.record
-                                .state
-                                .reconcile_source(p.inventory.revision.clone())?;
+                            self.record.state.reconcile_source(&p.inventory)?;
                             self.project = p;
                             e.into()
                         }
@@ -549,12 +565,16 @@ impl Controller {
             }
         };
         let previous = self.state().source().clone();
-        self.record
-            .state
-            .reconcile_source(project.inventory.revision.clone())?;
+        let generation = self.state().generation();
+        self.record.state.reconcile_source(&project.inventory)?;
         self.project = project;
+        self.observe_timing_file();
         if self.state().source() != &previous {
-            self.operations.shutdown(Duration::from_millis(300));
+            // A timing-only change keeps the generation: the running job and its
+            // processes still describe the source.
+            if self.state().generation() != generation {
+                self.operations.shutdown(Duration::from_millis(300));
+            }
             self.persist(self.record.clone())?;
         }
         Ok(())
@@ -640,7 +660,7 @@ impl Controller {
         let mut record = self.record.clone();
         record
             .state
-            .complete(tag, self.project.inventory.revision.clone(), result)?;
+            .complete(tag, &self.project.inventory, result)?;
         self.persist(record)
     }
     pub fn checkpoint(&mut self) -> Result<(), EngineError> {

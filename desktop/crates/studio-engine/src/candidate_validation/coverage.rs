@@ -23,7 +23,12 @@ pub fn broadening(changes: &ChangeSet) -> Option<BroadenReason> {
     if changes.entries.iter().any(|c| {
         matches!(
             c.kind,
-            FileKind::Rust | FileKind::Cargo | FileKind::Style | FileKind::Configuration
+            FileKind::Rust
+                | FileKind::Cargo
+                | FileKind::Style
+                | FileKind::Configuration
+                // The timing document moves every scene after the first edited clip.
+                | FileKind::Timing
         )
     }) {
         return Some(BroadenReason::SharedSourceChanged);

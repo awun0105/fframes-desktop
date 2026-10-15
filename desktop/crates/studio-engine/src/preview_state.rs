@@ -377,10 +377,7 @@ impl PreviewState {
             };
         }
         if self.candidate.as_ref() != Some(t)
-            || t.project != *source.project()
-            || t.session != *source.session()
-            || t.base_source != *source.source()
-            || t.generation != source.generation()
+            || !source.is_current_build(t)
             || !matches!(source.job(), JobState::Succeeded(s) if s == t)
             || ready.seek_serial != self.serial
             || ready.position != self.position.min(ready.timeline.total_frames)
@@ -402,6 +399,17 @@ impl PreviewState {
         self.displayed = Some(ready.identity().clone());
         self.candidate = None;
         self.status = PreviewStatus::Displayed;
+        Ok(())
+    }
+    /// The displayed preview laid out with another timing document: the same worker and
+    /// identity with a new length. The playhead keeps its frame number where it still
+    /// exists.
+    pub fn retime(&mut self, ready: &ReadyPreview) -> Result<(), StateError> {
+        if self.displayed.as_ref() != Some(ready.identity()) {
+            return Err(StateError::StaleResult);
+        }
+        self.total_frames = ready.timeline.total_frames;
+        self.position = self.position.min(self.total_frames);
         Ok(())
     }
     /// Older displayed source is still a legitimate target while a new build runs/fails.

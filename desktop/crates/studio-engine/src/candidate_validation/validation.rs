@@ -138,7 +138,7 @@ pub(super) fn build_identity_defect(
     captured: &CapturedCandidate,
     identity: &BuildIdentity,
 ) -> Option<String> {
-    let candidate = captured.candidate.revision().as_str();
+    let candidate = captured.build_revision.as_str();
     if identity.source_revision != candidate {
         return Some(format!(
             "the build names source revision {} but the candidate is {candidate}",
@@ -236,6 +236,7 @@ pub fn validate_candidate(
         task: captured.identity.clone(),
         source_base: captured.source_base.clone(),
         candidate: captured.candidate.clone(),
+        build_revision: captured.build_revision.clone(),
         manifest_sha256: captured.manifest_sha256.clone(),
         build: identity.clone(),
         verdict: if failure_context.is_some() {

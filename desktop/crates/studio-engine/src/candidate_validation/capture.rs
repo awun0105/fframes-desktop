@@ -117,6 +117,9 @@ pub struct CapturedCandidate {
     pub(super) source_base: TaskSourceBase,
     pub(super) scope: TaskScope,
     pub(super) candidate: CandidateRevision,
+    /// The candidate's revision without its timing document: what its build is keyed by.
+    #[serde(skip)]
+    pub(super) build_revision: SourceRevision,
     pub(super) manifest_sha256: String,
     pub(super) objects: Vec<ObjectRecord>,
     pub(super) changes: ChangeSet,
@@ -134,6 +137,10 @@ impl CapturedCandidate {
     }
     pub fn candidate(&self) -> &CandidateRevision {
         &self.candidate
+    }
+    /// The revision the candidate's build names: its source without `timeline.json`.
+    pub fn build_revision(&self) -> &SourceRevision {
+        &self.build_revision
     }
     /// SHA-256 of the immutable checkpoint manifest file.
     pub fn manifest_sha256(&self) -> &str {
@@ -333,6 +340,7 @@ pub(super) fn capture_tree(
         source_base: source_base.clone(),
         scope,
         candidate: CandidateRevision::new(revision),
+        build_revision: inventory.build_revision(),
         manifest_sha256,
         objects: inventory
             .files

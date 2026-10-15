@@ -63,7 +63,9 @@ impl Controller {
                     record.id
                 )));
             }
-            None if state.source() == state.accepted() && state.built() == Some(state.source()) => {
+            None if state.source() == state.accepted()
+                && state.built() == Some(state.build_source()) =>
+            {
                 (
                     state.source().clone(),
                     None,

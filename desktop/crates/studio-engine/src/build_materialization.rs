@@ -6,6 +6,7 @@ use std::{
 
 use studio_project::{
     OpenProject, ProjectError, ProjectPath, SourceInventory, lifecycle::read_cargo,
+    revision::TIMING_FILE,
 };
 use studio_sdk::{
     CompatibilityManifest, environment::SdkEnvironment, manifest::FRAMEWORK_REL_PATH,
@@ -172,7 +173,13 @@ pub fn materialize_in_environment(
     let root = staging.path().join("project");
     fs::create_dir(&root).map_err(|e| error(&root, e.to_string()))?;
     let mut buffer = [0; 64 * 1024];
+    // The timing document stays out: the build is shared by every timing of the same
+    // code, which the preview and export hand to the worker at run time.
+    let build_revision = project.inventory.build_revision();
     for source in &project.inventory.files {
+        if source.path.as_str() == TIMING_FILE {
+            continue;
+        }
         let target = root.join(source.path.as_str());
         fs::create_dir_all(target.parent().unwrap()).map_err(|e| error(&target, e.to_string()))?;
         let mut input = source.path.open_file(&project.root)?;
@@ -198,9 +205,9 @@ pub fn materialize_in_environment(
                 .map_err(|e| error(&target, e.to_string()))?;
         }
     }
-    if SourceInventory::scan_with_cancel(&root, cancelled)?.revision != project.inventory.revision
-        || SourceInventory::scan_with_cancel(&project.root, cancelled)?.revision
-            != project.inventory.revision
+    if SourceInventory::scan_with_cancel(&root, cancelled)?.build_revision() != build_revision
+        || SourceInventory::scan_with_cancel(&project.root, cancelled)?.build_revision()
+            != build_revision
     {
         return Err(error(
             &project.root,
@@ -249,8 +256,8 @@ pub fn materialize_in_environment(
     if root.join("Cargo.lock").exists() {
         fs::remove_file(root.join("Cargo.lock")).map_err(|e| error(&root, e.to_string()))?;
     }
-    if SourceInventory::scan_with_cancel(&project.root, cancelled)?.revision
-        != project.inventory.revision
+    if SourceInventory::scan_with_cancel(&project.root, cancelled)?.build_revision()
+        != build_revision
     {
         return Err(error(
             &project.root,

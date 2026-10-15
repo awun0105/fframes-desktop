@@ -1,7 +1,32 @@
 use crate::edit_transaction::{TaskRevisionRecord, TransactionKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use studio_project::{ProjectId, SourceRevision};
+use studio_project::{ProjectId, SourceInventory, SourceRevision};
+
+/// What one scan of the project says: the revision of every file, and the revision a
+/// build depends on (everything but the timing document).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScannedSource {
+    pub source: SourceRevision,
+    pub build: SourceRevision,
+}
+impl From<&SourceInventory> for ScannedSource {
+    fn from(inventory: &SourceInventory) -> Self {
+        Self {
+            source: inventory.revision.clone(),
+            build: inventory.build_revision(),
+        }
+    }
+}
+/// A revision without a separate build identity: every change is a build change.
+impl From<SourceRevision> for ScannedSource {
+    fn from(source: SourceRevision) -> Self {
+        Self {
+            build: source.clone(),
+            source,
+        }
+    }
+}
 
 /// Fresh random token on every open, including reopening the same project.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -247,7 +272,14 @@ pub struct ProjectState {
     source: SourceRevision,
     accepted: SourceRevision,
     candidate: Option<Candidate>,
+    /// The build revision ([`ScannedSource::build`]) of the last successful build.
     built: Option<SourceRevision>,
+    /// The build revision of `source`. `None` in records written before it existed;
+    /// the next reconcile fills it in.
+    #[serde(default)]
+    build_source: Option<SourceRevision>,
+    /// Changes with every build-relevant source change and every queued job, never
+    /// with a timing-only change.
     generation: u64,
     next_operation: u64,
     job: JobState,
@@ -276,17 +308,19 @@ impl ProjectState {
     pub fn opening(
         project: ProjectId,
         session: OpenSession,
-        source: SourceRevision,
+        source: impl Into<ScannedSource>,
         accepted: SourceRevision,
     ) -> Self {
+        let source = source.into();
         Self {
             project,
             session,
             open: OpenState::Opening,
-            source,
+            source: source.source,
             accepted,
             candidate: None,
             built: None,
+            build_source: Some(source.build),
             generation: 0,
             next_operation: 0,
             job: JobState::Idle,
@@ -372,8 +406,22 @@ impl ProjectState {
     pub fn candidate(&self) -> Option<&Candidate> {
         self.candidate.as_ref()
     }
+    /// The build revision of the last successful build; compare it with
+    /// [`Self::build_source`].
     pub fn built(&self) -> Option<&SourceRevision> {
         self.built.as_ref()
+    }
+    /// The build revision of the current source.
+    pub fn build_source(&self) -> &SourceRevision {
+        self.build_source.as_ref().unwrap_or(&self.source)
+    }
+    /// Whether a build or preview queued under `tag` still describes the current
+    /// source. The generation moves with every build-relevant change, so a timing-only
+    /// change keeps it current even though the full source revision moved.
+    pub fn is_current_build(&self, tag: &OperationTag) -> bool {
+        tag.project == self.project
+            && tag.session == self.session
+            && tag.generation == self.generation
     }
     pub fn job(&self) -> &JobState {
         &self.job
@@ -388,7 +436,7 @@ impl ProjectState {
         self.generation
     }
     /// Recovery refreshes the session and actual source; old operation tags remain historical only.
-    pub fn reopened(&self, source: SourceRevision) -> Self {
+    pub fn reopened(&self, source: impl Into<ScannedSource>) -> Self {
         let mut state = Self::opening(
             self.project.clone(),
             OpenSession::new(),
@@ -419,14 +467,26 @@ impl ProjectState {
     }
     /// Actual filesystem identity must be freshly reconciled before every completion.
     /// Edits retain accepted bytes, invalidate derived identities, and interrupt obsolete work.
-    pub fn reconcile_source(&mut self, current: SourceRevision) -> Result<(), StateError> {
+    ///
+    /// A change of the timing document alone moves `source` but keeps the generation,
+    /// the build and the running job: nothing built from the source is obsolete.
+    pub fn reconcile_source(
+        &mut self,
+        current: impl Into<ScannedSource>,
+    ) -> Result<(), StateError> {
         if self.open != OpenState::Ready {
             return Err(StateError::InvalidTransition);
         }
-        if current != self.source {
+        let current = current.into();
+        let build_changed = match &self.build_source {
+            Some(build) => *build != current.build,
+            None => current.source != self.source,
+        };
+        if build_changed {
             self.invalidate_source()?;
-            self.source = current;
         }
+        self.source = current.source;
+        self.build_source = Some(current.build);
         Ok(())
     }
     /// A failed scan invalidates old work even if the source later returns to the same bytes.
@@ -452,11 +512,11 @@ impl ProjectState {
             _ => None,
         }
     }
+    /// A build only needs the build revision it started from; every other job (a
+    /// checkpoint captures every file) needs the exact source.
     fn matches_current_source(&self, tag: &OperationTag) -> bool {
-        tag.project == self.project
-            && tag.session == self.session
-            && tag.base_source == self.source
-            && tag.generation == self.generation
+        self.is_current_build(tag)
+            && (tag.base_source == self.source || self.kind == Some(JobKind::Build))
     }
     pub fn queue(&mut self, kind: JobKind) -> Result<OperationTag, StateError> {
         if self.open != OpenState::Ready || self.active_tag().is_some() {
@@ -519,7 +579,7 @@ impl ProjectState {
     pub fn complete(
         &mut self,
         tag: &OperationTag,
-        current: SourceRevision,
+        current: impl Into<ScannedSource>,
         result: JobResult,
     ) -> Result<(), StateError> {
         self.reconcile_source(current)?;
@@ -531,7 +591,7 @@ impl ProjectState {
         match (self.kind, result) {
             (_, JobResult::Failed(e)) => self.job = JobState::Failed(tag.clone(), e),
             (Some(JobKind::Build), JobResult::Built(revision)) if revision == tag.base_source => {
-                self.built = Some(revision);
+                self.built = Some(self.build_source().clone());
                 self.job = JobState::Succeeded(tag.clone());
             }
             (Some(JobKind::Checkpoint), JobResult::Checkpointed(revision))
@@ -549,7 +609,7 @@ impl ProjectState {
     pub fn propose(
         &mut self,
         tag: &OperationTag,
-        current: SourceRevision,
+        current: impl Into<ScannedSource>,
         revision: SourceRevision,
     ) -> Result<(), StateError> {
         self.reconcile_source(current)?;
@@ -778,5 +838,92 @@ mod tests {
         assert!(!authorization.is_current(&other));
         state.reconcile_source(revision('c')).unwrap();
         assert!(!authorization.is_current(&state));
+    }
+
+    fn scanned(source: char, build: char) -> ScannedSource {
+        ScannedSource {
+            source: revision(source),
+            build: revision(build),
+        }
+    }
+
+    #[test]
+    fn timing_only_change_keeps_the_build_job_and_generation() {
+        let mut state = ProjectState::opening(
+            ProjectId::try_from("project-1".to_owned()).unwrap(),
+            OpenSession::new(),
+            scanned('a', '1'),
+            revision('a'),
+        );
+        state.finish_open(Ok(())).unwrap();
+        let tag = state.queue(JobKind::Build).unwrap();
+        state.start(&tag).unwrap();
+        let generation = state.generation();
+
+        // The timing document changes while the build runs.
+        state.reconcile_source(scanned('b', '1')).unwrap();
+        assert_eq!(state.source(), &revision('b'));
+        assert_eq!(state.generation(), generation);
+        assert_eq!(state.active_tag(), Some(&tag));
+        assert!(state.is_current_build(&tag));
+        state
+            .complete(
+                &tag,
+                scanned('c', '1'),
+                JobResult::Built(tag.base_source.clone()),
+            )
+            .unwrap();
+        assert_eq!(state.built(), Some(&revision('1')));
+        assert_eq!(state.built(), Some(state.build_source()));
+
+        // A code change invalidates the build.
+        state.reconcile_source(scanned('d', '2')).unwrap();
+        assert_ne!(state.generation(), generation);
+        assert_eq!(state.built(), None);
+        assert!(!state.is_current_build(&tag));
+    }
+
+    #[test]
+    fn timing_change_still_stales_a_running_checkpoint() {
+        let mut state = ProjectState::opening(
+            ProjectId::try_from("project-1".to_owned()).unwrap(),
+            OpenSession::new(),
+            scanned('a', '1'),
+            revision('a'),
+        );
+        state.finish_open(Ok(())).unwrap();
+        let tag = state.queue(JobKind::Checkpoint).unwrap();
+        state.start(&tag).unwrap();
+        // A checkpoint captures every file, the timing document included.
+        assert_eq!(
+            state.complete(
+                &tag,
+                scanned('b', '1'),
+                JobResult::Checkpointed(revision('a'))
+            ),
+            Err(StateError::StaleResult)
+        );
+        assert_eq!(state.accepted(), &revision('a'));
+    }
+
+    #[test]
+    fn records_without_a_build_revision_fill_it_in_on_reconcile() {
+        let mut state = state();
+        state.build_source = None;
+        let generation = state.generation();
+        state.reconcile_source(scanned('a', '1')).unwrap();
+        assert_eq!(
+            state.generation(),
+            generation,
+            "same source, nothing invalidated"
+        );
+        assert_eq!(state.build_source(), &revision('1'));
+        state.build_source = None;
+        state.reconcile_source(scanned('b', '1')).unwrap();
+        assert_ne!(
+            state.generation(),
+            generation,
+            "unknown build revision: invalidate"
+        );
     }
 }

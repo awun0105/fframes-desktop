@@ -14,7 +14,7 @@ use studio_engine::engine::handle::{CommandFinished, EngineEvent, WorkflowOpen};
 use studio_engine::presets::{PresetCommand, PresetReport};
 use studio_engine::services::build_service::BuildService;
 use studio_engine::services::export_service::{ExportControl, ExportProgress};
-use studio_engine::services::preview_coordinator::{PreviewCoordinator, SeekIntent};
+use studio_engine::services::preview_coordinator::{PreviewCoordinator, PreviewTiming, SeekIntent};
 
 use super::{Picker, StudioShell};
 use crate::agent::Attachment;
@@ -179,7 +179,7 @@ impl StudioShell {
                 self.presentation_refresh_pending = false;
                 if let Some(presentation) = presentation {
                     self.presentation = *presentation;
-                    self.push_preset_view(cx);
+                    self.push_presentation_views(cx);
                 }
                 self.refresh_if_wanted();
                 cx.notify();
@@ -265,7 +265,7 @@ impl StudioShell {
                     }
                     self.presentation = presentation;
                     self.sync_agent(cx);
-                    self.push_preset_view(cx);
+                    self.push_presentation_views(cx);
                 }
             }
         }
@@ -309,10 +309,21 @@ impl StudioShell {
         }
     }
 
-    pub(super) fn push_preset_view(&mut self, cx: &mut Context<Self>) {
+    /// Hands what a new presentation changed to the views and the preview: the preset
+    /// panel's state and the timing document the preview plays.
+    pub(super) fn push_presentation_views(&mut self, cx: &mut Context<Self>) {
         let view = self.presentation.preset.clone();
         self.preset_panel
             .update(cx, |panel, cx| panel.set_view(view, cx));
+        if let (Some(preview), Some(timeline)) = (&self.preview, &self.presentation.timeline)
+            && self.timing_sent != Some(timeline.generation)
+        {
+            preview.set_timing(PreviewTiming {
+                json: timeline.timing_json.clone(),
+                generation: timeline.generation,
+            });
+            self.timing_sent = Some(timeline.generation);
+        }
     }
 
     pub(super) fn run_preset(&mut self, command: PresetCommand, cx: &mut Context<Self>) {
@@ -693,7 +704,7 @@ impl StudioShell {
                 files: matches!(kind, Picker::Asset | Picker::Import | Picker::PresetCss),
                 directories: !matches!(kind, Picker::Asset | Picker::Import | Picker::PresetCss),
                 multiple: false,
-                prompt: Some(format!("{label}…").into()),
+                prompt: Some(format!("{label}â€¦").into()),
             });
             cx.spawn(async move |this, cx| {
                 let result = picker.await;

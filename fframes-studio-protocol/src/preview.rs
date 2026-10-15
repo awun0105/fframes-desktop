@@ -104,6 +104,12 @@ pub struct PreviewClipTiming {
     pub clip_index: usize,
     pub trim_start_frames: usize,
     pub trim_end_frames: usize,
+    /// Position of the scene in the video's code order; absent from older workers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene_index: Option<usize>,
+    /// The scene's own length before trims, without overlaps; absent from older workers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene_frames: Option<usize>,
 }
 /// Replaces the timing document of the preview. `timing_json` is a `fframes::TimingDoc`
 /// of at most [`MAX_TIMING_DOC_BYTES`] (`None` restores the code order); the worker

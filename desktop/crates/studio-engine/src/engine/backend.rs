@@ -45,6 +45,8 @@ pub struct Presentation {
     pub agent_sdk: Option<AgentSdk>,
     /// Style-preset controls state of the open project (`None` when none is open).
     pub preset: Option<PresetView>,
+    /// The open project's timing document, its clips and what can be edited now.
+    pub timeline: Option<crate::timing::TimelineSnapshot>,
 }
 
 #[derive(Clone)]
@@ -78,6 +80,8 @@ pub enum Command {
     Migrate(Option<studio_project::SourceRevision>),
     /// Undoes the open project's last migration, fenced the same way.
     UndoMigration(Option<studio_project::SourceRevision>),
+    /// A timeline edit of the open project (split, trim, move, a drag, undo or redo).
+    Timeline(crate::timing::TimelineCommand),
 }
 pub struct Backend {
     pub paths: Option<AppPaths>,
@@ -381,6 +385,11 @@ impl Backend {
                 drop(controller);
                 self.check_sdk();
             }
+            Command::Timeline(command) => self
+                .current()?
+                .lock()
+                .timeline_command(command)
+                .map_err(|e| e.to_string())?,
             Command::UndoMigration(expected) => {
                 let controller = self.current()?;
                 let mut controller = controller.lock();
@@ -546,21 +555,24 @@ impl Backend {
                     "Install or select the current SDK to migrate this project".into(),
                 );
             }
+            let timeline = controller.timeline_snapshot();
             (
                 project,
                 controller.state().clone(),
                 controller.processes.clone(),
                 PresetView::capture(&mut controller, &self.catalog),
+                timeline,
             )
         });
         Ok(Presentation {
             session: self.session,
-            project: open.as_ref().map(|(project, _, _, _)| project.clone()),
+            project: open.as_ref().map(|(project, ..)| project.clone()),
             recents,
             sdk: self.sdk.clone(),
-            state: open.as_ref().map(|(_, state, _, _)| state.clone()),
-            preset: open.as_ref().map(|(_, _, _, preset)| preset.clone()),
-            owner: open.map(|(_, _, owner, _)| owner),
+            state: open.as_ref().map(|(_, state, ..)| state.clone()),
+            preset: open.as_ref().map(|(_, _, _, preset, _)| preset.clone()),
+            timeline: open.as_ref().map(|(.., timeline)| timeline.clone()),
+            owner: open.map(|(_, _, owner, ..)| owner),
             paths: self.paths.clone(),
             agent_sdk: self.agent_sdk.clone(),
         })

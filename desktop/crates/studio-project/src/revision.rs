@@ -51,7 +51,13 @@ pub enum FileKind {
     Style = 4,
     Configuration = 5,
     Other = 6,
+    /// The timing document (`timeline.json`): play order and trims, which the studio
+    /// edits without rebuilding. Hashed like [`FileKind::Other`], its kind before it had
+    /// one, so revisions and checkpoints recorded earlier stay valid.
+    Timing = 7,
 }
+/// The project's timing document, at the project root.
+pub const TIMING_FILE: &str = "timeline.json";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceFile {
     pub path: ProjectPath,
@@ -71,6 +77,7 @@ pub struct SourceInventory {
 }
 const CURRENT_INVENTORY_VERSION: u32 = 1;
 const HASH_PREFIX: &[u8] = b"studio-source-v1\0";
+const BUILD_HASH_PREFIX: &[u8] = b"studio-build-v1\0";
 pub(crate) fn excluded(path: &str) -> bool {
     crate::paths::PROTECTED_TREES.iter().any(|p| {
         path == *p
@@ -93,6 +100,8 @@ fn kind(path: &str) -> FileKind {
         FileKind::Rust
     } else if path == "studio.json" || path.starts_with(".cargo/") {
         FileKind::Configuration
+    } else if path == TIMING_FILE {
+        FileKind::Timing
     } else {
         FileKind::Other
     }
@@ -113,7 +122,7 @@ impl SourceInventory {
         for file in &self.files {
             if previous.is_some_and(|p: &ProjectPath| p >= &file.path)
                 || excluded(file.path.as_str())
-                || kind(file.path.as_str()) != file.kind
+                || !kind_matches(file)
             {
                 return Err(io_error(
                     Path::new(file.path.as_str()),
@@ -158,6 +167,24 @@ impl SourceInventory {
         inventory_revision(&self.files, HASH_PREFIX, true) == *historical
             || (self.files.iter().all(|file| !file.executable)
                 && inventory_revision(&self.files, HASH_PREFIX, false) == *historical)
+    }
+    /// What a build depends on: the revision of every file except the timing document,
+    /// which the preview and export apply at run time. A timing-only change keeps it.
+    /// Recognised by path, so inventories recorded before the timing kind agree.
+    pub fn build_revision(&self) -> SourceRevision {
+        let files: Vec<SourceFile> = self
+            .files
+            .iter()
+            .filter(|file| file.path.as_str() != TIMING_FILE)
+            .cloned()
+            .collect();
+        inventory_revision(&files, BUILD_HASH_PREFIX, true)
+    }
+    /// The timing document's entry, when the project has one.
+    pub fn timing_file(&self) -> Option<&SourceFile> {
+        self.files
+            .iter()
+            .find(|file| file.path.as_str() == TIMING_FILE)
     }
     /// Includes all ordinary files except the four exact root-relative exclusions.
     /// Unknown durable files are included to avoid silently dropping imported source.
@@ -215,6 +242,17 @@ impl SourceInventory {
         })
     }
 }
+/// Inventories recorded before the timing kind list the timing document as `Other`.
+fn kind_matches(file: &SourceFile) -> bool {
+    let expected = kind(file.path.as_str());
+    expected == file.kind || (expected == FileKind::Timing && file.kind == FileKind::Other)
+}
+fn hashed_kind(kind: FileKind) -> u8 {
+    match kind {
+        FileKind::Timing => FileKind::Other as u8,
+        kind => kind as u8,
+    }
+}
 fn inventory_revision(
     files: &[SourceFile],
     prefix: &[u8],
@@ -229,7 +267,7 @@ fn inventory_revision(
             .collect();
         revision.update((file.path.as_str().len() as u64).to_le_bytes());
         revision.update(file.path.as_str().as_bytes());
-        revision.update([file.kind as u8]);
+        revision.update([hashed_kind(file.kind)]);
         revision.update(file.size.to_le_bytes());
         if include_executable {
             revision.update([u8::from(file.executable)]);

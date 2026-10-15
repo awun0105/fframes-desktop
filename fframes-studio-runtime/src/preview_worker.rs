@@ -304,6 +304,8 @@ fn preview_scene_infos(
                     clip_index: scene.clip_index,
                     trim_start_frames: scene.trim_start_frames,
                     trim_end_frames: scene.trim_end_frames,
+                    scene_index: Some(scene.scene_index),
+                    scene_frames: Some(scene.scene_frames),
                 }),
             }
         })
@@ -858,6 +860,8 @@ mod editor_metadata_tests {
             clip_index: 0,
             trim_start_frames: 0,
             trim_end_frames: 0,
+            scene_index: index,
+            scene_frames: 10,
         };
         let preview = identity();
         let scenes = preview_scene_infos(vec![scene(0), scene(1)], &preview);

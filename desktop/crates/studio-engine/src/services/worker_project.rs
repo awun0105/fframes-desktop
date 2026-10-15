@@ -209,8 +209,8 @@ fn compile_with_cargo(
     .map_err(|e| e.to_string())?;
     if studio_project::SourceInventory::scan_with_cancel(&project.root, &|| manager.is_shutdown())
         .map_err(|e| e.to_string())?
-        .revision
-        != project.inventory.revision
+        .build_revision()
+        != project.inventory.build_revision()
     {
         return Err("Source changed during worker build; refresh and retry".into());
     }

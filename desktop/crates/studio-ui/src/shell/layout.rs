@@ -110,7 +110,9 @@ impl Render for StudioShell {
                                             ready.identity().clone(),
                                         ));
                                     }
-                                    if ready.tag().base_source == *source.source() {
+                                    if ready.tag().base_source == *source.source()
+                                        || source.is_current_build(ready.tag())
+                                    {
                                         self.awaiting_preview = None;
                                     }
                                     // Tell the workflow what is on screen so its accepted-awaiting

@@ -123,7 +123,7 @@ impl CandidateProbe for PassingProbe {
 pub fn build_identity(captured: &CapturedCandidate) -> BuildIdentity {
     BuildIdentity {
         key_digest: "k".repeat(64),
-        source_revision: captured.candidate().revision().as_str().into(),
+        source_revision: captured.build_revision().as_str().into(),
         sdk_id: "sdk".into(),
         compatibility_digest: "d".repeat(64),
         toolchain: "1.98.1".into(),

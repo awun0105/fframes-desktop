@@ -209,6 +209,9 @@ pub struct ValidationReport {
     pub(super) task: TaskIdentity,
     pub(super) source_base: TaskSourceBase,
     pub(super) candidate: CandidateRevision,
+    /// What the candidate's build is keyed by: its revision without `timeline.json`.
+    #[serde(skip)]
+    pub(super) build_revision: SourceRevision,
     pub(super) manifest_sha256: String,
     pub(super) build: Option<BuildIdentity>,
     pub(super) verdict: Verdict,
@@ -312,8 +315,9 @@ impl ValidationReport {
         let Some(build) = &self.build else {
             return Some("no build identity".into());
         };
-        let candidate = self.candidate.revision().as_str();
-        if build.source_revision != candidate || build.backend != VALIDATED_BACKEND {
+        if build.source_revision != self.build_revision.as_str()
+            || build.backend != VALIDATED_BACKEND
+        {
             return Some("the build identity does not name this candidate".into());
         }
         let Some(coverage) = &self.coverage else {

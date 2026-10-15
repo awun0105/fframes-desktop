@@ -82,6 +82,10 @@ pub struct TimelineScene {
     pub clip_index: usize,
     pub trim_start: usize,
     pub trim_end: usize,
+    /// Position of the scene in `Video::define_scenes`.
+    pub scene_index: usize,
+    /// The scene's own length, before trims and without overlaps.
+    pub scene_frames: usize,
 }
 
 /// Everything needed to resolve time specs of one video.
@@ -125,6 +129,8 @@ impl TimelineIndex {
                             clip_index: clip.clip_index,
                             trim_start: clip.trim_start,
                             trim_end: clip.trim_end,
+                            scene_index: clip.scene_index,
+                            scene_frames: clip.info.duration_in_frames,
                         })
                         .collect()
                 })
@@ -379,6 +385,8 @@ mod tests {
                     clip_index: 0,
                     trim_start: 0,
                     trim_end: 0,
+                    scene_index: 0,
+                    scene_frames: 100,
                 },
                 TimelineScene {
                     index: 1,
@@ -390,6 +398,8 @@ mod tests {
                     clip_index: 0,
                     trim_start: 0,
                     trim_end: 0,
+                    scene_index: 1,
+                    scene_frames: 110,
                 },
                 TimelineScene {
                     index: 2,
@@ -401,6 +411,8 @@ mod tests {
                     clip_index: 0,
                     trim_start: 0,
                     trim_end: 0,
+                    scene_index: 2,
+                    scene_frames: 100,
                 },
             ],
         }
