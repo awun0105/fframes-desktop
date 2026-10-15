@@ -20,7 +20,7 @@ fn contained_label() -> &'static str {
     }
 }
 
-fn pid_alive(pid: u32) -> bool {
+fn process_exists(pid: u32) -> bool {
     if cfg!(windows) {
         let out = std::process::Command::new("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
@@ -92,7 +92,7 @@ fn a_launch_verified_writer_and_its_grandchild_are_contained_and_the_candidate_i
         .parse()
         .unwrap();
     assert!(
-        !pid_alive(helper),
+        !process_exists(helper),
         "the grandchild {helper} survived capture"
     );
     w.assert_clean();

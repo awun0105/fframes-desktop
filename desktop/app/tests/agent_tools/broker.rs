@@ -761,9 +761,9 @@ fn a_client_under_a_restricted_token_is_refused_by_the_token_check() {
         Security::{
             CreateRestrictedToken, CreateWellKnownSid, GetTokenInformation, SECURITY_MAX_SID_SIZE,
             SID_AND_ATTRIBUTES, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_GROUPS, TOKEN_QUERY,
-            TOKEN_USER, TokenLogonSid, TokenUser, WinAuthenticatedUserSid, WinBuiltinUsersSid,
-            WinRestrictedCodeSid, WinWorldSid,
+            TOKEN_USER, TokenGroups, TokenUser, WinRestrictedCodeSid,
         },
+        System::SystemServices::{SE_GROUP_ENABLED, SE_GROUP_INTEGRITY},
         System::Threading::{
             CREATE_NO_WINDOW, CreateProcessAsUserW, GetCurrentProcess, GetExitCodeProcess,
             OpenProcessToken, PROCESS_INFORMATION, STARTUPINFOW, WaitForSingleObject,
@@ -796,46 +796,47 @@ fn a_client_under_a_restricted_token_is_refused_by_the_token_check() {
             0
         );
         let user_sid = (*user.as_ptr().cast::<TOKEN_USER>()).User.Sid;
-        let well_known = |kind| {
-            let mut sid = vec![0u8; SECURITY_MAX_SID_SIZE as usize];
-            let mut size = sid.len() as u32;
-            assert_ne!(
-                CreateWellKnownSid(
-                    kind,
-                    std::ptr::null_mut(),
-                    sid.as_mut_ptr().cast(),
-                    &mut size
-                ),
-                0
-            );
-            sid
-        };
-        // The logon SID opens the window station and desktop, without which the child
-        // cannot even initialize its DLLs.
-        let mut logon = vec![0u64; 64];
+        // Restricting SIDs: the user, every enabled group of this token and RESTRICTED.
+        // The child can then open whatever this process can (its DLLs, the window
+        // station, the pipe), whatever the runner's folder permissions, yet its token is
+        // still restricted.
+        let mut size = 0u32;
+        GetTokenInformation(token, TokenGroups, std::ptr::null_mut(), 0, &mut size);
+        let mut groups = vec![0u64; size.div_ceil(8) as usize];
         assert_ne!(
             GetTokenInformation(
                 token,
-                TokenLogonSid,
-                logon.as_mut_ptr().cast(),
-                (logon.len() * 8) as u32,
-                &mut length,
+                TokenGroups,
+                groups.as_mut_ptr().cast(),
+                (groups.len() * 8) as u32,
+                &mut size,
             ),
             0
         );
-        let logon_sid = (*logon.as_ptr().cast::<TOKEN_GROUPS>()).Groups[0].Sid;
-        let mut others: Vec<Vec<u8>> = [
-            WinWorldSid,
-            WinBuiltinUsersSid,
-            WinAuthenticatedUserSid,
-            WinRestrictedCodeSid,
-        ]
-        .into_iter()
-        .map(well_known)
-        .collect();
-        let restricting: Vec<SID_AND_ATTRIBUTES> = [user_sid, logon_sid]
-            .into_iter()
-            .chain(others.iter_mut().map(|sid| sid.as_mut_ptr().cast()))
+        let groups = &*groups.as_ptr().cast::<TOKEN_GROUPS>();
+        let groups = std::slice::from_raw_parts(groups.Groups.as_ptr(), groups.GroupCount as usize);
+        let mut restricted_code = vec![0u8; SECURITY_MAX_SID_SIZE as usize];
+        let mut code_size = restricted_code.len() as u32;
+        assert_ne!(
+            CreateWellKnownSid(
+                WinRestrictedCodeSid,
+                std::ptr::null_mut(),
+                restricted_code.as_mut_ptr().cast(),
+                &mut code_size
+            ),
+            0
+        );
+        let restricting: Vec<SID_AND_ATTRIBUTES> = std::iter::once(user_sid)
+            .chain(
+                groups
+                    .iter()
+                    .filter(|group| {
+                        group.Attributes & SE_GROUP_ENABLED as u32 != 0
+                            && group.Attributes & SE_GROUP_INTEGRITY as u32 == 0
+                    })
+                    .map(|group| group.Sid),
+            )
+            .chain(Some(restricted_code.as_mut_ptr().cast()))
             .map(|sid| SID_AND_ATTRIBUTES {
                 Sid: sid,
                 Attributes: 0,

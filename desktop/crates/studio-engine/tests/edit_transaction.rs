@@ -1147,18 +1147,17 @@ fn short_name(path: &std::path::Path) -> Option<String> {
 /// `.git`, `target` or a Studio cache is refused before anything is probed or written.
 #[test]
 fn aliases_of_protected_trees_are_refused_at_planning() {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut aliases = vec![
         ".Git/hooks/pre-commit".to_owned(),
         "TARGET/x.txt".to_owned(),
         ".fframe\u{17F}/cache/x.txt".to_owned(),
     ];
-    if cfg!(windows) {
-        // Windows: the short name of `.git` in a fixture like the one each case uses.
-        #[cfg(windows)]
-        match short_name(&fixture().root.join(".git")) {
-            Some(short) => aliases.push(format!("{short}/hooks/pre-commit")),
-            None => eprintln!("8.3 name generation is off on this volume; no short-name case"),
-        }
+    // Windows: the short name of `.git` in a fixture like the one each case uses.
+    #[cfg(windows)]
+    match short_name(&fixture().root.join(".git")) {
+        Some(short) => aliases.push(format!("{short}/hooks/pre-commit")),
+        None => eprintln!("8.3 name generation is off on this volume; no short-name case"),
     }
     for alias in aliases {
         let f = fixture();

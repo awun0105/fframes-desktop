@@ -60,4 +60,4 @@ gpui = { workspace = true, features = ["test-support"] }
 studio-bootstrap = { workspace = true, features = ["fault-injection"] }
 
 [target.'cfg(target_os = "windows")'.dev-dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Security"] }
+windows-sys = { version = "0.59", features = ["Win32_Security", "Win32_System_SystemServices"] }
