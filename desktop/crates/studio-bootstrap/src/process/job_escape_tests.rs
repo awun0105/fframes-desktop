@@ -319,3 +319,33 @@ fn the_sampler_ends_with_its_tree_and_on_drop() {
         "drop joins promptly"
     );
 }
+
+#[test]
+#[cfg(windows)]
+fn a_launch_reports_the_job_containment_it_verified_and_grandchildren_stay_in_it() {
+    // cmd starts ping: the writer's own child must be in the same job.
+    let mut opts = SpawnOptions::new("cmd");
+    opts.args(["/c", "ping -n 30 127.0.0.1 > nul"]);
+    let mut child = spawn_tracked(opts).expect("spawn cmd");
+    let ownership = child.containment();
+    assert!(
+        matches!(ownership, WriterOwnership::JobObjectContained { .. }),
+        "{ownership:?}"
+    );
+    assert!(ownership.is_qualified());
+    assert_eq!(ownership.label(), "job-object-contained");
+    let handle = std::os::windows::io::AsRawHandle::as_raw_handle(child.child_mut())
+        as windows_sys::Win32::Foundation::HANDLE;
+    assert_eq!(process_in_job(handle, child.scope.job), Some(true));
+    std::thread::sleep(Duration::from_millis(300));
+    let members = job_member_pids(child.scope.job).unwrap();
+    assert!(
+        members.len() >= 2,
+        "cmd and ping are both members: {members:?}"
+    );
+    assert_eq!(child.escaped_descendants(), EscapeScan::Clean);
+    let report = child
+        .terminate_verified(Duration::from_millis(200))
+        .unwrap();
+    assert!(report.verified(), "{report:?}");
+}

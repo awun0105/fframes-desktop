@@ -411,7 +411,8 @@ fn trust_rank(ownership: &WriterOwnership) -> u8 {
     match ownership {
         WriterOwnership::Detached => 0,
         WriterOwnership::Unknown => 1,
-        WriterOwnership::ProcessGroupContained { .. } => 2,
+        WriterOwnership::ProcessGroupContained { .. }
+        | WriterOwnership::JobObjectContained { .. } => 2,
     }
 }
 

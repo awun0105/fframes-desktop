@@ -391,14 +391,17 @@ impl ScopeObservation {
     }
 }
 
-/// Whether an adapter's writers are known to stay inside the owned process group.
-/// Only an explicit qualification of a specific adapter produces
-/// [`WriterOwnership::ProcessGroupContained`]; escaped, background or unmodelled
-/// writers are never claimed detectable, so everything else blocks candidate capture.
+/// Whether an adapter's writers are known to stay inside the task's containment. Only a
+/// containment verified for the launch ([`TrackedChild::containment`]) produces a
+/// qualified value; escaped, background or unmodelled writers are never claimed
+/// detectable, so everything else blocks candidate capture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WriterOwnership {
     /// Qualified: this adapter's writer descendants remain in the task process group.
     ProcessGroupContained { qualification: String },
+    /// Qualified: the adapter was assigned to the task's Job Object before any of its
+    /// code ran, and the job refuses breakaway, so every descendant stays in it.
+    JobObjectContained { verification: String },
     /// An escape from the task process group was observed.
     Detached,
     /// Not qualified; a surviving writer cannot be ruled out.
@@ -406,11 +409,15 @@ pub enum WriterOwnership {
 }
 impl WriterOwnership {
     pub fn is_qualified(&self) -> bool {
-        matches!(self, Self::ProcessGroupContained { .. })
+        matches!(
+            self,
+            Self::ProcessGroupContained { .. } | Self::JobObjectContained { .. }
+        )
     }
     pub fn label(&self) -> &'static str {
         match self {
             Self::ProcessGroupContained { .. } => "process-group-contained",
+            Self::JobObjectContained { .. } => "job-object-contained",
             Self::Detached => "detached",
             Self::Unknown => "unknown",
         }
@@ -460,6 +467,39 @@ unsafe impl Send for TrackedChild {}
 unsafe impl Sync for TrackedChild {}
 
 impl TrackedChild {
+    /// The containment this launch established, as verified when it was spawned:
+    ///
+    /// - Windows: the child was assigned to a job that refuses breakaway and
+    ///   `IsProcessInJob` confirmed it while the child was still suspended (otherwise
+    ///   the spawn failed).
+    /// - Linux: the child leads its own process group (pgid = pid, start time pinned),
+    ///   and the `/proc` escape scan reports any descendant that leaves it.
+    /// - Elsewhere no descendant scan exists, so nothing rules out a writer that left
+    ///   the group: [`WriterOwnership::Unknown`].
+    ///
+    /// Observations made later can only demote this.
+    pub fn containment(&self) -> WriterOwnership {
+        #[cfg(windows)]
+        {
+            WriterOwnership::JobObjectContained {
+                verification: format!(
+                    "runtime: pid {} in a breakaway-refusing job before resume",
+                    self.pid
+                ),
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            WriterOwnership::ProcessGroupContained {
+                qualification: format!("runtime: process group {} with escape scan", self.pgid),
+            }
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            WriterOwnership::Unknown
+        }
+    }
+
     pub fn pid(&self) -> u32 {
         self.pid
     }
@@ -990,7 +1030,9 @@ pub fn spawn_tracked(opts: SpawnOptions) -> Result<TrackedChild, ProcessError> {
             let pid = child.id();
             let proc_handle = child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
             let assign_res = AssignProcessToJobObject(job, proc_handle);
-            if assign_res == 0 {
+            // The child is still suspended: verify the assignment before any of its code
+            // runs. A check that fails or cannot be answered ends the launch.
+            if assign_res == 0 || windows::process_in_job(proc_handle, job) != Some(true) {
                 let _ = TerminateProcess(proc_handle, 1);
                 CloseHandle(job);
                 return Err(ProcessError::JobAssignmentFailed {

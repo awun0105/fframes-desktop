@@ -85,6 +85,34 @@ fn test_tracked_child_graceful_termination() {
 
 #[test]
 #[cfg(unix)]
+fn a_launch_reports_the_containment_this_platform_can_verify() {
+    let mut opts = SpawnOptions::new("sleep");
+    opts.arg("30");
+    let mut child = spawn_tracked(opts).expect("spawn sleep");
+    let ownership = child.containment();
+    if cfg!(target_os = "linux") {
+        // Its own process group, watched by the /proc escape scan.
+        assert!(
+            matches!(&ownership, WriterOwnership::ProcessGroupContained { qualification }
+                if qualification.starts_with("runtime:")),
+            "{ownership:?}"
+        );
+        // SAFETY: getpgid has no memory effects.
+        assert_eq!(
+            unsafe { libc::getpgid(child.pid() as i32) },
+            child.pid() as i32
+        );
+    } else {
+        // No descendant scan rules out a writer that left the group.
+        assert_eq!(ownership, WriterOwnership::Unknown);
+    }
+    child
+        .terminate_gracefully(Duration::from_millis(500))
+        .expect("terminate gracefully");
+}
+
+#[test]
+#[cfg(unix)]
 fn test_process_tree_manager_cleanup() {
     let manager = ProcessTreeManager::new();
     let mut opts1 = SpawnOptions::new("sleep");
