@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "Split the remaining oversize files"
-status: in-progress
+status: done
 priority: P2
 effort: "3-4d"
 dependencies: [1]
@@ -39,8 +39,8 @@ The ACP driver split is a pure module split; "keep the existing ACP driver" mean
 
 - [x] Re-measure
 - [x] Source splits
-- [ ] Test splits (`acp_v1`, engine `candidate_validation`, `candidate_runner` done; `app/tests/agent_workflow.rs` and `agent_tools.rs` wait for phase 3)
-- [ ] Size gate passes
+- [x] Test splits
+- [x] Size gate passes
 
 ## Success criteria
 
@@ -65,3 +65,14 @@ Done, one commit per file, each a pure move. A line-multiset diff against `HEAD`
 A test's root moved to `tests/<name>/main.rs`, which Cargo still names `<name>`, so `--test <name>` in CI is unchanged. A root at `tests/<name>.rs` cannot hold child modules without `#[path]`. Verification: `studio-bootstrap` and `studio-harness` pass clippy with `-D warnings` for Windows, Linux and macOS targets. `studio-engine` and the app crate were checked on Windows only, because sqlite and ffmpeg block cross-checking. The Unix-only `candidate_runner` broker tests call only helpers in their root, never a sibling module's.
 
 Left: the two Unix-gated app tests (after phase 3, which edits them), and the gate's other offenders, which phases 4, 5 and 6 split (`studio_shell.rs`, `actor.rs`, `conversation_panel.rs`).
+
+## Progress (2026-10-15)
+
+The two Unix-gated app tests are split, one commit each, as pure moves:
+
+| File | Layout |
+|------|--------|
+| `app/tests/agent_tools.rs` | `tests/agent_tools/{main, contract, broker, slow_peers, client, mcp, subprocess}.rs`; the shared helpers `never`, `private_copy`, `rpc` and `initialize` are in `main.rs` |
+| `app/tests/agent_workflow.rs` | `tests/agent_workflow/{main, readiness, happy_path, manual_review, queueing, undo, repair, stop, permissions, failures, close, recovery, preview_handoff, resource_bounds, cycles, regressions, real_sdk}.rs`; the `Sink` impl, `wait_ready` and `World::wait_phase_snapshot` are in `main.rs` |
+
+Checked with a normalized line-multiset diff and the same `#[test]` and `#[ignore]` counts. Linux CI ran the same totals as before the split: `agent_tools` 39 passed; `agent_workflow` 67 passed, 2 ignored. Phases 4, 5 and 6 split the shell, the actor and the conversation panel. `git ls-files 'desktop/*.rs' | xargs wc -l | awk '$1>1500'` prints nothing.
