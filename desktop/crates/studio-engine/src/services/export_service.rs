@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File},
+    fs,
     io::{self, Read, Write},
     path::{Path, PathBuf},
     process::Stdio,
@@ -285,7 +285,10 @@ pub fn export_video(
         let _ = fs::remove_file(&temporary_path);
         return Err(error);
     }
-    File::open(&temporary_path)
+    // Windows flushes only through a handle with write access.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&temporary_path)
         .and_then(|file| file.sync_all())
         .map_err(|error| format!("could not flush MP4 before publication: {error}"))?;
     if processes.is_shutdown() || !control.begin_publication() {
@@ -593,7 +596,7 @@ fn push_diagnostic(diagnostics: &mut Vec<String>, line: String) {
 
 fn sync_directory(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
-    File::open(path)?.sync_all()?;
+    fs::File::open(path)?.sync_all()?;
     #[cfg(not(unix))]
     let _ = path;
     Ok(())
