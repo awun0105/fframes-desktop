@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Agent tool broker on Windows"
-status: in-progress
+status: completed
 priority: P1
 effort: "3-5d"
 dependencies: []
@@ -31,7 +31,7 @@ Agents on Windows get the same project tools (build, preview, inspect through `s
 - [x] Transport trait
 - [x] Named-pipe transport with SID checks
 - [x] Fallback limited to real failures
-- [ ] Windows tests (green on this Windows VM; the self-hosted Windows and Linux CI jobs run on push, macOS CI on a pull request or manual dispatch of Desktop CI)
+- [x] Windows tests (Desktop self-hosted validation run 38753289498 and Desktop CI run 38753289654 on commit 34a342f, 2026-10-15). The restricted-token client first failed DLL initialisation (`0xC0000142`) on the runner; it now uses every enabled group of the test's token as restricting SIDs.
 
 ## Progress (2026-10-15)
 

@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Runtime writer containment"
-status: in-progress
+status: completed
 priority: P1
 effort: "2d (re-estimated after the scout: the Job Object launch, the escape scans and the capture gate already existed)"
 dependencies: []
@@ -46,7 +46,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 - [x] Runtime verification replaces the ledger
 - [x] Launch identity kept
 - [x] Ledger code removed
-- [ ] Containment tests on three platforms (green on this Windows VM; Linux and macOS CI need a push)
+- [x] Containment tests on three platforms (Desktop self-hosted validation run 38753289498 and Desktop CI run 38753289654 on commit 34a342f, 2026-10-15)
 
 ## Progress (2026-10-15)
 

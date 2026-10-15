@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "macOS publication and executor"
-status: in-progress
+status: completed
 priority: P1
 effort: "3-4d"
 dependencies: []
@@ -25,7 +25,7 @@ Publication, the executor and crash recovery work on macOS (Apple Silicon includ
 - [x] macOS publication
 - [x] Probe
 - [x] Executor and fault injection
-- [ ] Suites green on macOS CI (needs a pushed branch or pull request; not run yet)
+- [x] Suites green on macOS CI (Desktop self-hosted validation run 38753289498 and Desktop CI run 38753289654 on commit 34a342f, 2026-10-15)
 
 ## Success criteria
 

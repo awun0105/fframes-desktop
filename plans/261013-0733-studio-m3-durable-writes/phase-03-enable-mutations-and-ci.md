@@ -30,7 +30,8 @@ Edit transactions, preset apply and agent apply run on Windows and macOS, protec
 - [x] Stand-ins removed
 - [x] `MUTATION_QUALIFIED` removed; gates open on probe
 - [x] Apply-gate test rewritten; parity assertions flipped
-- [ ] Workflow suites on three platforms (green on this Windows VM; Linux and macOS CI pending)
+- [x] Workflow suites on three platforms (Desktop self-hosted validation run 38753289498 and Desktop CI run 38753289654 on commit 34a342f, 2026-10-15)
+- [ ] Preset apply and agent Apply by hand in the GUI on this VM (not done: needs a person at the RDP session)
 - [x] Docs sentence updated
 
 ## Success criteria
@@ -58,6 +59,6 @@ Edit transactions, preset apply and agent apply run on Windows and macOS, protec
 - `edit_transaction/mod.rs` has no platform gate left. The stand-ins for platforms other than Linux, macOS and Windows are gone; `studio_project::publish` has no implementation for any other platform, so they were never reachable.
 - `MUTATION_QUALIFIED` is gone. `preset_mutation` and `apply_gate()` both open when `probe_no_clobber` succeeds on the project root; `apply_gate()` already did.
 - `app/tests/agent_workflow_apply_gate.rs` runs on every platform: Apply publishes where the probe succeeds, and with only the link-based pair (`force_publication_mechanism(Link)`, refused by the real gate) the candidate stays reviewable and exportable with nothing written. The parity harness no longer has `mutation_open`; its preset and agent Apply cases assert the real outcome everywhere.
-- Ungated suites: `agent_workflow`, `agent_workflow_ui`, `preset_workflow`, `promotion_handoff`, `provider_handoff`, `scoped_editing` (app) and `preset_state`, `promotion_install`, `review_history` (engine). Only one test needed a change for Windows: a working-copy path compared as a string with `/`. `agent_task.rs` keeps its Linux-only containment cases, which phase 4 covers.
-- This VM: 1188 tests in the desktop packages, all green after that fix; clippy and fmt clean. The CI workflows already run `cargo test` for these packages on Linux, Windows and macOS, so no workflow change was needed.
+- Ungated suites: `agent_workflow`, `agent_workflow_ui`, `preset_workflow`, `promotion_handoff`, `provider_handoff`, `scoped_editing` (app) and `preset_state`, `promotion_install`, `review_history` (engine). On this VM only one test needed a change: a working-copy path compared as a string with `/`. CI found more: the Windows runner has no `env`, `sleep` or `cp` (Git Bash tools on this VM's bash PATH), so those tests now use a marker file, `Start-Sleep` and a Rust copy; a Unix symlink was removed as a directory; and on macOS a late FSEvents hint had to settle before the install fence. `agent_task.rs` keeps its Linux-only containment cases, which phase 4 covers.
+- This VM: 1187 of 1188 tests passed in the desktop packages, and the one failure passed after that fix (the full run was not repeated); clippy and fmt clean. The CI workflows already run `cargo test` for these packages on Linux, Windows and macOS, so no workflow change was needed.
 - Docs: `architecture.md` (preset mutation) and the README Apply paragraph now name the per-platform rename primitives and the probe.
