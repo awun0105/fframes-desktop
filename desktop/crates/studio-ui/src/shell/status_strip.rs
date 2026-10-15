@@ -114,7 +114,7 @@ impl StudioShell {
     pub(super) fn render_status_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let p = self.presentation.project.as_ref()?;
         let theme = self.theme;
-        let expanded = status_strip_expanded(&p.job, self.error.is_some(), self.status_open);
+        let expanded = status_strip_expanded(self.error.is_some(), self.status_open);
         let tone = if p.source == p.accepted {
             Tone::Success
         } else {
@@ -185,9 +185,10 @@ impl StudioShell {
     }
 }
 
-/// The status strip opens when asked to, while a job is active and on any error.
-fn status_strip_expanded(job: &str, has_error: bool, user_open: bool) -> bool {
-    user_open || has_error || matches!(job, "Queued" | "Running" | "Cancelling")
+/// The status strip opens when asked to and on any error. A running job only shows in the
+/// one-line summary: the detail lines say nothing about it.
+fn status_strip_expanded(has_error: bool, user_open: bool) -> bool {
+    user_open || has_error
 }
 
 /// First line as the notice title; the full text as details when there is more.
@@ -202,13 +203,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn status_strip_expands_for_errors_and_active_jobs() {
-        assert!(!status_strip_expanded("Idle", false, false));
-        assert!(!status_strip_expanded("Succeeded", false, false));
-        assert!(status_strip_expanded("Idle", true, false));
-        assert!(status_strip_expanded("Running", false, false));
-        assert!(status_strip_expanded("Cancelling", false, false));
-        assert!(status_strip_expanded("Idle", false, true));
+    fn status_strip_expands_only_when_asked_or_on_errors() {
+        assert!(!status_strip_expanded(false, false));
+        assert!(status_strip_expanded(true, false));
+        assert!(status_strip_expanded(false, true));
     }
 
     #[test]
