@@ -6,19 +6,21 @@ use super::*;
 /// One consistent look at the process table. `complete` is false whenever any part of
 /// the enumeration could not be read, so an absent member can never be mistaken for a
 /// vanished one.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Debug, Clone, Default)]
 pub(super) struct ProcScan {
     pub(super) entries: Vec<ProcEntry>,
     pub(super) complete: bool,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Debug, Clone)]
 pub(super) struct ProcEntry {
     pub(super) pid: u32,
     pub(super) ppid: u32,
     pub(super) pgrp: i32,
+    /// Kernel start time (Linux); zero on macOS, whose whole-table scan cannot read it
+    /// for other users' processes. The leader is checked separately there.
     pub(super) start: u64,
     pub(super) zombie: bool,
 }
@@ -182,6 +184,81 @@ pub(super) fn mac_process_group_list_failed(count: libc::c_int, errno: libc::c_i
 #[cfg(target_os = "macos")]
 pub(super) fn mac_process_info_confirms_exit(read: libc::c_int, errno: libc::c_int) -> bool {
     read == 0 && errno == libc::ESRCH
+}
+
+/// Every process on the machine with its parent and group, for the escape scan.
+/// `PROC_PIDT_SHORTBSDINFO` is readable for every user's processes (the full BSD info
+/// is not), so only a process that vanished between listing and reading is skipped;
+/// any other failure leaves the scan incomplete.
+#[cfg(target_os = "macos")]
+pub(super) fn scan_all_processes() -> ProcScan {
+    let mut scan = ProcScan {
+        entries: Vec::new(),
+        complete: true,
+    };
+    let mut capacity = 1024usize;
+    let pids = loop {
+        let Ok(buffer_size) = libc::c_int::try_from(capacity * std::mem::size_of::<libc::pid_t>())
+        else {
+            scan.complete = false;
+            return scan;
+        };
+        let mut pids = vec![0 as libc::pid_t; capacity];
+        // SAFETY: `__error` returns this thread's errno storage.
+        unsafe { *libc::__error() = 0 };
+        // SAFETY: libproc writes at most `buffer_size` bytes to this pid buffer.
+        let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), buffer_size) };
+        // SAFETY: as above.
+        let errno = unsafe { *libc::__error() };
+        if mac_process_group_list_failed(count, errno) {
+            scan.complete = false;
+            return scan;
+        }
+        let count = count as usize;
+        if count < capacity {
+            pids.truncate(count);
+            break pids;
+        }
+        if capacity >= 1_048_576 {
+            scan.complete = false;
+            return scan;
+        }
+        capacity *= 2;
+    };
+    for pid in pids.into_iter().filter(|&pid| pid > 0) {
+        let mut info = std::mem::MaybeUninit::<libc::proc_bsdshortinfo>::zeroed();
+        // SAFETY: `__error` returns this thread's errno storage.
+        unsafe { *libc::__error() = 0 };
+        // SAFETY: `info` is a correctly sized output buffer for PROC_PIDT_SHORTBSDINFO;
+        // a nonzero arg includes processes not yet reaped by their parent.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDT_SHORTBSDINFO,
+                1,
+                info.as_mut_ptr().cast(),
+                std::mem::size_of::<libc::proc_bsdshortinfo>() as libc::c_int,
+            )
+        };
+        // SAFETY: as above.
+        let errno = unsafe { *libc::__error() };
+        if read != std::mem::size_of::<libc::proc_bsdshortinfo>() as libc::c_int {
+            if !mac_process_info_confirms_exit(read, errno) {
+                scan.complete = false;
+            }
+            continue;
+        }
+        // SAFETY: proc_pidinfo returned exactly the initialized structure size.
+        let info = unsafe { info.assume_init() };
+        scan.entries.push(ProcEntry {
+            pid: info.pbsi_pid,
+            ppid: info.pbsi_ppid,
+            pgrp: info.pbsi_pgid as i32,
+            start: 0,
+            zombie: info.pbsi_status == libc::SZOMB,
+        });
+    }
+    scan
 }
 
 /// Lists every process in a group, including zombies, via libproc. macOS does not
@@ -377,7 +454,7 @@ pub(super) fn membership_with(
     GroupMembership::Present
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(super) fn escaped_in_scan(
     scan: &ProcScan,
     root_pid: u32,

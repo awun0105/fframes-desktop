@@ -472,8 +472,9 @@ impl TrackedChild {
     /// - Windows: the child was assigned to a job that refuses breakaway and
     ///   `IsProcessInJob` confirmed it while the child was still suspended (otherwise
     ///   the spawn failed).
-    /// - Linux: the child leads its own process group (pgid = pid, start time pinned),
-    ///   and the `/proc` escape scan reports any descendant that leaves it.
+    /// - Linux and macOS: the child leads its own process group (pgid = pid, start time
+    ///   pinned), and the escape scan (`/proc`, or libproc's whole process table)
+    ///   reports any descendant that leaves it.
     /// - Elsewhere no descendant scan exists, so nothing rules out a writer that left
     ///   the group: [`WriterOwnership::Unknown`].
     ///
@@ -488,13 +489,13 @@ impl TrackedChild {
                 ),
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             WriterOwnership::ProcessGroupContained {
                 qualification: format!("runtime: process group {} with escape scan", self.pgid),
             }
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
             WriterOwnership::Unknown
         }
@@ -719,9 +720,34 @@ impl TrackedChild {
             });
             escape_verdict(escaped, gap.as_deref())
         }
-        // No escape scan exists here. The scan only ever demotes; containment is proven by
-        // qualification evidence, so the absence of a scan is not a failed scan.
-        #[cfg(not(any(target_os = "linux", windows)))]
+        #[cfg(target_os = "macos")]
+        {
+            // The whole-table scan carries no start times, so the leader is pinned by its
+            // full BSD info before and after: a recycled leader pid makes the tree
+            // someone else's.
+            let leader = || mac_process_start_time(self.pid as libc::pid_t);
+            if leader() != Some(self.leader_start) {
+                return EscapeScan::Clean;
+            }
+            let scan = scan_all_processes();
+            if !scan.complete {
+                return EscapeScan::Unverifiable(
+                    "the process table could not be read completely".into(),
+                );
+            }
+            if leader() != Some(self.leader_start) {
+                return EscapeScan::Clean;
+            }
+            let escaped = escaped_in_scan(&scan, self.pid, self.pgid, None);
+            if escaped.is_empty() {
+                EscapeScan::Clean
+            } else {
+                EscapeScan::Escaped(escaped)
+            }
+        }
+        // No escape scan exists here; containment is never claimed on such a platform
+        // (`containment` reports `Unknown`), so the absence of a scan is not a failed scan.
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         {
             EscapeScan::Clean
         }

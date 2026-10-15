@@ -90,8 +90,8 @@ fn a_launch_reports_the_containment_this_platform_can_verify() {
     opts.arg("30");
     let mut child = spawn_tracked(opts).expect("spawn sleep");
     let ownership = child.containment();
-    if cfg!(target_os = "linux") {
-        // Its own process group, watched by the /proc escape scan.
+    if cfg!(any(target_os = "linux", target_os = "macos")) {
+        // Its own process group, watched by the escape scan.
         assert!(
             matches!(&ownership, WriterOwnership::ProcessGroupContained { qualification }
                 if qualification.starts_with("runtime:")),
@@ -303,7 +303,7 @@ fn process_state(pid: i32) -> Option<String> {
     (!state.is_empty()).then_some(state)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn wait_for_escaped_descendant(mut observe: impl FnMut() -> Vec<u32>, helper: u32) -> Vec<u32> {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -367,8 +367,8 @@ fn setsid_escaped_helper_survives_group_verification_and_is_observable_only_whil
         "python3 -c 'import os, sys; os.setsid(); print(os.getpid(), flush=True); os.execvp(sys.argv[1], sys.argv[1:])' sleep 30 & wait",
     );
     let helper = read_pid_line(&mut child);
-    // Linux can see the escape while the helper is still a descendant.
-    #[cfg(target_os = "linux")]
+    // The escape scan sees the helper while it is still a descendant.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     assert_eq!(
         wait_for_escaped_descendant(
             || match child.escaped_descendants() {
@@ -396,10 +396,16 @@ fn setsid_escaped_helper_survives_group_verification_and_is_observable_only_whil
 }
 
 #[test]
-fn writer_ownership_is_qualified_only_for_process_group_containment() {
+fn writer_ownership_is_qualified_only_for_verified_containment() {
     assert!(
         WriterOwnership::ProcessGroupContained {
             qualification: "fixture".into()
+        }
+        .is_qualified()
+    );
+    assert!(
+        WriterOwnership::JobObjectContained {
+            verification: "fixture".into()
         }
         .is_qualified()
     );
