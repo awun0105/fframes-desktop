@@ -95,3 +95,8 @@ Order, one commit per step, each green in CI:
 - Deleted `m3_development_evidence.rs` and `app/examples/probe_m6_providers.rs` (`probe_adapter` keeps callers in `agent/jobs.rs` and the harness tests).
 - **Coverage gaps left by `m3_development_evidence.rs`** (no surviving test asserts these): a provider event flood never overflows the queue; each accepted edit compiles exactly once per cycle; CLI and MCP parity for `project_context`, `timeline` and `inspect` (only `render_frame` is compared) and the CLI capability dying with its task; the resident-row limits equal their constants; adapter PIDs are not alive after close; the authentic adapter probe (needs a real adapter by design). Partially covered: tool-card row counts, leases released to zero (a support helper, not a dedicated test).
 - **Bounds probes:** gpui's `VisualTestContext::debug_bounds` with `.debug_selector` could replace them in the headless parity tests, but the X11 tests read bounds from a real process's telemetry, so the probes stay.
+
+### Step 3b: the X11 shell tests run in full CI
+
+- The Linux full job runs `x11_shell` (`--ignored`, one test at a time) after the audio parity step, whose installed SDK (`$RUNNER_TEMP/m2-home/.fframes/sdk/active`) is the tests' `SDK_ACTIVE`; the canvas test installs its own from `SDK_BUNDLE`. The step exports `CARGO_HOME` and `RUSTUP_HOME` from the job's home, because the tests give the app process its own `HOME`.
+- These tests had never run in CI before this step; its first full run is their first run on the runner.

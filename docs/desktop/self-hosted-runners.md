@@ -18,6 +18,7 @@ gh workflow run "Desktop self-hosted validation" -R khanhthanhdev/fframes-deskto
 | fmt, tests, clippy, protocol/runtime tests, packaging and release gate tests | self-hosted Linux and Windows | every push |
 | SDK and Windows test build | self-hosted Windows | pushes to `main`, full runs |
 | Real worker, SDK, managed, portable, preview, timeline, audio parity | self-hosted Linux and Windows | full runs |
+| X11 shell tests (the real app on Xvfb, driven with xdotool) | self-hosted Linux | full runs |
 | Linux test build | self-hosted Linux | full runs |
 | fmt, tests, clippy for pull requests from other repositories | hosted Ubuntu ([Desktop CI](../../.github/workflows/desktop.yml)) | those pull requests |
 
