@@ -1,5 +1,5 @@
-//! The left column and the empty state: the Project, Assets and Style tabs, recent projects
-//! and the agent column.
+//! The left column and the empty state: the Agent, Project, Assets and Style tabs and recent
+//! projects.
 
 use std::path::PathBuf;
 
@@ -10,7 +10,7 @@ use gpui::{
 use studio_engine::engine::backend::Command;
 use studio_theme::{METRICS, TextStyle, text_style};
 
-use super::sections::{Section, section_probe};
+use super::sections::{Section, box_probe, section_probe};
 use super::{Picker, StudioShell};
 use crate::kit::{
     Badge, Card, CollapsibleSection, DISABLED_OPACITY, EditorButton, Handler, Icon, IconButton,
@@ -41,6 +41,7 @@ impl StudioShell {
             });
         });
         let content = match left_tab_content(self.left_tab) {
+            LeftContent::Agent => self.render_agent_tab(cx),
             LeftContent::Files => self.render_project_tab(cx),
             LeftContent::Assets => self.render_assets_tab(cx),
             LeftContent::Presets => self.render_style_tab(cx),
@@ -524,27 +525,26 @@ impl StudioShell {
             .into_any_element()
     }
 
-    pub(super) fn render_agent_column(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme = self.theme;
+    /// The agent panel, filling the sidebar below the tab rail: transcript above, composer
+    /// pinned at the bottom.
+    fn render_agent_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         div()
             .relative()
-            .child(section_probe(Section::Agent, cx))
-            .w(px(METRICS.agent_panel_w))
-            .h_full()
-            .flex_none()
+            .flex_1()
             .min_h_0()
+            .w_full()
+            .flex()
+            .flex_col()
             .overflow_hidden()
-            .rounded(px(METRICS.radius_card))
-            .border_1()
-            .border_color(theme.editor.line)
-            .bg(theme.editor.card)
             .child(self.panel.clone())
+            .child(box_probe("agent", cx))
             .into_any_element()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LeftTab {
+    Agent,
     Project,
     Assets,
     Style,
@@ -553,6 +553,7 @@ pub(super) enum LeftTab {
 /// What a left-column tab shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeftContent {
+    Agent,
     Files,
     Assets,
     Presets,
@@ -563,6 +564,7 @@ const LIST_ROW_H: f32 = 28.;
 
 fn left_tab_content(tab: LeftTab) -> LeftContent {
     match tab {
+        LeftTab::Agent => LeftContent::Agent,
         LeftTab::Project => LeftContent::Files,
         LeftTab::Assets => LeftContent::Assets,
         LeftTab::Style => LeftContent::Presets,
@@ -591,11 +593,17 @@ fn sdk_status_tone(busy: bool, ready: bool) -> Tone {
 }
 
 impl LeftTab {
-    const ALL: [LeftTab; 3] = [LeftTab::Project, LeftTab::Assets, LeftTab::Style];
+    const ALL: [LeftTab; 4] = [
+        LeftTab::Agent,
+        LeftTab::Project,
+        LeftTab::Assets,
+        LeftTab::Style,
+    ];
 
     /// Also the tab's element id.
     fn name(self) -> &'static str {
         match self {
+            LeftTab::Agent => "Agent",
             LeftTab::Project => "Project",
             LeftTab::Assets => "Assets",
             LeftTab::Style => "Style",
@@ -604,6 +612,7 @@ impl LeftTab {
 
     fn icon(self) -> Icon {
         match self {
+            LeftTab::Agent => Icon::Bot,
             LeftTab::Project => Icon::Folder,
             LeftTab::Assets => Icon::Image,
             LeftTab::Style => Icon::Palette,
@@ -611,7 +620,7 @@ impl LeftTab {
     }
 
     fn from_index(index: usize) -> Self {
-        Self::ALL.get(index).copied().unwrap_or(LeftTab::Project)
+        Self::ALL.get(index).copied().unwrap_or(LeftTab::Agent)
     }
 }
 
@@ -621,6 +630,7 @@ mod tests {
 
     #[test]
     fn left_tab_content_maps_each_tab() {
+        assert_eq!(left_tab_content(LeftTab::Agent), LeftContent::Agent);
         assert_eq!(left_tab_content(LeftTab::Project), LeftContent::Files);
         assert_eq!(left_tab_content(LeftTab::Assets), LeftContent::Assets);
         assert_eq!(left_tab_content(LeftTab::Style), LeftContent::Presets);
@@ -642,10 +652,10 @@ mod tests {
     #[test]
     fn left_tabs_keep_their_element_ids() {
         let names: Vec<_> = LeftTab::ALL.iter().map(|t| t.name()).collect();
-        assert_eq!(names, ["Project", "Assets", "Style"]);
+        assert_eq!(names, ["Agent", "Project", "Assets", "Style"]);
         for (index, tab) in LeftTab::ALL.into_iter().enumerate() {
             assert_eq!(LeftTab::from_index(index), tab);
         }
-        assert_eq!(LeftTab::from_index(9), LeftTab::Project);
+        assert_eq!(LeftTab::from_index(9), LeftTab::Agent);
     }
 }

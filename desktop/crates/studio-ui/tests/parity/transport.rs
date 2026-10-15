@@ -37,7 +37,7 @@ fn playback_renders_the_player_and_leaves_the_other_sections(cx: &mut gpui::Test
     assert_eq!(after["playing"], true);
     let grew = |section| renders(&after, section) - renders(&before, section);
     assert!(grew("player") >= 10, "{:#}", after["renders"]);
-    for section in ["header", "sidebar", "agent"] {
+    for section in ["header", "sidebar"] {
         assert!(
             grew(section) <= 1,
             "{section}: {:#} -> {:#}",

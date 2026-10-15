@@ -26,7 +26,6 @@ pub struct Metrics {
     pub transport_h: f32,
     pub gutter: f32,
     pub left_column_w: f32,
-    pub agent_panel_w: f32,
     pub timeline_default_h: f32,
     pub timeline_min_h: f32,
     pub player_min_h: f32,
@@ -63,9 +62,8 @@ pub const METRICS: Metrics = Metrics {
     toolbar_h: 44.,
     transport_h: 48.,
     gutter: 8.,
-    // fframes value: today's left column width (Cap has no left column).
-    left_column_w: 248.,
-    agent_panel_w: 400.,
+    // Cap's editor sidebar width; it also hosts the agent tab.
+    left_column_w: 416.,
     timeline_default_h: 260.,
     timeline_min_h: 240.,
     player_min_h: 320.,
@@ -119,12 +117,11 @@ mod tests {
                 m.transport_h,
                 m.gutter,
                 m.left_column_w,
-                m.agent_panel_w,
                 m.timeline_default_h,
                 m.timeline_min_h,
                 m.player_min_h
             ],
-            [52., 46., 44., 48., 8., 248., 400., 260., 240., 320.]
+            [52., 46., 44., 48., 8., 416., 260., 240., 320.]
         );
         assert_eq!(
             [m.ruler_h, m.track_h, m.track_gap, m.track_gutter_w],

@@ -11,6 +11,7 @@ use studio_engine::engine::backend::Command;
 use studio_engine::presets::PresetCommand;
 use studio_engine::services::audio_service::OutputDevice;
 
+use super::left_column::LeftTab;
 use super::{Picker, StudioShell};
 use crate::actions;
 
@@ -97,6 +98,10 @@ impl StudioShell {
                 s.panel.update(cx, |panel, cx| panel.detect_agents(cx))
             }))
             .on_action(cx.listener(|s, _: &actions::FocusPrompt, window, cx| {
+                if s.left_tab != LeftTab::Agent {
+                    s.left_tab = LeftTab::Agent;
+                    cx.notify();
+                }
                 s.panel
                     .update(cx, |panel, cx| panel.focus_prompt(window, cx))
             }))

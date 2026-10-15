@@ -2,11 +2,13 @@
 use crate::harness::Studio;
 use serde_json::Value;
 
-const GUTTER: f64 = 8.;
 const HEADER_H: f64 = 52.;
 const CAPTION_BUTTON_W: f64 = 46.;
-/// The sidebar and agent probes fill a card inside its 1 px border.
+/// The sidebar probe fills a card inside its 1 px border.
 const BORDERS: f64 = 2.;
+const SIDEBAR_W: f64 = 416.;
+/// The sidebar card's padding around the open tab.
+const SIDEBAR_PADDING: f64 = 16.;
 
 fn button_width(t: &Value, id: &str) -> Option<f64> {
     t["buttons"][id][2].as_f64()
@@ -90,14 +92,19 @@ fn the_sections_fill_their_boxes(cx: &mut gpui::TestAppContext) {
     // The sidebar shares the row above the timeline with the player.
     let sidebar = bounds(&t, "sidebar");
     assert!(
-        close(sidebar[3] + BORDERS, available - timeline),
+        close(sidebar[3] + BORDERS, available - timeline) && close(sidebar[2] + BORDERS, SIDEBAR_W),
         "sidebar {sidebar:?}, {available} available, timeline {timeline}"
     );
-    // The agent column runs the editor column's full height.
+    // The agent panel is the sidebar's open tab: its full inner width, down to its padding.
     let agent = bounds(&t, "agent");
     assert!(
-        close(agent[3] + BORDERS, available + GUTTER),
-        "agent {agent:?}, editor column {}",
-        available + GUTTER
+        close(agent[0], sidebar[0] + SIDEBAR_PADDING)
+            && close(agent[2], sidebar[2] - 2. * SIDEBAR_PADDING)
+            && close(
+                agent[1] + agent[3],
+                sidebar[1] + sidebar[3] - SIDEBAR_PADDING
+            )
+            && agent[3] > sidebar[3] / 2.,
+        "agent {agent:?} in the sidebar {sidebar:?}"
     );
 }

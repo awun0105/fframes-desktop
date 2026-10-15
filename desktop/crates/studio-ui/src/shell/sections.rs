@@ -1,7 +1,7 @@
 //! Parts of the window that render as views of their own, after Cap's `EditorSectionView`.
 //!
 //! Each section renders the shell's own `render_*` method and re-renders whenever the shell
-//! notifies. The header, sidebar and agent column are mounted `.cached(..)`, so a new frame,
+//! notifies. The header and sidebar are mounted `.cached(..)`, so a new frame,
 //! which notifies only the player section, leaves them as they were.
 
 use gpui::{
@@ -15,7 +15,6 @@ use super::StudioShell;
 pub(super) enum Section {
     Header,
     Sidebar,
-    Agent,
     Player,
 }
 
@@ -24,7 +23,6 @@ impl Section {
         match self {
             Section::Header => "header",
             Section::Sidebar => "sidebar",
-            Section::Agent => "agent",
             Section::Player => "player",
         }
     }
@@ -59,7 +57,6 @@ impl Render for SectionView {
         shell.update(cx, |shell, cx| match section {
             Section::Header => shell.render_header(cx),
             Section::Sidebar => shell.render_left_column(cx),
-            Section::Agent => shell.render_agent_column(cx),
             Section::Player => shell.render_player_area(cx),
         })
     }
@@ -105,7 +102,6 @@ pub(super) fn box_probe(
 pub(super) struct Sections {
     pub(super) header: Entity<SectionView>,
     pub(super) sidebar: Entity<SectionView>,
-    pub(super) agent: Entity<SectionView>,
     pub(super) player: Entity<SectionView>,
 }
 
@@ -116,12 +112,11 @@ impl Sections {
         Self {
             header: view(Section::Header),
             sidebar: view(Section::Sidebar),
-            agent: view(Section::Agent),
             player: view(Section::Player),
         }
     }
 
-    pub(super) fn all(&self) -> [&Entity<SectionView>; 4] {
-        [&self.header, &self.sidebar, &self.agent, &self.player]
+    pub(super) fn all(&self) -> [&Entity<SectionView>; 3] {
+        [&self.header, &self.sidebar, &self.player]
     }
 }

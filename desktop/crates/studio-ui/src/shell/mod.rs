@@ -358,7 +358,7 @@ impl StudioShell {
             in_flight: None,
             error: None,
             failed_open: None,
-            left_tab: LeftTab::Project,
+            left_tab: LeftTab::Agent,
             sdk_open: true,
             recents_open: true,
             status_open: false,

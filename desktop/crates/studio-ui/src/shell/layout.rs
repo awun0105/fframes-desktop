@@ -1,6 +1,6 @@
 //! The window's root layout, after Cap's editor: header, notices, then the editor column
-//! (the player beside the sidebar, above the timeline and its resize grip) and the agent
-//! column.
+//! (the player beside the sidebar, whose Agent tab holds the agent panel, above the
+//! timeline and its resize grip).
 
 use gpui::{
     Context, CursorStyle, DispatchPhase, InteractiveElement, IntoElement, MouseButton,
@@ -287,12 +287,6 @@ impl Render for StudioShell {
                     .child(sidebar),
             );
         }
-        let agent = sections.agent.clone().cached(
-            StyleRefinement::default()
-                .w(px(METRICS.agent_panel_w))
-                .flex_none()
-                .min_h_0(),
-        );
         Self::on_actions(div(), cx)
             .size_full()
             .key_context(WORKSPACE)
@@ -337,7 +331,6 @@ impl Render for StudioShell {
                             .flex()
                             .gap(gutter)
                             .child(editor)
-                            .child(agent)
                             .into_any_element()
                     }),
             )
