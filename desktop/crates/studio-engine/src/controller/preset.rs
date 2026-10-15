@@ -14,7 +14,7 @@ use crate::{
         ApplyGate, Boundary, PlanError, PromotionError, RecordSeed, TaskRevisionRecord,
         TransactionKind, plan as plan_transaction, prompt_summary,
     },
-    preset_state::{self, FileChange, MUTATION_QUALIFIED, ProjectStyle},
+    preset_state::{self, FileChange, ProjectStyle},
 };
 use std::{fs, io::Write, path::Path};
 use studio_project::SourceRevision;
@@ -47,14 +47,10 @@ pub struct PresetOutcome {
 
 impl Controller {
     /// Whether preset mutation is available, with an actionable reason when it is not.
-    /// Only the qualified platform may publish; a blocked publication gate, an
-    /// unresolved or suspended earlier mutation and a running agent task also disable it.
+    /// It opens when the project's filesystem proves no-clobber publication; a blocked
+    /// publication gate, an unresolved or suspended earlier mutation and a running agent
+    /// task disable it.
     pub fn preset_mutation(&mut self) -> PresetMutation {
-        if !MUTATION_QUALIFIED {
-            return PresetMutation::Disabled(
-                "Preset changes are enabled only on Linux x86_64, where no-clobber publication and crash recovery were qualified; this platform stays read-only until its probes pass".into(),
-            );
-        }
         if let Err(error) = self.ensure_mutable() {
             return PresetMutation::Disabled(error.to_string());
         }

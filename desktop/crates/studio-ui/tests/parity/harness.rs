@@ -27,14 +27,6 @@ pub const FIXTURE_CONFIG: &str = r#"{"frames":90,"fps":30,"scenes":[[0,45],[45,9
 
 const WAIT: Duration = Duration::from_secs(60);
 
-/// A change to project source that is behind a platform gate.
-pub enum Mutation {
-    /// Applying, resetting or overriding a style preset.
-    Preset,
-    /// Publishing an agent's candidate.
-    AgentApply,
-}
-
 pub struct Studio {
     pub cx: TestAppContext,
     window: WindowHandle<StudioShell>,
@@ -154,20 +146,6 @@ impl Studio {
 
     pub fn agent_evidence(&self) -> PathBuf {
         self.path("agent-evidence")
-    }
-
-    /// Whether this platform may make `mutation`: presets are qualified only on Linux
-    /// x86-64, agent Apply only where no-clobber publication is proven (Linux). The gated
-    /// tests assert the real outcome where this holds and "blocked, with the reason shown"
-    /// elsewhere, so qualifying another platform changes only this answer.
-    pub fn mutation_open(&self, mutation: Mutation) -> bool {
-        match mutation {
-            Mutation::Preset => studio_engine::preset_state::MUTATION_QUALIFIED,
-            Mutation::AgentApply => matches!(
-                studio_engine::edit_transaction::probe_apply_gate(&self.project),
-                studio_engine::ApplyGate::Ready(_)
-            ),
-        }
     }
 
     /// Another project next to the fixture, pinned to the same SDK and worker config.

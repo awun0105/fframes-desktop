@@ -3,7 +3,6 @@
 //! history on recovery (H8), the non-mutating compatibility preflight (M2), the saved
 //! history fence (M3), session-bound Undo (M4) and a committed outcome that survives a
 //! bookkeeping failure (M5).
-#![cfg(target_os = "linux")]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;

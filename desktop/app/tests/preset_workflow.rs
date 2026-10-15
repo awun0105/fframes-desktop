@@ -3,7 +3,6 @@
 //! override / reapply / reset, source conflicts, a failed preview and old-preview retention.
 //! No window is opened; the panel's model and the shell's handoff rules are pure functions
 //! of the reports and snapshots proven here (the GPUI process is exercised by `x11_shell`).
-#![cfg(target_os = "linux")]
 
 use parking_lot::Mutex;
 use std::{

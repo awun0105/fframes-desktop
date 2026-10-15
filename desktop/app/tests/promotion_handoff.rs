@@ -1,9 +1,6 @@
 //! Guarded handoff of a validated, published candidate to playback: adoption of the
 //! staged preview under the engine's promotion authorization, re-priming at the latest
 //! seek, matching video/audio identity, and a failed handoff keeping the old preview.
-//! These publication and promotion integration cases run only on Linux, where Apply is
-//! enabled after the no-clobber source publication primitives are qualified.
-#![cfg(target_os = "linux")]
 use serde_json::{Value, json};
 use std::{
     fs,

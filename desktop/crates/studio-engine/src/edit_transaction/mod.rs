@@ -52,7 +52,6 @@ use crate::{
     EngineError, candidate_validation::BuildIdentity, journal::TaskJournal, state::OpenSession,
 };
 use serde::{Deserialize, Serialize};
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 use std::collections::BTreeSet;
 use std::{collections::BTreeMap, io, path::Path};
 use studio_project::{
@@ -225,7 +224,6 @@ pub fn touched_conflicts(deltas: &[FileDelta], current: &SourceInventory) -> Vec
 /// whose permission bits differ from the bits the edit left (a `chmod` since). Legacy
 /// records that never knew the bits are not examined. Only touches the filesystem to
 /// `lstat` the recorded paths.
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 pub fn mode_conflicts(root: &Path, deltas: &[FileDelta]) -> Vec<PathConflict> {
     use studio_project::publish::Dir;
     let Ok(root_dir) = Dir::open_root(root) else {
@@ -249,11 +247,6 @@ pub fn mode_conflicts(root: &Path, deltas: &[FileDelta]) -> Vec<PathConflict> {
             })
         })
         .collect()
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-pub fn mode_conflicts(_root: &Path, _deltas: &[FileDelta]) -> Vec<PathConflict> {
-    Vec::new()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -418,13 +411,11 @@ pub struct TransactionIntent {
 }
 
 impl TransactionIntent {
-    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     fn dir_id(&self, path: &str) -> Option<FileId> {
         self.dirs.iter().find(|d| d.path == path).map(|d| d.id)
     }
 
     /// Whether the revision itself removes (and, on rollback, recreates) `path`.
-    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     fn is_vacated(&self, path: &str) -> bool {
         self.ops
             .iter()
@@ -692,7 +683,6 @@ impl ApplyGate {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 pub fn probe_apply_gate(root: &Path) -> ApplyGate {
     match studio_project::publish::Dir::open_root(root) {
         Err(e) => ApplyGate::Blocked(format!("{}: {e}", root.display())),
@@ -701,13 +691,6 @@ pub fn probe_apply_gate(root: &Path) -> ApplyGate {
             Err(reason) => ApplyGate::Blocked(reason),
         },
     }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-pub fn probe_apply_gate(_root: &Path) -> ApplyGate {
-    ApplyGate::Blocked(
-        "no-clobber source publication is only proven on Linux, macOS and Windows; this platform's Apply stays blocked until its primitives are qualified".into(),
-    )
 }
 
 // ---- planning --------------------------------------------------------------------------
@@ -736,12 +719,10 @@ pub struct RecordSeed {
     pub preset: Option<crate::preset_state::PresetProvenance>,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 fn split_path(path: &str) -> (&str, &str) {
     path.rsplit_once('/').unwrap_or(("", path))
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 fn conflict(path: &str, reason: impl Into<String>) -> PlanError {
     PlanError::Conflict {
         path: path.to_owned(),
@@ -749,12 +730,10 @@ fn conflict(path: &str, reason: impl Into<String>) -> PlanError {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 fn exec_mode(base: u32) -> u32 {
     base | ((base & 0o444) >> 2)
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 fn plain_mode(base: u32) -> u32 {
     base & !0o111
 }
@@ -763,7 +742,6 @@ fn plain_mode(base: u32) -> u32 {
 /// original's exact permission bits (a content-only replacement of a `0744` file stays
 /// `0744`); a flip adds or removes the executable bits following the readable classes;
 /// new files get the portable defaults.
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 fn after_mode(before_mode: Option<u32>, executable: bool) -> u32 {
     match before_mode {
         Some(mode) if (mode & 0o111 != 0) == executable => mode,
@@ -784,7 +762,6 @@ pub const LINK_REFUSED: &str = "linkat+unlinkat cannot move a live project file 
 ///
 /// `forced` simulates a filesystem where only that mechanism exists: `Link` is refused
 /// ([`LINK_REFUSED`]) because it can never move a live name.
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 pub fn plan(
     root: &Path,
     current: &SourceInventory,
@@ -1106,31 +1083,13 @@ pub fn plan(
     })
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-pub fn plan(
-    _root: &Path,
-    _current: &SourceInventory,
-    _candidate: &SourceInventory,
-    _seed: RecordSeed,
-    _forced: Option<NoClobber>,
-) -> Result<TransactionIntent, PlanError> {
-    match probe_apply_gate(Path::new(".")) {
-        ApplyGate::Blocked(reason) => Err(PlanError::GateBlocked(reason)),
-        ApplyGate::Ready(_) => unreachable!("only Linux can publish"),
-    }
-}
-
 // ---- execution -------------------------------------------------------------------------
 
 /// Executes and recovers transactions against one project root.
 pub struct Executor<'a> {
-    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     inner: executor::Machine<'a>,
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-    _marker: std::marker::PhantomData<&'a ()>,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 impl<'a> Executor<'a> {
     pub fn new(
         root: &'a Path,
@@ -1160,31 +1119,6 @@ impl<'a> Executor<'a> {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-impl<'a> Executor<'a> {
-    pub fn new(
-        _root: &'a Path,
-        _checkpoints: &'a Checkpoints,
-        _journal: &'a mut TaskJournal,
-        _hooks: &'a dyn TransactionHooks,
-    ) -> Result<Self, EngineError> {
-        // Opening a project must keep working everywhere; only mutation is unsupported.
-        Ok(Self {
-            _marker: std::marker::PhantomData,
-        })
-    }
-    pub fn execute(&mut self, _: &TransactionIntent) -> Result<Outcome, Interrupt> {
-        Err(Interrupt::Journal("unsupported platform".into()))
-    }
-    pub fn recover(
-        &mut self,
-        _: &[crate::journal::ReplayedTransaction],
-    ) -> Result<RecoveryReport, Interrupt> {
-        Ok(RecoveryReport::default())
-    }
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 mod executor;
 
 #[cfg(test)]
@@ -1323,7 +1257,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     fn published_modes_keep_permissions_and_follow_the_executable_state() {
         assert_eq!(after_mode(Some(0o600), true), 0o700);
         assert_eq!(after_mode(Some(0o644), true), 0o755);
@@ -1334,7 +1267,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     fn an_unchanged_executable_status_keeps_the_full_mode() {
         // Executable already (any x bit counts) and staying executable: untouched.
         assert_eq!(after_mode(Some(0o744), true), 0o744);

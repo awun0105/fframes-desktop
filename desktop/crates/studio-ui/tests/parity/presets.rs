@@ -1,5 +1,5 @@
-//! Preset/Style panel: apply and reset (gated: see `Studio::mutation_open`).
-use crate::harness::{Mutation, Studio};
+//! Preset/Style panel: apply and reset.
+use crate::harness::Studio;
 use serde_json::Value;
 use std::fs;
 use studio_ui::actions::{ApplyPreset, ResetPreset, SetStyleOverride};
@@ -33,16 +33,6 @@ fn apply_and_reset(cx: &mut gpui::TestAppContext) {
     let source = studio.telemetry()["current_source_revision"].clone();
     let style = style_files(&studio);
     studio.dispatch(ApplyPreset { key: key.clone() });
-    if !studio.mutation_open(Mutation::Preset) {
-        let refused = studio.wait("apply refused", |t| {
-            t["busy"] == false && !t["presets"]["status"].is_null()
-        });
-        assert_blocked(&studio, &refused, &source, &style);
-        studio.dispatch(ResetPreset { key });
-        let refused = studio.wait("reset refused", |t| t["busy"] == false);
-        assert_blocked(&studio, &refused, &source, &style);
-        return;
-    }
     let applied = studio.wait("preset applied", |t| {
         t["presets"]["applied"]["id"]
             .as_str()
@@ -94,17 +84,4 @@ fn style_files(studio: &Studio) -> Vec<(String, Vec<u8>)> {
         .unwrap_or_default();
     files.sort();
     files
-}
-
-/// Refused with the gate's reason, shown in the panel and the shell, and nothing written.
-fn assert_blocked(studio: &Studio, t: &Value, source: &Value, style: &[(String, Vec<u8>)]) {
-    let reason = t["presets"]["blocked"]
-        .as_str()
-        .unwrap_or_else(|| panic!("presets are not shown as blocked: {:#}", t["presets"]));
-    assert!(!reason.is_empty());
-    let status = t["presets"]["status"][0].as_str().unwrap();
-    assert!(status.starts_with("Not applied:"), "{status}");
-    assert!(t["error"].as_str().is_some_and(|e| !e.is_empty()), "{t:#}");
-    assert_eq!(&t["current_source_revision"], source);
-    assert_eq!(style_files(studio), style);
 }

@@ -37,11 +37,6 @@ use studio_project::{Manifest, ProjectPath, SourceInventory, manifest::PresetRef
 /// Largest style file read back from a project (they are all small JSON/text).
 const MAX_STYLE_FILE: u64 = 8 * 1024 * 1024;
 
-/// Whether this build may publish preset mutations. Only the platform whose no-clobber
-/// publication and crash-recovery gates were measured is enabled; every other
-/// OS/architecture combination stays disabled until its own probes pass.
-pub const MUTATION_QUALIFIED: bool = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-
 /// What a preset mutation did, recorded durably in the journal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -4,8 +4,6 @@
 //! window and shell hosting glue are pure functions of snapshots, so they are proven
 //! against what the workflow actually publishes. (The GPUI process itself is exercised by
 //! `x11_shell.rs`; neither the peer nor these tests qualify a provider.)
-//! The real workflow snapshots include successful Apply, currently qualified only on Linux.
-#![cfg(target_os = "linux")]
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
@@ -358,7 +356,7 @@ fn the_controls_follow_a_real_task_from_start_to_acceptance() {
     assert!(
         lines
             .iter()
-            .any(|(k, v)| *k == "Working copy" && v.ends_with("agent/draft")),
+            .any(|(k, v)| *k == "Working copy" && std::path::Path::new(v).ends_with("agent/draft")),
         "{lines:?}"
     );
     // A follow-up queues behind the running task.

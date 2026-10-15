@@ -27,11 +27,11 @@ Edit transactions, preset apply and agent apply run on Windows and macOS, protec
 
 - [x] Scout
 - [x] Protected-path alias defence with tests
-- [ ] Stand-ins removed
-- [ ] `MUTATION_QUALIFIED` removed; gates open on probe
-- [ ] Apply-gate test rewritten; parity assertions flipped
-- [ ] Workflow suites on three platforms
-- [ ] Docs sentence updated
+- [x] Stand-ins removed
+- [x] `MUTATION_QUALIFIED` removed; gates open on probe
+- [x] Apply-gate test rewritten; parity assertions flipped
+- [ ] Workflow suites on three platforms (green on this Windows VM; Linux and macOS CI pending)
+- [x] Docs sentence updated
 
 ## Success criteria
 
@@ -52,3 +52,12 @@ Edit transactions, preset apply and agent apply run on Windows and macOS, protec
   - `studio-project/tests/protected_paths.rs`: folding cases (`.Git`, `TARGET`, `.gıt`, `.fframeſ/cache`, ZWNJ, BOM, fullwidth); `open_child(".Git")` gives `InvalidInput` on a case-insensitive volume and `NotFound` elsewhere; the volume's real 8.3 name of `.git`, read with `GetShortPathNameW`, is refused (8.3 generation is enabled on this VM's C:); the inventory still excludes exactly the four trees.
   - `studio-engine/tests/edit_transaction.rs::aliases_of_protected_trees_are_refused_at_planning`: `.Git/hooks/pre-commit`, `TARGET/x.txt`, `.fframeſ/cache/x.txt` and the real short name. Each is refused with an unchanged tree (`.git` included), no transaction files and no task revision. The task ends `Conflict` with its candidate preserved, as for any unplannable delta.
 - Cost: `review_publication` 111.9 s and `task_recovery` 63.6 s, unchanged from before the check.
+
+### Gates opened (2026-10-15)
+
+- `edit_transaction/mod.rs` has no platform gate left. The stand-ins for platforms other than Linux, macOS and Windows are gone; `studio_project::publish` has no implementation for any other platform, so they were never reachable.
+- `MUTATION_QUALIFIED` is gone. `preset_mutation` and `apply_gate()` both open when `probe_no_clobber` succeeds on the project root; `apply_gate()` already did.
+- `app/tests/agent_workflow_apply_gate.rs` runs on every platform: Apply publishes where the probe succeeds, and with only the link-based pair (`force_publication_mechanism(Link)`, refused by the real gate) the candidate stays reviewable and exportable with nothing written. The parity harness no longer has `mutation_open`; its preset and agent Apply cases assert the real outcome everywhere.
+- Ungated suites: `agent_workflow`, `agent_workflow_ui`, `preset_workflow`, `promotion_handoff`, `provider_handoff`, `scoped_editing` (app) and `preset_state`, `promotion_install`, `review_history` (engine). Only one test needed a change for Windows: a working-copy path compared as a string with `/`. `agent_task.rs` keeps its Linux-only containment cases, which phase 4 covers.
+- This VM: 1188 tests in the desktop packages, all green after that fix; clippy and fmt clean. The CI workflows already run `cargo test` for these packages on Linux, Windows and macOS, so no workflow change was needed.
+- Docs: `architecture.md` (preset mutation) and the README Apply paragraph now name the per-platform rename primitives and the probe.

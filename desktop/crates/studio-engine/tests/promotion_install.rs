@@ -1,6 +1,5 @@
 //! Install authorization of a staged preview of just-published bytes: the explicit
 //! candidate-to-published relationship, never the task base.
-#![cfg(target_os = "linux")]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;

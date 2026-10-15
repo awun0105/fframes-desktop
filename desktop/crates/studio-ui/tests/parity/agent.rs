@@ -1,8 +1,8 @@
 //! Agent panel: a prompt sent to the scripted ACP agent, its streamed reply, a permission
-//! request answered from the panel, and Apply (gated: see `Studio::mutation_open`).
+//! request answered from the panel, and Apply.
 use crate::{
     build_fixture::FAKE_CONFIG,
-    harness::{FIXTURE_CONFIG, Mutation, Studio},
+    harness::{FIXTURE_CONFIG, Studio},
 };
 use serde_json::{Value, json};
 use std::{fs, time::Duration};
@@ -148,34 +148,13 @@ fn a_prompt_streams_the_reply_asks_permission_and_applies(cx: &mut gpui::TestApp
         "nothing is published before Apply"
     );
 
-    let open = studio.mutation_open(Mutation::AgentApply);
-    if open {
-        assert!(review["panel"]["apply_blocked"].is_null(), "{review:#}");
-    }
+    assert!(review["panel"]["apply_blocked"].is_null(), "{review:#}");
     studio.dispatch(ApplyCandidate);
-    if open {
-        let applied = studio.wait("the edit applied", |t| {
-            matches!(phase(t), "Accepted" | "Failed" | "Conflict")
-        });
-        assert_eq!(phase(&applied), "Accepted", "{applied:#}");
-        assert_eq!(source(&studio), EDIT);
-    } else {
-        studio.wait("Apply shown as blocked", |t| {
-            t["panel"]["apply_blocked"]
-                .as_str()
-                .is_some_and(|reason| !reason.is_empty())
-        });
-        let refused = studio.settle(Duration::from_millis(300));
-        assert!(
-            refused["panel"]["apply_blocked"]
-                .as_str()
-                .is_some_and(|reason| !reason.is_empty()),
-            "Apply stopped being shown as blocked: {:#}",
-            refused["panel"]
-        );
-        assert_eq!(phase(&refused), "Waiting for your review");
-        assert_eq!(source(&studio), original);
-    }
+    let applied = studio.wait("the edit applied", |t| {
+        matches!(phase(t), "Accepted" | "Failed" | "Conflict")
+    });
+    assert_eq!(phase(&applied), "Accepted", "{applied:#}");
+    assert_eq!(source(&studio), EDIT);
 }
 
 #[gpui::test]
