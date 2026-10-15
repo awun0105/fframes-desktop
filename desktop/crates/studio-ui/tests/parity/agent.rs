@@ -295,8 +295,11 @@ fn new_rows_stay_pinned_unless_the_reader_scrolled_up_past_the_threshold(
         studio.settle(Duration::from_millis(50));
         studio.type_text(BRIEF);
         studio.dispatch(SubmitPrompt);
-        studio.wait("the reply's tool cards", |t| {
-            rows(t, "tool").len() == tools && scroll_state(t).1.is_finite()
+        // The turn is over, so no row arrives after the reader moves the list.
+        studio.wait("the reply's tool cards and the end of the turn", |t| {
+            rows(t, "tool").len() == tools
+                && phase(t) == "Waiting for your answer"
+                && scroll_state(t).1.is_finite()
         });
         studio.settle(Duration::from_millis(200))
     };
