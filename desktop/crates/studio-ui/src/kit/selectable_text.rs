@@ -1,10 +1,11 @@
 //! Text the reader can select with the mouse and copy: a drag selects a range, a double
 //! click a word, a triple click the whole block, and Ctrl+C (Cmd+C on macOS) copies it.
 //!
-//! The app has one selection at a time, kept in a global; a press anywhere else ends it, so
-//! it never coexists with a selection made later in a text field. [`CopySelection`] is
-//! bound without a context, which gpui ranks above a focused field's own copy binding:
-//! with nothing selected here it passes the key on, and the field copies its selection.
+//! The app has one selection at a time, kept in a global. A press anywhere else ends it,
+//! and so does any key but the copy key in a focused text field (typing, Ctrl+A, arrows),
+//! so it never outlives a later selection in a field. [`CopySelection`] is bound without a
+//! context, which gpui ranks above a focused field's own copy binding: with nothing
+//! selected here it passes the key on, and the field copies its selection.
 //! A selection never spans two text blocks.
 //!
 //! Sections of the shell are cached views, which repaint only when notified: a change of
@@ -49,19 +50,34 @@ impl Selection {
     }
 }
 
+/// The key [`CopySelection`] is bound to.
+const COPY_KEY: &str = if cfg!(target_os = "macos") {
+    "cmd-c"
+} else {
+    "ctrl-c"
+};
+
 /// Binds the copy key and handles it. Called once at start.
 pub fn bind_selectable_text_keys(cx: &mut App) {
-    let copy = if cfg!(target_os = "macos") {
-        "cmd-c"
-    } else {
-        "ctrl-c"
-    };
-    cx.bind_keys([KeyBinding::new(copy, CopySelection, None)]);
+    cx.bind_keys([KeyBinding::new(COPY_KEY, CopySelection, None)]);
     cx.on_action(|_: &CopySelection, cx| match selected_text(cx) {
         Some(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
         // The next binding of the key (a focused text field's copy) handles it.
         None => cx.propagate(),
     });
+    // Any other key in a focused text field (typing, Ctrl+A, arrows) ends the selection, so
+    // the copy key copies the field's selection again. An observer sees keys a binding
+    // handled too, which a key listener would not.
+    cx.observe_keystrokes(|event, _, cx| {
+        let in_field = event
+            .context_stack
+            .iter()
+            .any(|context| context.contains(super::text_input::KEY_CONTEXT));
+        if in_field && !is_copy_key(&event.keystroke) {
+            clear_selection(cx);
+        }
+    })
+    .detach();
 }
 
 /// The selected text, if any is selected.
@@ -191,7 +207,7 @@ impl Element for SelectableText {
             let hitbox = hitbox.clone();
             move |_: &MouseDownEvent, phase, window, cx| {
                 if phase == DispatchPhase::Capture && !hitbox.is_hovered(window) && owns(&id, cx) {
-                    clear(cx);
+                    clear_selection(cx);
                 }
             }
         });
@@ -257,12 +273,25 @@ fn owns(id: &GlobalElementId, cx: &App) -> bool {
         .is_some_and(|s| s.owner.as_ref() == Some(id))
 }
 
-fn clear(cx: &mut App) {
-    let view = cx.try_global::<Selection>().and_then(|s| s.view);
+/// Ends the app's text selection, if there is one.
+fn clear_selection(cx: &mut App) {
+    let Some(selection) = cx.try_global::<Selection>() else {
+        return;
+    };
+    if selection.owner.is_none() {
+        return;
+    }
+    let view = selection.view;
     cx.set_global(Selection::default());
     if let Some(view) = view {
         cx.notify(view);
     }
+}
+
+/// Whether `keystroke` is the key [`CopySelection`] is bound to.
+fn is_copy_key(keystroke: &gpui::Keystroke) -> bool {
+    gpui::Keystroke::parse(COPY_KEY)
+        .is_ok_and(|copy| copy.key == keystroke.key && copy.modifiers == keystroke.modifiers)
 }
 
 /// The byte index nearest to `position`, on a character boundary.
@@ -402,6 +431,24 @@ mod tests {
             Some("selected words here")
         );
         assert_eq!(copy(cx).as_deref(), Some("selected words here"));
+        // Selecting in the still focused field takes the copy key back.
+        cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+            "cmd-a"
+        } else {
+            "ctrl-a"
+        });
+        assert_eq!(copy(cx).as_deref(), Some("prompt text"));
+        let select_line = |cx: &mut VisualTestContext| {
+            cx.simulate_mouse_down(point(from, y), MouseButton::Left, Modifiers::none());
+            cx.simulate_mouse_move(point(to, y), MouseButton::Left, Modifiers::none());
+            cx.simulate_mouse_up(point(to, y), MouseButton::Left, Modifiers::none());
+            assert!(cx.update(|_, cx| selected_text(cx)).is_some());
+        };
+        // Typing in the field ends it too.
+        select_line(cx);
+        cx.simulate_keystrokes("x");
+        assert_eq!(cx.update(|_, cx| selected_text(cx)), None);
+        select_line(cx);
         // A press anywhere else ends the selection.
         let below = point(from, line.bottom() + px(20.));
         cx.simulate_click(below, Modifiers::none());

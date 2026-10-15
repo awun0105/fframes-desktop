@@ -788,8 +788,17 @@ impl ConversationPanel {
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .child(label(&self.theme, name.to_owned()))
-                    .child(self.line(description)),
+                    // Plain text: the whole row is a radio button.
+                    .child(
+                        studio_theme::text_style(div(), studio_theme::TextStyle::Label)
+                            .text_color(palette.text_1)
+                            .child(name.to_owned()),
+                    )
+                    .child(
+                        studio_theme::text_style(div(), studio_theme::TextStyle::Small)
+                            .text_color(palette.text_2)
+                            .child(description),
+                    ),
             )
             .child(Badge::new(action_label).tone(if selected {
                 UiTone::Info
