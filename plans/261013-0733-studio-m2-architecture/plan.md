@@ -57,7 +57,7 @@ Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port
 
 ## Success criteria
 
-- [x] Parity tests, `cargo test` and `just clippy` pass after each phase. Verified on the final tree (full CI run 38695521718 on Linux and Windows, plus local runs); earlier phases were checked locally as they landed.
+- [x] Parity tests, `cargo test` and `just clippy` pass after each phase. Verified on the final tree (full CI run 38695521718 on Linux and Windows, plus local runs). Earlier full runs were red during phase 7 until the X11 fix.
 - [x] No `.rs` file under `desktop/` exceeds 1,500 lines (merge gate 6).
 - [x] `studio-engine`, `studio-proto` and `studio-harness` have no `gpui` dependency (`cargo tree -p <crate> -e normal | grep -c gpui` is 0).
 - [x] UI crates hold no `Mutex<Controller>` and no agent or preview polling; the 16 ms playback tick (which reads the audio snapshot) stays until M4 phase 6; the engine may keep internal locking. The panel reads the agent snapshot only when the workflow wakes the window; the tick forwards the playhead and thumbnail requests and keeps an 8 s fallback build for an accepted source that never got a preview.
