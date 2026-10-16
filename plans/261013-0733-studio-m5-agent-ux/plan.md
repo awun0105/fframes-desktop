@@ -57,6 +57,7 @@ Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port
 - **Composer base, for the plan owner to decide.** The reasons recorded for keeping `ComposerInput` were projection, inline mention and attachment chips, and Markdown faces; the port drops all three, so what remains (multiline wrap, undo, IME, the Enter keymap) overlaps heavily with the kit `TextInput`. Revisit before wiring, or restore projection when `@` mentions land. The 2026-10-14 decision stands until then.
 - **Attachments.** A disabled attach kind gates new pastes and the attach button only: chips already accepted still go out with the next send, so the owner filters them, and a paste of a disabled kind is dropped without feedback.
 - **Slash menu.** A `/` inside backticks still opens the completion menu (no code-span check).
+- **Intermittent parity hang, not from M5.** `services::cancelling_an_export_leaves_no_file` sometimes never lets the frame loop settle after a cancelled export, and the harness watchdog ends the parity process with exit 101. On this VM it hung in 1 of 4 runs of `services::` without the M5 engine work and 2 of 4 with it, so it predates M5. CI has passed on every platform so far.
 - **Viewer on screen.** Phase 4 needs a by-eye check in a real window, as phase 1 had, before it is done.
 
 ## Success criteria
