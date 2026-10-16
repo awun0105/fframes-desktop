@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Remove spike names and old modules"
-status: pending
+status: done
 priority: P2
 effort: "1d"
 dependencies: []
@@ -72,3 +72,12 @@ Keep unchanged: `desktop/app/src/assets.rs` (126, used by `main.rs:168` and `exa
 ## Rollback
 
 Revert the phase commit. Steps 1 and 2 are separate commits, so the port can stay while the deletion is reverted.
+
+## Todo
+
+- [x] Worker test rewritten on the live transport (frame, anchor, crash and restart)
+- [x] Spike files, --spike-ui and the harness ACP session deleted
+- [x] Unused app dependencies removed (built with `--all-targets`)
+- [x] Bundle id is `studio.fframes.app`; packaging test passes
+- [x] Stale wording fixed; spike grep empty
+- [x] Verification recorded in [the report](./reports/phase-01-spike-removal.md)
