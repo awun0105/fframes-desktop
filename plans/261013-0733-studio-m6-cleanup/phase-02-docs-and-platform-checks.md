@@ -3,32 +3,57 @@ phase: 2
 title: "Docs and platform checks"
 status: pending
 priority: P2
-effort: "2d"
+effort: "1.5d"
 dependencies: [1]
 ---
 
 # Phase 2: Docs and platform checks
 
-## Goal
+## Context
 
-Docs describe the real system, and the roadmap's Done-means list is checked by hand on Windows. macOS is not fully tested: it is covered by CI only, because no Mac is available ([roadmap, Platforms](../261013-0733-studio-rewrite-roadmap/plan.md#confirmed-contract), decided 2026-10-16).
+Docs were last rewritten before M3 to M5a. Checked at `df53e56` (2026-10-17). `AGENTS.md` at the repo root has no desktop section and no `/desktop` entry in its Project Structure list; its timeline-document text from M4 is already present, so nothing from M4 is outstanding there. macOS is not fully tested: CI only, no hand checks (decided 2026-10-16, [roadmap, Platforms](../261013-0733-studio-rewrite-roadmap/plan.md#confirmed-contract)). Windows hand checks go to `reports/platform-checks.md`.
 
-## Tasks
+## Requirements
 
-1. Rewrite `docs/desktop/architecture.md`: real crate layout, engine command and event flow with session lifetimes, timing doc and timing revision, playback pipeline, containment, tool broker transports, test strategy. Remove the "proposed" wording and the non-existent `studio-agent/` and `studio-ui/` entries.
-2. Update `docs/desktop/README.md` (setup, project migration, editing, agent panel, the one keymap) and the `AGENTS.md` sections touched in M4 phase 1.
-3. Mark the "facts only" licensing line in `plans/261011-0033-cap-style-studio-ui/plan.md` as superseded by the roadmap's porting rules.
-4. Manual checks recorded in `reports/platform-checks.md`: every roadmap Done-means item on Windows. For macOS, the report lists the latest green macOS CI run and marks each hand check as not run.
+- Each doc below describes the system as built; points to the owning source, script or test instead of copying it.
+- Every link and path in the touched docs resolves.
+- `reports/platform-checks.md` records each roadmap Done-means item on Windows, plus the open hand checks below.
 
-## Todo
+## Files
 
-- [ ] Architecture doc
-- [ ] README and AGENTS.md
-- [ ] Old licensing line superseded
-- [ ] Windows checks
-- [ ] macOS: record the latest green macOS CI run and mark the hand checks as not run (macOS not fully tested). If a Mac becomes available, the native-wire real-CLI checks are `cargo test -p studio-harness --test claude_real_cli --test codex_real_cli -- --ignored` ([checks report](../../desktop/plans/reports/native-wires-checks.md)).
-- [ ] Report written
+| File | What is wrong now | Source of truth to point to |
+|------|-------------------|-----------------------------|
+| `docs/desktop/architecture.md` | Line 3 says "proposed architecture"; workspace block (lines 72-93) lists non-existent `studio-protocol`, `studio-agent`, `studio-media`, `studio-ui` as proposed and omits `studio-engine`, `studio-harness`, `studio-proto`, `studio-theme`, `studio-markdown`, `studio-bootstrap`, `studio-sdk`, `studio-test-support`; line 66 "integration spike"; line 173 calls native drivers optional (Claude and Codex are native, ACP is the rest); the sections "Implemented native workflow (M3 Stage 4)", "Implemented M6 provider profiles" and "Implemented M4 presets" describe the old ACP-only panel and Linux-only evidence limits | `desktop/Cargo.toml` members; `studio-engine/src/engine/`; `studio-engine/src/services/`; `.github/workflows/desktop-*.yml` |
+| `docs/desktop/README.md` | Lines 20-54 describe the pre-rewrite panel (Agent tab beside Project, Assets and Style; ACP only; single-line prompt; Chat and Project tabs; one `conversation.jsonl`; Claude, Codex, Pi, Antigravity profiles). Lines 58-60 show `spike-ui`. Line 72 holds the X11 command and unqualified platform statements | `studio-ui/src/agent/`; `studio-engine` session store; `desktop/app/src/main.rs` command list |
+| `docs/desktop/design-system.md` | Line 3 names `app.rs` and `agent_spike.rs` as exceptions (both gone after phase 1); lines 62-64 use qualification-telemetry wording | `studio-theme`, `studio-ui/src/kit/` |
+| `docs/desktop/phase-zero-feasibility.md`, `implementation-plan.md` | Historical; spike wording is accurate for then. Add one line at the top of each saying it is a record, not the current design; do not rewrite | n/a |
+| `docs/desktop/self-hosted-runners.md` | Check the runner and X11 notes against `desktop-self-hosted.yml` | the workflow |
+| `AGENTS.md` | No `/desktop` entry | add one Project Structure line and one pointer to `docs/desktop/README.md`; nothing else |
+| `plans/261011-0033-cap-style-studio-ui/plan.md` | "Facts only" licensing line is superseded | the roadmap's porting rules |
 
-## Success criteria
+README must cover: setup, project migration, editing, agent panel, the one keymap, native Claude and Codex wires with ACP for the rest, multi-session history, the composer, diff review, and which platforms are tested. Architecture must cover: crate layout, engine command and event flow with session lifetimes, timing document and revision, playback pipeline, containment, tool broker transports, test strategy, and the kept production probes (telemetry, `bounds_probe`, `qualification.json`).
 
-Every link and file path in the updated docs resolves; `reports/platform-checks.md` shows each Done-means item passing by hand on Windows, and on macOS shows green CI and marks the platform not fully tested.
+## Steps
+
+1. Run phase 1 first so the docs do not describe deleted files.
+2. Read each doc in full, then edit the smallest owning section. Delete the three "Implemented ..." sections and replace them with one current section each.
+3. Add the superseded note and the `AGENTS.md` lines.
+4. Windows hand checks (needs the user's RDP session; real input cannot be driven from this agent): every roadmap Done-means item; the M2 open check of the Windows title bar; real-input checks that no automated test covers since the native harness was removed (caption hit-test, title drag, Close hover colour); native file dialogs; the Ctrl+Enter chord and the review-banner layout in the real app.
+5. Write `reports/platform-checks.md`: Windows rows pass or fail with date and build; macOS row lists the latest green macOS CI run and "hand checks not run, not fully tested". If a Mac appears, run `cargo test -p studio-harness --test claude_real_cli --test codex_real_cli -- --ignored` ([checks report](../../desktop/plans/reports/native-wires-checks.md)).
+6. A release dry run with `consumer_release_enabled` is for the user to run; record it in the report as pending or done with the run link.
+
+## Validation
+
+- A link check over `docs/desktop/*.md`, `AGENTS.md` and the plan files touched (every relative link and backticked path resolves).
+- `grep -rniE "spike|proposed|ACP only" docs/desktop/README.md docs/desktop/architecture.md docs/desktop/design-system.md` returns nothing that is not a clearly dated history line.
+- The crate list in `architecture.md` equals the `members` array in `desktop/Cargo.toml`.
+- `reports/platform-checks.md` has one row per Done-means item.
+
+## Risk
+
+- Low: docs drift again. Mitigation: link to sources instead of copying.
+- Medium: Windows checks need the user's session and may find bugs. Mitigation: a failure becomes a finding in the report and a new fix item, not a silent edit.
+
+## Rollback
+
+Revert the docs commit; docs have no runtime effect.
