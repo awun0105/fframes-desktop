@@ -230,7 +230,11 @@ impl Actor {
                 }
             }
         }
-        if let Ok(Some(mut manifest)) = SessionStore::load(&self.shared.paths, &self.shared.project)
+        // A failed resume leaves the stored manifest as it was (see `on_provider_failure`).
+        let resume_failed = std::mem::take(&mut self.resume_failed);
+        if !resume_failed
+            && let Ok(Some(mut manifest)) =
+                SessionStore::load(&self.shared.paths, &self.shared.project)
             && manifest.provider_id == active.adapter.provider
         {
             if kind == OutcomeKind::Accepted {

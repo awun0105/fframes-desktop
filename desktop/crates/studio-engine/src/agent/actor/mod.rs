@@ -118,6 +118,8 @@ pub(crate) enum Msg {
     },
     Refresh,
     History {
+        /// The conversation the page was asked for (`WorkflowSnapshot::chat`).
+        chat: u64,
         before: RowId,
         limit: usize,
         done: HistoryDone,
@@ -132,6 +134,8 @@ pub(crate) enum Msg {
     RestoreSession,
     DismissRestoration,
     NewChat,
+    /// Switch to a stored session (an id the workflow already checked).
+    OpenSession(String),
     TestHoldToolsGate(Sender<Option<crate::agent_tools::backend::WriterGuard>>),
     Close(Sender<()>),
     // ---- job results ----
@@ -322,6 +326,10 @@ pub(crate) struct Actor {
     retained_queue: VecDeque<Queued>,
     /// New chat resets so far (`WorkflowSnapshot::chat`).
     chat: u64,
+    /// The driver being started resumes a stored agent session.
+    resume_attempt: bool,
+    /// Resuming failed: the stored manifest stays as it was.
+    resume_failed: bool,
 }
 #[derive(Debug, Clone)]
 struct PendingResumeSession {
@@ -446,7 +454,14 @@ fn engine_state_of(phase: TaskPhase) -> TaskState {
 }
 
 impl Actor {
-    pub(crate) fn new(shared: Arc<Shared>, rx: Receiver<Msg>, store: RowStore) -> Self {
+    /// `startup_warnings` become warning rows before the first snapshot (a text already in the
+    /// transcript is not added again, so a persistent failure does not repeat on every open).
+    pub(crate) fn new(
+        shared: Arc<Shared>,
+        rx: Receiver<Msg>,
+        store: RowStore,
+        startup_warnings: Vec<String>,
+    ) -> Self {
         let mut actor = Self {
             shared,
             rx,
@@ -502,41 +517,15 @@ impl Actor {
             pending_resume_session: None,
             retained_queue: VecDeque::new(),
             chat: 0,
+            resume_attempt: false,
+            resume_failed: false,
         };
-        if let Ok(Some(manifest)) =
-            super::session_store::SessionStore::load(&actor.shared.paths, &actor.shared.project)
-        {
-            let project_id = actor.shared.project.to_string();
-            let compatible = {
-                let controller = actor.shared.controller.lock();
-                manifest.project_id == project_id
-                    && manifest.draft_path == controller.agent_draft_store().path()
-                    && manifest.last_source_revision
-                        == controller.current_source_revision().to_string()
-                    && manifest.last_accepted_revision == controller.state().accepted().to_string()
-                    && matches!(
-                        controller.agent_draft_state(),
-                        Ok(None) | Ok(Some(DraftState::Accepted { .. }))
-                    )
-            };
-            let is_resumable = manifest.is_resumable() && compatible;
-            actor.session_restore = Some(SessionRestoreView {
-                provider_id: manifest.provider_id.clone(),
-                redacted_session_id: manifest.redacted_id(),
-                is_resumable,
-                last_source_revision: manifest.last_source_revision.clone(),
-                notice: if is_resumable {
-                    Some(
-                        "Saved session found; adapter compatibility will be checked before launch."
-                            .to_string(),
-                    )
-                } else {
-                    Some("Previous session is incompatible with the current project state (fresh session available).".to_string())
-                },
-            });
-        }
+        actor.offer_saved_session();
         actor.settings_changed();
         actor.detect_interrupted();
+        for warning in startup_warnings {
+            actor.warn_once(&warning);
+        }
         actor.refresh_idle();
         actor.publish(true);
         actor
@@ -706,16 +695,26 @@ impl Actor {
             Msg::RestoreSession => self.restore_session(),
             Msg::DismissRestoration => self.dismiss_restoration(),
             Msg::NewChat => self.new_chat(),
+            Msg::OpenSession(id) => self.open_session(&id),
             Msg::TestHoldToolsGate(tx) => {
                 let guard = self.tools.as_ref().and_then(|t| t.gate().try_acquire());
                 let _ = tx.send(guard);
             }
             Msg::Refresh => self.refresh_idle(),
             Msg::History {
+                chat,
                 before,
                 limit,
                 done,
-            } => self.history_page(before, limit, done),
+            } => {
+                if chat == self.chat {
+                    self.history_page(before, limit, done);
+                } else {
+                    done(Err(WorkflowError::History(
+                        "the conversation changed".to_owned(),
+                    )));
+                }
+            }
             Msg::Progress(phase) => self.on_progress(phase),
             Msg::UndoProgress(phase) => {
                 if self.undo.is_some() {

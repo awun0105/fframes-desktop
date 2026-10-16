@@ -6,9 +6,12 @@ impl Actor {
     // ---- provider failure and stop ----------------------------------------------------------------------
 
     pub(super) fn on_provider_failure(&mut self, failure: AgentFailure) {
-        if failure.phase == studio_harness::driver::Phase::Session
-            || failure.kind == studio_harness::driver::FailureKind::RestoreUnsupported
-        {
+        let session_failure = failure.phase == studio_harness::driver::Phase::Session
+            || failure.kind == studio_harness::driver::FailureKind::RestoreUnsupported;
+        if session_failure && std::mem::take(&mut self.resume_attempt) {
+            self.resume_failed = true;
+            self.read_only_after_failed_resume();
+        } else if session_failure {
             if let Ok(Some(mut manifest)) =
                 super::session_store::SessionStore::load(&self.shared.paths, &self.shared.project)
             {
@@ -35,6 +38,36 @@ impl Actor {
         }
         let error = present::provider_error(&failure, true);
         self.fail_with(error);
+    }
+
+    /// The agent refused or failed to resume the stored session: say so and fall back to the
+    /// read-only rule (the next prompt starts a fresh agent session in this stored session).
+    /// The stored manifest is left as it was, so a transient failure does not end resumption.
+    fn read_only_after_failed_resume(&mut self) {
+        let manifest = SessionStore::load(&self.shared.paths, &self.shared.project)
+            .ok()
+            .flatten();
+        self.session_restore = Some(SessionRestoreView {
+            provider_id: manifest
+                .as_ref()
+                .map(|m| m.provider_id.clone())
+                .unwrap_or_default(),
+            redacted_session_id: manifest
+                .as_ref()
+                .map_or_else(|| "none".to_owned(), SessionManifest::redacted_id),
+            is_resumable: false,
+            last_source_revision: manifest
+                .map(|m| m.last_source_revision)
+                .unwrap_or_default(),
+            notice: Some(
+                "Previous session restoration failed; the next prompt starts a fresh agent session."
+                    .to_string(),
+            ),
+        });
+        self.notice(
+            "The agent could not resume the stored session. The stored messages stay read-only; the next prompt starts a fresh agent session in this conversation.",
+        );
+        self.touch();
     }
 
     /// Ends the task `Failed`: the adapter is reaped, the draft retained, no writer left.
@@ -511,12 +544,25 @@ impl Actor {
         self.touch();
     }
 
+    /// A fresh agent session without an id that can be stored replaces the one the manifest
+    /// names, so the old id must not be offered for resumption any more.
+    fn forget_stored_wire_id(&self) {
+        let (paths, project) = (&self.shared.paths, &self.shared.project);
+        if let Ok(Some(mut manifest)) = SessionStore::load(paths, project)
+            && manifest.wire_session_id.take().is_some()
+        {
+            let _ = SessionStore::save(paths, project, &manifest);
+        }
+    }
+
     pub(super) fn on_session_ready(&mut self, _sanitized_id: String, restored: bool) {
+        self.resume_attempt = false;
         let launch_digest = self
             .active
             .as_ref()
             .and_then(|active| session_launch_digest(active).ok());
         let Some(launch_digest) = launch_digest else {
+            self.forget_stored_wire_id();
             self.warn("Session restoration disabled: exact adapter launch identity could not be verified.");
             self.session_restore = Some(SessionRestoreView {
                 provider_id: self
@@ -587,6 +633,7 @@ impl Actor {
                 }
             }
         } else {
+            self.forget_stored_wire_id();
             self.notice("Session restoration disabled: provider session ID required credential redaction and cannot be safely resumed.");
             self.session_restore = Some(SessionRestoreView {
                 provider_id: self
@@ -612,97 +659,128 @@ impl Actor {
         self.touch();
     }
 
-    pub(super) fn restore_session(&mut self) {
-        match SessionStore::load(&self.shared.paths, &self.shared.project) {
-            Ok(Some(manifest)) if manifest.is_resumable() => {
-                let (project_id, draft_path, source_revision, accepted_revision, draft_state) = {
-                    let controller = self.shared.controller.lock();
-                    (
-                        self.shared.project.to_string(),
-                        controller.agent_draft_store().path().to_path_buf(),
-                        controller.current_source_revision().to_string(),
-                        controller.state().accepted().to_string(),
-                        controller.agent_draft_state(),
-                    )
-                };
-                if manifest.project_id != project_id {
-                    self.notice("Saved session belongs to a different project; a fresh session will be used.");
-                    self.touch();
-                    return;
-                }
-                if manifest.draft_path != draft_path {
-                    self.notice(
-                        "Saved session draft location changed; a fresh session will be used.",
-                    );
-                    self.touch();
-                    return;
-                }
-                match draft_state {
-                    Ok(None) | Ok(Some(DraftState::Accepted { .. })) => {}
-                    Ok(Some(DraftState::UnsafeWriter { .. })) => {
-                        self.notice("Saved session cannot be resumed while writer termination is unverified; preserve the draft and resolve recovery first.");
-                        self.touch();
-                        return;
-                    }
-                    Ok(Some(_)) => {
-                        self.notice("Saved session has a retained draft that cannot be safely matched to native memory; a fresh session will be used.");
-                        self.touch();
-                        return;
-                    }
-                    Err(error) => {
-                        self.notice(format!("Saved session cannot be resumed because draft safety could not be verified ({error}); a fresh session will be used."));
-                        self.touch();
-                        return;
-                    }
-                }
-                if manifest.last_source_revision != source_revision
-                    || manifest.last_accepted_revision != accepted_revision
-                {
-                    self.notice("Saved session source or accepted revision changed; a fresh session will be used.");
-                    self.touch();
-                    return;
-                }
-                let Some(wire_id) = manifest.wire_session_id.clone() else {
-                    self.notice(
-                        "Saved session has no resumable session ID; a fresh session will be used.",
-                    );
-                    return;
-                };
-                self.pending_resume_session = Some(PendingResumeSession {
-                    provider_id: manifest.provider_id.clone(),
-                    launch_digest: manifest.launch_digest.clone(),
-                    wire_session_id: wire_id,
-                    draft_path: manifest.draft_path.clone(),
-                    last_source_revision: manifest.last_source_revision.clone(),
-                    last_accepted_revision: manifest.last_accepted_revision.clone(),
-                });
-                self.notice(format!(
-                    "Restoring session for provider {} (session {})",
-                    manifest.provider_id,
-                    manifest.redacted_id()
+    /// Why `manifest`'s agent session cannot be resumed by the configured agent, judged by the
+    /// session's own provider and the capabilities stored with it; `None` when resuming may be
+    /// tried. Unknown capabilities mean "try": a refusal at launch falls back to a fresh session.
+    fn resume_blocker(&self, manifest: &SessionManifest) -> Option<String> {
+        let configured = self.adapter.provider.as_ref();
+        if let Some(configured) = configured.filter(|p| **p != manifest.provider_id) {
+            Some(format!(
+                "it was run by {} and the configured agent is {configured}",
+                manifest.provider_id
+            ))
+        } else if !manifest.is_resumable() {
+            Some("its agent session cannot be resumed".to_owned())
+        } else if manifest
+            .capability_snapshot
+            .as_ref()
+            .is_some_and(|caps| !caps.load_session && !caps.resume_session)
+        {
+            Some("the agent does not support resuming sessions".to_owned())
+        } else {
+            None
+        }
+    }
+
+    /// The view of a stored session that will not be resumed, with `text` as the reason.
+    fn not_resumable_view(manifest: Option<&SessionManifest>, text: &str) -> SessionRestoreView {
+        SessionRestoreView {
+            provider_id: manifest.map(|m| m.provider_id.clone()).unwrap_or_default(),
+            redacted_session_id: manifest.map_or_else(|| "none".to_owned(), |m| m.redacted_id()),
+            is_resumable: false,
+            last_source_revision: manifest
+                .map(|m| m.last_source_revision.clone())
+                .unwrap_or_default(),
+            notice: Some(text.to_owned()),
+        }
+    }
+
+    /// Queues the stored agent session of `manifest` for the next launch when the project is
+    /// as the session left it. `Ok` says what will be restored, `Err` why a fresh agent session
+    /// is used instead. Adds no rows.
+    fn queue_resume(&mut self, manifest: &SessionManifest) -> Result<String, String> {
+        let (project_id, draft_path, source_revision, accepted_revision, draft_state) = {
+            let controller = self.shared.controller.lock();
+            (
+                self.shared.project.to_string(),
+                controller.agent_draft_store().path().to_path_buf(),
+                controller.current_source_revision().to_string(),
+                controller.state().accepted().to_string(),
+                controller.agent_draft_state(),
+            )
+        };
+        if manifest.project_id != project_id {
+            return Err(
+                "Saved session belongs to a different project; a fresh session will be used."
+                    .to_owned(),
+            );
+        }
+        if manifest.draft_path != draft_path {
+            return Err(
+                "Saved session draft location changed; a fresh session will be used.".to_owned(),
+            );
+        }
+        match draft_state {
+            Ok(None) | Ok(Some(DraftState::Accepted { .. })) => {}
+            Ok(Some(DraftState::UnsafeWriter { .. })) => {
+                return Err("Saved session cannot be resumed while writer termination is unverified; preserve the draft and resolve recovery first.".to_owned());
+            }
+            Ok(Some(_)) => {
+                return Err("Saved session has a retained draft that cannot be safely matched to native memory; a fresh session will be used.".to_owned());
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Saved session cannot be resumed because draft safety could not be verified ({error}); a fresh session will be used."
                 ));
-                self.touch();
-            }
-            Ok(Some(manifest)) => {
-                self.notice(
-                    "Saved session cannot be safely resumed; a fresh session will be used.",
-                );
-                let redacted_id = manifest.redacted_id();
-                self.session_restore = Some(SessionRestoreView {
-                    provider_id: manifest.provider_id,
-                    redacted_session_id: redacted_id,
-                    is_resumable: false,
-                    last_source_revision: manifest.last_source_revision,
-                    notice: Some("Session cannot be resumed".to_string()),
-                });
-                self.touch();
-            }
-            _ => {
-                self.notice(
-                    "No saved session manifest found to restore; fresh session will be used.",
-                );
             }
         }
+        if manifest.last_source_revision != source_revision
+            || manifest.last_accepted_revision != accepted_revision
+        {
+            return Err(
+                "Saved session source or accepted revision changed; a fresh session will be used."
+                    .to_owned(),
+            );
+        }
+        let Some(wire_id) = manifest.wire_session_id.clone() else {
+            return Err(
+                "Saved session has no resumable session ID; a fresh session will be used."
+                    .to_owned(),
+            );
+        };
+        self.pending_resume_session = Some(PendingResumeSession {
+            provider_id: manifest.provider_id.clone(),
+            launch_digest: manifest.launch_digest.clone(),
+            wire_session_id: wire_id,
+            draft_path: manifest.draft_path.clone(),
+            last_source_revision: manifest.last_source_revision.clone(),
+            last_accepted_revision: manifest.last_accepted_revision.clone(),
+        });
+        Ok(format!(
+            "Restoring session for provider {} (session {})",
+            manifest.provider_id,
+            manifest.redacted_id()
+        ))
+    }
+
+    /// The user asked to restore the stored session of the open conversation.
+    pub(super) fn restore_session(&mut self) {
+        let Ok(Some(manifest)) = SessionStore::load(&self.shared.paths, &self.shared.project)
+        else {
+            self.notice("No saved session manifest found to restore; fresh session will be used.");
+            return;
+        };
+        if let Some(reason) = self.resume_blocker(&manifest) {
+            let text =
+                format!("Saved session cannot be resumed: {reason}; a fresh session will be used.");
+            self.session_restore = Some(Self::not_resumable_view(Some(&manifest), &text));
+            self.notice(text);
+        } else {
+            match self.queue_resume(&manifest) {
+                Ok(text) | Err(text) => self.notice(text),
+            }
+        }
+        self.touch();
     }
 
     pub(super) fn dismiss_restoration(&mut self) {
@@ -719,55 +797,242 @@ impl Actor {
         self.touch();
     }
 
-    /// Why a New chat cannot start now; `None` when the conversation can be reset.
-    pub(super) fn new_chat_blocker(&self) -> Option<&'static str> {
+    /// Why the open conversation cannot be replaced now, by a new chat or by another stored
+    /// session (`action` completes "before ..."); `None` when it can.
+    pub(super) fn switch_blocker(&self, action: &str) -> Option<String> {
         if self
             .active
             .as_ref()
             .is_some_and(|a| a.phase == TaskPhase::AwaitingReview)
         {
-            Some("Apply or Discard the candidate before starting a new chat.")
+            Some(format!("Apply or Discard the candidate before {action}."))
         } else if self.active.is_some() || self.undo.is_some() {
-            Some("Stop the running task or wait for it to finish before starting a new chat.")
+            Some(format!(
+                "Stop the running task or wait for it to finish before {action}."
+            ))
         } else if self.switch_target.is_some() || self.switch_pending.is_some() {
-            Some("Finish or cancel the provider switch before starting a new chat.")
+            Some(format!(
+                "Finish or cancel the provider switch before {action}."
+            ))
         } else if !self.queue.is_empty() || !self.retained_queue.is_empty() {
-            Some("Cancel or clear the queued briefs before starting a new chat.")
+            Some(format!(
+                "Cancel or clear the queued briefs before {action}."
+            ))
         } else if !self.recovery.unresolved_conflicts.is_empty()
             || self.task.as_ref().is_some_and(|t| t.conflict.is_some())
         {
-            Some("Resolve the conflict before starting a new chat.")
+            Some(format!("Resolve the conflict before {action}."))
         } else {
             None
         }
     }
 
-    pub(super) fn new_chat(&mut self) {
-        if let Some(reason) = self.new_chat_blocker() {
-            self.warn(reason);
-            self.touch();
-            return;
+    /// Shows a warning row unless the transcript already holds the same text.
+    pub(super) fn warn_once(&mut self, text: &str) {
+        let text = present::message(text);
+        let known =
+            self.store.resident().iter().any(
+                |row| matches!(&row.kind, RowKind::Notice { text: shown, .. } if *shown == text),
+            );
+        if !known {
+            self.push_row(RowKind::Notice {
+                level: NoticeLevel::Warning,
+                text,
+            });
         }
-        // The saved session goes first: if it stayed, the archived chat would be offered
-        // again on the next launch.
-        if let Err(error) = SessionStore::clear(&self.shared.paths, &self.shared.project) {
-            self.warn(format!("A new chat could not be started: {error}"));
-            self.touch();
+    }
+
+    /// Offers the current stored session's manifest for restoration, as it stands at launch.
+    pub(super) fn offer_saved_session(&mut self) {
+        let Ok(Some(manifest)) = SessionStore::load(&self.shared.paths, &self.shared.project)
+        else {
             return;
-        }
-        self.session_restore = None;
-        self.pending_resume_session = None;
-        if let Err(error) = self.store.start_new(now_unix()) {
-            self.warn(format!("A new chat could not be started: {error}"));
-            self.touch();
-            return;
-        }
+        };
+        let project_id = self.shared.project.to_string();
+        let compatible = {
+            let controller = self.shared.controller.lock();
+            manifest.project_id == project_id
+                && manifest.draft_path == controller.agent_draft_store().path()
+                && manifest.last_source_revision == controller.current_source_revision().to_string()
+                && manifest.last_accepted_revision == controller.state().accepted().to_string()
+                && matches!(
+                    controller.agent_draft_state(),
+                    Ok(None) | Ok(Some(DraftState::Accepted { .. }))
+                )
+        };
+        let is_resumable = manifest.is_resumable() && compatible;
+        self.session_restore = Some(SessionRestoreView {
+            provider_id: manifest.provider_id.clone(),
+            redacted_session_id: manifest.redacted_id(),
+            is_resumable,
+            last_source_revision: manifest.last_source_revision.clone(),
+            notice: if is_resumable {
+                Some(
+                    "Saved session found; adapter compatibility will be checked before launch."
+                        .to_string(),
+                )
+            } else {
+                Some("Previous session is incompatible with the current project state (fresh session available).".to_string())
+            },
+        });
+    }
+
+    /// Makes `next` the open conversation and forgets everything tied to the previous one:
+    /// the streaming message, tool and permission rows, the task shown and any restoration
+    /// on offer. `chat` changes so a view drops its caches and in-flight history pages.
+    fn replace_conversation(&mut self, next: RowStore) {
+        self.store = next;
         self.stream = None;
         self.tool_rows.clear();
         self.tool_order.clear();
         self.permission_rows.clear();
         self.task = None;
+        self.session_restore = None;
+        self.pending_resume_session = None;
+        // A provider switch's handoff belongs to the conversation it was made in.
+        self.next_handoff_context = None;
+        self.next_draft_choice = None;
+        self.resume_attempt = false;
+        self.resume_failed = false;
         self.chat += 1;
+    }
+
+    /// Saves the conversation being left and returns the smallest row id the next log may hand
+    /// out: after every id any session of the project used. The log is flushed and then closed
+    /// (it is never held open); its last row id is recorded with the session so ids stay unique
+    /// across restarts.
+    fn leave_conversation(&mut self) -> Result<u64, String> {
+        self.store
+            .flush()
+            .map_err(|e| format!("the current conversation could not be saved: {e}"))?;
+        let (paths, project) = (&self.shared.paths, &self.shared.project);
+        let last_row = self.store.resident().last().map(|row| row.id.0);
+        if let (Some(current), Some(last)) =
+            (SessionStore::current_session_id(paths, project), last_row)
+        {
+            SessionStore::record_last_row_id(paths, project, &current, last)?;
+        }
+        Ok((self.store.sequence_boundary() as u64)
+            .max(SessionStore::project_row_floor(paths, project)))
+    }
+
+    /// Opens a log for a stored session whose row ids start at `floor` at least.
+    fn open_session_log(&self, session: &str, floor: u64) -> Result<RowStore, String> {
+        let path =
+            SessionStore::session_log_path(&self.shared.paths, &self.shared.project, session)?;
+        RowStore::open_with_floor(path, self.store.limits(), floor).map_err(|e| e.to_string())
+    }
+
+    /// The log of a new empty session, made current. The previous session keeps its manifest
+    /// and stays resumable.
+    fn begin_session(&mut self) -> Result<RowStore, String> {
+        let floor = self.leave_conversation()?;
+        let (paths, project) = (&self.shared.paths, &self.shared.project);
+        let id = SessionStore::create_session_from(paths, project, None, now_unix(), floor)?;
+        let opened = self.open_session_log(&id, floor).and_then(|next| {
+            SessionStore::set_current(paths, project, &id)?;
+            Ok(next)
+        });
+        if opened.is_err() {
+            // An empty session nobody switched to would only clutter the list.
+            let _ = std::fs::remove_dir_all(paths.agent_session_dir(project, &id));
+        }
+        opened
+    }
+
+    pub(super) fn new_chat(&mut self) {
+        if let Some(reason) = self.switch_blocker("starting a new chat") {
+            self.warn(reason);
+            self.touch();
+            return;
+        }
+        // Nothing was said in this conversation: a new chat would only add an empty session.
+        if !self.store.has_older()
+            && !self
+                .store
+                .resident()
+                .iter()
+                .any(|row| matches!(row.kind, RowKind::User { .. }))
+        {
+            return;
+        }
+        match self.begin_session() {
+            Ok(next) => self.replace_conversation(next),
+            Err(error) => self.warn(format!("A new chat could not be started: {error}")),
+        }
         self.touch();
+    }
+
+    /// Switches to the stored session `id`: its log becomes the transcript (the stored log is
+    /// the only source of rows) and its agent session is resumed when possible.
+    pub(super) fn open_session(&mut self, id: &str) {
+        if let Some(reason) = self.switch_blocker("opening another session") {
+            self.warn(reason);
+            self.touch();
+            return;
+        }
+        let (paths, project) = (&self.shared.paths, &self.shared.project);
+        if SessionStore::current_session_id(paths, project).as_deref() == Some(id) {
+            return;
+        }
+        let known = SessionStore::session_log_path(paths, project, id)
+            .is_ok_and(|_| paths.agent_session_dir(project, id).is_dir());
+        if !known {
+            self.warn(format!(
+                "The session could not be opened: unknown session `{id}`"
+            ));
+            self.touch();
+            return;
+        }
+        let manifest = SessionStore::session_manifest(paths, project, id);
+        let switched = self.leave_conversation().and_then(|floor| {
+            let next = self.open_session_log(id, floor)?;
+            SessionStore::set_current(&self.shared.paths, &self.shared.project, id)?;
+            Ok(next)
+        });
+        match switched {
+            Ok(next) => {
+                self.replace_conversation(next);
+                self.resume_or_read_only(manifest);
+            }
+            Err(error) => self.warn(format!("The session could not be opened: {error}")),
+        }
+        self.touch();
+    }
+
+    /// After a switch: queues the stored agent session for resumption when the agent can
+    /// resume or load sessions, and otherwise says that the stored rows are read-only. Opening a
+    /// session adds nothing to its log: the outcome is shown through the restoration view, and
+    /// a row is written only when something happens (the resume, or the fresh agent start).
+    /// Nothing is launched here; the next prompt starts the agent.
+    fn resume_or_read_only(&mut self, manifest: Option<SessionManifest>) {
+        let Some(manifest) = manifest else {
+            self.session_restore = Some(Self::not_resumable_view(
+                None,
+                "This session has no saved agent session to resume. Its stored messages are shown read-only and the next prompt starts a fresh agent session.",
+            ));
+            return;
+        };
+        let view = if let Some(reason) = self.resume_blocker(&manifest) {
+            let text = format!(
+                "This session cannot be resumed: {reason}. Its stored messages are shown read-only and the next prompt starts a fresh agent session."
+            );
+            Self::not_resumable_view(Some(&manifest), &text)
+        } else {
+            match self.queue_resume(&manifest) {
+                Ok(_) => SessionRestoreView {
+                    provider_id: manifest.provider_id.clone(),
+                    redacted_session_id: manifest.redacted_id(),
+                    is_resumable: true,
+                    last_source_revision: manifest.last_source_revision.clone(),
+                    notice: Some(
+                        "Saved session found; adapter compatibility will be checked before launch."
+                            .to_owned(),
+                    ),
+                },
+                Err(reason) => Self::not_resumable_view(Some(&manifest), &reason),
+            }
+        };
+        self.session_restore = Some(view);
     }
 }

@@ -492,14 +492,6 @@ impl ToolRoute {
     }
 }
 
-/// Where the workflow keeps its conversation log.
-pub fn log_path(
-    paths: &crate::app_paths::AppPaths,
-    project: &studio_project::ProjectId,
-) -> std::path::PathBuf {
-    paths.project(project).join("conversation.jsonl")
-}
-
 /// Text of a repair turn: the engine's deterministic, bounded failure context, plus the
 /// tool routes of the repair session (a new session knows nothing of the first one).
 pub fn repair_prompt(context: &FailureContext, route: &ToolRoute) -> String {

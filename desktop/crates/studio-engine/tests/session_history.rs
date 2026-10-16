@@ -733,3 +733,146 @@ fn loading_and_listing_never_create_anything() {
     assert!(SessionStore::session_log_path(&f.paths, &f.project, "a/b").is_err());
     assert!(!f.paths.agent_sessions(&f.project).exists());
 }
+
+#[test]
+fn preparing_a_legacy_project_migrates_it_and_serves_its_log() {
+    let f = legacy_project();
+    let startup = SessionStore::prepare(&f.paths, &f.project);
+    assert!(startup.notices.is_empty(), "{:?}", startup.notices);
+    assert_eq!(
+        startup.log,
+        SessionStore::session_log_path(&f.paths, &f.project, LEGACY_SESSION_ID).unwrap()
+    );
+    assert!(startup.log.is_file());
+    assert!(!f.paths.legacy_conversation_log(&f.project).exists());
+    assert_eq!(ids(&f).len(), 2);
+}
+
+#[test]
+fn preparing_a_fresh_project_creates_its_first_session_once() {
+    let f = fixture();
+    let first = SessionStore::prepare(&f.paths, &f.project);
+    assert!(first.notices.is_empty(), "{:?}", first.notices);
+    assert_eq!(first.row_floor, 1);
+    let current = SessionStore::current_session_id(&f.paths, &f.project).unwrap();
+    assert_eq!(
+        first.log,
+        SessionStore::current_log_path(&f.paths, &f.project)
+    );
+    assert!(first.log.starts_with(f.paths.agent_sessions(&f.project)));
+
+    let again = SessionStore::prepare(&f.paths, &f.project);
+    assert_eq!(again.log, first.log);
+    assert_eq!(ids(&f), vec![current]);
+}
+
+#[test]
+fn an_item_that_cannot_be_migrated_becomes_a_notice_and_the_rest_still_opens() {
+    let f = legacy_project();
+    fs::create_dir_all(f.paths.project(&f.project).join("conversation-7.jsonl")).unwrap();
+    let startup = SessionStore::prepare(&f.paths, &f.project);
+    assert_eq!(startup.notices.len(), 1);
+    assert!(
+        startup.notices[0].contains("archive-7"),
+        "{:?}",
+        startup.notices
+    );
+    assert_eq!(
+        startup.log,
+        SessionStore::session_log_path(&f.paths, &f.project, LEGACY_SESSION_ID).unwrap()
+    );
+}
+
+#[test]
+fn a_legacy_conversation_that_is_not_migrated_is_never_hidden_behind_another_session() {
+    let f = legacy_project();
+    // Another session exists (an archive made it over, the legacy log did not).
+    let other = SessionStore::create_session(&f.paths, &f.project, None).unwrap();
+    assert_eq!(
+        SessionStore::current_session_id(&f.paths, &f.project),
+        None,
+        "no pointer is repaired to `{other}`"
+    );
+    assert!(!f.paths.agent_session_current(&f.project).exists());
+    assert_eq!(
+        SessionStore::current_log_path(&f.paths, &f.project),
+        f.paths.legacy_conversation_log(&f.project)
+    );
+
+    let startup = SessionStore::prepare(&f.paths, &f.project);
+    assert_eq!(
+        startup.log,
+        SessionStore::session_log_path(&f.paths, &f.project, LEGACY_SESSION_ID).unwrap(),
+        "the next successful migration serves the legacy conversation"
+    );
+    assert!(
+        fs::read_to_string(&startup.log)
+            .unwrap()
+            .contains("Make the intro faster")
+    );
+}
+
+#[test]
+fn a_legacy_file_that_cannot_be_removed_is_not_imported_again() {
+    let f = legacy_project();
+    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
+    let legacy_log = f.paths.legacy_conversation_log(&f.project);
+    // The log was written again after the migration: it becomes a session of its own.
+    write_log(
+        &legacy_log,
+        &[user(1, 2_000, "Written after the migration")],
+    );
+    let again = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
+    assert_eq!(again.imported.len(), 1, "{again:?}");
+    let sessions = ids(&f).len();
+
+    // The removal failed last time: the same file is still there. Nothing is imported twice.
+    write_log(
+        &legacy_log,
+        &[user(1, 2_000, "Written after the migration")],
+    );
+    let third = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
+    assert!(third.imported.is_empty(), "{third:?}");
+    assert_eq!(ids(&f).len(), sessions);
+    assert!(!legacy_log.exists());
+}
+
+#[test]
+fn row_ids_stay_unique_when_a_session_that_used_higher_ids_is_not_current_after_a_restart() {
+    let f = fixture();
+    let a = SessionStore::create_session_at(&f.paths, &f.project, None, 1).unwrap();
+    SessionStore::set_current(&f.paths, &f.project, &a).unwrap();
+    let rows: Vec<Row> = (1..=5).map(|i| agent(i, i, "a")).collect();
+    write_log(&SessionStore::current_log_path(&f.paths, &f.project), &rows);
+    SessionStore::record_last_row_id(&f.paths, &f.project, &a, 5).unwrap();
+    // Recording is monotonic.
+    SessionStore::record_last_row_id(&f.paths, &f.project, &a, 3).unwrap();
+    assert_eq!(SessionStore::project_row_floor(&f.paths, &f.project), 6);
+
+    // A second session uses ids past its first one and is left; the first becomes current
+    // again and the project restarts: the floor still counts the second session's ids.
+    let b = SessionStore::create_session_from(&f.paths, &f.project, None, 2, 6).unwrap();
+    let rows: Vec<Row> = (6..=10).map(|i| agent(i, i, "b")).collect();
+    write_log(
+        &SessionStore::session_log_path(&f.paths, &f.project, &b).unwrap(),
+        &rows,
+    );
+    SessionStore::record_last_row_id(&f.paths, &f.project, &b, 10).unwrap();
+    SessionStore::set_current(&f.paths, &f.project, &a).unwrap();
+    let startup = SessionStore::prepare(&f.paths, &f.project);
+    assert_eq!(startup.row_floor, 11);
+    let mut store =
+        RowStore::open_with_floor(startup.log, RowLimits::default(), startup.row_floor).unwrap();
+    assert_eq!(store.next_id(), RowId(11));
+}
+
+#[test]
+fn a_project_whose_sessions_cannot_be_written_keeps_serving_its_legacy_log() {
+    let f = legacy_project();
+    // A file where the sessions directory belongs: nothing can be migrated or created.
+    fs::write(f.paths.agent_sessions(&f.project), b"in the way").unwrap();
+    let startup = SessionStore::prepare(&f.paths, &f.project);
+    assert!(!startup.notices.is_empty());
+    assert_eq!(startup.log, f.paths.legacy_conversation_log(&f.project));
+    assert!(f.paths.legacy_conversation_log(&f.project).is_file());
+}

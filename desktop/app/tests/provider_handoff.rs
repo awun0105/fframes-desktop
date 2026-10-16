@@ -366,12 +366,12 @@ fn continuation_choices_apply_correct_draft_preparation() {
 fn restore_session_binds_to_provider_and_launch_digest_and_reaches_driver() {
     let w = World::new();
 
-    // 1. Run a seed task so the workflow establishes authentic project/adapter state
+    // 1. Enable load-session capability in acp-agent.py: the seed session stores it
+    fs::write(w.agent.join("load-session"), "1").unwrap();
+
+    // 2. Run a seed task so the workflow establishes authentic project/adapter state
     w.submit(&good("seed"));
     w.wait_task(None);
-
-    // 2. Enable load-session capability in acp-agent.py
-    fs::write(w.agent.join("load-session"), "1").unwrap();
 
     let wire_session_id = "test-opaque-session-token-xyz".to_string();
 
@@ -424,11 +424,10 @@ fn restore_session_binds_to_provider_and_launch_digest_and_reaches_driver() {
 fn restore_session_rejects_changed_adapter_closure() {
     let w = World::new();
 
+    // Enable load-session capability in acp-agent.py before the seed session stores it
+    fs::write(w.agent.join("load-session"), "1").unwrap();
     w.submit(&good("seed"));
     w.wait_task(None);
-
-    // Enable load-session capability in acp-agent.py
-    fs::write(w.agent.join("load-session"), "1").unwrap();
 
     // Load authentic manifest but tamper with the exact launch digest.
     let mut manifest =
@@ -598,15 +597,74 @@ fn continue_draft_preserves_outgoing_draft_edits_for_incoming_provider() {
     );
 }
 
+/// A world whose `codex` profile runs the test agent, switched to after one finished task.
+fn world_switched_to_codex_after_a_task() -> (World, AgentTaskId) {
+    let w = World::new();
+    let mut registry = studio_engine::providers::provider_profiles::ProviderRegistry::default();
+    if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
+        codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
+        codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
+    }
+    fs::create_dir_all(&w.paths.data).unwrap();
+    fs::write(
+        w.paths
+            .data
+            .join(studio_engine::providers::host::REGISTRY_FILE),
+        registry.to_pretty(),
+    )
+    .unwrap();
+    w.submit(&good("before-the-switch"));
+    let first = w.wait_task(None);
+    w.wf().initiate_switch("codex").expect("initiate ok");
+    w.wait("switch pending", |s| s.switch_pending.is_some());
+    w.wf()
+        .choose_handoff_continuation(
+            studio_engine::agent::model::HandoffChoice::RestartFromAccepted,
+        )
+        .expect("choose ok");
+    w.wait("switch resolved", |s| s.switch_pending.is_none());
+    (w, first.id)
+}
+
+fn last_prompt_text(w: &World) -> String {
+    w.evidence("prompts.jsonl")
+        .last()
+        .and_then(|prompt| prompt["text"].as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_handoff_of_a_provider_switch_goes_with_the_next_prompt_of_the_same_conversation() {
+    let (w, first) = world_switched_to_codex_after_a_task();
+    w.submit(&good("after-the-switch"));
+    w.wait_task(Some(&first));
+    assert!(
+        last_prompt_text(&w).contains("Studio handoff context"),
+        "{}",
+        last_prompt_text(&w)
+    );
+}
+
+#[test]
+fn the_handoff_of_a_provider_switch_never_reaches_another_conversation() {
+    let (w, first) = world_switched_to_codex_after_a_task();
+    w.wf().new_chat().unwrap();
+    w.wait("the new chat", |s| s.chat == 1);
+    w.submit(&good("in-the-new-chat"));
+    w.wait_task(Some(&first));
+    let prompt = last_prompt_text(&w);
+    assert!(prompt.contains("in-the-new-chat"), "{prompt}");
+    assert!(!prompt.contains("Studio handoff context"), "{prompt}");
+}
+
 #[test]
 fn unsupported_expired_resume_failure_falls_back_to_fresh_session() {
     let w = World::new();
 
+    // The seed session stores the load capability; the failure is injected afterwards.
+    fs::write(w.agent.join("load-session"), "1").unwrap();
     w.submit(&good("seed"));
     let seed_task = w.wait_task(None);
-
-    // Enable load-session but inject failure via fail-load
-    fs::write(w.agent.join("load-session"), "1").unwrap();
     fs::write(w.agent.join("fail-load"), "1").unwrap();
 
     let mut manifest =
@@ -658,6 +716,19 @@ fn unsupported_expired_resume_failure_falls_back_to_fresh_session() {
         "fresh session notice must be visible: {:?}",
         restore_view.notice
     );
+    // A failed resume does not end resumption for good: the stored manifest is as it was.
+    let stored =
+        studio_engine::agent::session_store::SessionStore::load(&w.paths, &w.snap().project)
+            .unwrap()
+            .expect("the manifest is still stored");
+    assert_eq!(
+        stored.state,
+        studio_engine::agent::session_store::SessionManifestState::Ready
+    );
+    assert!(s.rows.iter().any(|r| matches!(
+        &r.kind,
+        RowKind::Notice { text, .. } if text.contains("could not resume")
+    )));
 
     // Next task runs fresh without session-load (clean fresh session!)
     let _ = fs::remove_file(w.agent.join("fail-load"));
@@ -979,10 +1050,9 @@ fn tool_snapshot_race_waits_for_tool_snapshot_to_drain_before_draft_capture() {
 fn restore_session_rejects_changed_draft_location() {
     let w = World::new();
 
+    fs::write(w.agent.join("load-session"), "1").unwrap();
     w.submit(&good("seed"));
     let seed = w.wait_task(None);
-
-    fs::write(w.agent.join("load-session"), "1").unwrap();
 
     let mut manifest =
         studio_engine::agent::session_store::SessionStore::load(&w.paths, &w.snap().project)

@@ -11,24 +11,21 @@
 //! Attachment bytes are never stored: a `User` row carries text only.
 //!
 //! A project counts as migrated as soon as `sessions/` holds a session directory. From then on
-//! the single-session API never falls back to the legacy files: a missing, unreadable or
+//! the single-session API does not fall back to the legacy files: a missing, unreadable or
 //! dangling `current` pointer is repaired by pointing it at the most recently updated session.
-//! Consequently a session created in a project that has no pointer becomes current.
+//! The one exception is a legacy conversation that was not migrated (its files are still there
+//! and no `legacy` session exists): no session is picked in its place, so the legacy files keep
+//! being served until a later migration succeeds.
 //!
-//! # Seams for the restore wiring
+//! # How the workflow uses it
 //!
-//! The running workflow still opens `present::log_path` (`<project>/conversation.jsonl`) and
-//! `agent.rs` opens it, so nothing here moves a live log implicitly. Nothing in production calls
-//! [`SessionStore::migrate_legacy`] yet. The wiring must, in order:
-//!
-//! 1. call [`SessionStore::migrate_legacy`] before `AgentWorkflow::open` (it may remove the
-//!    legacy log, which Windows will not allow while it is open);
-//! 2. open the log at [`SessionStore::current_log_path`] instead of `present::log_path`, with
-//!    `RowStore::open_with_floor` and [`SessionStore::row_id_floor`] so row ids stay unique
-//!    across the sessions of a project;
-//! 3. start a new conversation with [`SessionStore::create_session`] and
-//!    [`SessionStore::set_current`] while no actor owns the log (flush it first), rather than
-//!    `RowStore::start_new`, which refuses a log that lives in a session directory.
+//! `AgentWorkflow::open` runs `SessionStore::prepare` (which calls
+//! [`SessionStore::migrate_legacy`] before any log is open: Windows will not remove an open
+//! legacy log) and opens the log at [`SessionStore::current_log_path`] with
+//! `RowStore::open_with_floor`, so row ids stay unique across the sessions of a project. New
+//! chat and opening a stored session flush the open log, then use
+//! [`SessionStore::create_session`] / [`SessionStore::set_current`], never `RowStore::start_new`,
+//! which refuses a log that lives in a session directory.
 //!
 //! [`SessionStore::load`], [`SessionStore::save`] and [`SessionStore::clear`] follow the
 //! `current` pointer, so they need no change. `clear` removes only the current session's
@@ -75,6 +72,14 @@ pub struct SessionMeta {
     /// sessions of a project.
     #[serde(default = "default_first_row_id")]
     pub first_row_id: u64,
+    /// The newest row id this session is known to have used (0 while unknown). Recorded when
+    /// the session is left, so the ids of every other session can start after it.
+    #[serde(default)]
+    pub last_row_id: u64,
+    /// Fingerprint of the legacy files this session was imported from, so legacy files that
+    /// cannot be deleted are not imported again on every start.
+    #[serde(default)]
+    pub source_hash: Option<String>,
 }
 
 /// What [`SessionStore::migrate_legacy`] did.
@@ -177,6 +182,13 @@ pub(super) fn session_ids(paths: &AppPaths, project: &ProjectId) -> Vec<String> 
         .collect()
 }
 
+/// Legacy single-session files exist and no `legacy` session holds them.
+fn legacy_files_unmigrated(paths: &AppPaths, project: &ProjectId) -> bool {
+    (paths.legacy_conversation_log(project).is_file()
+        || paths.agent_session_manifest(project).is_file())
+        && !paths.agent_session_dir(project, LEGACY_SESSION_ID).is_dir()
+}
+
 fn last_modified(paths: &AppPaths, project: &ProjectId, session: &str) -> std::time::SystemTime {
     [
         manifest_file(paths, project, session),
@@ -205,6 +217,11 @@ impl SessionStore {
     pub fn current_session_id(paths: &AppPaths, project: &ProjectId) -> Option<String> {
         if let Some(id) = Self::pointer_target(paths, project) {
             return Some(id);
+        }
+        // The legacy conversation did not make it into a session: never point at another
+        // session in its place, the legacy files keep being served until it does.
+        if legacy_files_unmigrated(paths, project) {
+            return None;
         }
         let id = session_ids(paths, project).into_iter().max_by(|a, b| {
             last_modified(paths, project, a)
@@ -269,9 +286,53 @@ impl SessionStore {
         first.max(after_rows)
     }
 
+    /// The smallest row id a new session of the project may hand out: after the ids every
+    /// session recorded (`first_row_id` and `last_row_id` of the metas). Reads only the small
+    /// meta files.
+    pub fn project_row_floor(paths: &AppPaths, project: &ProjectId) -> u64 {
+        session_ids(paths, project)
+            .iter()
+            .filter_map(|id| read_meta(&meta_file(paths, project, id)))
+            .map(|meta| meta.first_row_id.max(meta.last_row_id.saturating_add(1)))
+            .max()
+            .unwrap_or(1)
+            .max(1)
+    }
+
+    /// Records that `session` used row ids up to `last` (see `SessionMeta::last_row_id`).
+    /// Does nothing when the meta already says as much or does not exist.
+    pub fn record_last_row_id(
+        paths: &AppPaths,
+        project: &ProjectId,
+        session: &str,
+        last: u64,
+    ) -> Result<(), String> {
+        let path = meta_file(paths, project, session);
+        let Some(mut meta) = read_meta(&path) else {
+            return Ok(());
+        };
+        if meta.last_row_id >= last {
+            return Ok(());
+        }
+        meta.last_row_id = last;
+        write_meta(&paths.agent_session_dir(project, session), &meta)
+    }
+
+    /// The manifest of one stored session; `None` when it has none or it cannot be used.
+    pub fn session_manifest(
+        paths: &AppPaths,
+        project: &ProjectId,
+        session: &str,
+    ) -> Option<SessionManifest> {
+        is_valid_session_id(session)
+            .then(|| read_manifest(&manifest_file(paths, project, session)))
+            .flatten()
+    }
+
     /// Creates an empty session and returns its id. It does not become current, unless the
     /// project has no valid pointer yet (see the module docs). Its row ids continue after
-    /// those of the session that is current now: flush that session's log first.
+    /// those of every session, and after the rows of the session that is current now: flush
+    /// that session's log first.
     pub fn create_session(
         paths: &AppPaths,
         project: &ProjectId,
@@ -287,14 +348,29 @@ impl SessionStore {
         title: Option<String>,
         created_unix: u64,
     ) -> Result<String, String> {
+        let current_floor = Self::current_session_id(paths, project)
+            .map_or(1, |current| Self::row_id_floor(paths, project, &current));
+        let first_row_id = current_floor.max(Self::project_row_floor(paths, project));
+        Self::create_session_from(paths, project, title, created_unix, first_row_id)
+    }
+
+    /// Creates an empty session whose row ids start at `first_row_id` at least, without
+    /// reading any log (the caller knows the next id of the log it is leaving).
+    pub fn create_session_from(
+        paths: &AppPaths,
+        project: &ProjectId,
+        title: Option<String>,
+        created_unix: u64,
+        first_row_id: u64,
+    ) -> Result<String, String> {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let sessions = paths.agent_sessions(project);
-        let first_row_id = Self::current_session_id(paths, project)
-            .map_or(1, |current| Self::row_id_floor(paths, project, &current));
+        let first_row_id = first_row_id.max(Self::project_row_floor(paths, project));
         let now = now_unix();
         let id = loop {
             let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let id = format!("s-{now:x}-{n:x}-{:x}", std::process::id());
+            // Zero-padded, so ids made within one second sort in creation order.
+            let id = format!("s-{now:x}-{n:08x}-{:x}", std::process::id());
             if !sessions.join(&id).exists() {
                 break id;
             }
@@ -304,6 +380,8 @@ impl SessionStore {
             title: title.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()),
             created_unix,
             first_row_id,
+            last_row_id: 0,
+            source_hash: None,
         };
         publish_dir(&sessions, &id, |dir| write_meta(dir, &meta))?;
         Ok(id)
@@ -448,10 +526,29 @@ fn archive_id(stamp: &str) -> String {
     if id.len() <= MAX_ID_LEN {
         return id;
     }
-    let hash = stamp.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
-    });
-    format!("archive-{}-{hash:016x}", &stamp[..30])
+    format!("archive-{}-{:016x}", &stamp[..30], fnv1a(stamp.bytes()))
+}
+
+fn fnv1a(bytes: impl IntoIterator<Item = u8>) -> u64 {
+    bytes
+        .into_iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        })
+}
+
+/// Identifies the content of a legacy item's files (`None` when one cannot be read).
+fn fingerprint(item: &LegacyItem) -> Option<String> {
+    let mut bytes = Vec::new();
+    for path in legacy_files(item) {
+        bytes.extend(std::fs::read(path).ok()?);
+        bytes.push(0);
+    }
+    Some(format!(
+        "{:016x}-{}",
+        fnv1a(bytes.iter().copied()),
+        bytes.len()
+    ))
 }
 
 /// `conversation-<stamp>[-n].jsonl` files next to the project log, oldest first.
@@ -507,8 +604,8 @@ fn stage(dir: &Path, item: &LegacyItem) -> Result<(), String> {
             write_atomic(&dir.join(MANIFEST_FILE), &bytes)?;
         }
     }
+    let rows = log::read_rows(&dir.join(LOG_FILE)).unwrap_or_default();
     if created == 0 {
-        let rows = log::read_rows(&dir.join(LOG_FILE)).unwrap_or_default();
         created = rows.first().map_or(0, |row| row.at_unix);
     }
     write_meta(
@@ -518,6 +615,8 @@ fn stage(dir: &Path, item: &LegacyItem) -> Result<(), String> {
             title: None,
             created_unix: created,
             first_row_id: 1,
+            last_row_id: rows.iter().map(|row| row.id.0).max().unwrap_or(0),
+            source_hash: fingerprint(item),
         },
     )
 }
@@ -575,7 +674,9 @@ fn settle_item(
     item: &LegacyItem,
     report: &mut MigrationReport,
 ) {
-    if copy_matches(item, &paths.agent_session_dir(project, &item.id)) {
+    if copy_matches(item, &paths.agent_session_dir(project, &item.id))
+        || already_imported(paths, project, item)
+    {
         remove_legacy(item, report);
         return;
     }
@@ -598,6 +699,19 @@ fn settle_item(
         }
         Err(e) => report.failed.push((item.id.clone(), e)),
     }
+}
+
+/// A session was made from exactly these legacy files (they could not be removed then, so the
+/// session has moved on since and no longer equals them).
+fn already_imported(paths: &AppPaths, project: &ProjectId, item: &LegacyItem) -> bool {
+    let Some(hash) = fingerprint(item) else {
+        return false;
+    };
+    session_ids(paths, project).iter().any(|id| {
+        read_meta(&meta_file(paths, project, id))
+            .and_then(|meta| meta.source_hash)
+            .is_some_and(|stored| stored == hash)
+    })
 }
 
 fn legacy_files(item: &LegacyItem) -> impl Iterator<Item = &PathBuf> {
