@@ -17,7 +17,7 @@ created: 2026-10-13
 
 Part of [the studio rewrite roadmap](../261013-0733-studio-rewrite-roadmap/plan.md). Zeron runs Claude Code and Codex over their native protocols, not ACP, because their ACP adapters hold turns open for background work and report false "still running" and "done" states ([Zeron report](../reports/research-261013-1749-zeron-agent-control.md), headline). fframes captures an agent's changes when a turn ends, so the turn end must be reliable. This milestone adds those two native drivers; ACP stays for every other agent (`acp_v1` tests unchanged).
 
-Unlike Zeron, fframes never answers a request on the user's behalf: Claude's `can_use_tool` requests and Codex's approval requests become permission rows the user answers (parity item 9). What each CLI runs without asking is its own policy (Claude runs read-only tools in default mode; Codex `on-request` asks only outside its sandbox). Both drivers start in the task's draft directory, like ACP (`actor.rs:1764` `cwd: active.ctx.draft`), so writer containment (M3 phase 4) and candidate validation apply as today.
+Unlike Zeron, fframes never answers a request on the user's behalf: Claude's `can_use_tool` requests and Codex's approval requests become permission rows the user answers (parity item 9). What each CLI runs without asking is its own policy (Claude runs read-only tools in default mode; Codex runs with `untrusted` approvals in the `workspace-write` sandbox and asks before most commands, because S5 showed `on-request` asked for nothing). Both drivers start in the task's draft directory, like ACP (`actor.rs:1764` `cwd: active.ctx.draft`), so writer containment (M3 phase 4) and candidate validation apply as today.
 
 Order with one executor: after M4, before M5. M1 spike S5 proves both protocols on real CLIs first.
 
@@ -38,7 +38,7 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
 | 1 | [Driver trait and wire selection](./phase-01-driver-trait.md) | 2-3d | none | Completed |
-| 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Completed (the multi-question card is handed to the M5 composer) |
+| 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Completed except question answering: the engine's card answers only the first question and sends empty answers for the rest. Handed to [M5 phase 2](../261013-0733-studio-m5-agent-ux/phase-02-composer.md). |
 | 3 | [Codex app-server driver](./phase-03-codex-app-server.md) | 3-4d | 1 | Completed |
 | 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | In progress. Done on Windows; macOS manual checks and macOS/Linux CI are open. |
 
@@ -51,5 +51,5 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
 - [ ] The same with Codex on the user's machine (or wherever Codex is installed and signed in).
   - Against the real CLI on this VM: decline and accept, stop, and an interrupted command ended by session stop.
   - With the fake CLI only: steer and resume.
-- [x] No driver answers a request on the user's behalf. `cross_driver.rs` proves for all three wires that an unanswered permission request blocks the tool, and both native drivers run in the draft directory.
+- [x] No driver answers a request on the user's behalf. The engine still does for questions 2..n of a multi-question prompt; M5 phase 2 owns that fix. `cross_driver.rs` proves for all three wires that an unanswered permission request blocks the tool, and both native drivers run in the draft directory.
 - [ ] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs. They pass on this Windows VM; macOS and Linux have not run them.

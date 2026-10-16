@@ -21,7 +21,7 @@ Zeron `crates/ui/src/todo_panel.rs` (1,144 lines; depends on frost, edge fade, q
 
 ## Tasks
 
-1. Driver: add `AgentEventKind::Plan` for ACP `Plan` updates (today dropped at the catch-all in `driver/runtime.rs`), Claude `TodoWrite` input and Codex `turn/plan/updated` (both mapped in M5a); update the comment there to say plans are displayed but carry no workflow authority.
+1. Driver: map ACP `Plan` updates to `AgentEventKind::Plan`, which M5a added and which Claude `TodoWrite` and Codex `turn/plan/updated` already emit. ACP plans are still dropped in `driver/runtime/shared.rs` (`SessionUpdate::Plan`); update the comment there to say plans are displayed but carry no workflow authority. The engine ignores `Plan` today (`agent/actor/prompt.rs`), so task 2 starts there. Once ACP emits plans, check them for ACP in `studio-harness/tests/cross_driver.rs` too.
 2. Publish the latest plan entries in `WorkflowSnapshot`.
 3. Port the panel: collapsed summary (`2/5`), expanded list with status icons, collapse state per session.
 4. Tests: a driver test that a `Plan` update produces the event; a gpui test that updates replace the list and an empty plan hides the panel.

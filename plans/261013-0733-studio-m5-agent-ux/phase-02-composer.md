@@ -43,7 +43,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Composer on kit `TextInput`; steering extension or cancel-and-re-prompt; kind-less permissions as questions
+- [ ] Composer on kit `TextInput`; steering extension or cancel-and-re-prompt; driver `Question` events as question cards
 
 - [ ] Scout prompt path
 - [ ] Composer ported and split
