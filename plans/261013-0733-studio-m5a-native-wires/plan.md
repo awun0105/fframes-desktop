@@ -1,7 +1,7 @@
 ---
 title: "M5a Native agent wires: Claude stream-json and Codex app-server"
 description: "Put the agent driver behind one trait, keep ACP for other agents, and add native drivers for Claude Code (stream-json control protocol) and Codex (app-server JSON-RPC), ported from Zeron's harness, with every approval routed to the user."
-status: pending
+status: in-progress
 priority: P1
 effort: "10-14d"
 branch: feat/studio-rewrite
@@ -37,15 +37,19 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
-| 1 | [Driver trait and wire selection](./phase-01-driver-trait.md) | 2-3d | none | Pending |
-| 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Pending |
-| 3 | [Codex app-server driver](./phase-03-codex-app-server.md) | 3-4d | 1 | Pending |
-| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | Pending |
+| 1 | [Driver trait and wire selection](./phase-01-driver-trait.md) | 2-3d | none | Completed |
+| 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Completed (the multi-question card is handed to the M5 composer) |
+| 3 | [Codex app-server driver](./phase-03-codex-app-server.md) | 3-4d | 1 | Completed |
+| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | In progress. Done on Windows; macOS manual checks and macOS/Linux CI are open. |
 
 ## Success criteria
 
-- [ ] The agent actor talks only to the driver trait; ACP, Claude and Codex implement it; `acp_v1` tests pass unchanged.
+- [x] The agent actor talks only to the driver trait; ACP, Claude and Codex implement it. The `acp_v1` tests pass with their test code unchanged; the ACP peer's `permission` mode now writes only on allow.
 - [ ] With Claude Code on this VM: a turn streams text, asks permission before an edit (deny blocks it, allow lets it through), steers, stops without killing the process, resumes, and ends only when the `result` frame arrives; the candidate is captured after writer quiescence.
+  - Against the real CLI: text, deny and allow, and stop.
+  - With the fake CLI only: steer, resume, and capture after quiescence.
 - [ ] The same with Codex on the user's machine (or wherever Codex is installed and signed in).
-- [ ] No driver answers a request on the user's behalf; a test proves an unanswered permission request blocks the tool; both native drivers run in the draft directory.
-- [ ] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs.
+  - Against the real CLI on this VM: decline and accept, stop, and an interrupted command ended by session stop.
+  - With the fake CLI only: steer and resume.
+- [x] No driver answers a request on the user's behalf. `cross_driver.rs` proves for all three wires that an unanswered permission request blocks the tool, and both native drivers run in the draft directory.
+- [ ] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs. They pass on this Windows VM; macOS and Linux have not run them.
