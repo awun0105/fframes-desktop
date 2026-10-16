@@ -42,8 +42,8 @@ pub struct SlashToken {
 /// `([{>`, and the caret must sit inside the word. Paths such as `/usr/bin` and
 /// text after the command word (its arguments) are not tokens.
 ///
-/// Text in a Markdown code span is not recognised as code here, so a slash
-/// typed inside backticks still opens the menu.
+/// A slash inside an open backtick span (an odd number of backticks before it) is
+/// code, not a command, and opens no menu.
 pub fn slash_token(text: &str, cursor: usize) -> Option<SlashToken> {
     if cursor > text.len() || !text.is_char_boundary(cursor) {
         return None;
@@ -54,6 +54,9 @@ pub fn slash_token(text: &str, cursor: usize) -> Option<SlashToken> {
         .find(|(_, c)| c.is_whitespace() || matches!(c, '(' | '[' | '{' | '>'))
         .map_or(0, |(i, c)| i + c.len_utf8());
     if !text[start..cursor].starts_with('/') {
+        return None;
+    }
+    if text[..start].matches('`').count() % 2 == 1 {
         return None;
     }
     let query = &text[start + 1..cursor];
@@ -272,6 +275,14 @@ mod tests {
         assert_eq!(slash_token("/", 1).map(|t| t.query), Some(String::new()));
         // An offset inside a character is not a position.
         assert!(slash_token("/é", 2).is_none());
+    }
+
+    #[test]
+    fn a_slash_inside_backticks_is_code_not_a_command() {
+        assert!(slash_token("run `ls /co", 11).is_none());
+        assert!(slash_token("`a b /x", 7).is_none());
+        // Once the span is closed the slash is prose again.
+        assert_eq!(slash_token("`ls` /co", 8).unwrap().range, 5..8);
     }
 
     #[test]

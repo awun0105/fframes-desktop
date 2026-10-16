@@ -25,6 +25,7 @@ fn describe(event: &ComposerEvent) -> String {
         ComposerEvent::AttachRequested(AttachRequest::Paths(p)) => format!("paths:{}", p.len()),
         ComposerEvent::AttachRequested(AttachRequest::Images(i)) => format!("images:{}", i.len()),
         ComposerEvent::AttachmentRemoved(id) => format!("removed:{}", id.0),
+        ComposerEvent::AttachBlocked { kind, reason } => format!("blocked:{kind:?}:{reason}"),
     }
 }
 
@@ -225,12 +226,39 @@ fn attach_buttons_and_pastes_ask_the_owner_unless_the_kind_is_disabled(cx: &mut 
         composer.on_input_event(&ComposerInputEvent::PastedImages(vec![]), cx);
         composer.on_input_event(&ComposerInputEvent::PastedPaths(vec!["a".into()]), cx);
     });
-    assert_eq!(take(&log), ["paths:1"], "a disabled kind is dropped");
+    assert_eq!(
+        take(&log),
+        ["blocked:Image:no images", "paths:1"],
+        "a disabled kind is refused with its reason, not silently dropped"
+    );
     composer.update(cx, |composer, cx| {
         composer.set_attach_disabled(AttachKind::Image, None, cx);
         composer.on_input_event(&ComposerInputEvent::PastedImages(vec![]), cx);
     });
     assert_eq!(take(&log), ["images:0"]);
+}
+
+#[gpui::test]
+fn switching_a_kind_off_removes_its_chips_and_says_why(cx: &mut TestAppContext) {
+    let (composer, cx, log) = setup(cx);
+    composer.update(cx, |composer, cx| {
+        composer.add_attachment(AttachmentDraft::file("notes.txt"), cx);
+        let image = Arc::new(gpui::Image::from_bytes(gpui::ImageFormat::Png, vec![0]));
+        composer.add_attachment(AttachmentDraft::image("shot", image), cx);
+        composer.set_attach_disabled(AttachKind::Image, Some("no images".into()), cx);
+    });
+    let left = composer.read_with(cx, |composer, _| {
+        composer
+            .attachments()
+            .iter()
+            .map(|chip| chip.draft.label.to_string())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(left, ["notes.txt"]);
+    let log = take(&log);
+    assert_eq!(log.len(), 2, "{log:?}");
+    assert!(log[0].starts_with("removed:"));
+    assert_eq!(log[1], "blocked:Image:no images");
 }
 
 #[gpui::test]

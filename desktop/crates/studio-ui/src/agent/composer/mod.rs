@@ -42,6 +42,7 @@ pub use slash::SlashCommand;
 pub use steer::{SendAction, SteerMode};
 
 use crate::kit::{Button, ButtonSize, ButtonVariant, Icon, IconButton};
+use crate::probe::{self, BoundsSink};
 use slash::SlashState;
 use steer::steer_actions;
 
@@ -87,8 +88,22 @@ pub enum ComposerEvent {
     /// The stop button.
     Stop,
     AttachRequested(AttachRequest),
-    /// A chip's remove button was pressed and the chip is gone.
+    /// A chip's remove button was pressed and the chip is gone, or the owner switched
+    /// its kind off and the composer dropped it.
     AttachmentRemoved(AttachmentId),
+    /// Something of a switched-off kind was pasted, or chips of a kind that was just
+    /// switched off were dropped: the owner shows the reason.
+    AttachBlocked {
+        kind: AttachKind,
+        reason: SharedString,
+    },
+}
+
+fn chip_kind(chip: &Attachment) -> AttachKind {
+    match chip.draft.kind {
+        AttachmentKind::File => AttachKind::File,
+        AttachmentKind::Image => AttachKind::Image,
+    }
 }
 
 /// The composer view.
@@ -103,6 +118,7 @@ pub struct Composer {
     /// Why each kind of attachment is off, when it is.
     file_disabled: Option<SharedString>,
     image_disabled: Option<SharedString>,
+    bounds_sink: Option<BoundsSink>,
     _input_events: Subscription,
 }
 
@@ -131,6 +147,7 @@ impl Composer {
             running: false,
             file_disabled: None,
             image_disabled: None,
+            bounds_sink: None,
             _input_events: subscription,
         }
     }
@@ -177,10 +194,28 @@ impl Composer {
             AttachKind::File => &mut self.file_disabled,
             AttachKind::Image => &mut self.image_disabled,
         };
-        if *slot != reason {
-            *slot = reason;
-            cx.notify();
+        if *slot == reason {
+            return;
         }
+        slot.clone_from(&reason);
+        // Chips of a kind the agent cannot take must not ride along with the next send.
+        if let Some(reason) = reason {
+            let dropped: Vec<AttachmentId> = self
+                .attachments
+                .items()
+                .iter()
+                .filter(|chip| chip_kind(chip) == kind)
+                .map(|chip| chip.id)
+                .collect();
+            for id in &dropped {
+                self.attachments.remove(*id);
+                cx.emit(ComposerEvent::AttachmentRemoved(*id));
+            }
+            if !dropped.is_empty() {
+                cx.emit(ComposerEvent::AttachBlocked { kind, reason });
+            }
+        }
+        cx.notify();
     }
 
     /// Shows a chip the owner accepted.
@@ -201,6 +236,14 @@ impl Composer {
             cx.notify();
         }
         removed
+    }
+
+    /// Drops every chip without telling the owner, as when the conversation changed.
+    pub fn clear_attachments(&mut self, cx: &mut Context<Self>) {
+        if !self.attachments.is_empty() {
+            self.attachments.take();
+            cx.notify();
+        }
     }
 
     pub fn attachments(&self) -> &[Attachment] {
@@ -229,14 +272,61 @@ impl Composer {
         window.focus(&self.input.focus_handle(cx), cx);
     }
 
+    /// The placeholder shown while the draft is empty.
+    pub fn set_placeholder(
+        &mut self,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        let placeholder = placeholder.into();
+        self.input
+            .update(cx, |input, cx| input.set_placeholder(placeholder, cx));
+    }
+
+    /// Where the composer reports the bounds of its buttons, the slash rows and the
+    /// input (composer-input), for owners that drive the window with real pointer events.
+    pub fn set_bounds_sink(&mut self, sink: BoundsSink) {
+        self.bounds_sink = Some(sink);
+    }
+
+    /// The Enter gesture: sends as the primary action of the current state. Does nothing
+    /// when the agent cannot take a message now or the draft is empty.
+    pub fn send_primary(&mut self, cx: &mut Context<Self>) {
+        if let Some(action) = steer_actions(self.steer_mode, self.running).primary {
+            self.trigger(action, cx);
+        }
+    }
+
+    /// Whether the draft has any text or chip to send.
+    pub fn has_draft(&self, cx: &App) -> bool {
+        self.can_send(cx)
+    }
+
+    /// The reason each attachment kind is off, if it is.
+    pub fn attach_disabled(&self, kind: AttachKind) -> Option<&SharedString> {
+        match kind {
+            AttachKind::File => self.file_disabled.as_ref(),
+            AttachKind::Image => self.image_disabled.as_ref(),
+        }
+    }
+
+    /// The names of the commands the slash menu lists now, in row order; empty while it is
+    /// closed.
+    pub fn slash_rows(&self) -> Vec<SharedString> {
+        if !self.slash.is_open() {
+            return Vec::new();
+        }
+        self.slash
+            .rows()
+            .iter()
+            .filter_map(|index| self.commands.get(*index))
+            .map(|command| command.name.clone())
+            .collect()
+    }
+
     fn on_input_event(&mut self, event: &ComposerInputEvent, cx: &mut Context<Self>) {
         match event {
-            ComposerInputEvent::Submitted => {
-                let actions = steer_actions(self.steer_mode, self.running);
-                if let Some(action) = actions.primary {
-                    self.trigger(action, cx);
-                }
-            }
+            ComposerInputEvent::Submitted => self.send_primary(cx),
             ComposerInputEvent::SubmittedNow => {
                 let action = steer_actions(self.steer_mode, self.running).now;
                 self.trigger(action, cx);
@@ -258,21 +348,29 @@ impl Composer {
                 self.sync_completion_controls(cx);
                 cx.notify();
             }
-            ComposerInputEvent::PastedImages(images) => {
-                if self.image_disabled.is_none() {
+            ComposerInputEvent::PastedImages(images) => match self.image_disabled.clone() {
+                None => {
                     let images = images.iter().cloned().map(Arc::new).collect();
                     cx.emit(ComposerEvent::AttachRequested(AttachRequest::Images(
                         images,
                     )));
                 }
-            }
-            ComposerInputEvent::PastedPaths(paths) => {
-                if self.file_disabled.is_none() {
+                Some(reason) => cx.emit(ComposerEvent::AttachBlocked {
+                    kind: AttachKind::Image,
+                    reason,
+                }),
+            },
+            ComposerInputEvent::PastedPaths(paths) => match self.file_disabled.clone() {
+                None => {
                     cx.emit(ComposerEvent::AttachRequested(AttachRequest::Paths(
                         paths.clone(),
                     )));
                 }
-            }
+                Some(reason) => cx.emit(ComposerEvent::AttachBlocked {
+                    kind: AttachKind::File,
+                    reason,
+                }),
+            },
         }
     }
 
@@ -288,9 +386,16 @@ impl Composer {
         }
         let text = self.text(cx).trim().to_string();
         self.input.update(cx, |input, cx| input.set_text("", cx));
+        // A chip of a switched-off kind never travels, whatever put it there.
+        let (file_off, image_off) = (self.file_disabled.is_some(), self.image_disabled.is_some());
+        let mut chips = self.attachments.take();
+        chips.retain(|chip| match chip_kind(chip) {
+            AttachKind::File => !file_off,
+            AttachKind::Image => !image_off,
+        });
         let submission = Submission {
             text,
-            attachments: self.attachments.take(),
+            attachments: chips,
         };
         cx.emit(match action {
             SendAction::Submit => ComposerEvent::Submit(submission),
@@ -367,6 +472,7 @@ impl Composer {
             .map(|(row, command)| {
                 div()
                     .id(("slash-row", row))
+                    .relative()
                     .flex()
                     .flex_row()
                     .items_center()
@@ -396,6 +502,10 @@ impl Composer {
                             .text_color(theme.gray(10))
                             .child(command.description.clone()),
                     )
+                    .children(probe::probe_element(
+                        &self.bounds_sink,
+                        format!("composer-slash-row-{row}"),
+                    ))
             })
             .collect::<Vec<_>>();
         Some(
@@ -436,6 +546,10 @@ impl Composer {
             .on_click(
                 cx.listener(|this, _, _, cx| this.request_attach(AttachRequest::PickFiles, cx)),
             );
+        let file_button = match probe::report_to(&self.bounds_sink, "composer-attach-file") {
+            Some(report) => file_button.on_bounds(report),
+            None => file_button,
+        };
         let image_button = IconButton::body(&theme, "composer-attach-image", Icon::Image.path())
             .size(px(24.0))
             .icon_size(px(14.0))
@@ -451,18 +565,24 @@ impl Composer {
             .on_click(
                 cx.listener(|this, _, _, cx| this.request_attach(AttachRequest::PickImages, cx)),
             );
+        let image_button = match probe::report_to(&self.bounds_sink, "composer-attach-image") {
+            Some(report) => image_button.on_bounds(report),
+            None => image_button,
+        };
 
         let mut right = div().flex().flex_row().items_center().gap(px(6.0));
         if self.running {
-            right = right.child(
-                IconButton::body(&theme, "composer-stop", Icon::Square.path())
-                    .size(px(24.0))
-                    .icon_size(px(12.0))
-                    .rounded(px(12.0))
-                    .label("Stop")
-                    .tooltip(&theme, "Stop")
-                    .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
-            );
+            let stop = IconButton::body(&theme, "composer-stop", Icon::Square.path())
+                .size(px(24.0))
+                .icon_size(px(12.0))
+                .rounded(px(12.0))
+                .label("Stop")
+                .tooltip(&theme, "Stop")
+                .on_click(cx.listener(|this, _, _, cx| this.stop(cx)));
+            right = right.child(match probe::report_to(&self.bounds_sink, "composer-stop") {
+                Some(report) => stop.on_bounds(report),
+                None => stop,
+            });
         }
         if let Some(hint) = actions.hint {
             right = right.child(
@@ -475,28 +595,38 @@ impl Composer {
         if self.running {
             let now = actions.now;
             right = right.child(
-                Button::plain(
-                    &theme,
-                    "composer-send-now",
-                    ButtonVariant::Outline,
-                    ButtonSize::Sm,
-                )
-                .label(now.label())
-                .disabled(!sendable)
-                .on_click(cx.listener(move |this, _, _, cx| this.trigger(now, cx))),
+                div()
+                    .relative()
+                    .child(
+                        Button::plain(
+                            &theme,
+                            "composer-send-now",
+                            ButtonVariant::Outline,
+                            ButtonSize::Sm,
+                        )
+                        .label(now.label())
+                        .disabled(!sendable)
+                        .on_click(cx.listener(move |this, _, _, cx| this.trigger(now, cx))),
+                    )
+                    .children(probe::probe_element(&self.bounds_sink, "composer-send-now")),
             );
         }
         if let Some(primary) = actions.primary {
             right = right.child(
-                Button::plain(
-                    &theme,
-                    "composer-send",
-                    ButtonVariant::Primary,
-                    ButtonSize::Sm,
-                )
-                .label(primary.label())
-                .disabled(!sendable)
-                .on_click(cx.listener(move |this, _, _, cx| this.trigger(primary, cx))),
+                div()
+                    .relative()
+                    .child(
+                        Button::plain(
+                            &theme,
+                            "composer-send",
+                            ButtonVariant::Primary,
+                            ButtonSize::Sm,
+                        )
+                        .label(primary.label())
+                        .disabled(!sendable)
+                        .on_click(cx.listener(move |this, _, _, cx| this.trigger(primary, cx))),
+                    )
+                    .children(probe::probe_element(&self.bounds_sink, "composer-send")),
             );
         }
 
@@ -540,7 +670,14 @@ impl Render for Composer {
             .bg(theme.gray(2))
             .children(self.slash_menu(cx))
             .children(attachments::strip(&self.attachments, &theme, on_remove))
-            .child(div().px(px(14.0)).py(px(10.0)).child(self.input.clone()))
+            .child(
+                div()
+                    .relative()
+                    .px(px(14.0))
+                    .py(px(10.0))
+                    .child(self.input.clone())
+                    .children(probe::probe_element(&self.bounds_sink, "composer-input")),
+            )
             .child(self.controls(cx))
     }
 }

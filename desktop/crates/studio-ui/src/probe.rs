@@ -21,6 +21,30 @@ impl BoundsProbe {
     }
 }
 
+/// Where a nested view reports the bounds of its named parts: `(name, [left, top, width,
+/// height], app)`. The owner of the view decides where they are kept.
+pub type BoundsSink = Rc<dyn Fn(&str, [f32; 4], &mut App)>;
+
+/// A bounds handler that reports under `name` to `sink`, for the kit components'
+/// `on_bounds`.
+pub fn report_to(
+    sink: &Option<BoundsSink>,
+    name: impl Into<String>,
+) -> Option<impl Fn(Bounds<Pixels>, &mut App) + 'static> {
+    let sink = sink.clone()?;
+    let name = name.into();
+    Some(move |bounds, cx: &mut App| sink(&name, bounds_to_record(bounds), cx))
+}
+
+/// An invisible element that fills its parent and reports the parent's bounds under `name`.
+pub fn probe_element(
+    sink: &Option<BoundsSink>,
+    name: impl Into<String>,
+) -> Option<gpui::AnyElement> {
+    let report = report_to(sink, name)?;
+    Some(crate::kit::bounds_probe(std::rc::Rc::new(report)))
+}
+
 /// `[left, top, width, height]`, the format telemetry consumers read.
 pub fn bounds_to_record(bounds: Bounds<Pixels>) -> [f32; 4] {
     [

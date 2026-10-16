@@ -23,6 +23,7 @@ use crate::kit::{
     Badge, Button, ButtonSize, ButtonVariant, TextInput, TextInputEvent, TextInputState, Tone,
     focusable,
 };
+use crate::probe::{BoundsSink, probe_element};
 
 pub mod search;
 #[cfg(test)]
@@ -122,6 +123,7 @@ pub struct HistoryList {
     query_input: Entity<TextInputState>,
     /// Indices into `entries`, best match first.
     shown: Vec<usize>,
+    bounds_sink: Option<BoundsSink>,
 }
 
 impl EventEmitter<HistoryEvent> for HistoryList {}
@@ -156,7 +158,14 @@ impl HistoryList {
             now_unix: 0,
             query_input,
             shown: Vec::new(),
+            bounds_sink: None,
         }
+    }
+
+    /// Where the rows, the search box and the new-session button report their bounds
+    /// (history-row-N, history-search, history-new), for owners driven by real pointer events.
+    pub fn set_bounds_sink(&mut self, sink: BoundsSink) {
+        self.bounds_sink = Some(sink);
     }
 
     /// Replaces the list. `entries` are expected newest first; `now_unix` anchors the
@@ -232,6 +241,7 @@ impl HistoryList {
         let row = div()
             .id(("history-row", ix))
             .debug_selector(move || format!("history-row-{ix}"))
+            .relative()
             .role(Role::Button)
             .aria_label(SharedString::from(entry.title.clone()))
             .w_full()
@@ -272,7 +282,11 @@ impl HistoryList {
             .when_some(entry.outcome, |row, outcome| {
                 let (label, tone) = outcome_chip(outcome);
                 row.child(Badge::new(label).tone(tone))
-            });
+            })
+            .children(probe_element(
+                &self.bounds_sink,
+                format!("history-row-{ix}"),
+            ));
         focusable(row, theme, false).into_any_element()
     }
 }
@@ -337,6 +351,8 @@ impl Render for HistoryList {
                             .flex_1()
                             .min_w_0()
                             .debug_selector(|| "history-search".into())
+                            .relative()
+                            .children(probe_element(&self.bounds_sink, "history-search"))
                             .child(TextInput::plain(
                                 &theme,
                                 "history-search-input",
@@ -344,16 +360,20 @@ impl Render for HistoryList {
                             )),
                     )
                     .child(
-                        div().debug_selector(|| "history-new".into()).child(
-                            Button::plain(
-                                &theme,
-                                "history-new-button",
-                                ButtonVariant::Gray,
-                                ButtonSize::Sm,
-                            )
-                            .label("New session")
-                            .on_click(cx.listener(|this, _, _, cx| this.new_session(cx))),
-                        ),
+                        div()
+                            .debug_selector(|| "history-new".into())
+                            .relative()
+                            .children(probe_element(&self.bounds_sink, "history-new"))
+                            .child(
+                                Button::plain(
+                                    &theme,
+                                    "history-new-button",
+                                    ButtonVariant::Gray,
+                                    ButtonSize::Sm,
+                                )
+                                .label("New session")
+                                .on_click(cx.listener(|this, _, _, cx| this.new_session(cx))),
+                            ),
                     ),
             )
             .child(body)

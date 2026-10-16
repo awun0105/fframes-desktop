@@ -50,6 +50,23 @@ impl TodoItem {
     }
 }
 
+impl From<studio_engine::agent::PlanStatus> for TodoStatus {
+    fn from(status: studio_engine::agent::PlanStatus) -> Self {
+        use studio_engine::agent::PlanStatus;
+        match status {
+            PlanStatus::Pending => Self::Pending,
+            PlanStatus::InProgress => Self::InProgress,
+            PlanStatus::Completed => Self::Completed,
+        }
+    }
+}
+
+impl From<studio_engine::agent::PlanEntry> for TodoItem {
+    fn from(entry: studio_engine::agent::PlanEntry) -> Self {
+        Self::new(entry.text, entry.status.into())
+    }
+}
+
 /// What the collapsed header reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TodoSummary {
@@ -388,6 +405,31 @@ mod tests {
     use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext};
 
     use super::*;
+
+    #[test]
+    fn an_engine_plan_entry_becomes_the_same_item() {
+        use studio_engine::agent::{PlanEntry, PlanStatus};
+        let entry = |text: &str, status| PlanEntry {
+            text: text.into(),
+            status,
+        };
+        let items: Vec<TodoItem> = [
+            entry("a", PlanStatus::Completed),
+            entry("b", PlanStatus::InProgress),
+            entry("c", PlanStatus::Pending),
+        ]
+        .into_iter()
+        .map(TodoItem::from)
+        .collect();
+        assert_eq!(
+            items,
+            vec![
+                TodoItem::new("a", TodoStatus::Completed),
+                TodoItem::new("b", TodoStatus::InProgress),
+                TodoItem::new("c", TodoStatus::Pending),
+            ]
+        );
+    }
 
     /// x = completed, > = in progress, . = pending
     fn items(spec: &str) -> Vec<TodoItem> {

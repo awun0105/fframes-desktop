@@ -96,6 +96,7 @@ pub enum AttachmentRequest {
     Image { label: String, bytes: Vec<u8> },
 }
 
+#[derive(Clone)]
 enum Inner {
     /// A project file, linked inside the agent's working copy when it is sent.
     ProjectFile {
@@ -114,7 +115,9 @@ enum Inner {
 }
 
 /// An attachment that passed the engine's checks. Only this crate can construct one, so
-/// the send operations cannot be handed an unchecked file or image.
+/// the send operations cannot be handed an unchecked file or image. Cloning keeps a copy
+/// for the caller to offer again when a send is refused (the send consumes its list).
+#[derive(Clone)]
 pub struct PreparedAttachment(Inner);
 
 impl std::fmt::Debug for PreparedAttachment {
