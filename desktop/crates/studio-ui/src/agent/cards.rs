@@ -1,5 +1,6 @@
 //! Transcript rows and their cards: tool calls, permissions, errors, validation, changes, banners and conflicts.
 
+use super::markdown::{MarkdownRow, Voice};
 use super::*;
 
 impl ConversationPanel {
@@ -30,9 +31,7 @@ impl ConversationPanel {
                         ),
                 )
                 .into_any_element(),
-            RowKind::Agent {
-                text, streaming, ..
-            } => Self::row_shell()
+            RowKind::Agent { streaming, .. } => Self::row_shell()
                 .child(
                     div()
                         .flex()
@@ -45,15 +44,12 @@ impl ConversationPanel {
                             "Agent"
                         }))
                         .child(
-                            text_style(div(), TextStyle::Body)
-                                .text_color(palette.text_1)
-                                .child(selectable(text.clone()).id(("agent-row-text", row.id.0))),
+                            MarkdownRow::new(row, Voice::Answer)
+                                .project_root(self.project_root.clone()),
                         ),
                 )
                 .into_any_element(),
-            RowKind::Thought {
-                text, streaming, ..
-            } => {
+            RowKind::Thought { streaming, .. } => {
                 let id = row.id.0;
                 let open = self.thoughts_open.contains(&id);
                 let entity = cx.entity();
@@ -80,11 +76,10 @@ impl ConversationPanel {
                                     ),
                             )
                             .content(
-                                text_style(div(), TextStyle::Small)
-                                    .italic()
-                                    .pt(px(4.))
-                                    .text_color(palette.text_2)
-                                    .child(selectable(text.clone()).id(("agent-row-text", id))),
+                                div().pt(px(4.)).child(
+                                    MarkdownRow::new(row, Voice::Reasoning)
+                                        .project_root(self.project_root.clone()),
+                                ),
                             )
                             .on_toggle(move |next, _, cx| {
                                 entity.update(cx, |this, cx| {

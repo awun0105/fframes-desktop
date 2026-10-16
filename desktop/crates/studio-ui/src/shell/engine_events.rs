@@ -649,6 +649,7 @@ impl StudioShell {
         self.agent.playhead = usize::MAX;
         if let Some(paths) = self.presentation.paths.clone() {
             let scope = self.timeline.read(cx).selected_scope();
+            let root = self.presentation.project.as_ref().map(|p| p.root.clone());
             self.panel.update(cx, |panel, cx| {
                 panel.attach(
                     Attachment {
@@ -662,6 +663,7 @@ impl StudioShell {
                     },
                     cx,
                 );
+                panel.set_project_root(root, cx);
             });
             self.install_task_scope(scope, cx);
         }

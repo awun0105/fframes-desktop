@@ -14,9 +14,11 @@ mod cards;
 mod chat_tab;
 mod commands;
 pub mod controls;
+pub mod markdown;
 mod project_tab;
 pub mod provider_setup;
 mod setup_page;
+pub mod syntax;
 pub mod transcript;
 mod widgets;
 
@@ -307,6 +309,9 @@ pub struct ConversationPanel {
     /// The option whose menu is open.
     open_config: Option<String>,
     config_focus: FocusHandle,
+    /// The open project's folder; links in agent text to files inside it reveal them. Set on
+    /// every workflow open and left alone by `detach`, which clears the rows that could link.
+    project_root: Option<std::path::PathBuf>,
 }
 
 /// A single-line field. Return in the prompt sends it; Escape in any field hands the
@@ -392,6 +397,7 @@ impl ConversationPanel {
             config_menus: HashMap::new(),
             open_config: None,
             config_focus: cx.focus_handle(),
+            project_root: None,
         }
     }
 
@@ -458,6 +464,15 @@ impl ConversationPanel {
 
     pub fn workflow(&self) -> Option<&Arc<AgentWorkflow>> {
         self.attached.as_ref().map(|a| &a.workflow)
+    }
+
+    /// The project folder that file links in agent text resolve against; `None` makes them
+    /// plain text.
+    pub fn set_project_root(&mut self, root: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
+        if self.project_root != root {
+            self.project_root = root;
+            cx.notify();
+        }
     }
 
     pub fn attached_serial(&self) -> Option<u64> {
