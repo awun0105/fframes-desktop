@@ -9,9 +9,12 @@
 //! as is and `agent::syntax` spans only change the colour of its runs.
 
 mod file_list;
+mod host;
 mod model;
 mod paint;
+mod source;
 mod split;
+mod strips;
 #[cfg(test)]
 mod tests;
 mod unified;
@@ -25,7 +28,10 @@ use gpui::{
 };
 use studio_theme::{TextStyle, Theme, text_style};
 
+pub use host::{ReviewHost, ReviewHostEvent, ReviewRequest, ReviewTarget};
 pub use model::{DiffFile, DiffMode, NotShown};
+pub use source::Read;
+pub use source::{Facts, Loaded, ReviewBackend, facts, map_diffs};
 
 use model::{DiffRow, FileDiff, flatten_rows};
 use paint::{Colors, FILE_HEADER_H, HUNK_HEADER_H, Highlights, MONO_FAMILY, NOTICE_H, RowStyle};
@@ -54,11 +60,35 @@ pub enum ChangesEvent {
     Reject(Vec<String>),
     /// Undo the change to this one file after apply.
     RevertFile(String),
+    /// Every file is toggled off and the reviewer confirmed: drop the whole candidate. This is
+    /// not a Reject, which keeps the files that stay on.
+    Discard,
     /// Leave the viewer.
     Close,
 }
 
 impl EventEmitter<ChangesEvent> for Changes {}
+
+/// The diffs and syntax highlights of a listing: the expensive part of showing it, done once
+/// and movable between threads.
+pub struct Prepared {
+    diffs: Vec<FileDiff>,
+    highlights: Vec<Highlights>,
+}
+
+impl Prepared {
+    pub fn compute(files: &[DiffFile]) -> Self {
+        Self {
+            diffs: files.iter().map(FileDiff::compute).collect(),
+            highlights: files
+                .iter()
+                .map(|file| {
+                    Highlights::compute(&file.path, file.before.as_deref(), file.after.as_deref())
+                })
+                .collect(),
+        }
+    }
+}
 
 pub struct Changes {
     files: Vec<FileDiff>,
@@ -69,6 +99,14 @@ pub struct Changes {
     review: Review,
     collapsed: HashSet<String>,
     rejected: BTreeSet<String>,
+    /// Files changed that the owner could not list, shown as one notice and never as a row.
+    more: usize,
+    /// An operation is under way: nothing can be rejected or reverted until it settles.
+    busy: bool,
+    /// Asking whether to discard the whole candidate, because every file is toggled off.
+    confirm_discard: bool,
+    /// Files already reverted, which show as such and offer no Revert.
+    reverted: HashSet<String>,
     rows: Vec<DiffRow>,
     /// Row index of each file's header.
     headers: Vec<usize>,
@@ -85,6 +123,10 @@ impl Changes {
             review: Review::default(),
             collapsed: HashSet::new(),
             rejected: BTreeSet::new(),
+            more: 0,
+            busy: false,
+            confirm_discard: false,
+            reverted: HashSet::new(),
             rows: Vec::new(),
             headers: Vec::new(),
             list: ListState::new(0, ListAlignment::Top, px(OVERDRAW_PX)),
@@ -99,18 +141,25 @@ impl Changes {
         cx.notify();
     }
 
+    /// Replaces the files with diffs that were computed elsewhere, so a large listing does
+    /// not hold the UI thread.
+    pub fn set_prepared(&mut self, prepared: Prepared, cx: &mut Context<Self>) {
+        self.load_prepared(prepared);
+        cx.notify();
+    }
+
     fn load(&mut self, files: Vec<DiffFile>) {
-        self.files = files.iter().map(FileDiff::compute).collect();
-        self.highlights = files
-            .iter()
-            .map(|file| {
-                Highlights::compute(&file.path, file.before.as_deref(), file.after.as_deref())
-            })
-            .collect();
+        self.load_prepared(Prepared::compute(&files));
+    }
+
+    fn load_prepared(&mut self, prepared: Prepared) {
+        self.files = prepared.diffs;
+        self.highlights = prepared.highlights;
         let present: HashSet<&str> = self.files.iter().map(|f| f.path.as_str()).collect();
         self.collapsed
             .retain(|path| present.contains(path.as_str()));
         self.rejected.retain(|path| present.contains(path.as_str()));
+        self.confirm_discard = false;
         self.rebuild();
     }
 
@@ -143,6 +192,54 @@ impl Changes {
             self.review = review;
             cx.notify();
         }
+    }
+
+    /// How many changed files are not listed (the owner's listing was cut short).
+    pub fn set_more(&mut self, more: usize, cx: &mut Context<Self>) {
+        if self.more != more {
+            self.more = more;
+            cx.notify();
+        }
+    }
+
+    pub fn more(&self) -> usize {
+        self.more
+    }
+
+    pub fn file_count(&self) -> usize {
+        self.files.len()
+    }
+
+    /// While an operation is under way the toggles, Reject and Revert are disabled.
+    pub fn set_busy(&mut self, busy: bool, cx: &mut Context<Self>) {
+        if self.busy != busy {
+            self.busy = busy;
+            self.confirm_discard = false;
+            cx.notify();
+        }
+    }
+
+    pub fn busy(&self) -> bool {
+        self.busy
+    }
+
+    /// The files that were reverted already.
+    pub fn set_reverted(&mut self, reverted: HashSet<String>, cx: &mut Context<Self>) {
+        if self.reverted != reverted {
+            self.reverted = reverted;
+            cx.notify();
+        }
+    }
+
+    /// Whether the reviewer asked to drop every listed file, which is a discard of the whole
+    /// candidate rather than a rejection of some files. Not so while some changed files are
+    /// not listed: then the owner decides what the rest means.
+    pub fn rejects_everything(&self) -> bool {
+        !self.files.is_empty() && self.more == 0 && self.rejected.len() == self.files.len()
+    }
+
+    pub fn confirming_discard(&self) -> bool {
+        self.confirm_discard
     }
 
     /// The files toggled off, in file order.
@@ -198,6 +295,7 @@ impl Changes {
     }
 
     fn set_accepted(&mut self, path: &str, accepted: bool, cx: &mut Context<Self>) {
+        self.confirm_discard = false;
         if accepted {
             self.rejected.remove(path);
         } else {
@@ -268,7 +366,15 @@ impl Changes {
                         .child(SharedString::from(format!("-{}", file.deletions))),
                 );
         }
-        if self.review == Review::Applied {
+        if self.review == Review::Applied && self.reverted.contains(&file.path) {
+            header = header.child(
+                div()
+                    .debug_selector(move || format!("changes-reverted-{file_ix}"))
+                    .text_color(colors.muted)
+                    .child("Reverted"),
+            );
+        } else if self.review == Review::Applied {
+            let busy = self.busy;
             header = header.child(
                 div()
                     .debug_selector(move || format!("changes-revert-{file_ix}"))
@@ -280,6 +386,7 @@ impl Changes {
                             ButtonSize::Xs,
                         )
                         .label("Revert")
+                        .disabled(busy)
                         .on_click(cx.listener(
                             move |_, _: &ClickEvent, _, cx| {
                                 cx.stop_propagation();
@@ -443,26 +550,7 @@ impl Changes {
                 ),
             );
         if self.review == Review::Pending {
-            let paths = rejected.clone();
-            bar = bar.child(
-                div().debug_selector(|| "changes-reject".into()).child(
-                    Button::plain(
-                        theme,
-                        "changes-reject-button",
-                        ButtonVariant::Destructive,
-                        ButtonSize::Sm,
-                    )
-                    .label(if rejected.is_empty() {
-                        SharedString::from("Reject")
-                    } else {
-                        SharedString::from(format!("Reject {}", rejected.len()))
-                    })
-                    .disabled(rejected.is_empty())
-                    .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                        cx.emit(ChangesEvent::Reject(paths.clone()));
-                    })),
-                ),
-            );
+            bar = bar.child(self.reject_button(rejected, theme, cx));
         }
         bar.child(
             div().debug_selector(|| "changes-close".into()).child(
@@ -520,6 +608,8 @@ impl Render for Changes {
             .flex_col()
             .bg(theme.editor.card)
             .child(self.toolbar(&theme, &colors, cx))
+            .children(self.confirm_strip(&theme, &colors, cx))
             .child(body)
+            .children(self.more_footer(&colors))
     }
 }

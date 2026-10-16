@@ -379,6 +379,7 @@ impl StudioShell {
         self.agent.session = None;
         self.agent.attached = None;
         self.agent.applied_sdk = None;
+        self.close_review(cx);
         self.panel.update(cx, |panel, cx| panel.detach(cx));
         self.agent.workflow.take()
     }
@@ -403,6 +404,7 @@ impl StudioShell {
             self.agent.session = None;
             self.agent.opening = None;
             self.agent.attached = None;
+            self.close_review(cx);
             self.panel.update(cx, |panel, cx| panel.detach(cx));
             return;
         };
@@ -413,6 +415,7 @@ impl StudioShell {
             }
             self.agent.attached = None;
             self.agent.opening = None;
+            self.close_review(cx);
             self.panel.update(cx, |panel, cx| panel.detach(cx));
             self.agent.session = Some(session);
         }
@@ -514,6 +517,7 @@ impl StudioShell {
         self.panel.update(cx, |panel, cx| {
             panel.poll(cx);
         });
+        self.sync_review(cx);
     }
 
     /// Tells the workflow which revision the preview now displays.

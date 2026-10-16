@@ -75,9 +75,13 @@ impl Changes {
                         .debug_selector(move || format!("changes-toggle-{ix}"))
                         .child(
                             Toggle::plain(theme, format!("changes-accept-{ix}"), accepted)
+                                .disabled(theme, self.busy)
                                 .label(format!("Keep {}", file.path))
                                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                     cx.stop_propagation();
+                                    if this.busy {
+                                        return;
+                                    }
                                     let accepted = this.rejected.contains(&toggle_path);
                                     this.set_accepted(&toggle_path, accepted, cx);
                                 })),

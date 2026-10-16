@@ -134,3 +134,64 @@ fn one_file_of_an_applied_revision_can_be_reverted_alone() {
     assert_eq!(w.source("notes.txt"), "kept out of the project\n");
     w.assert_clean();
 }
+
+#[test]
+fn the_review_window_reads_the_same_facts_the_engine_publishes_for_a_reject() {
+    use studio_ui::agent::changes::{facts, map_diffs};
+
+    let w = manual_world();
+    w.submit(&three_files("facts"));
+    w.wait_phase(TaskPhase::AwaitingReview);
+    let before = facts(&w.snap(), None);
+    let key = before.candidate.clone().expect("a candidate under review");
+    assert!(before.task_active);
+
+    let listing = map_diffs(w.wf().candidate_file_diffs().unwrap());
+    assert!(listing.files.iter().any(|f| f.path == "notes.txt"));
+    assert!(listing.files.iter().all(|f| !f.path.is_empty()));
+
+    w.wf().reject_files(&["notes.txt".to_owned()]).unwrap();
+    // The replacement candidate is a new key, which is what makes the window read again.
+    w.poll("a new candidate key", || {
+        let now = facts(&w.snap(), None);
+        now.phase == Some(TaskPhase::AwaitingReview) && now.candidate.as_ref() != Some(&key)
+    });
+    let listing = map_diffs(w.wf().candidate_file_diffs().unwrap());
+    assert!(listing.files.iter().all(|f| f.path != "notes.txt"));
+    w.wf().discard().unwrap();
+    assert_eq!(w.wait_task(None).phase, TaskPhase::Cancelled);
+    w.assert_clean();
+}
+
+#[test]
+fn a_refused_revert_is_found_as_the_refusal_the_window_shows() {
+    use studio_ui::agent::changes::facts;
+
+    let w = World::new();
+    w.submit(&three_files("applied"));
+    assert_eq!(w.wait_task(None).phase, TaskPhase::Accepted);
+    let revision = w
+        .wait("the revision in history", |s| !s.history.is_empty())
+        .history
+        .last()
+        .unwrap()
+        .id
+        .clone();
+    let newest = facts(&w.snap(), Some(&revision)).newest_row;
+
+    // The file changed after the revision, so reverting it would lose that edit.
+    std::fs::write(w.root.join("src/lib.rs"), "// edited by hand\n").unwrap();
+    w.wf().revert_path(&revision, "src/lib.rs").unwrap();
+    w.poll("a refusal row", || {
+        facts(&w.snap(), Some(&revision))
+            .refusal
+            .is_some_and(|(id, _)| id > newest)
+    });
+    let now = facts(&w.snap(), Some(&revision));
+    let (_, reason) = now.refusal.unwrap();
+    assert!(!reason.is_empty());
+    println!("refusal shown to the reviewer: {reason}");
+    assert!(now.reverted.is_empty());
+    assert!(!now.undo_in_progress);
+    assert_eq!(w.source("src/lib.rs"), "// edited by hand\n");
+}

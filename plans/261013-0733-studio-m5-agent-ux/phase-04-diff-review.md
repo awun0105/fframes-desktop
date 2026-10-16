@@ -33,12 +33,16 @@ Zeron `crates/ui/src/changes.rs` (6,581 lines): unified and split viewer, `list(
 
 ## Todo
 
-- [ ] Scout
-- [ ] Per-file deltas
-- [ ] Reject forms a validated candidate
-- [ ] Per-path revert with journal format bump
-- [ ] Viewer ported and split
-- [ ] Tests on three platforms
+- [x] Scout
+- [x] Per-file deltas ([engine report](./reports/phase-04-engine.md), [review](./reports/phase-04-engine-review.md))
+- [x] Reject forms a validated candidate
+- [x] Per-path revert with journal format bump
+- [x] Viewer ported and split ([viewer](./reports/phase-04-viewer.md)), opened over the preview from the sidebar ([wiring](./reports/phase-04-wiring.md))
+- [ ] Tests on three platforms: the engine tests passed on Windows, macOS and Linux CI; the wiring has run on this VM only so far
+
+Open: no real agent has been driven through review in the running app by hand (the parity case drives the fake agent through the real shell; screenshots came from a stand-in window). A mode-only change shows "No changes".
+
+Open before done: the "Review changes" button sits on the candidate card, which at the default window size is scrolled above the validation and outcome cards exactly when review is asked for (the parity case enlarges the window to reach it). The spec enters the viewer from the sidebar's `Changes` row; put the entry in the pinned Apply banner and drop the test's resize.
 
 ## Success criteria
 

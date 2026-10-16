@@ -206,7 +206,11 @@ impl ConversationPanel {
                 history.child(self.line("No agent edit has been accepted in this project yet."));
         }
         for entry in snapshot.history.iter().rev().take(10) {
-            history = history.child(history_line(&self.theme, entry));
+            let mut line = history_line(&self.theme, entry);
+            if entry.kind == "Apply" {
+                line = line.child(self.revision_review_button(&entry.id, cx));
+            }
+            history = history.child(line);
         }
         column = column.child(history);
 

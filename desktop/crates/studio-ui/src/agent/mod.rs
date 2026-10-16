@@ -19,6 +19,7 @@ pub mod controls;
 pub mod markdown;
 mod project_tab;
 pub mod provider_setup;
+mod review_entry;
 mod setup_page;
 pub mod syntax;
 pub mod todo_panel;
@@ -722,6 +723,7 @@ fn probed_button(id: &ElementId) -> Option<&str> {
                 "agent-policy"
                     | "agent-apply"
                     | "agent-undo"
+                    | "agent-review-candidate"
                     | "agent-tab-Chat"
                     | "agent-tab-Project"
                     | "agent-open-setup"

@@ -257,6 +257,9 @@ impl StudioShell {
         });
         value["viewport"] = serde_json::json!(self.viewport);
         value["settings_open"] = self.settings_open.into();
+        if let Some(review) = self.review_telemetry(cx) {
+            value["review"] = review;
+        }
         value["header_appearance"] = match self.header_appearance.get() {
             Some(studio_theme::Appearance::Light) => "light".into(),
             Some(studio_theme::Appearance::Dark) => "dark".into(),

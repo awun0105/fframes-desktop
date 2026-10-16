@@ -7,6 +7,7 @@ mod left_column;
 mod observation;
 mod overflow;
 mod player;
+mod review;
 mod sections;
 mod settings;
 mod status_strip;
@@ -189,6 +190,7 @@ pub struct StudioShell {
     awaiting_since: Option<Instant>,
     export_status: Option<ExportProgress>,
     export_panel: export_panel::ExportPanelState,
+    review: review::ReviewState,
     export_cancelled: Option<Arc<ExportControl>>,
     export_processes: Option<studio_bootstrap::ProcessTreeManager>,
 }
@@ -293,6 +295,7 @@ impl StudioShell {
                 PanelEvent::Leave => window.focus(&shell.focus, cx),
                 PanelEvent::OpenSetup => shell.open_agent_setup(cx),
             });
+        let review = review::ReviewState::new(&panel, cx);
         let setup_page = cx.new(|cx| AgentSetupPage::new(&panel, cx));
         let preset_panel = cx.new(|cx| PresetPanel::new(window, cx));
         let preset_subscription =
@@ -433,6 +436,7 @@ impl StudioShell {
             awaiting_since: None,
             export_status: None,
             export_panel: Default::default(),
+            review,
             export_cancelled: None,
             export_processes: None,
             output_device: OutputDevice::Default,

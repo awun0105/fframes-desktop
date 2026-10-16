@@ -104,7 +104,7 @@ impl ConversationPanel {
                 .into_any_element(),
             RowKind::Error(error) => self.error_card(row, error),
             RowKind::Validation(card) => self.validation_card(row, card),
-            RowKind::Changes(card) => self.changes_card(card),
+            RowKind::Changes(card) => self.changes_card(card, cx),
             RowKind::Outcome(card) => {
                 let (tone, title) = outcome_style(card.kind);
                 let mut lines = vec![card.summary.clone()];
@@ -358,7 +358,7 @@ impl ConversationPanel {
             .into_any_element()
     }
 
-    pub(super) fn changes_card(&self, card: &ChangeCard) -> AnyElement {
+    pub(super) fn changes_card(&mut self, card: &ChangeCard, cx: &mut Context<Self>) -> AnyElement {
         use studio_engine::candidate_validation::ChangeKind;
         let theme = self.theme;
         let palette = theme.editor;
@@ -396,6 +396,9 @@ impl ConversationPanel {
                 "…and {} more",
                 card.total.saturating_sub(card.entries.len())
             )));
+        }
+        if let Some(button) = self.candidate_review_button(card, cx) {
+            body = body.child(button);
         }
         Self::row_shell().child(body).into_any_element()
     }

@@ -312,3 +312,50 @@ fn new_rows_stay_pinned_unless_the_reader_scrolled_up_past_the_threshold(
     let (following, distance) = scroll_state(&third);
     assert!(!following && distance > 70., "{:#}", third["panel"]);
 }
+
+fn button_center(t: &Value, id: &str) -> Option<(f32, f32)> {
+    let b = t["panel"]["buttons"][id].as_array()?;
+    let at = |i: usize| b[i].as_f64().map(|v| v as f32);
+    Some((at(0)? + at(2)? / 2., at(1)? + at(3)? / 2.))
+}
+
+/// "Review changes" on the candidate card opens the review window over the preview with the
+/// candidate's files; applying from the panel ends the candidate and closes the window.
+#[gpui::test]
+fn the_candidate_can_be_reviewed_before_apply_and_the_window_closes_with_it(
+    cx: &mut gpui::TestAppContext,
+) {
+    let mut studio = studio_with_agent(cx);
+    // Tall enough that the whole transcript, the candidate card included, is on screen.
+    studio.resize(1536., 2400.);
+    studio.dispatch(ToggleReviewPolicy);
+    studio.wait("review before Apply", |t| {
+        t["panel"]["review_policy"] == "ManualReview"
+    });
+    send_brief(&mut studio);
+    studio.dispatch(AnswerPermission {
+        option: Some("allow".into()),
+    });
+    let review = studio.wait("the candidate", |t| {
+        matches!(phase(t), "Waiting for your review" | "Failed" | "Stopped")
+    });
+    assert_eq!(phase(&review), "Waiting for your review", "{review:#}");
+    assert!(review["review"].is_null(), "closed until asked for");
+
+    studio.report_button_bounds();
+    let measured = studio.wait("the review button measured", |t| {
+        !t["panel"]["buttons"]["agent-review-candidate"].is_null()
+    });
+    let at = button_center(&measured, "agent-review-candidate").expect("Review changes is offered");
+    studio.click(at);
+    let open = studio.wait("the review window", |t| {
+        t["review"]["files"].as_u64() > Some(0)
+    });
+    assert_eq!(open["review"]["target"], "candidate", "{open:#}");
+
+    studio.dispatch(ApplyCandidate);
+    let closed = studio.wait("the window closed with the candidate", |t| {
+        phase(t) == "Accepted" && t["review"].is_null()
+    });
+    assert_eq!(source(&studio), EDIT, "{closed:#}");
+}

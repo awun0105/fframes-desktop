@@ -269,7 +269,15 @@ impl Render for StudioShell {
             .child(measure);
         if project_open {
             let split = self.split();
-            let player = sections.player.clone();
+            let player = match self.review.view() {
+                Some(review) => div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .child(review)
+                    .into_any_element(),
+                None => sections.player.clone().into_any_element(),
+            };
             editor = editor
                 .child(
                     div()

@@ -30,6 +30,10 @@ const DIFF_DEADLINE: Duration = Duration::from_secs(1);
 pub enum NotShown {
     Binary,
     TooLarge,
+    /// The reader already holds as much text as one listing may carry.
+    Budget,
+    /// The file could not be read.
+    Unreadable,
 }
 
 /// One changed file as the viewer takes it. `None` means the file is absent on that side: an
@@ -41,6 +45,8 @@ pub struct DiffFile {
     pub after: Option<String>,
     /// Set for a file the caller could not or would not read as text.
     pub not_shown: Option<NotShown>,
+    /// What the reader said about a file it could not read.
+    pub detail: Option<String>,
 }
 
 impl DiffFile {
@@ -50,6 +56,7 @@ impl DiffFile {
             before,
             after,
             not_shown: None,
+            detail: None,
         }
     }
 
@@ -164,6 +171,20 @@ impl FileDiff {
             Some(NotShown::TooLarge) => {
                 diff.notices
                     .push("File too large, contents not shown".to_owned());
+                return diff;
+            }
+            Some(NotShown::Budget) => {
+                diff.notices
+                    .push("Too much text in this listing, contents not shown".to_owned());
+                return diff;
+            }
+            Some(NotShown::Unreadable) => {
+                diff.notices.push(match file.detail.as_deref() {
+                    Some(detail) if !detail.is_empty() => {
+                        format!("File could not be read, contents not shown: {detail}")
+                    }
+                    _ => "File could not be read, contents not shown".to_owned(),
+                });
                 return diff;
             }
             None => {}

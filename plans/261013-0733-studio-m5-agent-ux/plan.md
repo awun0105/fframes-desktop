@@ -47,7 +47,7 @@ Syntax highlighting is written as a small module with five tree-sitter grammars 
 | 1 | [Streaming markdown](./phase-01-streaming-markdown.md) | 3-5d | none | Completed |
 | 2 | [Composer](./phase-02-composer.md) | 5-7d | none | In progress: component built and tested, not wired ([report](./reports/phase-02-composer-ui.md)) |
 | 3 | [Todo panel](./phase-03-todo-panel.md) | 1-2d | none | In progress: component built and tested, not fed from agent events ([report](./reports/phase-03-todo-panel.md)) |
-| 4 | [Diff review](./phase-04-diff-review.md) | 4-6d | 1 | In progress: viewer built and tested, not opened from the panel; checked by layout tests only, not on screen ([report](./reports/phase-04-viewer.md)); engine half under way |
+| 4 | [Diff review](./phase-04-diff-review.md) | 4-6d | 1 | In progress: engine, viewer and wiring done; awaiting three-platform CI of the wiring ([wiring](./reports/phase-04-wiring.md)) |
 | 5 | [Session history](./phase-05-session-history.md) | 3-4d | none | Pending |
 
 Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) compiled the todo panel and `ComposerInput` on the Cap fork with one GPUI API change. Phase 3 shrinks; phase 2 holds at 5-7d because it keeps `ComposerInput` (decided 2026-10-14) rather than building on the kit `TextInput` (8-10d).
@@ -58,7 +58,7 @@ Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port
 - **Attachments.** A disabled attach kind gates new pastes and the attach button only: chips already accepted still go out with the next send, so the owner filters them, and a paste of a disabled kind is dropped without feedback.
 - **Slash menu.** A `/` inside backticks still opens the completion menu (no code-span check).
 - **Intermittent parity hang, not from M5.** `services::cancelling_an_export_leaves_no_file` sometimes never lets the frame loop settle after a cancelled export, and the harness watchdog ends the parity process with exit 101. On this VM it hung in 1 of 4 runs of `services::` without the M5 engine work and 2 of 4 with it, so it predates M5. CI has passed on every platform so far.
-- **Viewer on screen.** Phase 4 needs a by-eye check in a real window, as phase 1 had, before it is done.
+- **Viewer on screen.** Checked in a stand-in window with real clicks ([wiring report](./reports/phase-04-wiring.md)); not yet with a real agent in the running app.
 
 ## Success criteria
 
