@@ -145,8 +145,8 @@ impl ImagePresentationManager {
     }
 
     /// Shows the frame answering seek `serial`. A serial older than the one on screen is
-    /// counted; serials only grow within a preview, so an install starts them again with
-    /// [`Self::replace_image`].
+    /// counted. The preview state never restarts its serials, so installs and retimes are
+    /// not counted; [`Self::replace_image`] and [`Self::clear`] forget the last one.
     pub fn present(&mut self, new_image: Arc<RenderImage>, serial: u64, window: &mut Window) {
         if self.last_serial.is_some_and(|last| serial < last) {
             self.out_of_order += 1;

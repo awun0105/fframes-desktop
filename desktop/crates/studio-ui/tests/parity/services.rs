@@ -85,6 +85,8 @@ fn a_failed_rebuild_keeps_the_displayed_preview_until_a_build_succeeds(
     });
     assert_eq!(rebuilt["displayed_revision"], displayed, "{rebuilt:#}");
     assert_eq!(rebuilt["audio_identity_matches"], true, "{rebuilt:#}");
+    // Seek serials keep growing across installs, so a rebuild is not out of order.
+    assert_eq!(rebuilt["image_metrics"]["out_of_order"], 0, "{rebuilt:#}");
 }
 
 /// The fake worker cannot encode MP4, so a finished export is left to the native export
