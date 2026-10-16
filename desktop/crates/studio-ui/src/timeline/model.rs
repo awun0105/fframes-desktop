@@ -13,6 +13,9 @@ pub struct ClipSegment {
     /// The scene row: 0 is the clip track, higher rows hold scenes that overlap it.
     pub lane: usize,
     pub label: String,
+    /// The clip's position in the engine's `TimelineSnapshot::clips`, which edits name;
+    /// `None` for a compiled scene no clip plays.
+    pub clip: Option<usize>,
     /// The compiled scene that plays this clip, used for selection and the task scope.
     /// `None` while the displayed report has not caught up with the document.
     pub scene: Option<usize>,
@@ -36,6 +39,7 @@ pub fn clip_segments(
             end: scene.end_frame,
             lane: model.scene_lane(index),
             label: format!("{} #{}", scene.name, scene.index),
+            clip: None,
             scene: Some(index),
         }
     };
@@ -45,7 +49,8 @@ pub fn clip_segments(
     let mut segments: Vec<_> = snapshot
         .map_or(&[][..], |snapshot| &snapshot.clips[..])
         .iter()
-        .map(|clip| {
+        .enumerate()
+        .map(|(position, clip)| {
             let occurrence = occurrences.entry(clip.key.as_str()).or_default();
             let scene = report.scenes.iter().position(|scene| {
                 scene.clip.as_ref().is_some_and(|timing| {
@@ -56,13 +61,17 @@ pub fn clip_segments(
             let segment = match scene {
                 Some(index) => {
                     claimed[index] = true;
-                    from_scene(index)
+                    ClipSegment {
+                        clip: Some(position),
+                        ..from_scene(index)
+                    }
                 }
                 None => ClipSegment {
                     start: previous_end,
                     end: previous_end.saturating_add(clip.frames()),
                     lane: 0,
                     label: clip.key.clone(),
+                    clip: Some(position),
                     scene: None,
                 },
             };

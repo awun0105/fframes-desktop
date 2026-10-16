@@ -322,6 +322,7 @@ impl Render for StudioShell {
                 self.timeline_resize
                     .map(|_| self.render_resize_tracking(cx)),
             )
+            .child(self.render_edit_tracking())
             .bg(theme.editor.window)
             .text_color(theme.editor.text_1)
             .flex()

@@ -36,6 +36,12 @@ actions!(
         SeekToEnd,
         /// Select the next scene under the playhead on the timeline.
         CycleScene,
+        /// Split the clip under the playhead in two.
+        SplitAtPlayhead,
+        /// Undo the last timeline edit.
+        UndoTimelineEdit,
+        /// Redo the timeline edit last undone.
+        RedoTimelineEdit,
         /// Start the timeline range selection at the playhead.
         MarkRangeStart,
         /// End the timeline range selection at the playhead.

@@ -10,6 +10,7 @@ use gpui::{App, Context, InteractiveElement, KeyBinding};
 use studio_engine::engine::backend::Command;
 use studio_engine::presets::PresetCommand;
 use studio_engine::services::audio_service::OutputDevice;
+use studio_engine::timing::TimelineCommand;
 
 use super::left_column::LeftTab;
 use super::{Picker, StudioShell};
@@ -21,6 +22,8 @@ pub(super) const PLAYER: &str = "Player";
 const TIMELINE: &str = crate::timeline::KEY_CONTEXT;
 /// The window's key context, around every other one.
 pub(super) const WORKSPACE: &str = "Workspace";
+/// The window's keys that must leave a focused text field alone.
+const WORKSPACE_OUTSIDE_FIELDS: &str = "Workspace && !TextInput";
 
 /// Binds the studio window's keys: the text fields' editing keys, then the player's and
 /// the timeline's. Call once at startup, before the window opens.
@@ -33,6 +36,7 @@ pub fn bind_keys(cx: &mut App) {
 fn key_bindings() -> Vec<KeyBinding> {
     let player = Some(PLAYER);
     let timeline = Some(TIMELINE);
+    let outside_fields = Some(WORKSPACE_OUTSIDE_FIELDS);
     vec![
         KeyBinding::new("space", actions::TogglePlayback, player),
         KeyBinding::new("left", actions::StepBackward, player),
@@ -55,6 +59,15 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("pageup", actions::PageTimelineBack, timeline),
         KeyBinding::new("pagedown", actions::PageTimelineForward, timeline),
         KeyBinding::new("s", actions::CycleScene, timeline),
+        KeyBinding::new("c", actions::SplitAtPlayhead, timeline),
+        KeyBinding::new("secondary-z", actions::UndoTimelineEdit, timeline),
+        KeyBinding::new("secondary-shift-z", actions::RedoTimelineEdit, timeline),
+        KeyBinding::new("secondary-z", actions::UndoTimelineEdit, outside_fields),
+        KeyBinding::new(
+            "secondary-shift-z",
+            actions::RedoTimelineEdit,
+            outside_fields,
+        ),
         KeyBinding::new("[", actions::MarkRangeStart, timeline),
         KeyBinding::new("]", actions::MarkRangeEnd, timeline),
     ]
@@ -165,6 +178,15 @@ impl StudioShell {
             .on_action(cx.listener(|s, _: &actions::CycleScene, _, cx| {
                 s.timeline.update(cx, |t, cx| t.cycle_scene(cx))
             }))
+            .on_action(cx.listener(|s, _: &actions::SplitAtPlayhead, _, cx| {
+                s.timeline.update(cx, |t, cx| t.split_at_playhead(cx))
+            }))
+            .on_action(cx.listener(|s, _: &actions::UndoTimelineEdit, _, cx| {
+                s.timeline_history(TimelineCommand::Undo, cx)
+            }))
+            .on_action(cx.listener(|s, _: &actions::RedoTimelineEdit, _, cx| {
+                s.timeline_history(TimelineCommand::Redo, cx)
+            }))
             .on_action(cx.listener(|s, _: &actions::MarkRangeStart, _, cx| {
                 s.timeline.update(cx, |t, cx| t.mark_range_start(cx))
             }))
@@ -223,7 +245,7 @@ mod tests {
         // A binding in a wider context would win over a focused text field's typing.
         for (context, keys, action) in bound() {
             assert!(
-                context == PLAYER || context == TIMELINE,
+                context == PLAYER || context == TIMELINE || context == WORKSPACE_OUTSIDE_FIELDS,
                 "{keys} -> {action} is bound in {context:?}"
             );
         }
@@ -254,6 +276,19 @@ mod tests {
             (TIMELINE, "pageup", "studio::PageTimelineBack"),
             (TIMELINE, "pagedown", "studio::PageTimelineForward"),
             (TIMELINE, "s", "studio::CycleScene"),
+            (TIMELINE, "c", "studio::SplitAtPlayhead"),
+            (TIMELINE, "secondary-z", "studio::UndoTimelineEdit"),
+            (TIMELINE, "secondary-shift-z", "studio::RedoTimelineEdit"),
+            (
+                WORKSPACE_OUTSIDE_FIELDS,
+                "secondary-z",
+                "studio::UndoTimelineEdit",
+            ),
+            (
+                WORKSPACE_OUTSIDE_FIELDS,
+                "secondary-shift-z",
+                "studio::RedoTimelineEdit",
+            ),
             (TIMELINE, "[", "studio::MarkRangeStart"),
             (TIMELINE, "]", "studio::MarkRangeEnd"),
         ] {

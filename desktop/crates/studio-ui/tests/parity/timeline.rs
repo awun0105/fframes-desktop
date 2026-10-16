@@ -2,7 +2,8 @@
 use crate::harness::Studio;
 use serde_json::{Value, json};
 use studio_ui::actions::{
-    CycleScene, MarkRangeEnd, MarkRangeStart, Seek, SeekToEnd, SeekToStart, ZoomIn, ZoomOut,
+    CycleScene, MarkRangeEnd, MarkRangeStart, RedoTimelineEdit, Seek, SeekToEnd, SeekToStart,
+    SplitAtPlayhead, UndoTimelineEdit, ZoomIn, ZoomOut,
 };
 
 fn selection(t: &Value) -> &Value {
@@ -188,4 +189,53 @@ fn the_fit_button_fits_a_zoomed_timeline_again(cx: &mut gpui::TestAppContext) {
     let zoomed = studio.wait("zoomed in", |t| pixels_per_second(t) == 4. * fitted_scale);
     studio.click(fit_button(&zoomed).unwrap());
     studio.wait("fitted again", |t| pixels_per_second(t) == fitted_scale);
+}
+
+#[gpui::test]
+fn edits_wait_for_a_migrated_project_and_say_why(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed(cx);
+    let shown = studio.wait("the edit state is reported", |t| {
+        t["timeline"]["edit"]["enabled"].is_boolean()
+    });
+    let edit = &shown["timeline"]["edit"];
+    // This fixture is not timeline-ready; a ready project is covered by the engine tests.
+    assert_eq!(edit["enabled"], false, "{edit:#}");
+    assert!(
+        edit["reason"]
+            .as_str()
+            .is_some_and(|reason| !reason.is_empty()),
+        "{edit:#}"
+    );
+    // Splitting and undoing change nothing and raise no error.
+    studio.dispatch(SplitAtPlayhead);
+    studio.dispatch(UndoTimelineEdit);
+    studio.dispatch(RedoTimelineEdit);
+    studio.press("secondary-z");
+    let after = studio.settle(std::time::Duration::from_millis(300));
+    assert!(after["error"].is_null(), "{:#}", after["error"]);
+    assert_eq!(after["timeline"]["edit"]["drag"], Value::Null);
+}
+
+#[gpui::test]
+fn undo_belongs_to_the_text_field_while_one_has_focus(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed(cx);
+    studio.settle(std::time::Duration::from_millis(50));
+    studio.dispatch(studio_ui::actions::FocusTimeline);
+    studio.settle(std::time::Duration::from_millis(50));
+    let outside = studio.actions_bound_to("secondary-z");
+    assert!(
+        outside
+            .iter()
+            .any(|name| name.ends_with("UndoTimelineEdit")),
+        "{outside:?}"
+    );
+    studio.dispatch(studio_ui::actions::FocusPrompt);
+    studio.settle(std::time::Duration::from_millis(50));
+    let in_field = studio.actions_bound_to("secondary-z");
+    assert!(
+        !in_field
+            .iter()
+            .any(|name| name.ends_with("UndoTimelineEdit")),
+        "{in_field:?}"
+    );
 }

@@ -9,13 +9,14 @@ mod player;
 mod sections;
 mod settings;
 mod status_strip;
+mod timeline_edits;
 mod transport;
 
 pub use keymap::bind_keys;
 
 use gpui::{AppContext, Context, Window};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     path::PathBuf,
     sync::{
         Arc,
@@ -119,6 +120,11 @@ pub struct StudioShell {
     timing_sent: Option<u64>,
     timeline: gpui::Entity<TimelineView>,
     _timeline_subscription: gpui::Subscription,
+    /// Timeline edits waiting for the engine, oldest first.
+    timeline_queue: VecDeque<studio_engine::timing::TimelineCommand>,
+    /// The timeline edit the engine is running.
+    timeline_in_flight: Option<(CommandId, studio_engine::timing::TimelineCommand)>,
+    _activation_subscription: gpui::Subscription,
     transport: studio_engine::PlaybackClock,
     audio: Arc<AudioService>,
     output: Option<OutputHandle>,
@@ -260,11 +266,20 @@ impl StudioShell {
                     }
                     shell.resume_scrub = false;
                 }
+                TimelineEvent::Edit(command) => shell.timeline_edit(command, cx),
                 TimelineEvent::ScopeChanged(scope) => {
                     let scope = scope.map(|scope| scope.map(|scope| *scope));
                     shell.install_task_scope(scope, cx);
                 }
             });
+        // A drag the pointer left the window during never sees its release.
+        let activation_subscription = cx.observe_window_activation(window, |shell, window, cx| {
+            if !window.is_window_active() {
+                shell
+                    .timeline
+                    .update(cx, |timeline, cx| timeline.end_edit_drag(cx));
+            }
+        });
         let panel = cx.new(|cx| ConversationPanel::new(window, cx));
         let panel_subscription =
             cx.subscribe_in(&panel, window, |shell, _, event, window, cx| match event {
@@ -389,6 +404,9 @@ impl StudioShell {
             timing_sent: None,
             timeline,
             _timeline_subscription: timeline_subscription,
+            timeline_queue: VecDeque::new(),
+            timeline_in_flight: None,
+            _activation_subscription: activation_subscription,
             transport: studio_engine::PlaybackClock::install(30, 0, 0, 0.)
                 .expect("valid empty clock"),
             audio,

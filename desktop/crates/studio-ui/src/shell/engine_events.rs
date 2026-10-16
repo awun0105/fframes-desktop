@@ -223,6 +223,7 @@ impl StudioShell {
         self.presentation_refresh_pending = false;
         self.preview_gate_pending = false;
         self.busy = false;
+        let edit = self.timeline_in_flight.take_if(|(sent, _)| *sent == id);
         if let Some(presentation) = presentation {
             let changed_session =
                 self.preview_session.as_ref() != presentation.state.as_ref().map(|s| s.session());
@@ -275,6 +276,7 @@ impl StudioShell {
                 preview.build(spec);
             }
         }
+        let refused = result.is_err();
         match result {
             Ok(()) => {
                 if !refresh {
@@ -287,6 +289,10 @@ impl StudioShell {
         if let Some(report) = report {
             self.adopt_preset_report(report, cx);
         }
+        if let Some((_, command)) = edit {
+            self.timeline_edit_finished(command, refused, cx);
+        }
+        self.flush_timeline_edits(cx);
         cx.notify();
     }
 

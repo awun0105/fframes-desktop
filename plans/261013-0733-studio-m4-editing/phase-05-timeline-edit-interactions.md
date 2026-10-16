@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Trim, split, reorder and snapping"
-status: pending
+status: done-with-concerns
 priority: P1
 effort: "2.5-3.5d"
 dependencies: [2, 4]
@@ -38,15 +38,26 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Drag layer and gesture end on blur; undo key-context tests
+- [x] Drag layer and gesture end on blur; undo key-context tests
 
-- [ ] Trim
-- [ ] Split
-- [ ] Reorder
-- [ ] Snapping
-- [ ] Undo and redo bindings
-- [ ] Disabled states
-- [ ] Tests
+- [x] Trim
+- [x] Split
+- [x] Reorder
+- [x] Snapping
+- [x] Undo and redo bindings
+- [x] Disabled states
+- [x] Tests
+
+## Notes
+
+- Split is `C`; undo and redo are Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z, bound in the timeline and in the window outside text fields (`Workspace && !TextInput`).
+- Edits queue in the shell (`shell/timeline_edits.rs`) because the engine runs one command at a time; a queued trim replaces a queued trim of the same edge.
+- gpui tests cover trim, reorder, split, snapping and the disabled state at the view, and the shell path in the parity suite. Undo through a real timeline-ready worker stays with the ignored `SDK_BUNDLE` qualification test.
+- A rebuilt preview or a cleared timeline closes a live trim but drops a live reorder, whose indices belong to the old layout. A parity test asserts Ctrl/Cmd+Z is bound to timeline undo outside text fields and not while the prompt has focus.
+
+### Open
+
+- Manual check on this VM (trim, split, reorder, undo against a timeline-ready project) is not done; the parity fixture is not timeline-ready, so undo through a real engine is covered only by the engine tests and the ignored `SDK_BUNDLE` qualification.
 
 ## Success criteria
 

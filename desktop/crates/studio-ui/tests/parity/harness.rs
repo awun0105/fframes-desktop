@@ -245,6 +245,23 @@ impl Studio {
         self.cx.simulate_input(self.window.into(), text);
     }
 
+    /// The names of the actions `keystroke` is bound to for the focused element, from the
+    /// keymap and the key contexts of the focus path.
+    pub fn actions_bound_to(&mut self, keystroke: &str) -> Vec<String> {
+        let keystroke = gpui::Keystroke::parse(keystroke).expect("a keystroke");
+        self.window
+            .update(&mut self.cx, |_, window, cx| {
+                let stack = window.context_stack();
+                let keymap = cx.key_bindings();
+                let (bindings, _) = keymap.borrow().bindings_for_input(&[keystroke], &stack);
+                bindings
+                    .iter()
+                    .map(|binding| binding.action().name().to_string())
+                    .collect()
+            })
+            .expect("the window is open")
+    }
+
     /// Presses real keys (`"enter"`, `"space"`, `"shift-tab"`) on the focused element,
     /// through the keymap like a keyboard does.
     pub fn press(&mut self, keystrokes: &str) {
