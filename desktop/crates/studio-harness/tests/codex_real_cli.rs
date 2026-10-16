@@ -17,9 +17,12 @@ use studio_harness::{
     driver::{
         AgentDriver, AgentEventKind, AgentWire, DriverConfig, DriverLimits, DriverMode,
         McpStdioServer, McpStdioSupport, OwnershipSource, PermissionReply, PromptOutcome,
-        StopReasonKind, start_driver,
+        SteeringMode, StopReasonKind, start_driver,
     },
 };
+
+mod real_cli;
+use real_cli::{WORD, run_until_idle};
 
 const TURN: Duration = Duration::from_secs(240);
 const WRITE: &str = "Create a file named ran.txt in the current directory containing the \
@@ -30,7 +33,8 @@ const PING: &str = "PING.EXE";
 /// In the studio stub's command line, so the listing can tell it from other servers.
 const STUB_MARKER: &str = "studio-mcp-stub-3c9a";
 
-fn start(root: &Path) -> (Box<dyn AgentDriver>, ProcessTreeManager) {
+fn start(root: &Path, resume: Option<String>) -> (Box<dyn AgentDriver>, ProcessTreeManager) {
+    let resumed = resume.is_some();
     let config = AdapterConfig {
         executable: std::env::var("FFRAMES_CODEX").unwrap_or_else(|_| "codex".into()),
         args: vec!["--effort".into(), "low".into()],
@@ -63,7 +67,7 @@ fn start(root: &Path) -> (Box<dyn AgentDriver>, ProcessTreeManager) {
             cwd: root.to_owned(),
             launch,
             limits: DriverLimits::default(),
-            resume_session: None,
+            resume_session: resume,
             ownership: OwnershipSource::Verified,
             mode: DriverMode::Full,
             mcp_servers: vec![studio],
@@ -72,7 +76,11 @@ fn start(root: &Path) -> (Box<dyn AgentDriver>, ProcessTreeManager) {
         &manager,
     )
     .expect("Codex starts");
-    driver.wait_ready(TURN).expect("the thread becomes ready");
+    let info = driver.wait_ready(TURN).expect("the thread becomes ready");
+    assert_eq!(
+        info.restored, resumed,
+        "a resumed thread reports itself restored"
+    );
     (driver, manager)
 }
 
@@ -166,7 +174,7 @@ fn descendants() -> HashMap<u32, Process> {
 fn decline_blocks_accept_writes_in_the_draft_interrupt_keeps_the_server_and_stop_ends_commands() {
     let root = tempfile::tempdir().unwrap();
     let file = root.path().join("ran.txt");
-    let (driver, manager) = start(root.path());
+    let (driver, manager) = start(root.path(), None);
 
     driver.prompt(WRITE, Vec::new()).unwrap();
     let (outcome, asked) = run_turn(&*driver, "decline", || {});
@@ -288,6 +296,63 @@ fn decline_blocks_accept_writes_in_the_draft_interrupt_keeps_the_server_and_stop
         pings_before,
         "the command outlived the session"
     );
+}
+
+#[test]
+#[ignore = "needs the real, signed-in Codex CLI and makes model calls"]
+fn a_steer_reaches_the_running_turn_and_a_resumed_thread_remembers_it() {
+    let root = tempfile::tempdir().unwrap();
+    let (driver, _manager) = start(root.path(), None);
+    assert_eq!(driver.capabilities().steering, SteeringMode::StepBoundary);
+
+    driver
+        .prompt(
+            "Write the numbers from 1 to 300 in words, one per line. Do not run any command.",
+            Vec::new(),
+        )
+        .unwrap();
+    let mut steered = None;
+    let record = run_until_idle(&*driver, TURN, "decline", || {
+        steered = Some(driver.steer(&format!(
+            "Stop the list now. Reply with exactly the code word {WORD} and nothing else."
+        )));
+    });
+    let stops: Vec<_> = record.outcomes.iter().map(|o| o.stop_reason).collect();
+    eprintln!(
+        "steer: {steered:?}, turns {stops:?}, {} chars",
+        record.text.len()
+    );
+    steered
+        .expect("text streamed")
+        .expect("the steer is accepted");
+    assert!(
+        record.text.contains(WORD),
+        "the steer never reached the model"
+    );
+    assert_eq!(record.outcomes.len(), 1, "a steer stays in its turn");
+    assert!(record.outcomes[0].eligible_for_quiescence());
+
+    let thread = driver.wire_session_id().expect("the thread has an id");
+    assert!(driver.shutdown().termination.group_empty);
+
+    let (driver, _manager) = start(root.path(), Some(thread.clone()));
+    assert_eq!(driver.wire_session_id(), Some(thread));
+    driver
+        .prompt(
+            "What code word did you reply with earlier in this conversation? \
+             Reply with only the code word.",
+            Vec::new(),
+        )
+        .unwrap();
+    let record = run_until_idle(&*driver, TURN, "decline", || {});
+    eprintln!("resumed: {:?}", record.text.trim());
+    assert!(
+        record.text.contains(WORD),
+        "the resumed thread lost the conversation"
+    );
+    let ended = driver.shutdown();
+    assert!(ended.failure.is_none(), "{:?}", ended.failure);
+    assert!(ended.termination.group_empty);
 }
 
 fn count_named(name: &str) -> usize {
