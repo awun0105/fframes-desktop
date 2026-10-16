@@ -269,7 +269,7 @@ impl Backend {
                     .preview_contract_versions
                     .contains(&fframes_studio_protocol::PREVIEW_CONTRACT_VERSION)
                 {
-                    return Err("Selected SDK supports only the legacy worker. Select an M2 preview SDK; imported source is not rewritten.".into());
+                    return Err("Selected SDK has no preview worker. Select an SDK that supports the preview contract; imported source is not rewritten.".into());
                 }
                 if controller.state().active_tag().is_some() {
                     controller.cancel().map_err(|e| e.to_string())?;
@@ -507,8 +507,8 @@ impl Backend {
                     Some(&self.processes),
                 );
                 if report.is_ready() {
-                    // Agent tasks compile and preview candidates, which needs the M2
-                    // preview contract; a legacy-worker SDK stays usable for the rest.
+                    // Agent tasks compile and preview candidates, which needs the
+                    // preview contract; an SDK without it stays usable for the rest.
                     if selected
                         .preview_contract_versions
                         .contains(&fframes_studio_protocol::PREVIEW_CONTRACT_VERSION)

@@ -1,4 +1,4 @@
-//! Strict M2 consumer using the same supervised bounded transport as the legacy client.
+//! Strict preview-protocol consumer over the supervised, bounded `WorkerClient` transport.
 use crate::services::worker_client::{WorkerClient, WorkerClientError};
 use crate::{PreviewFrame, validate_preview_timeline};
 use fframes_studio_protocol::*;
@@ -14,9 +14,9 @@ fn invalid(message: impl Into<String>) -> WorkerClientError {
     WorkerClientError::Other(message.into())
 }
 
-/// The negotiation failed because the worker is not a compatible M2 preview worker
+/// The negotiation failed because the worker is not a compatible preview worker
 /// (version, capability, backend or limits): an SDK/environment problem, not an edit.
-pub const INCOMPATIBLE_BRIDGE: &str = "Incompatible preview SDK/worker bridge; source unchanged. Select an M2-capable SDK and explicit preview entry.";
+pub const INCOMPATIBLE_BRIDGE: &str = "Incompatible preview SDK/worker bridge; source unchanged. Select an SDK with preview support and an explicit preview entry.";
 
 impl PreviewWorkerClient {
     pub fn new(transport: WorkerClient, identity: PreviewIdentity) -> Self {

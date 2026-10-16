@@ -86,7 +86,7 @@ pub fn resolve_manifest(
         .ok_or_else(|| missing_sdk_bundle_message(host.unwrap_or("this platform")))
 }
 
-/// Install only the SDK. Product setup must not regenerate the spike fixture.
+/// Install only the SDK. Product setup must not generate a project.
 /// `app_version` is the running app's version the SDK must be compatible with.
 pub fn install_sdk(
     manifest: &CompatibilityManifest,

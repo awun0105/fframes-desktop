@@ -70,7 +70,7 @@ pub struct SetupView {
 }
 
 impl SetupView {
-    /// Shared discovery for the spike and product shell; callers run this off the UI thread.
+    /// Shared discovery for the setup view and the shell; callers run this off the UI thread.
     pub fn defaults() -> Result<(CompatibilityManifest, PathBuf), String> {
         studio_engine::sdk_setup::defaults_in(studio_engine::sdk_setup::default_sdk_home())
     }
