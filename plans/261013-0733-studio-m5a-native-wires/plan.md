@@ -40,7 +40,7 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
 | 1 | [Driver trait and wire selection](./phase-01-driver-trait.md) | 2-3d | none | Completed |
 | 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Completed except question answering: the engine's card answers only the first question and sends empty answers for the rest. Handed to [M5 phase 2](../261013-0733-studio-m5-agent-ux/phase-02-composer.md). |
 | 3 | [Codex app-server driver](./phase-03-codex-app-server.md) | 3-4d | 1 | Completed |
-| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | In progress. Done on Windows; macOS manual checks and macOS/Linux CI are open. |
+| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | In progress. CI green on Windows, macOS and Linux; manual checks on macOS are open. |
 
 ## Success criteria
 
@@ -52,4 +52,4 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
   - Against the real CLI on this VM: decline and accept, stop, and an interrupted command ended by session stop.
   - With the fake CLI only: steer and resume.
 - [x] No driver answers a request on the user's behalf. The engine still does for questions 2..n of a multi-question prompt; M5 phase 2 owns that fix. `cross_driver.rs` proves for all three wires that an unanswered permission request blocks the tool, and both native drivers run in the draft directory.
-- [ ] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs. They pass on this Windows VM; macOS and Linux have not run them.
+- [x] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs: `6225af8`, [self-hosted Linux and Windows](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905684378) and [macOS 15](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905719933), 2026-10-16. The first Linux attempt hit the known intermittent export-cancel hang in the parity `services::` tests after every agent test had passed; the re-run passed.

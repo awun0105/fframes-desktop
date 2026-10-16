@@ -42,7 +42,7 @@ All three drivers are tested the same way on Windows, macOS and Linux CI without
 - [x] Background-work turn-end test. In the cross-driver suite, the work is reported before the wire's own end frame and clears afterwards. In the engine (`app/tests/agent_workflow/{claude,codex}_wire.rs`), capture waits for it, and Stop during the wait captures nothing.
 - [x] Parity agent test per wire, `crates/studio-ui/tests/parity/agent.rs`. The panel flow (prompt, permission card, allow, review, Apply) runs over Claude stream-json and over Codex app-server through `Studio::with_native_agent`. The other parity agent tests stay on the scripted ACP agent.
 - [ ] Manual checks recorded ([report](../../desktop/plans/reports/native-wires-checks.md)). Done on this Windows VM for Claude Code 2.1.296 and Codex 0.162.1. Still open: Claude and Codex on the user's Mac.
-- [ ] Cross-driver suite on macOS and Linux CI. It has only run on this Windows VM.
+- [x] Cross-driver suite on macOS and Linux CI: green on all three platforms for `6225af8` ([self-hosted Linux and Windows](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905684378), [macOS 15](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905719933)).
 
 ## Success criteria
 
