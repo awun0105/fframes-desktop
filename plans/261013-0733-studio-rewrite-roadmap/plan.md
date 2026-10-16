@@ -22,10 +22,10 @@ This roadmap indexes six milestone plans. Each milestone ends with the app build
 | # | Milestone | Blocked by | Effort | Status |
 |---|-----------|-----------|--------|--------|
 | M1 | [Foundations: spikes, Cap GPUI switch, parity tests](../261013-0733-studio-m1-foundations/plan.md) | CI branch merged | 12-17d | Complete |
-| M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 27-38d | In progress (all phases done; hand checks on macOS and of the Windows title bar open) |
+| M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 27-38d | In progress (all phases done; hand check of the Windows title bar open; macOS hand checks not run, see Platforms) |
 | M3 | [Durable writes, containment and tools on Windows and macOS](../261013-0733-studio-m3-durable-writes/plan.md) | M1 phase 1; phases 3-5 also need M2 phases 1, 3, 8 | 18-27d | Completed (CI green on Linux, Windows and macOS, 2026-10-15) |
 | M4 | [Editing: timing doc, SDK release, timeline, playback, export](../261013-0733-studio-m4-editing/plan.md) | M2, M3 | 24-33d | Done with concerns |
-| M5a | [Native agent wires: Claude stream-json, Codex app-server](../261013-0733-studio-m5a-native-wires/plan.md) | M2, M3 | 10-14d | Done with concerns (CI green on all three platforms, real CLIs checked on Windows; the macOS real-CLI checks moved to M6, no Mac available) |
+| M5a | [Native agent wires: Claude stream-json, Codex app-server](../261013-0733-studio-m5a-native-wires/plan.md) | M2, M3 | 10-14d | Done with concerns (CI green on all three platforms, real CLIs checked on Windows; macOS not fully tested: CI only, see Platforms) |
 | M5 | [Agent UX: markdown, composer, todo, diffs, history](../261013-0733-studio-m5-agent-ux/plan.md) | M2, M3, M5a | 16-24d (re-estimated from spike S4) | In progress on `feat/studio-m5-ux`; builds on the M5a code without waiting for M5a's open checks (decided 2026-10-16) |
 | M6 | [Cleanup: spike names, docs, platform checks](../261013-0733-studio-m6-cleanup/plan.md) | M4, M5 | 3-4d | Pending |
 
@@ -48,13 +48,13 @@ M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1,
 - **Agent panel:** a tab in the editor sidebar next to Presets and Scenes; chrome (frame, tabs, controls, menus, inputs) from Cap's kit; Zeron supplies the internals: streaming markdown with code highlighting, todo panel, composer (slash commands, attachments, steer/stop), diff review where rejecting files forms a new candidate that must pass validation before apply, per-file revert after apply (also validated), and multi-session history.
 - **Safety kept:** writer containment is verified at runtime by the engine (Unix process groups, Windows Job Objects), not by a qualification ledger. The agent tool broker runs on Windows over named pipes.
 - **Tests:** `#[gpui::test]` replaces the bounds-probe harness. Parity tests land in M1 and stay green; the harness is deleted in M2.
-- **Platforms:** Windows and macOS ship and are checked by hand; Linux compiles and passes CI.
+- **Platforms:** Windows ships and is checked by hand. macOS ships **not fully tested**: no Mac is available (decided by the user, 2026-10-16), so macOS is covered only by CI (tests, fake agent CLIs, clippy), and no hand check, real-CLI check or on-screen check runs there. Every Done-means item below that says "on Windows and macOS" is met on macOS by CI alone, and a milestone records its macOS hand checks as not run rather than open. Linux compiles and passes CI.
 
 ## Done means
 
 - `desktop/` builds on Cap's GPUI fork and draws with Cap's components; `just clippy` and `cargo test` pass; no `.rs` file under `desktop/` exceeds 1,500 lines.
 - Trim, split or reorder a scene in a project made from the studio template: preview updates without a Rust rebuild, `timeline.json` is written, Ctrl+Z restores it, and an export matches the preview.
-- An agent turn renders markdown, a todo list and a diff with per-file accept (validated) and revert, on Windows and macOS, with project tools available on both, over native wires for Claude Code and Codex and ACP for other agents (Codex is checked on Windows where it is installed and signed in).
+- An agent turn renders markdown, a todo list and a diff with per-file accept (validated) and revert, on Windows and macOS, with project tools available on both, over native wires for Claude Code and Codex and ACP for other agents (Codex is checked on Windows where it is installed and signed in; macOS by CI only, see Platforms).
 - Durable writes, crash recovery and writer containment run on Windows and macOS, proven by tests in CI.
 - No bounds-probe, telemetry or qualification harness code remains; the release workflow gates on an explicit eligibility list, package verification and a tag-to-CI-run check instead; no `*_spike` names remain.
 - `docs/desktop/architecture.md` describes the real crate layout.
@@ -153,7 +153,7 @@ Questions resolved from repository evidence; the open ones are recorded as assum
 |---|----------|-----------|--------|-----------|
 | 1 | How does a new SDK reach projects: crates.io or the app bundle? | Bundled. Projects build offline against `framework/vendor` from the shipped SDK. The earlier "publish to crates.io" step was wrong and is replaced; enforcement accepts the legacy and the new pin set so unmigrated projects still build. | `build_materialization.rs` crates-io `replace-with = "studio-vendor"`; `desktop/scripts/assemble-phase-zero-sdk.py` (`cargo vendor`) | Roadmap contract; M4 p2 |
 | 2 | Which GitHub organisation holds the zui and gpui-base mirrors? | **Assumption:** the owner of `origin` (`khanhthanhdev`). Confirm before creating the mirrors in M1 spike S1. | `git remote -v` | M1 p1 (S1) |
-| 3 | Who runs the macOS manual checks? | **Assumption:** the user on their own Mac; this VM is Windows and CPU-only. macOS CI covers the automated part. Confirm when M1 S1 needs the first manual run. | memory note on the VM; `desktop-release.yml` macOS job | M1 p1; M6 p2 |
+| 3 | Who runs the macOS manual checks? | Nobody: no Mac is available (decided by the user, 2026-10-16). macOS is marked not fully tested and is covered by CI only; see Platforms. | memory note on the VM; `desktop-release.yml` macOS job | M1 p1; M6 p2 |
 | 4 | Do M4 and M5 run in parallel or in sequence? | Parallel, as planned; they own disjoint `studio-ui` modules and coordinate only on `studio-proto`. With a single executor, run M4 first because it carries the SDK migration. | Roadmap milestone table | Roadmap |
 
 No contradictions with confirmed user decisions. `ak plan validate` re-run after these edits.

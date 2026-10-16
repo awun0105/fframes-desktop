@@ -1,6 +1,6 @@
 ---
 title: "M6 Cleanup: spike names, docs, platform checks"
-description: "Remove spike leftovers and dead modules, update the docs to the real system, and check every roadmap Done-means item by hand on Windows and macOS."
+description: "Remove spike leftovers and dead modules, update the docs to the real system, and check every roadmap Done-means item by hand on Windows; macOS is covered by CI only (not fully tested)."
 status: pending
 priority: P2
 effort: "3-4d"
@@ -28,4 +28,4 @@ Part of [the studio rewrite roadmap](../261013-0733-studio-rewrite-roadmap/plan.
 
 - [ ] No `*_spike` names, `StudioSpikeApp` or `spike-ui` route remain; the app crate is a thin binary.
 - [ ] No harness identifiers remain (`grep -rnE "qualify_|presentation_stress|stress_metrics|bounds_probe|start_agent_telemetry" desktop --include=*.rs` is empty), while the production probes listed in M2 phase 7 still exist.
-- [ ] Every roadmap Done-means item is checked on Windows and on macOS, recorded in `reports/platform-checks.md`.
+- [ ] Every roadmap Done-means item is checked by hand on Windows, recorded in `reports/platform-checks.md`. macOS is marked not fully tested there: green CI only, with no hand checks, because no Mac is available (decided 2026-10-16).

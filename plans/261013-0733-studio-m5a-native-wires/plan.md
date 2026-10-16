@@ -40,7 +40,7 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
 | 1 | [Driver trait and wire selection](./phase-01-driver-trait.md) | 2-3d | none | Completed |
 | 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Completed except question answering: the engine's card answers only the first question and sends empty answers for the rest. Handed to [M5 phase 2](../261013-0733-studio-m5-agent-ux/phase-02-composer.md). |
 | 3 | [Codex app-server driver](./phase-03-codex-app-server.md) | 3-4d | 1 | Completed |
-| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | Done with concerns: CI is green on Windows, macOS and Linux, and the real CLIs pass on Windows. The real-CLI checks were not run on macOS (no Mac; moved to M6 phase 2). |
+| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | Done with concerns: CI is green on Windows, macOS and Linux, and the real CLIs pass on Windows. macOS is not fully tested: CI only, with no real-CLI checks, because no Mac is available. |
 
 ## Success criteria
 
@@ -50,6 +50,6 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
   - The engine's capture on that sequence (deferred until idle, nothing captured on Stop) is tested with the fake CLI, which replays the same frames.
 - [x] The same with Codex on this VM, where it is installed and signed in: decline and accept, stop, steer, resume, and an interrupted command ended by session stop, all against the real CLI.
   - With the fake CLI only: a command that completes after its turn, and `requestUserInput` questions.
-- macOS: the real-CLI checks were not run because no Mac is available (decided 2026-10-16). CI covers macOS with the fake CLIs; the real-CLI checks moved to [M6 phase 2](../261013-0733-studio-m6-cleanup/phase-02-docs-and-platform-checks.md).
+- macOS is **not fully tested**. CI covers it with the fake CLIs, but the real-CLI checks were not run there because no Mac is available (decided by the user, 2026-10-16; [roadmap, Platforms](../261013-0733-studio-rewrite-roadmap/plan.md#confirmed-contract)).
 - [x] No driver answers a request on the user's behalf. The engine still does for questions 2..n of a multi-question prompt; M5 phase 2 owns that fix. `cross_driver.rs` proves for all three wires that an unanswered permission request blocks the tool, and both native drivers run in the draft directory.
 - [x] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs: `6225af8`, [self-hosted Linux and Windows](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905684378) and [macOS 15](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905719933), 2026-10-16. The first Linux attempt hit the known intermittent export-cancel hang in the parity `services::` tests after every agent test had passed; the re-run passed.

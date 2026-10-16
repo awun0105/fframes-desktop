@@ -69,4 +69,4 @@ These two are covered with the fake CLI (`codex_app_server.rs`, and the `codex_w
 
 ## macOS
 
-Not run: no Mac is available (decided 2026-10-16). CI runs the fake-CLI suites on macOS 15. The real-CLI checks above move to the macOS checks of [M6 phase 2](../../../plans/261013-0733-studio-m6-cleanup/phase-02-docs-and-platform-checks.md).
+Not fully tested. The real-CLI checks were not run because no Mac is available (decided by the user, 2026-10-16). CI runs the fake-CLI suites on macOS 15. If a Mac becomes available, run the same two commands there.
