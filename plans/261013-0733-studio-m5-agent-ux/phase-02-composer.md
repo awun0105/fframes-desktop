@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Composer"
-status: pending
+status: completed
 priority: P1
 effort: "5-7d"
 dependencies: []
@@ -43,16 +43,17 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Composer on the ported `ComposerInput` ([component report](./reports/phase-02-composer-ui.md)); steering extension or cancel-and-re-prompt; driver `Question` events as question cards
+Reports: [component](./reports/phase-02-composer-ui.md), [driver and engine](./reports/phase-02-03-driver-engine.md), [security review](./reports/phase-02-03-review.md) (every high and medium finding fixed, see "Review fixes" in the driver report), [panel wiring](./reports/wiring-agent-panel.md).
 
-- [ ] Scout prompt path
-- [ ] Composer ported and split
-- [ ] Commands event in the driver and slash UI
-- [ ] Images through `prompt_with_images` with transcoding
-- [ ] Confined file attachments
-- [ ] Stop and per-adapter steering
-- [ ] Question card for every question (handed over from M5a phase 2). Today the actor shows only the first question's options and sends `QuestionAnswer::default()` for questions 2..n (`studio-engine/src/agent/actor/prompt.rs`, `reply_permission`), so the agent receives answers the user never gave; a free-text question with no options can only be cancelled. The card must collect an answer, or free text, for each question before anything is sent.
-- [ ] Tests
+- [x] Composer on the ported `ComposerInput`; steering extension or cancel-and-re-prompt; driver `Question` events as question cards
+- [x] Scout prompt path
+- [x] Composer ported and split
+- [x] Commands event in the driver and slash UI (the last list outlives a task and is cleared when the adapter or conversation changes)
+- [x] Images through `prompt_with_images` with transcoding (every image, PNG included, is decoded and re-encoded)
+- [x] Confined file attachments: deny list on the canonical path (Windows trailing dots, streams and 8.3 names tested); outside files staged with a single-use token and sent as embedded content; inside files link into the agent's working copy; hard links refused; size caps
+- [x] Stop and per-adapter steering (a steer shows as sent only after the agent accepts it; a refused one returns to the composer)
+- [x] Question card for every question: one answer or free text per item, keyed by index, sent only when all are answered
+- [x] Tests: engine, harness and workflow tests; 11 composer parity cases through the real shell; a real-click check in the running app
 
 ## Success criteria
 

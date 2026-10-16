@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Session history"
-status: pending
+status: completed
 priority: P2
 effort: "3-4d"
 dependencies: []
@@ -34,13 +34,14 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Stored log as the single row source; replay dropped on load, with test
-
+- [x] Stored log as the single row source; replay dropped on load, with test (`sessions::a_reopened_session_restored_by_loading_shows_each_stored_row_once_while_the_agent_replays_it`, [merge checks](./reports/merge-verification.md))
 - [x] Scout
-- [x] Multi-session storage and migration ([report](./reports/phase-05-storage-and-list.md), [review](./reports/phase-05-review.md)); nothing calls the migration yet
-- [ ] Engine list, load, resume via existing path: list and load done; resume waits for the M5a driver work
-- [x] List and search UI (standalone, not in the panel)
-- [ ] Tests: storage, migration, list, search and load covered; reopen and resume not yet
+- [x] Multi-session storage and migration ([report](./reports/phase-05-storage-and-list.md), [review](./reports/phase-05-review.md)); the migration runs when a project opens
+- [x] Engine list, load and resume: new chat starts a new session; resume follows the capabilities stored with the session, read-only otherwise ([lifecycle](./reports/phase-05-lifecycle.md), [review](./reports/phase-05-lifecycle-review.md))
+- [x] List and search UI in the panel's History tab ([wiring](./reports/wiring-agent-panel.md))
+- [x] Tests: storage, migration, list, search, load, reopen and resume by capability; parity `composer::the_history_lists_searches_and_reopens_stored_sessions`
+
+Open, handed to M6: the startup offer skips the stored-capability gate (the read-only fallback still applies), and listing reads every manifest.
 
 ## Success criteria
 

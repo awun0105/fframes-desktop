@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Todo panel"
-status: pending
+status: completed
 priority: P2
 effort: "1-2d"
 dependencies: []
@@ -28,10 +28,10 @@ Zeron `crates/ui/src/todo_panel.rs` (1,144 lines; depends on frost, edge fade, q
 
 ## Todo
 
-- [ ] Driver plan event
-- [ ] Plan in snapshot
-- [ ] Panel ported
-- [ ] Tests
+- [x] Driver plan event ([driver and engine](./reports/phase-02-03-driver-engine.md))
+- [x] Plan in snapshot (`WorkflowSnapshot.composer.plan`; cleared when the conversation changes)
+- [x] Panel ported ([component](./reports/phase-03-todo-panel.md)), shown above the composer and scrolling in a short window ([wiring](./reports/wiring-agent-panel.md))
+- [x] Tests: driver and engine tests for the plan event; gpui tests for the panel; parity `composer::the_agents_plan_shows_as_a_todo_list` and `composer::a_long_todo_list_leaves_review_reachable_at_the_default_size`
 
 ## Success criteria
 

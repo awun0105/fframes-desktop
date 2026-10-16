@@ -24,6 +24,10 @@ Part of [the studio rewrite roadmap](../261013-0733-studio-rewrite-roadmap/plan.
 | 1 | [Remove spike names and old modules](./phase-01-remove-spikes-and-old-modules.md) | 1-2d | none | Pending |
 | 2 | [Docs and platform checks](./phase-02-docs-and-platform-checks.md) | 2d | 1 | Pending |
 
+## Carried over from M5
+
+[M5's "Handed to M6" list](../261013-0733-studio-m5-agent-ux/plan.md#handed-to-m6-2026-10-17): the composer base question, driver and session limitations, inputs not driven in the real app, and the intermittent test failures (the export-cancel parity hang first).
+
 ## Success criteria
 
 - [ ] No `*_spike` names, `StudioSpikeApp` or `spike-ui` route remain; the app crate is a thin binary.

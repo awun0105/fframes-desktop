@@ -45,21 +45,24 @@ Syntax highlighting is written as a small module with five tree-sitter grammars 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
 | 1 | [Streaming markdown](./phase-01-streaming-markdown.md) | 3-5d | none | Completed |
-| 2 | [Composer](./phase-02-composer.md) | 5-7d | none | In progress: component built and tested, not wired ([report](./reports/phase-02-composer-ui.md)) |
-| 3 | [Todo panel](./phase-03-todo-panel.md) | 1-2d | none | In progress: component built and tested, not fed from agent events ([report](./reports/phase-03-todo-panel.md)) |
-| 4 | [Diff review](./phase-04-diff-review.md) | 4-6d | 1 | In progress: engine, viewer and wiring done; awaiting three-platform CI of the wiring ([wiring](./reports/phase-04-wiring.md)) |
-| 5 | [Session history](./phase-05-session-history.md) | 3-4d | none | In progress: storage, migration, list and load, and the search list built and tested, not called by the app ([report](./reports/phase-05-storage-and-list.md), [review](./reports/phase-05-review.md)); restore, resume and wiring wait for M5a |
+| 2 | [Composer](./phase-02-composer.md) | 5-7d | none | Completed ([component](./reports/phase-02-composer-ui.md), [driver and engine](./reports/phase-02-03-driver-engine.md), [security review](./reports/phase-02-03-review.md), [panel wiring](./reports/wiring-agent-panel.md)) |
+| 3 | [Todo panel](./phase-03-todo-panel.md) | 1-2d | none | Completed ([component](./reports/phase-03-todo-panel.md), [driver and engine](./reports/phase-02-03-driver-engine.md), [panel wiring](./reports/wiring-agent-panel.md)) |
+| 4 | [Diff review](./phase-04-diff-review.md) | 4-6d | 1 | Completed ([engine](./reports/phase-04-engine.md), [viewer](./reports/phase-04-viewer.md), [wiring](./reports/phase-04-wiring.md)) |
+| 5 | [Session history](./phase-05-session-history.md) | 3-4d | none | Completed ([storage](./reports/phase-05-storage-and-list.md), [review](./reports/phase-05-review.md), [lifecycle](./reports/phase-05-lifecycle.md), [lifecycle review](./reports/phase-05-lifecycle-review.md), [merge checks](./reports/merge-verification.md)) |
 
 Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) compiled the todo panel and `ComposerInput` on the Cap fork with one GPUI API change. Phase 3 shrinks; phase 2 holds at 5-7d because it keeps `ComposerInput` (decided 2026-10-14) rather than building on the kit `TextInput` (8-10d).
 
-## Open items before wiring (2026-10-16)
+## Handed to M6 (2026-10-17)
 
-- **Composer base, for the plan owner to decide.** The reasons recorded for keeping `ComposerInput` were projection, inline mention and attachment chips, and Markdown faces; the port drops all three, so what remains (multiline wrap, undo, IME, the Enter keymap) overlaps heavily with the kit `TextInput`. Revisit before wiring, or restore projection when `@` mentions land. The 2026-10-14 decision stands until then.
-- **Attachments.** A disabled attach kind gates new pastes and the attach button only: chips already accepted still go out with the next send, so the owner filters them, and a paste of a disabled kind is dropped without feedback.
-- **Slash menu.** A `/` inside backticks still opens the completion menu (no code-span check).
+The disabled-kind chips, the silent disabled paste and the slash menu inside backticks were closed by the wiring ([report](./reports/wiring-agent-panel.md)). What remains goes to [M6 cleanup](../261013-0733-studio-m6-cleanup/plan.md):
+
+- **Composer base.** The reasons recorded for keeping `ComposerInput` were projection, inline mention and attachment chips, and Markdown faces; the port drops all three, so what remains (multiline wrap, undo, IME, the Enter keymap) overlaps heavily with the kit `TextInput`. Revisit when `@` mentions land. The 2026-10-14 decision stands.
+- **Driver limitations** ([driver report](./reports/phase-02-03-driver-engine.md)): plan updates are not coalesced; the workspace `image` feature is enabled for the whole workspace; a plan or command update that arrives before the session id is stored is accepted (display only); an adapter change clears the command list, covered by a unit test only.
+- **Session limitations** ([lifecycle report](./reports/phase-05-lifecycle.md)): the startup offer of the saved session skips the stored-capability gate (the read-only fallback still applies); a new chat while the legacy log is served hides the legacy conversation if its migration keeps failing; listing sessions reads every manifest.
+- **Not driven in the real app:** native file dialogs and the Ctrl+Enter chord (both covered by parity tests); the review-banner layout fix is covered by a parity test, not by a screenshot.
 - **Intermittent parity hang, not from the review engine.** `services::cancelling_an_export_leaves_no_file` sometimes never lets the frame loop settle after a cancelled export, and the harness watchdog ends the parity process with exit 101. On this VM it hung in 1 of 4 runs of `services::` without the per-file review engine and 2 of 4 with it (both branches already held the markdown phase), so it predates the engine work. It also failed the self-hosted Linux job of CI run 38917158146 once; a re-run passed.
 - **Intermittent macOS failures outside M5.** `build_sharing::cancelling_the_ui_compile_scope_leaves_a_tool_subscriber_running` (subscriber count) and `agent_workflow::regressions::a_check_still_running_when_the_adapter_changes_is_redone_for_the_new_adapter` (check never started) each failed one macOS run and passed on re-run.
-- **Viewer on screen.** Checked in a stand-in window with real clicks ([wiring report](./reports/phase-04-wiring.md)); not yet with a real agent in the running app.
+- **Other intermittent failures, all passing when re-run alone.** Parity: `services::an_unmigrated_project_exports_only_the_default_whatever_was_saved` (twice, both in runs that also stalled on exports), `agent::undo_in_the_prompt_undoes_the_typing_there`, `composer::the_history_lists_searches_and_reopens_stored_sessions` (the History tab click was not taken under load; 3 of 3 alone), and on macOS CI `agent::switching_projects_mid_turn_shows_nothing_of_the_old_turn`. Self-hosted CI: `agent_workflow::codex_wire::capture_waits_for_a_command_that_outlives_its_turn` (5 of 5 alone here). They point at timing waits in the harnesses under load.
 
 ## Success criteria
 
