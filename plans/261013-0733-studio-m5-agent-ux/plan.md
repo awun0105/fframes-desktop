@@ -1,7 +1,7 @@
 ---
 title: "M5 Agent UX: streaming markdown, composer, todos, diff review, history"
 description: "Port Zeron's markdown, composer, todo panel, change viewer and search onto the M2 transcript rows, extend the ACP driver for plans and commands, make partial apply validated, and store many sessions per project."
-status: in-progress
+status: completed
 priority: P1
 effort: "16-24d"
 branch: feat/studio-rewrite
@@ -62,12 +62,12 @@ The disabled-kind chips, the silent disabled paste and the slash menu inside bac
 - **Not driven in the real app:** native file dialogs and the Ctrl+Enter chord (both covered by parity tests); the review-banner layout fix is covered by a parity test, not by a screenshot.
 - **Intermittent parity hang, not from the review engine.** `services::cancelling_an_export_leaves_no_file` sometimes never lets the frame loop settle after a cancelled export, and the harness watchdog ends the parity process with exit 101. On this VM it hung in 1 of 4 runs of `services::` without the per-file review engine and 2 of 4 with it (both branches already held the markdown phase), so it predates the engine work. It also failed the self-hosted Linux job of CI run 38917158146 once; a re-run passed.
 - **Intermittent macOS failures outside M5.** `build_sharing::cancelling_the_ui_compile_scope_leaves_a_tool_subscriber_running` (subscriber count) and `agent_workflow::regressions::a_check_still_running_when_the_adapter_changes_is_redone_for_the_new_adapter` (check never started) each failed one macOS run and passed on re-run.
-- **Other intermittent failures, all passing when re-run alone.** Parity: `services::an_unmigrated_project_exports_only_the_default_whatever_was_saved` (twice, both in runs that also stalled on exports), `agent::undo_in_the_prompt_undoes_the_typing_there`, and on macOS CI `agent::switching_projects_mid_turn_shows_nothing_of_the_old_turn`. Self-hosted CI: `agent_workflow::codex_wire::capture_waits_for_a_command_that_outlives_its_turn` (5 of 5 alone here). They point at timing waits in the harnesses under load. One M5 test had the same kind of failure and was fixed: `composer::the_history_lists_searches_and_reopens_stored_sessions` once clicked the History tab at bounds measured before a notice moved the tabs, so the composer cases now click only once two measurements a frame apart agree.
+- **Other intermittent failures, all passing when re-run alone.** Parity: `services::an_unmigrated_project_exports_only_the_default_whatever_was_saved` (twice, both in runs that also stalled on exports), `agent::undo_in_the_prompt_undoes_the_typing_there`, and on macOS CI `agent::switching_projects_mid_turn_shows_nothing_of_the_old_turn`. They point at timing waits in the harnesses under load. One M5 test had the same kind of failure and was fixed: `composer::the_history_lists_searches_and_reopens_stored_sessions` once clicked the History tab at bounds measured before a notice moved the tabs, so the composer cases now click only once two measurements a frame apart agree. `agent_workflow::codex_wire::capture_waits_for_a_command_that_outlives_its_turn` failed twice on the self-hosted runner after the merges: the fake command ended 0.5 s after its turn and the wait could miss the whole window, so the command is now held until the test has seen it waiting.
 
 ## Success criteria
 
-- [ ] An agent turn against each fake agent (ACP, Claude, Codex) renders markdown with highlighted code while streaming, shows its todo list, and shows a diff with per-file accept (validated) and revert, on Windows and macOS.
-- [ ] The composer supports multiline input, slash commands from the agent, file and image attachments within confinement rules, stop, and steering.
-- [ ] Many past sessions per project can be listed, searched and reopened; the existing single session migrates.
-- [ ] No link or file from agent output is ever executed by the OS.
-- [ ] Parity agent tests stay green; new gpui tests cover each feature.
+- [x] An agent turn against each fake agent (ACP, Claude, Codex) renders markdown with highlighted code while streaming, shows its todo list, and shows a diff with per-file accept (validated) and revert, on Windows and macOS. The panel parity cases drive ACP (markdown, todo list, review) and Claude (questions); Codex plans and commands are covered at workflow level (`composer::claude_and_codex_publish_their_commands_and_plan`, `studio-harness/tests/cross_driver.rs`), since the panel renders the same snapshot whichever driver fills it. macOS by CI only.
+- [x] The composer supports multiline input, slash commands from the agent, file and image attachments within confinement rules, stop, and steering ([wiring](./reports/wiring-agent-panel.md)).
+- [x] Many past sessions per project can be listed, searched and reopened; the existing single session migrates ([lifecycle](./reports/phase-05-lifecycle.md)).
+- [x] No link or file from agent output is ever executed by the OS ([phase 1 links](./reports/phase-01-links.md); attachments are only read, never opened).
+- [x] Parity agent tests stay green; new gpui tests cover each feature (Desktop CI run 38960161225 green on all platforms).
