@@ -83,6 +83,8 @@ struct Mailbox {
     devices: Vec<String>,
 }
 
+type Wake = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
+
 struct Control {
     wanted: AtomicU64,
     committed: AtomicU64,
@@ -96,6 +98,7 @@ struct Control {
 pub struct AudioService {
     mailbox: Arc<Mutex<Mailbox>>,
     control: Arc<Control>,
+    wake: Wake,
     task: Mutex<Option<JoinHandle<()>>>,
 }
 impl AudioService {
@@ -110,10 +113,13 @@ impl AudioService {
         });
         let m = mailbox.clone();
         let c = control.clone();
-        let task = thread::spawn(move || owner(m, c, origin));
+        let wake = Wake::default();
+        let w = wake.clone();
+        let task = thread::spawn(move || owner(m, c, w, origin));
         Self {
             mailbox,
             control,
+            wake,
             task: Mutex::new(Some(task)),
         }
     }
@@ -134,6 +140,12 @@ impl AudioService {
             position,
             device,
         });
+    }
+    /// Called on the owner thread, never under a lock and never from the audio callback,
+    /// when an event is waiting for [`Self::event`] and each time the playing output has
+    /// published a new clock snapshot.
+    pub fn set_wake(&self, wake: impl Fn() + Send + Sync + 'static) {
+        *self.wake.lock() = Some(Arc::new(wake));
     }
     pub fn commit(&self, epoch: u64, playing: bool) {
         if self.control.wanted.load(Ordering::Acquire) == epoch {
@@ -198,6 +210,10 @@ pub struct AudioMetrics {
 impl OutputHandle {
     pub fn snapshot(&self) -> Option<OutputClockSnapshot> {
         self.state.snapshot.read(self.epoch, self.sample_rate)
+    }
+    /// How many clock snapshots the output has published; changes with every callback.
+    pub fn snapshot_sequence(&self) -> u64 {
+        self.state.snapshot.sequence.load(Ordering::Acquire)
     }
     pub fn metrics(&self) -> AudioMetrics {
         AudioMetrics {
@@ -459,7 +475,13 @@ impl Drop for Session {
     }
 }
 
-fn owner(mailbox: Arc<Mutex<Mailbox>>, control: Arc<Control>, origin: Instant) {
+fn owner(mailbox: Arc<Mutex<Mailbox>>, control: Arc<Control>, wake: Wake, origin: Instant) {
+    let wake_up = || {
+        let listener = wake.lock().clone();
+        if let Some(listener) = listener {
+            listener();
+        }
+    };
     let host = cpal::default_host();
     mailbox.lock().devices = host
         .output_devices()
@@ -469,8 +491,10 @@ fn owner(mailbox: Arc<Mutex<Mailbox>>, control: Arc<Control>, origin: Instant) {
         .take(32)
         .collect();
     let mut current: Option<Session> = None;
+    let mut announced = 0;
     while !control.closed.load(Ordering::Acquire) {
         let request = mailbox.lock().request.take();
+        let had_request = request.is_some();
         if let Some(request) = request {
             let epoch = request.epoch;
             let identity = request.ready.identity().clone();
@@ -515,10 +539,10 @@ fn owner(mailbox: Arc<Mutex<Mailbox>>, control: Arc<Control>, origin: Instant) {
                 }
             }
         }
-        if current
+        let lost = current
             .as_ref()
-            .is_some_and(|s| s.handle.state.failed.load(Ordering::Acquire))
-        {
+            .is_some_and(|s| s.handle.state.failed.load(Ordering::Acquire));
+        if lost {
             let epoch = current.as_ref().unwrap().handle.epoch;
             drop(current.take());
             let mut mailbox = mailbox.lock();
@@ -535,6 +559,14 @@ fn owner(mailbox: Arc<Mutex<Mailbox>>, control: Arc<Control>, origin: Instant) {
             && control.committed.load(Ordering::Acquire) != control.wanted.load(Ordering::Acquire)
         {
             drop(current.take());
+        }
+        // The callback only publishes; this thread turns its progress and the events above
+        // into a wake for the UI.
+        let sequence = current.as_ref().map_or(0, |s| s.handle.snapshot_sequence());
+        let progressed = sequence != announced && control.playing.load(Ordering::Acquire);
+        announced = sequence;
+        if had_request || lost || progressed {
+            wake_up();
         }
         thread::sleep(Duration::from_millis(2));
     }

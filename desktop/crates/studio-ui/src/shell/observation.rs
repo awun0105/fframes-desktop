@@ -307,7 +307,7 @@ impl StudioShell {
             "audio_note": self.audio_note, "output_device": format!("{:?}", self.output_device), "muted": self.muted,
             "audio_metrics": self.output.as_ref().map(OutputHandle::metrics),
             "thumbnail_metrics": thumbnails,
-            "image_metrics": { "resident": self.images.resident_count(), "queued": self.images.queue_depth(), "dropped": self.images.dropped_count(), "release_failures": self.images.release_failures() },
+            "image_metrics": { "resident": self.images.resident_count(), "queued": self.images.queue_depth(), "dropped": self.images.dropped_count(), "release_failures": self.images.release_failures(), "out_of_order": self.images.out_of_order() },
             "pump_metrics": self.preview.as_ref().map(|p| p.metrics()), "buttons": buttons,
             "ruler_bounds": thumbnails["ruler_bounds"],
         })

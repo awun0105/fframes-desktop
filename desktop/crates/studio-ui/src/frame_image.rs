@@ -48,35 +48,27 @@ pub fn convert_rgba_to_gpui_bgra(
     let swap_channels = header.channel_order == ChannelOrder::Rgba8;
     let un_premultiply = header.alpha_mode == AlphaMode::Premultiplied;
 
-    for y in 0..height {
-        let in_row_start = y * in_stride;
-        let out_row_start = y * out_stride;
-
-        for x in 0..width {
-            let in_px = in_row_start + x * 4;
-            let out_px = out_row_start + x * 4;
-
-            let mut c0 = payload[in_px];
-            let mut c1 = payload[in_px + 1];
-            let mut c2 = payload[in_px + 2];
-            let a = payload[in_px + 3];
-
+    // Row by row with chunked pixels: no index arithmetic or bounds checks per pixel.
+    for (in_row, out_row) in payload
+        .chunks(in_stride)
+        .zip(bgra_bytes.chunks_exact_mut(out_stride))
+        .take(height)
+    {
+        let (src_pixels, _) = in_row[..out_stride].as_chunks::<4>();
+        let (dst_pixels, _) = out_row.as_chunks_mut::<4>();
+        for (src, dst) in src_pixels.iter().zip(dst_pixels) {
+            let (mut c0, mut c1, mut c2, a) = (src[0], src[1], src[2], src[3]);
             if swap_channels {
                 // RGBA -> BGRA: swap c0 (R) and c2 (B)
                 std::mem::swap(&mut c0, &mut c2);
             }
-
             if un_premultiply && a > 0 && a < 255 {
                 let alpha_scale = a as f32 / 255.0;
                 c0 = ((c0 as f32 / alpha_scale).min(255.0)) as u8;
                 c1 = ((c1 as f32 / alpha_scale).min(255.0)) as u8;
                 c2 = ((c2 as f32 / alpha_scale).min(255.0)) as u8;
             }
-
-            bgra_bytes[out_px] = c0;
-            bgra_bytes[out_px + 1] = c1;
-            bgra_bytes[out_px + 2] = c2;
-            bgra_bytes[out_px + 3] = a;
+            *dst = [c0, c1, c2, a];
         }
     }
 
@@ -103,6 +95,8 @@ pub struct ImagePresentationManager {
     queue_depth: usize,
     dropped_image_count: usize,
     release_failures: usize,
+    last_serial: Option<u64>,
+    out_of_order: usize,
 }
 
 impl Default for ImagePresentationManager {
@@ -119,6 +113,8 @@ impl ImagePresentationManager {
             queue_depth: 0,
             dropped_image_count: 0,
             release_failures: 0,
+            last_serial: None,
+            out_of_order: 0,
         }
     }
 
@@ -142,10 +138,28 @@ impl ImagePresentationManager {
         self.release_failures
     }
 
+    /// Frames shown after a frame of a newer seek. The pump drops them before they get here,
+    /// so this stays zero; it is the proof that it does.
+    pub fn out_of_order(&self) -> usize {
+        self.out_of_order
+    }
+
+    /// Shows the frame answering seek `serial`. A serial older than the one on screen is
+    /// counted; serials only grow within a preview, so an install starts them again with
+    /// [`Self::replace_image`].
+    pub fn present(&mut self, new_image: Arc<RenderImage>, serial: u64, window: &mut Window) {
+        if self.last_serial.is_some_and(|last| serial < last) {
+            self.out_of_order += 1;
+        }
+        self.replace_image(new_image, window);
+        self.last_serial = Some(serial);
+    }
+
     /// Replaces the current image with the new image, invoking `window.drop_image()`
     /// on the prior image to evict it from GPUI's sprite atlas and prevent memory leaks.
     pub fn replace_image(&mut self, new_image: Arc<RenderImage>, window: &mut Window) {
         self.clear(window);
+        self.last_serial = None;
         self.current_image = Some(new_image);
         self.resident_count = 1;
         self.queue_depth = 1;
@@ -163,6 +177,7 @@ impl ImagePresentationManager {
             }
         }
         self.queue_depth = 0;
+        self.last_serial = None;
     }
 }
 
@@ -204,6 +219,40 @@ mod tests {
         // Bottom-right x=1, y=1: Transparent
         let trans_px = (2 + 1) * 4;
         assert_eq!(&bgra[trans_px..trans_px + 4], &[0, 0, 0, 0]);
+    }
+
+    struct Blank;
+    impl gpui::Render for Blank {
+        fn render(
+            &mut self,
+            _: &mut Window,
+            _: &mut gpui::Context<Self>,
+        ) -> impl gpui::IntoElement {
+            gpui::div()
+        }
+    }
+
+    #[gpui::test]
+    fn an_older_serial_after_a_newer_one_is_counted_and_the_count_survives_a_clear(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (_, cx) = cx.add_window_view(|_, _| Blank);
+        let image = || {
+            let (header, payload) = generate_reference_frame("rev1", 1, 1, 0, 2, 2, false);
+            create_render_image(&header, &payload).unwrap()
+        };
+        let mut images = ImagePresentationManager::new();
+        cx.update(|window, _| {
+            images.present(image(), 3, window);
+            images.present(image(), 5, window);
+            assert_eq!(images.out_of_order(), 0);
+            images.present(image(), 4, window);
+            assert_eq!(images.out_of_order(), 1);
+            // A cleared presentation starts its serials again; the count stays.
+            images.clear(window);
+            images.present(image(), 1, window);
+            assert_eq!(images.out_of_order(), 1);
+        });
     }
 
     #[test]

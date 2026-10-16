@@ -149,3 +149,27 @@ fn playback_keeps_images_and_requests_within_their_bounds(cx: &mut gpui::TestApp
     });
     within_bounds(&playing);
 }
+
+#[gpui::test]
+fn seeking_during_playback_never_paints_an_older_frame_after_a_newer_one(
+    cx: &mut gpui::TestAppContext,
+) {
+    let mut studio = Studio::displayed(cx);
+    studio.dispatch(TogglePlayback);
+    studio.wait("playback under way", |t| {
+        t["playing"] == true && t["paint_frame"].as_u64() >= Some(3)
+    });
+    for _ in 0..4 {
+        studio.dispatch(SeekToStart);
+    }
+    let seeked = studio.wait("the last seek shown", |t| t["position"].as_u64() < Some(6));
+    let settled = studio.settle(Duration::from_millis(200));
+    assert_eq!(
+        settled["playing"], true,
+        "the seeks stopped playback: {settled:#}"
+    );
+    assert_eq!(
+        settled["image_metrics"]["out_of_order"], 0,
+        "{seeked:#} -> {settled:#}"
+    );
+}

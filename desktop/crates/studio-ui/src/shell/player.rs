@@ -1,6 +1,9 @@
 //! The player: preview frames, playback and audio, canvas selection, and the player card's toolbar
 //! and stage.
 
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
 use gpui::{
     Context, InteractiveElement, IntoElement, MouseButton, ParentElement,
     StatefulInteractiveElement, Styled, canvas, div, px,
@@ -66,6 +69,7 @@ impl StudioShell {
             self.timeline
                 .update(cx, |v, cx| v.thumbnail(key, frame, cx));
             self.thumbnails_sent = None;
+            self.request_thumbnails(cx);
         }
         if let Some(frame) = events.frame
             && self.preview_state.accepts_frame(&frame)
@@ -140,6 +144,7 @@ impl StudioShell {
         self.displayed = Some(ready);
         self.thumbnails_sent = None;
         self.request_frame(position, cx);
+        self.request_thumbnails(cx);
         if resume {
             self.toggle_playback(cx);
         }
@@ -255,6 +260,7 @@ impl StudioShell {
         if self.transport.playing() {
             self.prime_playback(cx);
         }
+        self.schedule_playback_timer(cx);
     }
 
     fn request_frame(&mut self, position: usize, cx: &mut Context<Self>) {
@@ -299,6 +305,7 @@ impl StudioShell {
         }
         let position = self.preview_state.position();
         self.timeline.update(cx, |v, _| v.set_position(position));
+        self.forward_playhead();
         true
     }
 
@@ -320,6 +327,7 @@ impl StudioShell {
                 self.prime_playback(cx);
             }
         }
+        self.schedule_playback_timer(cx);
         cx.notify();
     }
 
@@ -335,6 +343,8 @@ impl StudioShell {
         self.output = None;
         self.audio_ready_epoch = None;
         self.request_frame(self.transport.position(), cx);
+        self.schedule_playback_timer(cx);
+        self.request_thumbnails(cx);
     }
 
     pub(super) fn pause_at_painted_frame(&mut self, cx: &mut Context<Self>) {
@@ -625,7 +635,13 @@ impl StudioShell {
         self.seek_preview(self.transport.position().saturating_add_signed(delta), cx);
     }
 
-    pub(super) fn tick_playback(&mut self, cx: &mut Context<Self>) {
+    /// Runs when the audio output published a clock snapshot, an audio event arrived or the next
+    /// frame boundary passed: takes the output clock, moves the cursor and asks for its frame.
+    pub(super) fn pump_playback(&mut self, cx: &mut Context<Self>) {
+        if self.closed.load(Ordering::Acquire) {
+            self.playback_timer = None;
+            return;
+        }
         self.poll_audio(cx);
         if let Some(output) = &self.output
             && let Some(snapshot) = output.snapshot()
@@ -645,8 +661,30 @@ impl StudioShell {
                 self.output = None;
                 self.audio_ready_epoch = None;
             }
+            self.request_thumbnails(cx);
             cx.notify();
         }
+        self.forward_playhead();
+        self.schedule_playback_timer(cx);
+    }
+
+    /// Waits for the next frame boundary while playing; the wait replaces the previous one, and
+    /// nothing waits while paused. It covers the host clock, which has no callbacks, and backs
+    /// up the output clock should its device stall without reporting a loss.
+    pub(super) fn schedule_playback_timer(&mut self, cx: &mut Context<Self>) {
+        self.playback_timer = None;
+        let Some(wait) = self
+            .transport
+            .next_frame_in(self.clock_start.elapsed().as_secs_f64())
+        else {
+            return;
+        };
+        self.playback_timer = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_secs_f64(wait))
+                .await;
+            let _ = this.update(cx, |shell, cx| shell.pump_playback(cx));
+        }));
     }
 
     /// The preview, transport and history controls: toolbar, stage and transport

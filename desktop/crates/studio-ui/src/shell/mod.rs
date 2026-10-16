@@ -126,6 +126,10 @@ pub struct StudioShell {
     timeline_in_flight: Option<(CommandId, studio_engine::timing::TimelineCommand)>,
     _activation_subscription: gpui::Subscription,
     transport: studio_engine::PlaybackClock,
+    /// The one-shot wait for the next frame boundary while playing; replaced on every pump.
+    playback_timer: Option<gpui::Task<()>>,
+    /// Whether the stranded-acceptance watch is running.
+    acceptance_watch: bool,
     audio: Arc<AudioService>,
     output: Option<OutputHandle>,
     audio_ready_epoch: Option<u64>,
@@ -267,6 +271,7 @@ impl StudioShell {
                     shell.resume_scrub = false;
                 }
                 TimelineEvent::Edit(command) => shell.timeline_edit(command, cx),
+                TimelineEvent::ThumbnailsWanted => shell.request_thumbnails(cx),
                 TimelineEvent::ScopeChanged(scope) => {
                     let scope = scope.map(|scope| scope.map(|scope| *scope));
                     shell.install_task_scope(scope, cx);
@@ -354,6 +359,7 @@ impl StudioShell {
             }
         })
         .detach();
+        let (audio_wake, audio_wakes) = async_channel::bounded(1);
         let (preview_wake, preview_wakes) = async_channel::bounded(1);
         cx.spawn(async move |this, cx| {
             while preview_wakes.recv().await.is_ok() {
@@ -432,6 +438,8 @@ impl StudioShell {
             requested_clock_epoch: 0,
             presented_serial: 0,
             clock_start,
+            playback_timer: None,
+            acceptance_watch: false,
             resume_scrub: false,
             qualifying: false,
             button_bounds: HashMap::new(),
@@ -454,24 +462,15 @@ impl StudioShell {
             sections: None,
         };
         shell.dispatch(Command::Initialize, cx);
+        shell.audio.set_wake(move || {
+            let _ = audio_wake.try_send(());
+        });
         cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(16))
-                    .await;
-                let Ok(keep_running) = this.update(cx, |shell, cx| {
-                    if shell.closed.load(Ordering::Acquire) {
-                        return false;
-                    }
-                    shell.tick_playback(cx);
-                    shell.request_thumbnails(cx);
-                    shell.forward_playhead();
-                    shell.rebuild_stranded_acceptance(cx);
-                    true
-                }) else {
-                    break;
-                };
-                if !keep_running {
+            while audio_wakes.recv().await.is_ok() {
+                if this
+                    .update(cx, |shell, cx| shell.pump_playback(cx))
+                    .is_err()
+                {
                     break;
                 }
             }

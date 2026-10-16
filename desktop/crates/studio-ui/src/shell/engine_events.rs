@@ -49,6 +49,7 @@ impl StudioShell {
             "Accepted source {} is awaiting its preview; the preview still shows the previous revision.",
             &published[..12]
         ));
+        self.watch_acceptance(cx);
         let handoff = match (
             staged,
             promotion.authorization.as_ref(),
@@ -310,6 +311,7 @@ impl StudioShell {
         }
         if let Some(request) = request {
             self.awaiting_preview = Some(request.label);
+            self.watch_acceptance(cx);
             self.refresh_presentation();
             self.dispatch(Command::Build, cx);
         }
@@ -554,6 +556,32 @@ impl StudioShell {
         if std::mem::take(&mut self.refresh_wanted) {
             self.refresh_presentation();
         }
+    }
+
+    /// Checks once a second, only while a source is awaiting its preview, whether it is
+    /// stranded; stops by itself when nothing awaits.
+    pub(super) fn watch_acceptance(&mut self, cx: &mut Context<Self>) {
+        if std::mem::replace(&mut self.acceptance_watch, true) {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let Ok(again) = this.update(cx, |shell, cx| {
+                    shell.rebuild_stranded_acceptance(cx);
+                    let again =
+                        shell.awaiting_preview.is_some() && !shell.closed.load(Ordering::Acquire);
+                    shell.acceptance_watch = again;
+                    again
+                }) else {
+                    break;
+                };
+                if !again {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     /// Safety net for an accepted source whose handoff never produced a preview (a

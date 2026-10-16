@@ -50,7 +50,7 @@ Snapping (part of the confirmed editing scope) ports from Cap: `arm_drag_snap` a
 | 3 | [Engine timing document and edit history](./phase-03-engine-timeline-doc.md) | 3-4d | 1 (manual check needs 2) | Completed |
 | 4 | [Port Cap's timeline view](./phase-04-timeline-view-port.md) | 5-7d | 3 | Completed |
 | 5 | [Trim, split, reorder and snapping](./phase-05-timeline-edit-interactions.md) | 2.5-3.5d | 2, 4 | Done, manual check open |
-| 6 | [Playback pipeline](./phase-06-playback-pump.md) | 2.5-3.5d | 3 | Pending |
+| 6 | [Playback pipeline](./phase-06-playback-pump.md) | 2.5-3.5d | 3 | Done, manual check open |
 | 7 | [Export panel](./phase-07-export-panel.md) | 3-4d | 2, 3 | Pending |
 
 Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) re-estimated phases 4-7 and found that Cap's timeline snaps, so phase 5 ports snapping.

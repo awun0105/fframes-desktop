@@ -26,6 +26,8 @@ use studio_sdk::CompatibilityManifest;
 pub const FIXTURE_CONFIG: &str = r#"{"frames":90,"fps":30,"scenes":[[0,45],[45,90]],"tracks":[[0.0,1.0]],"audio":"tone","export_hang":true}"#;
 
 const WAIT: Duration = Duration::from_secs(60);
+/// How far the fake test clock moves per step; unrelated to any production timer.
+const CLOCK_STEP: Duration = Duration::from_millis(16);
 
 pub struct Studio {
     pub cx: TestAppContext,
@@ -214,7 +216,7 @@ impl Studio {
         let _watchdog = Watchdog::arm(what);
         let deadline = Instant::now() + WAIT;
         loop {
-            self.cx.executor().advance_clock(Duration::from_millis(16));
+            self.cx.executor().advance_clock(CLOCK_STEP);
             self.cx.run_until_parked();
             let telemetry = self.telemetry();
             if done(&telemetry) {
@@ -231,9 +233,9 @@ impl Studio {
     /// Runs the frame loop for `duration` of app time without a condition.
     pub fn settle(&mut self, duration: Duration) -> Value {
         let _watchdog = Watchdog::arm("the frame loop to settle");
-        let steps = duration.as_millis() / 16;
+        let steps = duration.as_millis() / CLOCK_STEP.as_millis();
         for _ in 0..steps {
-            self.cx.executor().advance_clock(Duration::from_millis(16));
+            self.cx.executor().advance_clock(CLOCK_STEP);
             self.cx.run_until_parked();
             std::thread::sleep(Duration::from_millis(2));
         }

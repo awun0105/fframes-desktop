@@ -3,6 +3,7 @@
 //! reorder and split at the playhead. Geometry and selection are engine-owned, thumbnail
 //! textures window-owned. The shell mounts it cached and paints the playhead.
 use std::sync::Arc;
+use std::time::Instant;
 
 use gpui::{
     Bounds, Context, EventEmitter, FocusHandle, Hsla, InteractiveElement, IntoElement, MouseButton,
@@ -43,6 +44,9 @@ pub enum TimelineEvent {
     ScopeChanged(Result<Option<Box<TaskScope>>, String>),
     /// An edit of the timing document, for the engine.
     Edit(TimelineCommand),
+    /// The thumbnails the visible track wants changed: scrolled, zoomed, resized, replaced
+    /// or one arrived.
+    ThumbnailsWanted,
 }
 
 pub struct TimelineView {
@@ -52,10 +56,15 @@ pub struct TimelineView {
     clips: Vec<ClipSegment>,
     /// Peaks of the displayed preview's mix, see `studio_engine::waveform`.
     waveform: Arc<[f32]>,
+    /// The thumbnails last announced with `ThumbnailsWanted`.
+    wanted: Vec<ThumbnailKey>,
     viewport: TimelineTransform,
     selection: TimelineSelection,
     /// The playhead frame. Stored without a notify: the shell paints the playhead.
     position: usize,
+    /// Whether the playhead runs between frames, and when it last moved.
+    playing: bool,
+    anchor: Instant,
     focus: FocusHandle,
     bounds: Option<Bounds<Pixels>>,
     /// `[left, top, width, height]` of the Fit button, reported by its probe.
@@ -83,9 +92,12 @@ impl TimelineView {
             snapshot: None,
             clips: Vec::new(),
             waveform: Arc::from([]),
+            wanted: Vec::new(),
             viewport: TimelineTransform::default(),
             selection: TimelineSelection::default(),
             position: 0,
+            playing: false,
+            anchor: Instant::now(),
             focus: cx.focus_handle().tab_stop(true),
             bounds: None,
             fit_bounds: None,
@@ -124,6 +136,7 @@ impl TimelineView {
             self.viewport.fit(&model);
         }
         self.position = position.min(model.report().total_frames);
+        self.anchor = Instant::now();
         self.model = Some(model);
         self.waveform = waveform;
         self.refresh_clips();
@@ -143,6 +156,7 @@ impl TimelineView {
         self.drag = None;
         self.minimap_drag = None;
         self.position = 0;
+        self.playing = false;
         self.clear_cache = true;
         self.pending_thumbnail = None;
         self.emit_scope_changed(cx);
@@ -177,7 +191,30 @@ impl TimelineView {
     /// Moves the playhead. The timeline does not render again for it; the shell paints
     /// the playhead from [`Self::playhead`].
     pub fn set_position(&mut self, frame: usize) {
+        if self.position != frame {
+            self.anchor = Instant::now();
+        }
         self.position = frame;
+    }
+    /// While playing the playhead moves on between frames, see [`Self::playhead`].
+    pub fn set_playing(&mut self, playing: bool) {
+        if self.playing != playing {
+            self.anchor = Instant::now();
+        }
+        self.playing = playing;
+    }
+    pub fn playing(&self) -> bool {
+        self.playing
+    }
+    /// The playhead in frames: the shown frame plus the part of the next one elapsed since it
+    /// was shown while playing, never past the end of the timing-aware duration.
+    fn playhead_frame(&self, total: usize, fps: f64) -> f64 {
+        let ahead = if self.playing {
+            (self.anchor.elapsed().as_secs_f64() * fps).min(1.)
+        } else {
+            0.
+        };
+        (self.position as f64 + ahead).min(total as f64)
     }
     pub fn renders(&self) -> u64 {
         self.renders
@@ -190,7 +227,9 @@ impl TimelineView {
             bounds.origin + gpui::point(inset, px(0.)),
             gpui::size((bounds.size.width - inset).max(px(0.)), bounds.size.height),
         );
-        let x = f32::from(axis.left()) + self.viewport.x_at_frame(self.position, model) as f32;
+        let seconds = self.playhead_frame(model.report().total_frames, model.report().fps as f64)
+            / model.report().fps as f64;
+        let x = f32::from(axis.left()) + self.viewport.x_at_seconds(seconds) as f32;
         Some(PlayheadGeometry { axis, x })
     }
     pub fn thumbnail_requests(&self) -> Vec<ThumbnailKey> {
@@ -874,6 +913,11 @@ impl Render for TimelineView {
             for image in self.cache.insert(key, image, bytes) {
                 self.release_failures += usize::from(window.drop_image(image).is_err());
             }
+        }
+        let wanted = self.thumbnail_requests();
+        if wanted != self.wanted {
+            self.wanted = wanted;
+            cx.emit(TimelineEvent::ThumbnailsWanted);
         }
         let theme = Theme::for_window(window, cx);
         let colors = theme.editor;
@@ -1746,6 +1790,32 @@ mod tests {
         });
         view.update(cx, |view, cx| view.clear(cx));
         assert_eq!(edits.borrow().last(), Some(&TimelineCommand::EndGesture));
+    }
+
+    #[gpui::test]
+    fn the_playhead_clamps_to_a_shorter_timeline_and_runs_ahead_only_while_playing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, cx, _) = editable(cx);
+        view.update(cx, |view, _| view.set_position(40));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.playhead_frame(90, 30.), 40.);
+        });
+        view.update(cx, |view, _| {
+            view.set_playing(true);
+            view.anchor = Instant::now() - std::time::Duration::from_secs(5);
+        });
+        // A whole frame at most, however late the next one is.
+        view.read_with(cx, |view, _| assert_eq!(view.playhead_frame(90, 30.), 41.));
+        view.update(cx, |view, _| view.set_position(89));
+        view.update(cx, |view, _| {
+            view.anchor = Instant::now() - std::time::Duration::from_secs(5);
+        });
+        view.read_with(cx, |view, _| assert_eq!(view.playhead_frame(89, 30.), 89.));
+        // Another timeline, shorter than where the playhead was.
+        let shorter = TimelineModel::new(report(10, &[("a", 0, 30)])).unwrap();
+        view.update(cx, |view, cx| view.install(shorter, Arc::from([]), 70, cx));
+        view.read_with(cx, |view, _| assert_eq!(view.position, 30));
     }
 
     #[gpui::test]

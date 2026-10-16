@@ -127,6 +127,8 @@ impl Render for StudioShell {
                                     self.error = None;
                                     // The commit dropped the queued thumbnails of the old preview.
                                     self.thumbnails_sent = None;
+                                    self.request_thumbnails(cx);
+                                    self.forward_playhead();
                                     committed = true;
                                 }
                             }
@@ -157,7 +159,7 @@ impl Render for StudioShell {
         {
             match create_render_image(&f.response.header, &f.pixels) {
                 Ok(image) => {
-                    self.images.replace_image(image, window);
+                    self.images.present(image, f.response.seek_serial, window);
                     if let Some(preview) = self
                         .displayed
                         .as_ref()
@@ -247,6 +249,15 @@ impl Render for StudioShell {
         .top_0()
         .left_0()
         .size_full();
+        // The playhead runs between frames while playing; only this layer repaints for it.
+        let playing = self.transport.playing();
+        let playhead = self.timeline.update(cx, |timeline, _| {
+            timeline.set_playing(playing);
+            timeline.playhead()
+        });
+        if playing && playhead.is_some() {
+            window.request_animation_frame();
+        }
         let mut editor = div()
             .relative()
             .flex_1()
@@ -286,10 +297,7 @@ impl Render for StudioShell {
                                 ),
                         )
                         // Over the cached timeline: only this moves while playing.
-                        .child(crate::timeline::playhead_overlay(
-                            &self.theme,
-                            self.timeline.read(cx).playhead(),
-                        ))
+                        .child(crate::timeline::playhead_overlay(&self.theme, playhead))
                         .child(self.render_resize_grip(split.timeline_height, cx)),
                 );
         } else {
