@@ -1,4 +1,4 @@
-use fframes::{Color, Duration, Frame, RenderOptions, Svgr, Video, cli};
+use fframes::{Color, Duration, EditorMetadataError, EditorObjectKey, Frame, RenderOptions, Svgr, Video, cli};
 use fframes_studio_protocol::{PreviewIdentity, Rect};
 use fframes_studio_runtime::{
     ElementRegistration, PreviewWorkerConfig, WorkerTransport, serve_preview_worker, serve_worker,
@@ -48,7 +48,25 @@ fn compute_anchor() -> (String, usize, usize) {
 
     (hash, start, end)
 }
-pub struct AnnotatedVideo;
+pub struct AnnotatedVideo {
+    title_id: String,
+}
+
+impl AnnotatedVideo {
+    /// The title carries a semantic editor identity and a source anchor, so Studio can map a
+    /// click on it back to this file.
+    fn new() -> Result<Self, EditorMetadataError> {
+        let key = EditorObjectKey::new("intro", "overlay-title", "headline", "primary")?
+            .with_source_anchor(
+                "src/main.rs",
+                "render_frame",
+                Some(concat!("overlay-title-", "anchor")),
+            )?;
+        Ok(Self {
+            title_id: key.render_id(),
+        })
+    }
+}
 
 impl Video for AnnotatedVideo {
     const FPS: usize = 30;
@@ -69,6 +87,7 @@ impl Video for AnnotatedVideo {
         _frame: Frame,
         _ctx: &fframes::FFramesContext<'a, '_>,
     ) -> Svgr<'a> {
+        // overlay-title-anchor
         /* ANCHOR_START: intro.title */
         let title_text = "fframes desktop studio";
         /* ANCHOR_END: intro.title */
@@ -76,9 +95,11 @@ impl Video for AnnotatedVideo {
         fframes::svgr!(
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width={Self::WIDTH} height={Self::HEIGHT}>
                 <rect x="0" y="0" width={Self::WIDTH} height={Self::HEIGHT} fill="#0d1117" />
-                <text id="intro.title" x="100" y="300" font-family="DM Sans" font-size="120" fill="#ffffff">
-                    {title_text}
-                </text>
+                <g id={self.title_id.as_str()}>
+                    <text id="intro.title" x="100" y="300" font-family="DM Sans" font-size="120" fill="#ffffff">
+                        {title_text}
+                    </text>
+                </g>
             </svg>
         )
     }
@@ -114,7 +135,13 @@ fn main() -> std::process::ExitCode {
             .map(|s| s.as_str())
             .unwrap_or("rev_overlay");
 
-        let video = AnnotatedVideo;
+        let video = match AnnotatedVideo::new() {
+            Ok(video) => video,
+            Err(error) => {
+                eprintln!("Invalid editor identity: {error}");
+                return std::process::ExitCode::FAILURE;
+            }
+        };
         let options = RenderOptions {
             media: Some(&media),
             ..Default::default()
@@ -174,7 +201,13 @@ fn main() -> std::process::ExitCode {
         }
         std::process::ExitCode::SUCCESS
     } else {
-        let video = AnnotatedVideo;
+        let video = match AnnotatedVideo::new() {
+            Ok(video) => video,
+            Err(error) => {
+                eprintln!("Invalid editor identity: {error}");
+                return std::process::ExitCode::FAILURE;
+            }
+        };
         cli::new(
             &video,
             RenderOptions {
