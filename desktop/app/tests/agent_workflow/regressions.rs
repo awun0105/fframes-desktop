@@ -236,10 +236,7 @@ fn a_conversation_log_that_cannot_be_written_stops_the_task_and_keeps_memory_bou
         ..Options::default()
     });
     // The log breaks after the workflow opened: a directory where the file belongs.
-    let log = w
-        .paths
-        .project(&w.snap().project)
-        .join("conversation.jsonl");
+    let log = session_store::SessionStore::current_log_path(&w.paths, &w.snap().project);
     let _ = fs::remove_file(&log);
     fs::create_dir(&log).unwrap();
     w.submit(&json!({"flood_tools": 3000, "hang": true}));
@@ -349,7 +346,7 @@ fn a_configured_credential_never_reaches_a_persisted_row_card_or_repair_prompt()
     );
     let s = w.snap();
     assert!(!format!("{:?}", s.task).contains(secret));
-    let log = w.paths.project(&s.project).join("conversation.jsonl");
+    let log = session_store::SessionStore::current_log_path(&w.paths, &s.project);
     assert!(
         !fs::read_to_string(log).unwrap().contains(secret),
         "the conversation log carries the credential"
@@ -864,10 +861,7 @@ fn a_history_page_never_blocks_the_caller_or_the_actor_when_the_log_read_blocks(
     use std::os::unix::ffi::OsStrExt;
     let w = World::new();
     // A FIFO where the log belongs: opening it for reading blocks until a writer comes.
-    let log = w
-        .paths
-        .project(&w.snap().project)
-        .join("conversation.jsonl");
+    let log = session_store::SessionStore::current_log_path(&w.paths, &w.snap().project);
     let _ = fs::remove_file(&log);
     let path = std::ffi::CString::new(log.as_os_str().as_bytes()).unwrap();
     assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);

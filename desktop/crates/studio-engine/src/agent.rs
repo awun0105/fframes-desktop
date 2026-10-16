@@ -228,6 +228,21 @@ impl Registry {
     }
 }
 
+/// Why the conversation cannot be replaced, by what blocks it: a candidate under review, an
+/// Undo, queued briefs, a running task.
+const BUSY_NEW_SESSION: [&str; 4] = [
+    "Apply or Discard the candidate before starting a new chat.",
+    "Wait for the Undo to finish before starting a new chat.",
+    "Cancel or clear the queued briefs before starting a new chat.",
+    "Stop the running task or wait for it to finish before starting a new chat.",
+];
+const BUSY_OPEN_SESSION: [&str; 4] = [
+    "Apply or Discard the candidate before opening another session.",
+    "Wait for the Undo to finish before opening another session.",
+    "Cancel or clear the queued briefs before opening another session.",
+    "Stop the running task or wait for it to finish before opening another session.",
+];
+
 pub(crate) struct Settings {
     pub adapter: Option<AdapterSettings>,
     pub build: Option<BuildSettings>,
@@ -324,8 +339,10 @@ pub struct AgentWorkflow {
 }
 
 impl AgentWorkflow {
-    /// Starts the actor for the project `controller` owns. Reads the conversation log and
-    /// the engine's recovery state; launches nothing (no adapter probe, no agent).
+    /// Starts the actor for the project `controller` owns. Migrates a single-session project
+    /// into the stored-session layout (the first time), reads the current session's
+    /// conversation log and the engine's recovery state; launches nothing (no adapter probe,
+    /// no agent).
     ///
     /// This replays the conversation log and refreshes the engine's recovery view before
     /// it returns, so it BLOCKS the caller for that long (and for the controller lock):
@@ -339,11 +356,11 @@ impl AgentWorkflow {
             let c = controller.lock();
             (c.project.manifest.project_id.clone(), c.processes.clone())
         };
-        let store = RowStore::open(
-            present::log_path(&config.paths, &project),
-            config.row_limits,
-        )
-        .map_err(|e: LogError| WorkflowError::History(e.to_string()))?;
+        // Migration and the first session come before the log opens: the migration may move
+        // the legacy log, which nothing may hold open yet.
+        let startup = session_store::SessionStore::prepare(&config.paths, &project);
+        let store = RowStore::open_with_floor(startup.log, config.row_limits, startup.row_floor)
+            .map_err(|e: LogError| WorkflowError::History(e.to_string()))?;
         let (tx, rx) = channel();
         let empty = Arc::new(WorkflowSnapshot {
             revision: 0,
@@ -414,7 +431,7 @@ impl AgentWorkflow {
             tx,
         });
         // The actor publishes revision 1 before this returns.
-        let actor = Actor::new(shared.clone(), rx, store);
+        let actor = Actor::new(shared.clone(), rx, store, startup.notices);
         let thread = std::thread::Builder::new()
             .name("studio-workflow".into())
             .spawn(move || actor.run())
@@ -506,6 +523,7 @@ impl AgentWorkflow {
         done: impl FnOnce(Result<Vec<Arc<Row>>, WorkflowError>) + Send + 'static,
     ) -> Result<(), WorkflowError> {
         self.send(Msg::History {
+            chat: self.snapshot().chat,
             before,
             limit,
             done: Box::new(done),
@@ -909,13 +927,84 @@ impl AgentWorkflow {
         self.send(Msg::DismissRestoration)
     }
 
-    /// Starts an empty conversation while nothing is running: the transcript is archived
-    /// next to the log and the saved session is forgotten. Undo history, the review policy
-    /// and the project are kept. Refused with a warning while a task, an undo, a provider
-    /// switch, queued briefs or an unresolved conflict still belong to the current one.
+    /// Starts an empty conversation while nothing is running: it becomes a new stored session
+    /// and the current one stays in the session list, resumable. Row ids keep counting up
+    /// across sessions. Undo history, the review policy and the project are kept. Refused
+    /// with a warning row while a task, an undo, a provider switch, queued briefs or an
+    /// unresolved conflict still belong to the current conversation.
     pub fn new_chat(&self) -> Result<(), WorkflowError> {
         self.open_check()?;
         self.send(Msg::NewChat)
+    }
+
+    /// [`Self::new_chat`], refused at once with [`WorkflowError::Busy`] (the reason to show)
+    /// while a task, an undo or a queued brief is running. A conflict the actor alone knows
+    /// of is still refused there, with a warning row.
+    pub fn new_session(&self) -> Result<(), WorkflowError> {
+        self.open_check()?;
+        self.refuse_while_busy(&BUSY_NEW_SESSION)?;
+        self.send(Msg::NewChat)
+    }
+
+    /// The project's stored sessions, most recently updated first, each with its title,
+    /// agent, outcome and whether it is the current one and can be resumed.
+    ///
+    /// Reads every session log in full: call it off the UI thread, not on every keystroke.
+    /// The newest rows of the running session reach disk with the next snapshot, so its
+    /// entry can lag the transcript by a moment.
+    pub fn sessions(&self) -> Result<Vec<session_store::history::SessionSummary>, WorkflowError> {
+        self.open_check()?;
+        session_store::SessionStore::list_sessions(&self.shared.paths, &self.shared.project)
+            .map_err(WorkflowError::History)
+    }
+
+    /// Switches to a stored session: the transcript is reloaded from its stored log and, when
+    /// the agent supports `session/resume` or `session/load` (or `--resume`, `thread/resume`),
+    /// the next prompt resumes the agent's own session. Otherwise the stored rows are shown
+    /// read-only with a notice and the next prompt starts a fresh agent session that still
+    /// appends to this stored session. Opening the current session does nothing (the actor
+    /// decides).
+    ///
+    /// Refused with [`WorkflowError::Busy`] (the reason names what is going on) while a task,
+    /// an undo or a queued brief is running; other blockers (a conflict, a provider switch) are refused
+    /// by the actor with a warning row. The switch itself happens on the actor thread: wait
+    /// for `WorkflowSnapshot::chat` to change.
+    pub fn open_session(&self, id: &str) -> Result<(), WorkflowError> {
+        self.open_check()?;
+        if !crate::app_paths::is_valid_session_id(id)
+            || !self
+                .shared
+                .paths
+                .agent_session_dir(&self.shared.project, id)
+                .is_dir()
+        {
+            return Err(WorkflowError::History(format!("unknown session `{id}`")));
+        }
+        self.refuse_while_busy(&BUSY_OPEN_SESSION)?;
+        self.send(Msg::OpenSession(id.to_owned()))
+    }
+
+    /// Refuses with the reason that names what is going on, judged from the last snapshot
+    /// (the registry alone says whether something is).
+    fn refuse_while_busy(&self, reasons: &[&'static str; 4]) -> Result<(), WorkflowError> {
+        if !self.shared.registry.lock().busy() {
+            return Ok(());
+        }
+        let snapshot = self.snapshot();
+        let reviewing = snapshot
+            .task
+            .as_ref()
+            .is_some_and(|task| task.phase == TaskPhase::AwaitingReview);
+        let index = if reviewing {
+            0
+        } else if matches!(snapshot.undo, UndoView::InProgress { .. }) {
+            1
+        } else if snapshot.task.is_none() && !snapshot.queue.is_empty() {
+            2
+        } else {
+            3
+        };
+        Err(WorkflowError::Busy(reasons[index]))
     }
 
     /// The project's process scope (the controller's, shut down when the project closes

@@ -12,6 +12,7 @@ use studio_project::ProjectId;
 
 pub mod history;
 pub mod layout;
+pub mod startup;
 
 /// Version 2 lives in `sessions/<id>/manifest.json`; the field set is the same as version 1,
 /// so a version 1 file (the single-session layout) still parses and is rewritten on migration.

@@ -238,6 +238,11 @@ impl RowStore {
         Ok(store)
     }
 
+    /// The limits this store was opened with, to open the next session's log alike.
+    pub fn limits(&self) -> RowLimits {
+        self.limits
+    }
+
     /// Next row id; monotonic and never reused.
     pub fn next_id(&mut self) -> RowId {
         let id = RowId(self.next);

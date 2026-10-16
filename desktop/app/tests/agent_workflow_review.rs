@@ -95,6 +95,35 @@ fn stopping_while_the_remaining_files_validate_returns_to_review_of_the_original
 }
 
 #[test]
+fn switching_sessions_is_refused_while_the_remaining_files_validate() {
+    let w = manual_world();
+    let project = w.snap().project.clone();
+    let other =
+        studio_engine::agent::session_store::SessionStore::create_session(&w.paths, &project, None)
+            .unwrap();
+    w.submit(&three_files("switch-refused"));
+    w.wait_phase(TaskPhase::AwaitingReview);
+
+    w.compiler.release.store(false, Ordering::SeqCst);
+    let before = w.compiler.started.load(Ordering::SeqCst);
+    w.wf().reject_files(&["notes.txt".to_owned()]).unwrap();
+    w.compiler.wait_started(before + 1);
+    w.wait_phase(TaskPhase::Validating);
+    assert!(matches!(
+        w.wf().open_session(&other),
+        Err(WorkflowError::Busy(_))
+    ));
+    assert!(matches!(w.wf().new_session(), Err(WorkflowError::Busy(_))));
+    assert_eq!(w.snap().chat, 0);
+
+    w.compiler.release.store(true, Ordering::SeqCst);
+    w.wait_phase(TaskPhase::AwaitingReview);
+    w.wf().apply().unwrap();
+    assert_eq!(w.wait_task(None).phase, TaskPhase::Accepted);
+    w.assert_clean();
+}
+
+#[test]
 fn rejecting_every_file_discards_the_candidate() {
     let w = manual_world();
     let original = w.source("src/lib.rs");

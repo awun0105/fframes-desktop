@@ -91,5 +91,6 @@ mod recovery;
 mod regressions;
 mod repair;
 mod resource_bounds;
+mod sessions;
 mod stop;
 mod undo;

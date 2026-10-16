@@ -485,6 +485,7 @@ impl Actor {
         } else {
             (None, false)
         };
+        self.resume_attempt = resume_session.is_some();
         let config = DriverConfig {
             provider: active.adapter.provider.clone(),
             task: identity.task.0.clone(),

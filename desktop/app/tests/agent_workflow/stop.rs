@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn new_chat_is_refused_while_a_task_runs_and_archives_the_transcript_when_idle() {
+fn new_chat_is_refused_while_a_task_runs_and_stores_the_transcript_as_a_session_when_idle() {
     let w = World::new();
     w.submit(&json!({"text": "starting", "hang": true}));
     w.wait_phase(TaskPhase::Editing);
@@ -31,16 +31,10 @@ fn new_chat_is_refused_while_a_task_runs_and_archives_the_transcript_when_idle()
         history,
         "undo history is not part of the chat"
     );
-    let dir = w.paths.project(&s.project);
-    let archived = fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            name.starts_with("conversation-") && name.ends_with(".jsonl")
-        })
-        .count();
-    assert_eq!(archived, 1);
+    let sessions = w.wf().sessions().unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions[0].is_current && sessions[0].rows == 0);
+    assert!(sessions[1].rows > 0 && !sessions[1].is_current);
 
     w.submit(&good("after"));
     w.wait_task(None);
