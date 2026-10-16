@@ -4,7 +4,7 @@ Date 2026-10-16. Working copy `fframes-m5`, nothing committed.
 
 ## What is wired
 
-- Entry: a "Review changes" button on the change summary of the candidate that awaits review
+- Entry: a "Review changes" button in the pinned Apply banner and one on the change summary of the candidate that awaits review
   (only the current one, not older summaries) and on each accepted ("Apply") history entry in
   the agent sidebar. The panel emits `ReviewRequest(ReviewTarget)`; `PanelEvent` is untouched.
 - Window: `StudioShell` swaps the preview for a `ReviewHost` (Changes view plus a status strip)
@@ -99,8 +99,11 @@ product:
   Pinned to the newest rows, it shows the validation and outcome cards and the candidate card
   above them is out of view, so the button is not painted and not measured. This is ordinary
   scrolling, not a missing button: with the transcript scrolled until the card was inside the
-  list, the click opened the window. The test now makes the window tall enough that the whole
-  transcript is on screen, which is what it asserts on.
+  list, the click opened the window.
+  The fix for the user is a second "Review changes" button in the pinned Apply banner (id
+  `agent-review-banner`, in the probed buttons), which is in view whenever a candidate awaits review;
+  the card keeps its button. The parity case clicks the banner at the harness's default window size,
+  without a resize.
 
 ## Diff work off the UI thread, Unreadable reason kept
 

@@ -31,6 +31,19 @@ impl ConversationPanel {
         })
     }
 
+    /// The button in the pinned banner, which stays in view while the candidate awaits review
+    /// even when its change card has scrolled out of the transcript.
+    pub(super) fn banner_review_button(&mut self, cx: &mut Context<Self>) -> EditorButton {
+        self.action_button(
+            "agent-review-banner",
+            "Review changes",
+            true,
+            Tone::Normal,
+            cx,
+            |this, _, cx| this.request_review(ReviewTarget::Candidate, cx),
+        )
+    }
+
     /// The button under an accepted edit in the history.
     pub(super) fn revision_review_button(
         &mut self,

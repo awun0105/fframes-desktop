@@ -465,6 +465,7 @@ impl ConversationPanel {
             for button in self.review_buttons(review, cx) {
                 notice = notice.action(button);
             }
+            notice = notice.action(self.banner_review_button(cx));
         }
         let mut banner = div().flex().flex_col().gap(px(8.)).child(notice);
         if let Some(conflict) = &task.conflict {

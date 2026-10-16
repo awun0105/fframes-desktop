@@ -724,6 +724,7 @@ fn probed_button(id: &ElementId) -> Option<&str> {
                     | "agent-apply"
                     | "agent-undo"
                     | "agent-review-candidate"
+                    | "agent-review-banner"
                     | "agent-tab-Chat"
                     | "agent-tab-Project"
                     | "agent-open-setup"

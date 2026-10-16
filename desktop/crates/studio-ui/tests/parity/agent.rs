@@ -326,8 +326,6 @@ fn the_candidate_can_be_reviewed_before_apply_and_the_window_closes_with_it(
     cx: &mut gpui::TestAppContext,
 ) {
     let mut studio = studio_with_agent(cx);
-    // Tall enough that the whole transcript, the candidate card included, is on screen.
-    studio.resize(1536., 2400.);
     studio.dispatch(ToggleReviewPolicy);
     studio.wait("review before Apply", |t| {
         t["panel"]["review_policy"] == "ManualReview"
@@ -344,9 +342,9 @@ fn the_candidate_can_be_reviewed_before_apply_and_the_window_closes_with_it(
 
     studio.report_button_bounds();
     let measured = studio.wait("the review button measured", |t| {
-        !t["panel"]["buttons"]["agent-review-candidate"].is_null()
+        !t["panel"]["buttons"]["agent-review-banner"].is_null()
     });
-    let at = button_center(&measured, "agent-review-candidate").expect("Review changes is offered");
+    let at = button_center(&measured, "agent-review-banner").expect("Review changes is offered");
     studio.click(at);
     let open = studio.wait("the review window", |t| {
         t["review"]["files"].as_u64() > Some(0)

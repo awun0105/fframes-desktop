@@ -42,7 +42,7 @@ Zeron `crates/ui/src/changes.rs` (6,581 lines): unified and split viewer, `list(
 
 Open: no real agent has been driven through review in the running app by hand (the parity case drives the fake agent through the real shell; screenshots came from a stand-in window). A mode-only change shows "No changes".
 
-Open before done: the "Review changes" button sits on the candidate card, which at the default window size is scrolled above the validation and outcome cards exactly when review is asked for (the parity case enlarges the window to reach it). The spec enters the viewer from the sidebar's `Changes` row; put the entry in the pinned Apply banner and drop the test's resize.
+The "Review changes" entry is also in the pinned Apply banner (`agent-review-banner`), so it stays reachable at the default window size while the candidate card has scrolled out of view; the card keeps its own button and the parity case uses the banner at the default size ([wiring](./reports/phase-04-wiring.md)).
 
 ## Success criteria
 
