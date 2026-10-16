@@ -8,8 +8,8 @@ use crate::{
     AdapterConfig,
     detect::NodeEntry,
     driver::{
-        AcpDriver, AgentFailure, DriverConfig, DriverLimits, DriverMode, FailureKind,
-        InitializedInfo, McpStdioSupport, OwnershipSource, Phase,
+        AcpDriver, AgentFailure, AgentWire, DriverConfig, DriverLimits, DriverMode, FailureKind,
+        InitializedInfo, McpStdioSupport, OwnershipSource, Phase, start_driver,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -424,6 +424,20 @@ pub fn probe_adapter(
     options: &ProbeOptions,
     processes: &ProcessTreeManager,
 ) -> DiscoveryReport {
+    probe_adapter_on(AgentWire::Acp, config, search, options, processes)
+}
+
+/// [`probe_adapter`] for an adapter speaking `wire`. Claude Code is ready once its version
+/// passes the gate and it answers `initialize`; it proves a login only in its first turn,
+/// so a signed-out CLI surfaces as `AuthRequired` there. A wire this build cannot run is
+/// refused without launching anything.
+pub fn probe_adapter_on(
+    wire: AgentWire,
+    config: &AdapterConfig,
+    search: &ExecutableSearch,
+    options: &ProbeOptions,
+    processes: &ProcessTreeManager,
+) -> DiscoveryReport {
     let launch = match AdapterLaunch::resolve(config, search) {
         Ok(launch) => launch,
         Err(error) => {
@@ -449,6 +463,47 @@ pub fn probe_adapter(
         init_timeout: options.timeout,
         ..DriverLimits::default()
     };
+    if wire != AgentWire::Acp {
+        let config = DriverConfig {
+            provider: config.executable.clone(),
+            task: "discovery".into(),
+            cwd: options.scratch_cwd.clone(),
+            launch,
+            limits,
+            resume_session: None,
+            ownership: OwnershipSource::Verified,
+            mode: DriverMode::InitializeOnly,
+            mcp_servers: Vec::new(),
+            mcp_stdio: McpStdioSupport::Baseline,
+        };
+        let driver = match start_driver(wire, config, processes) {
+            Ok(driver) => driver,
+            Err(failure) => {
+                return DiscoveryReport {
+                    status: status_from_failure(failure, Vec::new()),
+                    executable,
+                    initialized: None,
+                };
+            }
+        };
+        let (status, initialized) =
+            match driver.wait_ready(options.timeout + Duration::from_secs(5)) {
+                Ok(info) => (
+                    AdapterStatus::Ready {
+                        agent: info.initialized.agent_name.clone(),
+                        version: info.initialized.agent_version.clone(),
+                    },
+                    Some(info.initialized),
+                ),
+                Err(failure) => (status_from_failure(failure, Vec::new()), None),
+            };
+        drop(driver.shutdown());
+        return DiscoveryReport {
+            status,
+            executable,
+            initialized,
+        };
+    }
     let driver = match AcpDriver::start(
         DriverConfig {
             provider: config.executable.clone(),

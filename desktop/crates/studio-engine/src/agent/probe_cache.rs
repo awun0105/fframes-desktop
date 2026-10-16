@@ -9,7 +9,9 @@
 
 use parking_lot::Mutex;
 use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::OnceLock, time::SystemTime};
-use studio_harness::{AdapterConfig, DiscoveryReport, ExecutableSearch, resolve_executable};
+use studio_harness::{
+    AdapterConfig, AgentWire, DiscoveryReport, ExecutableSearch, resolve_executable,
+};
 
 /// The launch identity a report describes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -17,6 +19,7 @@ pub struct ProbeKey {
     executable: PathBuf,
     modified: Option<SystemTime>,
     len: u64,
+    wire: AgentWire,
     args: Vec<String>,
     auth_env_names: Vec<String>,
     auth_method: Option<String>,
@@ -30,6 +33,7 @@ impl ProbeKey {
     /// reports the missing executable, which is cheap and never cached.
     pub fn of(
         adapter: &AdapterConfig,
+        wire: AgentWire,
         search: &ExecutableSearch,
         auth_method: Option<&str>,
     ) -> Option<Self> {
@@ -40,6 +44,7 @@ impl ProbeKey {
             executable,
             modified: metadata.modified().ok(),
             len: metadata.len(),
+            wire,
             args: adapter.args.clone(),
             auth_env_names: adapter.auth_env_names.clone(),
             auth_method: auth_method.map(str::to_owned),
@@ -131,7 +136,12 @@ mod tests {
     }
 
     fn key(path: &Path) -> Option<ProbeKey> {
-        ProbeKey::of(&adapter(path), &ExecutableSearch::default(), None)
+        ProbeKey::of(
+            &adapter(path),
+            AgentWire::Acp,
+            &ExecutableSearch::default(),
+            None,
+        )
     }
 
     #[test]
@@ -178,13 +188,16 @@ mod tests {
         let path = dir.path().join("adapter.cmd");
         write_adapter(&path, "echo one");
         let search = ExecutableSearch::default();
-        let plain = ProbeKey::of(&adapter(&path), &search, None);
-        let with_method = ProbeKey::of(&adapter(&path), &search, Some("api-key"));
+        let acp = AgentWire::Acp;
+        let plain = ProbeKey::of(&adapter(&path), acp, &search, None);
+        let with_method = ProbeKey::of(&adapter(&path), acp, &search, Some("api-key"));
         let mut other_args = adapter(&path);
         other_args.args.push("--verbose".into());
-        let other_args = ProbeKey::of(&other_args, &search, None);
+        let other_args = ProbeKey::of(&other_args, acp, &search, None);
+        let other_wire = ProbeKey::of(&adapter(&path), AgentWire::ClaudeStreamJson, &search, None);
         assert_ne!(plain, with_method);
         assert_ne!(plain, other_args);
+        assert_ne!(plain, other_wire);
     }
 
     #[test]

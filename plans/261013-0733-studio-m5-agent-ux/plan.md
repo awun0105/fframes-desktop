@@ -21,10 +21,10 @@ Chrome is Cap's: the composer frame, todo panel frame, change viewer toolbar and
 
 Every M5 feature works through the driver trait from [M5a](../261013-0733-studio-m5a-native-wires/plan.md), for ACP, Claude Code and Codex alike; driver tasks below add events to all three. The panel is a tab in the editor sidebar.
 
-What the ACP driver (`studio-harness`, `driver/runtime.rs`) does today (verified 2026-10-13):
+What the ACP driver (`studio-harness`, `driver/runtime/shared.rs` since M5a) does today (verified 2026-10-13; plan events re-checked 2026-10-16):
 
 - Handles message, thought, tool call, tool call update, mode and config updates, and cancel.
-- **Drops** `Plan` and `AvailableCommandsUpdate` on purpose ("Plans, command lists, usage and session info carry no workflow authority"); `AgentEventKind` has no variant for them. M5 reverses that for display only: plans and commands stay without workflow authority.
+- **Drops** `Plan` and `AvailableCommandsUpdate` on purpose ("Plans, command lists, usage and session info carry no workflow authority"); M5a added `AgentEventKind::Plan`, which the Claude and Codex drivers emit, but ACP still drops its plans, there is no commands variant, and the engine ignores `Plan`. M5 reverses that for display only: plans and commands stay without workflow authority.
 - **Already sends images** through `prompt_with_images`, gated on `prompt_capabilities.image`, PNG only, count- and size-capped, never persisted.
 - **Already restores sessions** (`resume_session` preferred over `load_session`); restored non-text content becomes a placeholder.
 - One session manifest and one `conversation.jsonl` per project (`session_store`, `deny_unknown_fields`).

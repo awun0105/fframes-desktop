@@ -27,29 +27,31 @@ impl Actor {
         let processes = self.shared.root_scope.sub_manager();
         let tx = self.shared.tx.clone();
         let generation = self.probe_generation;
-        let payload = (
-            adapter.adapter,
+        let payload = ProbeInput {
+            adapter: adapter.adapter,
+            wire: adapter.wire,
             search,
-            adapter.auth_method,
+            auth_method: adapter.auth_method,
             scratch,
             timeout,
             processes,
-        );
-        let refused = self.admit(
-            JobKind::Probe,
-            payload,
-            move |(config, search, method, scratch, timeout, processes)| {
-                let key = ProbeKey::of(&config, &search, method.as_deref());
-                let probe = || run_probe(config, search, method, scratch, timeout, processes);
-                let cache = AdapterProbeCache::global();
-                let report = if explicit {
-                    cache.refresh(key, probe)
-                } else {
-                    cache.get_or_probe(key, probe)
-                };
-                let _ = tx.send(Msg::Probe { generation, report });
-            },
-        );
+        };
+        let refused = self.admit(JobKind::Probe, payload, move |input: ProbeInput| {
+            let key = ProbeKey::of(
+                &input.adapter,
+                input.wire,
+                &input.search,
+                input.auth_method.as_deref(),
+            );
+            let probe = || run_probe(input);
+            let cache = AdapterProbeCache::global();
+            let report = if explicit {
+                cache.refresh(key, probe)
+            } else {
+                cache.get_or_probe(key, probe)
+            };
+            let _ = tx.send(Msg::Probe { generation, report });
+        });
         if let Err((message, _)) = refused {
             self.probing = false;
             self.adapter.readiness = AdapterReadiness::Unchecked;
@@ -324,7 +326,10 @@ impl Actor {
             evidence_cancel: Arc::new(AtomicBool::new(false)),
             turn: None,
             open_permissions: HashSet::new(),
+            open_questions: HashMap::new(),
             engine_waiting: false,
+            background: (0, false),
+            capture_deferred: false,
             failed: false,
             stop_requested: false,
             promoting: false,
@@ -492,7 +497,7 @@ impl Actor {
             mcp_servers: active.mcp.iter().cloned().collect(),
             mcp_stdio: active.adapter.mcp,
         };
-        let driver = AcpDriver::start(config, &scope)
+        let driver = studio_harness::start_driver(active.adapter.wire, config, &scope)
             .map_err(|f| Box::new(present::provider_error(&f, true)))?;
         // What the supervisor verified for the process it just spawned, not a claim made
         // before the launch; observations during the task only demote it.
@@ -517,6 +522,7 @@ impl Actor {
         active.turn = None;
         active.failed = false;
         active.open_permissions.clear();
+        active.open_questions.clear();
         active.engine_waiting = false;
         // A pump of an earlier driver must not act on this one.
         self.driver_epoch += 1;

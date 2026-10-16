@@ -452,6 +452,9 @@ pub fn stop_note(phase: TaskPhase) -> String {
             "Cancels the agent, closes open requests and keeps its working copy."
         }
         TaskPhase::WaitingClarification => "Ends the task without an answer and keeps the working copy.",
+        TaskPhase::WaitingBackground => {
+            "Stops the agent and its background task and keeps the working copy."
+        }
         TaskPhase::Quiescing | TaskPhase::Capturing | TaskPhase::Validating | TaskPhase::Repairing => {
             "Cancels validation or repair; the working copy and candidate are kept."
         }

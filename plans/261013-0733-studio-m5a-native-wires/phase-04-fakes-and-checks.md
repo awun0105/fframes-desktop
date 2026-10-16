@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Fake CLIs, cross-driver tests and platform checks"
-status: pending
+status: completed
 priority: P1
 effort: "2-3d"
 dependencies: [2, 3]
@@ -25,12 +25,25 @@ All three drivers are tested the same way on Windows, macOS and Linux CI without
 
 ## Todo
 
-- [ ] Python fake CLIs with recorded frames
-- [ ] Cross-driver suite
-- [ ] Background-work turn-end test
-- [ ] Parity agent test per wire
-- [ ] Manual checks recorded
+- [x] Python fake CLIs with recorded frames: `fake-claude.py` and `fake-codex.py`, with frame shapes from Claude Code 2.1.296 and codex-cli 0.162.1. They sit in `crates/studio-harness/tests/` next to `acp-peer.py` (the ACP fake, not `acp-agent.py`), not in `tests/support/`. Each also has its own suite: `claude_stream_json.rs` and `codex_app_server.rs`.
+- [x] Cross-driver suite, `crates/studio-harness/tests/cross_driver.rs`. It drives every scenario through `start_driver` and the `AgentDriver` trait, once per wire, with a fixture that maps each scenario to the fake's mode and prompt. Scenarios:
+  - text, and exactly one end per turn;
+  - a permission denied (the tool does not run) and allowed;
+  - an unanswered permission blocks the tool until Stop closes it;
+  - questions;
+  - steering at the declared boundary, refused on ACP;
+  - stop keeps the agent running;
+  - resume;
+  - images;
+  - plans;
+  - background work.
+
+  What a wire cannot do is asserted through its capabilities: ACP has no steering, questions or background work. ACP plans are not checked, because the ACP driver drops plan updates until the M5 todo panel adds them (M5 phase 3). The ACP peer's `permission` mode now writes only when the allow option is chosen, so the deny case means something there too.
+- [x] Background-work turn-end test. In the cross-driver suite, the work is reported before the wire's own end frame and clears afterwards. In the engine (`app/tests/agent_workflow/{claude,codex}_wire.rs`), capture waits for it, and Stop during the wait captures nothing.
+- [x] Parity agent test per wire, `crates/studio-ui/tests/parity/agent.rs`. The panel flow (prompt, permission card, allow, review, Apply) runs over Claude stream-json and over Codex app-server through `Studio::with_native_agent`. The other parity agent tests stay on the scripted ACP agent.
+- [x] Manual checks recorded ([report](../../desktop/plans/reports/native-wires-checks.md)) on this Windows VM for Claude Code 2.1.296 and Codex 0.162.1: permissions, stop, steer, resume and background work. Not run on macOS, which is not fully tested because no Mac is available (decided 2026-10-16).
+- [x] Cross-driver suite on macOS and Linux CI: green on all three platforms for `6225af8` ([self-hosted Linux and Windows](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905684378), [macOS 15](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905719933)).
 
 ## Success criteria
 
-The cross-driver suite passes for ACP, Claude and Codex on three CI platforms; the manual checks report shows each wire working on Windows and macOS.
+The cross-driver suite passes for ACP, Claude and Codex on three CI platforms; the manual checks report shows each wire working on Windows. macOS is not fully tested: it is covered by CI only (decided 2026-10-16).

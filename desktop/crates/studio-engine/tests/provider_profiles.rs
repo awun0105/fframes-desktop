@@ -71,6 +71,7 @@ fn registry_save_load_round_trip_re_derives_builtin_and_experimental_flags() {
         auth_env_names: vec![],
         auth_method: None,
         mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
     });
     host::save_registry(&paths, &registry).unwrap();
 
@@ -114,6 +115,7 @@ fn migration_from_custom_adapter_preserves_all_fields_and_selects_it() {
         auth_env_names: vec!["CUSTOM_TOKEN".into(), "CUSTOM_API_KEY".into()],
         auth_method: Some("custom-method".into()),
         mcp: McpChoice::Unsupported,
+        wire: studio_harness::AgentWire::Acp,
     };
     std::fs::write(paths.data.join(SETTINGS_FILE), legacy.to_pretty()).unwrap();
 
@@ -168,6 +170,7 @@ fn migration_matches_builtin_provider_by_name() {
         auth_env_names: vec!["OPENAI_API_KEY".into()],
         auth_method: None,
         mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
     };
     std::fs::write(paths.data.join(SETTINGS_FILE), legacy.to_pretty()).unwrap();
 
@@ -200,6 +203,7 @@ fn validation_rejects_duplicate_ids() {
             auth_env_names: vec![],
             auth_method: None,
             mcp: McpChoice::Baseline,
+            wire: studio_harness::AgentWire::Acp,
         },
         builtin: false,
         experimental: true,
@@ -235,6 +239,7 @@ fn save_registry_does_not_modify_legacy_agent_adapter_json() {
         auth_env_names: vec![],
         auth_method: None,
         mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
     };
     let legacy_bytes = original_legacy.to_pretty();
     std::fs::write(paths.data.join(SETTINGS_FILE), &legacy_bytes).unwrap();
@@ -266,6 +271,7 @@ fn save_settings_updates_registry_without_clobbering_builtin_defaults() {
         auth_env_names: vec!["CUSTOM_KEY".into()],
         auth_method: None,
         mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
     };
     host::save_settings(&paths, &custom_adapter).unwrap();
 
@@ -412,6 +418,7 @@ fn node_launch_of_a_selected_adapter_survives_the_setup_fields() {
         auth_env_names: vec![],
         auth_method: None,
         mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
     };
     let rebuilt = AdapterFile::from_fields(None, &file.fields(), McpChoice::Baseline)
         .unwrap()
@@ -506,6 +513,7 @@ fn node_launch(node: &std::path::Path, entry: &std::path::Path) -> AdapterFile {
         auth_env_names: vec!["ANTHROPIC_API_KEY".into()],
         auth_method: None,
         mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
     }
 }
 
@@ -560,6 +568,7 @@ fn a_turn_on_save_changes_only_that_profile_and_keeps_its_identity() {
         auth_env_names: vec![],
         auth_method: None,
         mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
     });
     host::save_registry(&paths, &registry).unwrap();
     let before = host::load_registry(&paths).unwrap().unwrap();

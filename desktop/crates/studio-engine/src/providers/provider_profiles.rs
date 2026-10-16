@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use studio_harness::{
-    Detected, DetectionEnv, DetectionSpec,
+    AgentWire, Detected, DetectionEnv, DetectionSpec,
     adapter_install::{InstallTools, InstalledAdapter, find_installed, package_for},
     detect_agents, find_executable,
 };
@@ -183,6 +183,7 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
                 auth_env_names: vec!["ANTHROPIC_API_KEY".into()],
                 auth_method: None,
                 mcp: McpChoice::Baseline,
+                wire: AgentWire::Acp,
             },
             cli_executable: String::new(),
             builtin: true,
@@ -199,6 +200,7 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
                 auth_env_names: vec!["OPENAI_API_KEY".into(), "CODEX_API_KEY".into()],
                 auth_method: None,
                 mcp: McpChoice::Baseline,
+                wire: AgentWire::Acp,
             },
             cli_executable: String::new(),
             builtin: true,
@@ -215,6 +217,7 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
                 auth_env_names: Vec::new(),
                 auth_method: None,
                 mcp: McpChoice::Unsupported,
+                wire: AgentWire::Acp,
             },
             cli_executable: String::new(),
             builtin: true,
@@ -231,6 +234,7 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
                 auth_env_names: vec!["GEMINI_API_KEY".into(), "GOOGLE_API_KEY".into()],
                 auth_method: None,
                 mcp: McpChoice::Baseline,
+                wire: AgentWire::Acp,
             },
             cli_executable: String::new(),
             builtin: true,

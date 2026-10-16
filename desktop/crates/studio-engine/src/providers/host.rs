@@ -22,7 +22,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use studio_harness::{AdapterConfig, ExecutableSearch, McpStdioSupport};
+use studio_harness::{AdapterConfig, AgentWire, ExecutableSearch, McpStdioSupport};
 
 /// File name of the app-local adapter description inside the app data directory.
 pub const SETTINGS_FILE: &str = "agent-adapter.json";
@@ -63,6 +63,10 @@ pub struct AdapterFile {
     pub auth_method: Option<String>,
     #[serde(default)]
     pub mcp: McpChoice,
+    /// The protocol the adapter speaks. Omitted for ACP, so files written before the
+    /// field existed and ACP files written now are the same.
+    #[serde(default, skip_serializing_if = "AgentWire::is_acp")]
+    pub wire: AgentWire,
 }
 
 fn default_provider() -> String {
@@ -131,6 +135,7 @@ impl AdapterFile {
                 McpChoice::Unsupported => McpStdioSupport::Unsupported,
             },
             auth_method: self.auth_method.clone(),
+            wire: self.wire,
         }
     }
 
@@ -141,6 +146,7 @@ impl AdapterFile {
             executable: self.executable.clone(),
             args: join_args(&self.args),
             env_names: self.auth_env_names.join(", "),
+            wire: self.wire,
         }
     }
 
@@ -174,6 +180,7 @@ impl AdapterFile {
                 .collect(),
             auth_method: base.and_then(|b| b.auth_method.clone()),
             mcp,
+            wire: fields.wire,
         };
         file.validate()?;
         Ok(Some(file))
@@ -193,6 +200,7 @@ pub struct AdapterFields {
     pub args: String,
     /// Variable NAMES separated by commas or spaces.
     pub env_names: String,
+    pub wire: AgentWire,
 }
 
 /// Splits an argument line into words (quotes group, a backslash escapes inside double
@@ -828,12 +836,14 @@ mod tests {
             auth_env_names: vec![],
             auth_method: Some("oauth".into()),
             mcp: McpChoice::Baseline,
+            wire: AgentWire::Acp,
         };
         let fields = AdapterFields {
             provider: " tool ".into(),
             executable: " /opt/a ".into(),
             args: "--acp --flag \"v w\"".into(),
             env_names: "KEY_A, KEY_B  KEY_C".into(),
+            wire: AgentWire::ClaudeStreamJson,
         };
         let built = AdapterFile::from_fields(Some(&base), &fields, McpChoice::Unsupported)
             .unwrap()
@@ -844,6 +854,7 @@ mod tests {
         assert_eq!(built.auth_env_names, vec!["KEY_A", "KEY_B", "KEY_C"]);
         assert_eq!(built.auth_method.as_deref(), Some("oauth"));
         assert_eq!(built.mcp, McpChoice::Unsupported);
+        assert_eq!(built.wire, AgentWire::ClaudeStreamJson);
         assert_eq!(built.fields().args, "--acp --flag \"v w\"");
         // Blank fields mean "no adapter"; a value in an environment field is refused.
         assert_eq!(
@@ -870,6 +881,7 @@ mod tests {
             auth_env_names: vec!["API_KEY".into()],
             auth_method: None,
             mcp: McpChoice::Unsupported,
+            wire: AgentWire::Acp,
         };
         save_settings(&paths, &saved).unwrap();
         assert_eq!(load_settings(&paths).unwrap().unwrap(), saved);
@@ -910,7 +922,36 @@ mod tests {
             auth_env_names: vec![],
             auth_method: None,
             mcp: McpChoice::Baseline,
+            wire: AgentWire::Acp,
         }
+    }
+
+    #[test]
+    fn the_wire_is_omitted_for_acp_and_round_trips_otherwise() {
+        let acp = described("p", 0);
+        let text = acp.to_pretty();
+        assert!(!text.contains("wire"), "{text}");
+        // A file written before the field existed loads as ACP.
+        assert_eq!(AdapterFile::parse(&text).unwrap().unwrap(), acp);
+        for wire in [AgentWire::ClaudeStreamJson, AgentWire::CodexAppServer] {
+            let native = AdapterFile {
+                wire,
+                ..acp.clone()
+            };
+            let text = native.to_pretty();
+            assert!(text.contains(wire.as_str()), "{text}");
+            let parsed = AdapterFile::parse(&text).unwrap().unwrap();
+            assert_eq!(parsed, native);
+            assert_eq!(
+                parsed.resolve(&OwnershipPolicy::Validated).wire,
+                wire,
+                "the wire reaches the workflow settings"
+            );
+        }
+        assert!(
+            AdapterFile::parse(r#"{"executable":"/a","wire":"telnet"}"#).is_err(),
+            "an unknown wire is refused, not read as ACP"
+        );
     }
 
     #[test]

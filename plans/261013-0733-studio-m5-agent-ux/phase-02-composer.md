@@ -36,12 +36,14 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 1. Input: the composer is built on the kit `TextInput` (gpui `EntityInputHandler`, already in `text_input.rs`) for IME, dead keys, selection, undo and clipboard. Multiline: Enter sends and Shift+Enter inserts a newline, bound in the composer key context.
 2. Steering (Zeron `acp/mod.rs`): when the agent advertises the `_session/steering` extension, send steers through it; otherwise hold the message and, at the declared boundary with no tool call open, cancel and re-prompt with it. Read the steering mode from one place, the driver's negotiated capability published in `WorkflowSnapshot`. Zeron's driver and engine descriptors disagree for Grok and Devin (`acp/mod.rs:246, 331` against `registry.rs:652, 670`); that is the bug to avoid.
 3. Stop: `session/cancel`, then the existing `shutdown_grace` and verified termination (M3 phase 4). Zeron escalates the same way.
-4. Questions: a `session/request_permission` whose options carry no `kind` is shown as a question listing the options rather than as allow or deny (Zeron `acp/normalize.rs:488-503`). Requests with kinds keep today's prompt; fframes never auto-approves, unlike Zeron.
+4. Questions: the driver's `Question` event (Claude `AskUserQuestion`, Codex `item/tool/requestUserInput`) is shown as a question listing its options rather than as allow or deny. fframes never auto-approves, unlike Zeron.
+   - **Corrected 2026-10-16 (M5a phase 1):** an ACP permission option cannot be kind-less in ACP v1 (the kind is a required enum), and the Zeron lines once cited here (`acp/normalize.rs:488-503`) only pick an auto-approve option.
+   - ACP questions would come from `elicitation/create`, which fframes does not advertise.
 5. Images: fframes already sends image blocks through `prompt_with_images`; Zeron's ACP client sends text only, so nothing is ported there.
 
 ## Todo
 
-- [ ] Composer on kit `TextInput`; steering extension or cancel-and-re-prompt; kind-less permissions as questions
+- [ ] Composer on kit `TextInput`; steering extension or cancel-and-re-prompt; driver `Question` events as question cards
 
 - [ ] Scout prompt path
 - [ ] Composer ported and split
@@ -49,6 +51,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 - [ ] Images through `prompt_with_images` with transcoding
 - [ ] Confined file attachments
 - [ ] Stop and per-adapter steering
+- [ ] Question card for every question (handed over from M5a phase 2). Today the actor shows only the first question's options and sends `QuestionAnswer::default()` for questions 2..n (`studio-engine/src/agent/actor/prompt.rs`, `reply_permission`), so the agent receives answers the user never gave; a free-text question with no options can only be cancelled. The card must collect an answer, or free text, for each question before anything is sent.
 - [ ] Tests
 
 ## Success criteria

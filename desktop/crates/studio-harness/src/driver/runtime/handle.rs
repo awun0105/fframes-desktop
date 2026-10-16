@@ -46,99 +46,17 @@ impl AcpDriver {
                     .flat_map(|s| s.secrets().map(str::to_owned)),
             ),
         ));
-        if !cwd.is_absolute() || !cwd.is_dir() {
-            return Err(AgentFailure::new(
-                FailureKind::SpawnFailed,
-                Phase::Spawn,
-                "session working directory must be an existing absolute directory",
-            ));
-        }
-        let child = AgentSupervisor::new(processes.clone())
-            .spawn_adapter(
-                &launch.executable,
-                &launch.args,
-                &cwd,
-                Some(launch.env.clone()),
-            )
-            .map_err(|error| spawn_failure(&launch, error, &redactor))?;
-        let (stdin, stdout, stderr) = {
-            let mut child = child.lock();
-            let process = child.child_mut();
-            (
-                process.stdin.take(),
-                process.stdout.take(),
-                process.stderr.take(),
-            )
-        };
-        let (Some(stdin), Some(stdout), Some(stderr)) = (stdin, stdout, stderr) else {
-            let _ = child.lock().kill_forcefully();
-            return Err(AgentFailure::new(
-                FailureKind::SpawnFailed,
-                Phase::Spawn,
-                "adapter pipes were not available",
-            ));
-        };
-        let ownership = match ownership {
-            OwnershipSource::Verified => child.lock().containment(),
-            OwnershipSource::Injected(ownership) => ownership,
-        };
-        let queue = EventQueue::new(provider, task, limits.max_queued_events);
-        let ingress = Ingress::new(INGRESS_MAX_FRAMES, INGRESS_MAX_BYTES);
-        let shared = Arc::new(Shared {
-            ownership,
-            streams: Mutex::new(Streams {
-                agent: StreamRedactor::new(redactor.clone()),
-                thought: StreamRedactor::new(redactor.clone()),
-                user: StreamRedactor::new(redactor.clone()),
-            }),
-            stderr: Mutex::new(StderrState {
-                redactor: StreamRedactor::new(redactor.clone()),
-                carry: Vec::new(),
-                tail: VecDeque::new(),
-            }),
-            redactor,
-            queue,
-            child,
-            core: Mutex::new(Core {
-                status: DriverStatus::Starting,
-                phase: Phase::Initialize,
-                session: None,
-                restored: false,
-                restoring: false,
-                initialized: None,
-                turn: None,
-                next_turn: 1,
-                last_outcome: None,
-                failure: None,
-                stopping: false,
-                escaped: Vec::new(),
-                containment_unverified: None,
-                outcome: None,
-                permissions: Permissions::default(),
-                cancel_to_send: None,
-            }),
-            core_changed: Condvar::new(),
-            transcript: Mutex::new(Transcript::new(limits.max_transcript_bytes)),
-            options: Mutex::new(AgentOptions::default()),
-            option_ids: Mutex::new(OptionIds::default()),
-            ingress: ingress.clone(),
-            late: AtomicU64::new(0),
-            declined: AtomicU64::new(0),
-            watchdog: Watchdog::new(),
-            forced_kill: AtomicBool::new(false),
-            claude_adapter: AtomicBool::new(false),
-            limits,
-        });
-        shared
-            .watchdog
-            .arm(Phase::Initialize, shared.limits.init_timeout);
-        let (line_tx, line_rx) = mpsc::channel(32);
-        let mut io = vec![
-            transport::spawn_reader(shared.clone(), stdout, line_tx, ingress),
-            transport::spawn_stderr(shared.clone(), stderr),
-        ];
-        let (sink, writer) = transport::spawn_writer(shared.clone(), stdin);
-        io.push(writer);
+        let spawned = spawn_owned(&launch, &launch.args, &cwd, processes, &redactor)?;
+        let (shared, line_rx, sink, io) = Shared::start(
+            spawned,
+            Owner {
+                provider,
+                task,
+                ownership,
+                limits,
+                redactor,
+            },
+        );
         let (command_tx, command_rx) = mpsc::channel(COMMAND_QUEUE);
         let params = DriveParams {
             cwd,
@@ -274,81 +192,13 @@ impl AcpDriver {
     /// Blocks until the session (or, in `InitializeOnly` mode, initialization) is ready,
     /// the driver fails, or `timeout` passes.
     pub fn wait_ready(&self, timeout: Duration) -> Result<SessionInfo, AgentFailure> {
-        let deadline = Instant::now() + timeout;
-        let mut core = self.shared.core.lock();
-        loop {
-            if let Some(failure) = &core.failure {
-                return Err(failure.clone());
-            }
-            if core.status == DriverStatus::Closed {
-                return Err(AgentFailure::new(
-                    FailureKind::ProcessExited,
-                    core.phase,
-                    "driver closed before it became ready",
-                ));
-            }
-            if core.status != DriverStatus::Starting
-                && let Some(initialized) = &core.initialized
-            {
-                let initialized = initialized.clone();
-                let restored = core.restored;
-                let session = core.session.clone();
-                drop(core);
-                return Ok(SessionInfo {
-                    session_id: session.map(|s| self.shared.clean(&s)),
-                    restored,
-                    initialized,
-                });
-            }
-            if self
-                .shared
-                .core_changed
-                .wait_until(&mut core, deadline)
-                .timed_out()
-            {
-                return Err(AgentFailure::new(
-                    FailureKind::DeadlineExceeded,
-                    core.phase,
-                    "timed out waiting for the adapter to become ready",
-                ));
-            }
-        }
+        self.shared.wait_ready(timeout)
     }
 
     /// Blocks until `turn` finishes, the driver fails, or `timeout` passes. A latched
     /// failure always wins over a recorded completion.
     pub fn wait_turn(&self, turn: u64, timeout: Duration) -> Result<PromptOutcome, AgentFailure> {
-        let deadline = Instant::now() + timeout;
-        let mut core = self.shared.core.lock();
-        loop {
-            if let Some(failure) = &core.failure {
-                return Err(failure.clone());
-            }
-            if let Some(outcome) = &core.last_outcome
-                && outcome.turn == turn
-            {
-                return Ok(outcome.clone());
-            }
-            if core.status == DriverStatus::Closed {
-                return Err(AgentFailure::new(
-                    FailureKind::ProcessExited,
-                    core.phase,
-                    "driver closed before the turn finished",
-                ));
-            }
-            if self
-                .shared
-                .core_changed
-                .wait_until(&mut core, deadline)
-                .timed_out()
-            {
-                return Err(AgentFailure::new(
-                    FailureKind::DeadlineExceeded,
-                    core.phase,
-                    "timed out waiting for the turn to finish",
-                ));
-            }
-        }
+        self.shared.wait_turn(turn, timeout)
     }
 
     pub(super) fn send(&self, command: Command) -> Result<(), DriverError> {
@@ -394,11 +244,7 @@ impl AcpDriver {
         let mut content = vec![ContentBlock::Text(TextContent::new(text))];
         content.extend((0..count).map(|_| ContentBlock::Image(ImageContent::new("", "image/png"))));
         let framing = prompt_line_bytes(&PromptRequest::new(session, content));
-        // Base64 room left on the line; each image rounds up to whole 4-byte groups, so
-        // 4 * ceil(n / 3) <= (4n + 8) / 3 and the total n must satisfy 4n <= 3 * room - 8c.
-        let max_line = self.shared.limits.max_message_bytes.saturating_sub(1);
-        let room = max_line.saturating_sub(framing);
-        room.saturating_mul(3).saturating_sub(8 * count) / 4
+        image_budget(framing, count, self.shared.limits.max_message_bytes)
     }
 
     /// Starts a text prompt with bounded PNG evidence. Image content is rejected unless
@@ -409,24 +255,7 @@ impl AcpDriver {
         text: &str,
         images: Vec<PromptImage>,
     ) -> Result<u64, DriverError> {
-        if text.trim().is_empty() {
-            return Err(DriverError::InvalidPrompt("prompt is empty"));
-        }
-        if text.len() > MAX_PROMPT_BYTES {
-            return Err(DriverError::InvalidPrompt("prompt exceeds the size limit"));
-        }
-        if images.len() > MAX_PROMPT_IMAGE_COUNT {
-            return Err(DriverError::InvalidPrompt("too many prompt images"));
-        }
-        if images.iter().any(|image| image.data.is_empty()) {
-            return Err(DriverError::InvalidPrompt("prompt image is empty"));
-        }
-        if images
-            .iter()
-            .any(|image| !image.data.starts_with(b"\x89PNG\r\n\x1a\n"))
-        {
-            return Err(DriverError::InvalidPrompt("prompt image is not a PNG"));
-        }
+        validate_prompt(text, &images)?;
         if !images.is_empty()
             && !self
                 .initialized()
@@ -464,48 +293,9 @@ impl AcpDriver {
             }
             content = request.prompt;
         }
-        let turn = {
-            let mut core = self.shared.core.lock();
-            if let Some(failure) = &core.failure {
-                return Err(DriverError::Failed(failure.clone()));
-            }
-            match core.status {
-                DriverStatus::Ready if core.session.is_some() => {}
-                DriverStatus::Prompting => return Err(DriverError::TurnInProgress),
-                DriverStatus::Starting => return Err(DriverError::NotReady),
-                _ => return Err(DriverError::Closed),
-            }
-            let id = core.next_turn;
-            core.next_turn = id.checked_add(1).ok_or_else(|| {
-                DriverError::Failed(AgentFailure::new(
-                    FailureKind::CounterExhausted,
-                    Phase::Prompt,
-                    "turn counter exhausted",
-                ))
-            })?;
-            core.turn = Some(Turn {
-                id,
-                cancel_requested: false,
-            });
-            core.status = DriverStatus::Prompting;
-            core.phase = Phase::Prompt;
-            id
-        };
-        self.shared.watchdog.arm_turn(
-            self.shared.limits.prompt_timeout,
-            self.shared.limits.max_turn,
-        );
+        let turn = self.shared.begin_turn()?;
         if let Err(error) = self.send(Command::Prompt { turn, content }) {
-            // Never leave a phantom turn that nothing will ever answer.
-            let mut core = self.shared.core.lock();
-            if core.turn.as_ref().map(|t| t.id) == Some(turn) {
-                core.turn = None;
-                if core.status == DriverStatus::Prompting {
-                    core.status = DriverStatus::Ready;
-                }
-            }
-            drop(core);
-            self.shared.watchdog.disarm();
+            self.shared.abandon_turn(turn);
             return Err(error);
         }
         Ok(turn)
@@ -589,58 +379,168 @@ impl AcpDriver {
     }
 
     pub(super) fn stop(&mut self) -> DriverOutcome {
+        let threads = Threads {
+            main: self.main.take(),
+            watchdog: self.watchdog.take(),
+            io: std::mem::take(&mut self.io),
+        };
+        self.shared.stop_owned(
+            || {
+                let _ = self.send(Command::Shutdown);
+                // Dropping the sender also ends the command loop if the queue was full.
+                self.commands.lock().take();
+            },
+            threads,
+        )
+    }
+}
+
+/// Checks every wire shares: non-empty bounded text and at most a few non-empty PNGs.
+pub(in crate::driver) fn validate_prompt(
+    text: &str,
+    images: &[PromptImage],
+) -> Result<(), DriverError> {
+    if text.trim().is_empty() {
+        return Err(DriverError::InvalidPrompt("prompt is empty"));
+    }
+    if text.len() > MAX_PROMPT_BYTES {
+        return Err(DriverError::InvalidPrompt("prompt exceeds the size limit"));
+    }
+    if images.len() > MAX_PROMPT_IMAGE_COUNT {
+        return Err(DriverError::InvalidPrompt("too many prompt images"));
+    }
+    if images.iter().any(|image| image.data.is_empty()) {
+        return Err(DriverError::InvalidPrompt("prompt image is empty"));
+    }
+    if images
+        .iter()
+        .any(|image| !image.data.starts_with(b"\x89PNG\r\n\x1a\n"))
+    {
+        return Err(DriverError::InvalidPrompt("prompt image is not a PNG"));
+    }
+    Ok(())
+}
+
+/// The largest total of raw image bytes `count` images can carry on a line whose framing
+/// without any image data is `framing` bytes. Each image rounds up to whole 4-byte base64
+/// groups, so 4 * ceil(n / 3) <= (4n + 8) / 3 and the total n must satisfy
+/// 4n <= 3 * room - 8c.
+pub(in crate::driver) fn image_budget(framing: usize, count: usize, max_message: usize) -> usize {
+    let max_line = max_message.saturating_sub(1);
+    let room = max_line.saturating_sub(framing);
+    room.saturating_mul(3).saturating_sub(8 * count) / 4
+}
+
+impl Shared {
+    /// Opens a turn when the session is ready and idle and arms its deadlines.
+    pub(in crate::driver) fn begin_turn(&self) -> Result<u64, DriverError> {
+        let id = {
+            let mut core = self.core.lock();
+            if let Some(failure) = &core.failure {
+                return Err(DriverError::Failed(failure.clone()));
+            }
+            match core.status {
+                DriverStatus::Ready if core.session.is_some() => {}
+                DriverStatus::Prompting => return Err(DriverError::TurnInProgress),
+                DriverStatus::Starting => return Err(DriverError::NotReady),
+                _ => return Err(DriverError::Closed),
+            }
+            let id = core.next_turn;
+            core.next_turn = id.checked_add(1).ok_or_else(|| {
+                DriverError::Failed(AgentFailure::new(
+                    FailureKind::CounterExhausted,
+                    Phase::Prompt,
+                    "turn counter exhausted",
+                ))
+            })?;
+            core.turn = Some(Turn {
+                id,
+                cancel_requested: false,
+            });
+            core.status = DriverStatus::Prompting;
+            core.phase = Phase::Prompt;
+            id
+        };
+        self.watchdog
+            .arm_turn(self.limits.prompt_timeout, self.limits.max_turn);
+        Ok(id)
+    }
+
+    /// Takes back a turn whose prompt could not be sent: never leave a phantom turn that
+    /// nothing will ever answer.
+    pub(in crate::driver) fn abandon_turn(&self, turn: u64) {
+        let mut core = self.core.lock();
+        if core.turn.as_ref().map(|t| t.id) == Some(turn) {
+            core.turn = None;
+            if core.status == DriverStatus::Prompting {
+                core.status = DriverStatus::Ready;
+            }
+        }
+        drop(core);
+        self.watchdog.disarm();
+    }
+}
+
+/// The threads one driver owns besides the caller's.
+pub(in crate::driver) struct Threads {
+    pub(in crate::driver) main: Option<JoinHandle<()>>,
+    pub(in crate::driver) watchdog: Option<JoinHandle<()>>,
+    pub(in crate::driver) io: Vec<JoinHandle<()>>,
+}
+
+impl Shared {
+    /// Stops the adapter: closes requests as cancelled, asks the connection to shut down
+    /// (`request_shutdown`), drains for the graceful period, force-kills the owned tree
+    /// and verifies the group is empty.
+    pub(in crate::driver) fn stop_owned(
+        &self,
+        request_shutdown: impl FnOnce(),
+        threads: Threads,
+    ) -> DriverOutcome {
         {
-            let mut core = self.shared.core.lock();
+            let mut core = self.core.lock();
             if core.status != DriverStatus::Closed {
                 core.stopping = true;
                 core.status = DriverStatus::Stopping;
             }
         }
         // Latch the stop before anything else: permissions close and the turn is flagged.
-        let _ = self.shared.latch_cancel(true);
-        let _ = self.send(Command::Shutdown);
-        // Dropping the sender also ends the command loop if the queue was full.
-        self.commands.lock().take();
-        let grace = self.shared.limits.shutdown_grace;
+        let _ = self.latch_cancel(true);
+        request_shutdown();
+        let grace = self.limits.shutdown_grace;
         if !self.wait_closed(grace + Duration::from_secs(1)) {
             // The connection did not unwind by itself (for example it is blocked on a pipe
             // an escaped helper still holds open): force the owned tree down here.
-            self.shared.kill_now();
+            self.kill_now();
             self.wait_closed(grace + Duration::from_secs(1));
         }
-        let existing = self.shared.core.lock().outcome.clone();
+        let existing = self.core.lock().outcome.clone();
         let outcome = match existing {
             Some(outcome) => outcome,
             None => {
                 // Wedged connection: verify the tree here, from one consistent snapshot,
                 // with the same sticky ownership demotion as the normal path.
-                let termination = self.shared.teardown();
-                self.shared.stderr_finish();
-                let outcome = self.shared.snapshot_outcome(termination, None);
-                self.shared.publish_closed(outcome)
+                let termination = self.teardown();
+                self.stderr_finish();
+                let outcome = self.snapshot_outcome(termination, None);
+                self.publish_closed(outcome)
             }
         };
-        self.shared.watchdog.stop();
-        self.shared.ingress.close();
-        if let Some(main) = self.main.take() {
-            join_when_finished(main);
-        }
-        if let Some(watchdog) = self.watchdog.take() {
-            join_when_finished(watchdog);
-        }
-        for handle in self.io.drain(..) {
+        self.watchdog.stop();
+        self.ingress.close();
+        let Threads { main, watchdog, io } = threads;
+        for handle in main.into_iter().chain(watchdog).chain(io) {
             // A pipe held open by an escaped helper must not wedge shutdown.
             join_when_finished(handle);
         }
         outcome
     }
 
-    pub(super) fn wait_closed(&self, timeout: Duration) -> bool {
+    pub(in crate::driver) fn wait_closed(&self, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
-        let mut core = self.shared.core.lock();
+        let mut core = self.core.lock();
         while core.status != DriverStatus::Closed {
             if self
-                .shared
                 .core_changed
                 .wait_until(&mut core, deadline)
                 .timed_out()
@@ -649,6 +549,91 @@ impl AcpDriver {
             }
         }
         true
+    }
+
+    /// Blocks until the session (or, in `InitializeOnly` mode, initialization) is ready,
+    /// the driver fails, or `timeout` passes.
+    pub(in crate::driver) fn wait_ready(
+        &self,
+        timeout: Duration,
+    ) -> Result<SessionInfo, AgentFailure> {
+        let deadline = Instant::now() + timeout;
+        let mut core = self.core.lock();
+        loop {
+            if let Some(failure) = &core.failure {
+                return Err(failure.clone());
+            }
+            if core.status == DriverStatus::Closed {
+                return Err(AgentFailure::new(
+                    FailureKind::ProcessExited,
+                    core.phase,
+                    "driver closed before it became ready",
+                ));
+            }
+            if core.status != DriverStatus::Starting
+                && let Some(initialized) = &core.initialized
+            {
+                let initialized = initialized.clone();
+                let restored = core.restored;
+                let session = core.session.clone();
+                drop(core);
+                return Ok(SessionInfo {
+                    session_id: session.map(|s| self.clean(&s)),
+                    restored,
+                    initialized,
+                });
+            }
+            if self
+                .core_changed
+                .wait_until(&mut core, deadline)
+                .timed_out()
+            {
+                return Err(AgentFailure::new(
+                    FailureKind::DeadlineExceeded,
+                    core.phase,
+                    "timed out waiting for the adapter to become ready",
+                ));
+            }
+        }
+    }
+
+    /// Blocks until `turn` finishes, the driver fails, or `timeout` passes. A latched
+    /// failure always wins over a recorded completion.
+    pub(in crate::driver) fn wait_turn(
+        &self,
+        turn: u64,
+        timeout: Duration,
+    ) -> Result<PromptOutcome, AgentFailure> {
+        let deadline = Instant::now() + timeout;
+        let mut core = self.core.lock();
+        loop {
+            if let Some(failure) = &core.failure {
+                return Err(failure.clone());
+            }
+            if let Some(outcome) = &core.last_outcome
+                && outcome.turn == turn
+            {
+                return Ok(outcome.clone());
+            }
+            if core.status == DriverStatus::Closed {
+                return Err(AgentFailure::new(
+                    FailureKind::ProcessExited,
+                    core.phase,
+                    "driver closed before the turn finished",
+                ));
+            }
+            if self
+                .core_changed
+                .wait_until(&mut core, deadline)
+                .timed_out()
+            {
+                return Err(AgentFailure::new(
+                    FailureKind::DeadlineExceeded,
+                    core.phase,
+                    "timed out waiting for the turn to finish",
+                ));
+            }
+        }
     }
 }
 
@@ -669,6 +654,158 @@ impl Drop for AcpDriver {
         if self.main.is_some() {
             let _ = self.stop();
         }
+    }
+}
+
+/// The adapter process just spawned in its scope, with its pipes.
+pub(in crate::driver) struct Spawned {
+    child: Arc<Mutex<TrackedChild>>,
+    stdin: std::process::ChildStdin,
+    stdout: std::process::ChildStdout,
+    stderr: std::process::ChildStderr,
+}
+
+/// Who owns a driver and how it is bounded.
+pub(in crate::driver) struct Owner {
+    pub(in crate::driver) provider: String,
+    pub(in crate::driver) task: String,
+    pub(in crate::driver) ownership: OwnershipSource,
+    pub(in crate::driver) limits: DriverLimits,
+    pub(in crate::driver) redactor: Arc<Redactor>,
+}
+
+/// Spawns the adapter inside the task's process scope (`cwd` must be an existing absolute
+/// directory) and takes its pipes.
+pub(in crate::driver) fn spawn_owned(
+    launch: &AdapterLaunch,
+    args: &[String],
+    cwd: &std::path::Path,
+    processes: &ProcessTreeManager,
+    redactor: &Redactor,
+) -> Result<Spawned, AgentFailure> {
+    if !cwd.is_absolute() || !cwd.is_dir() {
+        return Err(AgentFailure::new(
+            FailureKind::SpawnFailed,
+            Phase::Spawn,
+            "session working directory must be an existing absolute directory",
+        ));
+    }
+    let child = AgentSupervisor::new(processes.clone())
+        .spawn_adapter(&launch.executable, args, cwd, Some(launch.env.clone()))
+        .map_err(|error| spawn_failure(launch, error, redactor))?;
+    let (stdin, stdout, stderr) = {
+        let mut child = child.lock();
+        let process = child.child_mut();
+        (
+            process.stdin.take(),
+            process.stdout.take(),
+            process.stderr.take(),
+        )
+    };
+    let (Some(stdin), Some(stdout), Some(stderr)) = (stdin, stdout, stderr) else {
+        let _ = child.lock().kill_forcefully();
+        return Err(AgentFailure::new(
+            FailureKind::SpawnFailed,
+            Phase::Spawn,
+            "adapter pipes were not available",
+        ));
+    };
+    Ok(Spawned {
+        child,
+        stdin,
+        stdout,
+        stderr,
+    })
+}
+
+/// A started driver's shared state, inbound line stream, outbound sink and io threads.
+pub(in crate::driver) type Started = (
+    Arc<Shared>,
+    mpsc::Receiver<std::io::Result<String>>,
+    LineSink,
+    Vec<JoinHandle<()>>,
+);
+
+impl Shared {
+    /// Builds the shared state for a spawned adapter, arms the initialize deadline and
+    /// starts the stdout, stderr and stdin threads. Returns the inbound line stream, the
+    /// outbound sink and the io threads.
+    pub(in crate::driver) fn start(spawned: Spawned, owner: Owner) -> Started {
+        let Spawned {
+            child,
+            stdin,
+            stdout,
+            stderr,
+        } = spawned;
+        let Owner {
+            provider,
+            task,
+            ownership,
+            limits,
+            redactor,
+        } = owner;
+        let ownership = match ownership {
+            OwnershipSource::Verified => child.lock().containment(),
+            OwnershipSource::Injected(ownership) => ownership,
+        };
+        let queue = EventQueue::new(provider, task, limits.max_queued_events);
+        let ingress = Ingress::new(INGRESS_MAX_FRAMES, INGRESS_MAX_BYTES);
+        let shared = Arc::new(Shared {
+            ownership,
+            streams: Mutex::new(Streams {
+                agent: StreamRedactor::new(redactor.clone()),
+                thought: StreamRedactor::new(redactor.clone()),
+                user: StreamRedactor::new(redactor.clone()),
+            }),
+            stderr: Mutex::new(StderrState {
+                redactor: StreamRedactor::new(redactor.clone()),
+                carry: Vec::new(),
+                tail: VecDeque::new(),
+            }),
+            redactor,
+            queue,
+            child,
+            core: Mutex::new(Core {
+                status: DriverStatus::Starting,
+                phase: Phase::Initialize,
+                session: None,
+                restored: false,
+                restoring: false,
+                initialized: None,
+                turn: None,
+                next_turn: 1,
+                last_outcome: None,
+                failure: None,
+                stopping: false,
+                escaped: Vec::new(),
+                containment_unverified: None,
+                outcome: None,
+                permissions: Permissions::default(),
+                cancel_to_send: None,
+            }),
+            core_changed: Condvar::new(),
+            transcript: Mutex::new(Transcript::new(limits.max_transcript_bytes)),
+            options: Mutex::new(AgentOptions::default()),
+            option_ids: Mutex::new(OptionIds::default()),
+            ingress: ingress.clone(),
+            late: AtomicU64::new(0),
+            declined: AtomicU64::new(0),
+            watchdog: Watchdog::new(),
+            forced_kill: AtomicBool::new(false),
+            claude_adapter: AtomicBool::new(false),
+            limits,
+        });
+        shared
+            .watchdog
+            .arm(Phase::Initialize, shared.limits.init_timeout);
+        let (line_tx, line_rx) = mpsc::channel(32);
+        let mut io = vec![
+            transport::spawn_reader(shared.clone(), stdout, line_tx, ingress),
+            transport::spawn_stderr(shared.clone(), stderr),
+        ];
+        let (sink, writer) = transport::spawn_writer(shared.clone(), stdin);
+        io.push(writer);
+        (shared, line_rx, sink, io)
     }
 }
 

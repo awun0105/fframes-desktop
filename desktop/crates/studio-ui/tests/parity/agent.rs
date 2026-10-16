@@ -177,6 +177,79 @@ fn a_declined_permission_writes_nothing(cx: &mut gpui::TestAppContext) {
     assert_eq!(source(&studio), original);
 }
 
+/// The same panel flow over a native wire: the fake CLI asks before its edit (the
+/// uppercase `EDIT` in the brief), the card's allow option answers it, and the candidate
+/// holds what the agent wrote into its draft.
+fn native_prompt_asks_permission_and_applies(
+    cx: &mut gpui::TestAppContext,
+    wire: studio_harness::AgentWire,
+    allow: &str,
+) {
+    let mut studio = Studio::with_native_agent(cx, wire);
+    fs::write(
+        studio.agent_evidence().join("writes.json"),
+        json!({"src/lib.rs": EDIT, FAKE_CONFIG: FIXTURE_CONFIG}).to_string(),
+    )
+    .unwrap();
+    studio.wait("agent panel attached", |t| t["panel"]["attached"] == true);
+    let original = source(&studio);
+    studio.dispatch(ToggleReviewPolicy);
+    studio.wait("review before Apply", |t| {
+        t["panel"]["review_policy"] == "ManualReview"
+    });
+    studio.dispatch(FocusPrompt);
+    studio.settle(Duration::from_millis(50));
+    studio.type_text("EDIT the title");
+    studio.dispatch(SubmitPrompt);
+    let asking = studio.wait("the permission request", |t| {
+        phase(t) == "Waiting for your permission" && t["panel"]["open_permissions"] == 1
+    });
+    assert_eq!(
+        rows(&asking, "permission").len(),
+        1,
+        "{:#}",
+        asking["panel"]
+    );
+    assert!(!rows(&asking, "agent").is_empty(), "{:#}", asking["panel"]);
+
+    studio.dispatch(AnswerPermission {
+        option: Some(allow.into()),
+    });
+    let review = studio.wait("the candidate", |t| {
+        matches!(phase(t), "Waiting for your review" | "Failed" | "Stopped")
+    });
+    assert_eq!(phase(&review), "Waiting for your review", "{review:#}");
+    assert_eq!(
+        source(&studio),
+        original,
+        "nothing is published before Apply"
+    );
+    studio.dispatch(ApplyCandidate);
+    let applied = studio.wait("the edit applied", |t| {
+        matches!(phase(t), "Accepted" | "Failed" | "Conflict")
+    });
+    assert_eq!(phase(&applied), "Accepted", "{applied:#}");
+    assert_eq!(source(&studio), EDIT);
+}
+
+#[gpui::test]
+fn over_claude_stream_json_a_prompt_asks_permission_and_applies(cx: &mut gpui::TestAppContext) {
+    native_prompt_asks_permission_and_applies(
+        cx,
+        studio_harness::AgentWire::ClaudeStreamJson,
+        "allow",
+    );
+}
+
+#[gpui::test]
+fn over_codex_app_server_a_prompt_asks_permission_and_applies(cx: &mut gpui::TestAppContext) {
+    native_prompt_asks_permission_and_applies(
+        cx,
+        studio_harness::AgentWire::CodexAppServer,
+        "accept",
+    );
+}
+
 /// Opening another project while a turn waits for permission ends that project's agent: the
 /// new project's panel shows nothing of the old turn, then or later.
 #[gpui::test]

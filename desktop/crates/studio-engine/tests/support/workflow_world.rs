@@ -111,6 +111,10 @@ struct Options {
     job_faults: Option<JobFaults>,
     /// A configured credential value (auth variable `SCRIPTED_TOKEN`).
     secret: Option<String>,
+    wire: studio_harness::AgentWire,
+    /// Run the fake native CLI of this wire (`fake-claude.py` or `fake-codex.py`) in this
+    /// mode instead of the ACP peer.
+    fake_cli: Option<(studio_harness::AgentWire, &'static str)>,
 }
 
 impl Default for Options {
@@ -131,6 +135,8 @@ impl Default for Options {
             starter_project: false,
             job_faults: None,
             secret: None,
+            wire: studio_harness::AgentWire::Acp,
+            fake_cli: None,
         }
     }
 }
@@ -295,7 +301,25 @@ impl World {
             }
             (None, None) => python(),
         };
-        args.push(agent_script());
+        let wire = match self.options.fake_cli {
+            Some((wire, mode)) => {
+                let script = match wire {
+                    studio_harness::AgentWire::ClaudeStreamJson => "fake-claude.py",
+                    studio_harness::AgentWire::CodexAppServer => "fake-codex.py",
+                    studio_harness::AgentWire::Acp => unreachable!("the ACP peer is the default"),
+                };
+                args.push(format!(
+                    "{}/../../studio-harness/tests/{script}",
+                    studio_test_support::ENGINE_TESTS_DIR
+                ));
+                args.push(mode.into());
+                wire
+            }
+            None => {
+                args.push(agent_script());
+                self.options.wire
+            }
+        };
         args.push(self.agent.to_string_lossy().into_owned());
         AdapterSettings {
             provider: "scripted".into(),
@@ -311,6 +335,7 @@ impl World {
             ownership: self.options.ownership.clone(),
             mcp: self.options.mcp,
             auth_method: None,
+            wire,
         }
     }
 

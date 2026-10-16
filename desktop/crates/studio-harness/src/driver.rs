@@ -1,22 +1,29 @@
-//! ACP driver: the legacy wire-shape structs, secret redaction and the production
-//! SDK-based v1 driver (`AcpDriver`).
+//! Agent drivers: the [`AgentDriver`] trait every wire implements, the legacy ACP
+//! wire-shape structs, secret redaction and the production SDK-based ACP v1 driver
+//! (`AcpDriver`).
 
+mod api;
 mod events;
 mod redact;
 mod runtime;
 mod transcript;
 mod transport;
 
+pub use api::{
+    AgentDriver, AgentWire, DriverCapabilities, QuestionAnswer, QuestionItem, QuestionOption,
+    QuestionPrompt, SteeringMode, start_driver,
+};
 pub use events::{
     AgentCapabilityInfo, AgentEvent, AgentEventKind, AgentFailure, AgentOptions, ClosedInfo,
     ConfigKind, ConfigOption, ConfigValue, EventQueue, FailureKind, InitializedInfo, MessageRole,
     ModeOption, OptionValue, PermissionChoice, PermissionId, PermissionPrompt, PermissionReply,
-    PermissionResolution, Phase, PromptOutcome, StopReasonKind, ToolEvent, ToolStatus,
+    PermissionResolution, Phase, PlanEntry, PlanStatus, PromptOutcome, StopReasonKind, ToolEvent,
+    ToolStatus, TurnOrigin,
 };
 pub use redact::{REDACTION_MARK, Redactor, StreamRedactor};
 pub use runtime::{
-    AcpDriver, DriverConfig, DriverError, DriverLimits, DriverMode, DriverOutcome, DriverStatus,
-    McpStdioSupport, OwnershipSource, PromptImage, SessionInfo,
+    AcpDriver, ClaudeDriver, CodexDriver, DriverConfig, DriverError, DriverLimits, DriverMode,
+    DriverOutcome, DriverStatus, McpStdioSupport, OwnershipSource, PromptImage, SessionInfo,
 };
 pub use transcript::{Transcript, TranscriptEntry, TranscriptPage};
 

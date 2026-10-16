@@ -203,15 +203,13 @@ impl Shared {
         request: RequestPermissionRequest,
         responder: Responder<RequestPermissionResponse>,
     ) -> Result<(), RpcError> {
-        let cancel = |responder: Responder<RequestPermissionResponse>| {
-            let _ = quiet(|| {
-                responder.respond(RequestPermissionResponse::new(
-                    RequestPermissionOutcome::Cancelled,
-                ))
-            });
-        };
         self.flush_before_event();
         let wire_id = responder.id().to_string();
+        let sink = Box::new(AcpResponder(responder));
+        if self.core.lock().session.as_deref() != Some(&*request.session_id.0) {
+            let _ = sink.respond(WireAnswer::Cancelled);
+            return Err(self.protocol_violation("permission request for another session"));
+        }
         let tool_call_id = self.clean(&request.tool_call.tool_call_id.0);
         let title = self.clean(
             request
@@ -234,57 +232,74 @@ impl Shared {
             });
             options.push((exported, raw));
         }
-        // One critical section: session check, cancel latch, duplicate check and
-        // insertion cannot interleave with Stop, a grant, or turn completion.
-        let mut core = self.core.lock();
-        if core.session.as_deref() != Some(&*request.session_id.0) {
-            drop(core);
-            cancel(responder);
-            return Err(self.protocol_violation("permission request for another session"));
+        match self.admit_pending(wire_id, options, sink, false) {
+            Err(violation) => Err(self.protocol_violation(violation)),
+            Ok(None) => Ok(()),
+            Ok(Some((id, turn))) => {
+                self.emit(AgentEventKind::PermissionRequested(PermissionPrompt {
+                    id,
+                    turn,
+                    tool_call_id,
+                    title,
+                    options: choices,
+                }));
+                Ok(())
+            }
         }
+    }
+
+    /// Admits one permission or question request for the active turn. Returns its id and
+    /// turn, `None` when no active, uncancelled turn could ever answer it (it is answered
+    /// as cancelled), or the protocol violation (also answered as cancelled; the caller
+    /// fails the driver). The caller emits the request event.
+    pub(in crate::driver) fn admit_pending(
+        &self,
+        wire_id: String,
+        options: Vec<(String, String)>,
+        sink: Box<dyn PermissionSink>,
+        question: bool,
+    ) -> Result<Option<(PermissionId, u64)>, &'static str> {
+        // One critical section: cancel latch, duplicate check and insertion cannot
+        // interleave with Stop, a grant, or turn completion.
+        let mut core = self.core.lock();
         let active = match (&core.turn, core.stopping) {
             (Some(turn), false) if !turn.cancel_requested => Some(turn.id),
             _ => None,
         };
-        let Some(turn) = active else {
-            // No active, uncancelled turn: such a request can never be granted.
+        let refused = if active.is_none() {
+            None
+        } else if core.permissions.wire_ids.contains(&wire_id) {
+            Some("duplicate in-flight permission request id")
+        } else if core.permissions.pending.len() >= MAX_PENDING_PERMISSIONS {
+            Some("too many pending permission requests")
+        } else {
+            let id = core.permissions.next;
+            core.permissions.next += 1;
+            core.permissions.wire_ids.insert(wire_id.clone());
+            core.permissions.pending.insert(
+                id,
+                PendingPermission {
+                    sink,
+                    options,
+                    wire_id,
+                    question,
+                },
+            );
             drop(core);
-            self.late.fetch_add(1, Ordering::SeqCst);
-            cancel(responder);
-            return Ok(());
+            // An admitted request for the active turn is agent activity.
+            self.note_turn_activity();
+            return Ok(active.map(|turn| (PermissionId(id), turn)));
         };
-        if core.permissions.wire_ids.contains(&wire_id) {
-            drop(core);
-            cancel(responder);
-            return Err(self.protocol_violation("duplicate in-flight permission request id"));
-        }
-        if core.permissions.pending.len() >= MAX_PENDING_PERMISSIONS {
-            drop(core);
-            cancel(responder);
-            return Err(self.protocol_violation("too many pending permission requests"));
-        }
-        let id = core.permissions.next;
-        core.permissions.next += 1;
-        core.permissions.wire_ids.insert(wire_id.clone());
-        core.permissions.pending.insert(
-            id,
-            PendingPermission {
-                responder,
-                options,
-                wire_id,
-            },
-        );
         drop(core);
-        // An admitted request for the active turn is agent activity.
-        self.note_turn_activity();
-        self.emit(AgentEventKind::PermissionRequested(PermissionPrompt {
-            id: PermissionId(id),
-            turn,
-            tool_call_id,
-            title,
-            options: choices,
-        }));
-        Ok(())
+        let _ = sink.respond(WireAnswer::Cancelled);
+        match refused {
+            Some(violation) => Err(violation),
+            None => {
+                // No active, uncancelled turn: such a request can never be granted.
+                self.late.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            }
+        }
     }
 
     /// Exported (redacted, collision-free) copy of a wire id.
@@ -310,14 +325,67 @@ impl Shared {
         candidate
     }
 
-    pub(super) fn reply_permission(
+    pub(in crate::driver) fn reply_permission(
         &self,
         id: PermissionId,
         reply: PermissionReply,
     ) -> Result<(), DriverError> {
-        // Lookup, validation, removal and the wire reply are one step under `core`, so a
-        // concurrent Stop either cancels this request first (this call then fails) or
-        // observes it already answered.
+        self.answer_pending(id, |pending| match &reply {
+            PermissionReply::Select(_) if pending.question => Err(DriverError::InvalidOption(
+                "a question is answered with answers, not an option".to_owned(),
+            )),
+            PermissionReply::Select(option) => {
+                let Some((exported, raw)) = pending
+                    .options
+                    .iter()
+                    .find(|(exported, _)| exported == option)
+                else {
+                    return Err(DriverError::InvalidOption(
+                        "unknown permission option".to_owned(),
+                    ));
+                };
+                Ok((
+                    WireAnswer::Selected(raw.clone()),
+                    PermissionResolution::Selected {
+                        option_id: exported.clone(),
+                    },
+                ))
+            }
+            PermissionReply::Cancel => Ok((WireAnswer::Cancelled, PermissionResolution::Cancelled)),
+        })
+    }
+
+    /// Answers one pending question request with one answer per question.
+    pub(in crate::driver) fn answer_question(
+        &self,
+        id: PermissionId,
+        answers: Vec<crate::driver::QuestionAnswer>,
+    ) -> Result<(), DriverError> {
+        self.answer_pending(id, |pending| {
+            if !pending.question {
+                return Err(DriverError::InvalidOption(
+                    "a permission request is answered with an option".to_owned(),
+                ));
+            }
+            Ok((
+                WireAnswer::Answers(answers),
+                PermissionResolution::Selected {
+                    option_id: "answered".to_owned(),
+                },
+            ))
+        })
+    }
+
+    /// Lookup, validation, removal and the wire reply are one step under `core`, so a
+    /// concurrent Stop either cancels the request first (the call then fails) or observes
+    /// it already answered.
+    fn answer_pending(
+        &self,
+        id: PermissionId,
+        decide: impl FnOnce(
+            &PendingPermission,
+        ) -> Result<(WireAnswer, PermissionResolution), DriverError>,
+    ) -> Result<(), DriverError> {
         let (resolution, failed) = {
             let mut core = self.core.lock();
             if let Some(failure) = &core.failure {
@@ -326,51 +394,45 @@ impl Shared {
             let Some(pending) = core.permissions.pending.get(&id.0) else {
                 return Err(DriverError::UnknownPermission(id));
             };
-            let (outcome, resolution) = match &reply {
-                PermissionReply::Select(option) => {
-                    let Some((exported, raw)) = pending
-                        .options
-                        .iter()
-                        .find(|(exported, _)| exported == option)
-                    else {
-                        return Err(DriverError::InvalidOption(
-                            "unknown permission option".to_owned(),
-                        ));
-                    };
-                    (
-                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                            raw.clone(),
-                        )),
-                        PermissionResolution::Selected {
-                            option_id: exported.clone(),
-                        },
-                    )
-                }
-                PermissionReply::Cancel => (
-                    RequestPermissionOutcome::Cancelled,
-                    PermissionResolution::Cancelled,
-                ),
-            };
+            let (answer, resolution) = decide(pending)?;
             let pending = core
                 .permissions
                 .pending
                 .remove(&id.0)
                 .expect("checked above");
             core.permissions.wire_ids.remove(&pending.wire_id);
-            let failed = quiet(|| {
-                pending
-                    .responder
-                    .respond(RequestPermissionResponse::new(outcome))
-            })
-            .err();
-            (resolution, failed)
+            (resolution, pending.sink.respond(answer).err())
         };
         if let Some(error) = failed {
-            self.fail(self.rpc_failure(Phase::Prompt, error));
+            self.fail(match error {
+                SinkError::Rpc(error) => self.rpc_failure(Phase::Prompt, error),
+                SinkError::Failed(failure) => failure,
+            });
             return Err(DriverError::Closed);
         }
         self.emit(AgentEventKind::PermissionClosed { id, resolution });
         Ok(())
+    }
+
+    /// The adapter withdrew a pending request itself (Claude's `control_cancel_request`):
+    /// it is closed as cancelled without an answer. Unknown wire ids are ignored.
+    pub(in crate::driver) fn withdraw_pending(&self, wire_id: &str) {
+        let id = {
+            let mut core = self.core.lock();
+            let Some(id) = core
+                .permissions
+                .pending
+                .iter()
+                .find(|(_, pending)| pending.wire_id == wire_id)
+                .map(|(id, _)| *id)
+            else {
+                return;
+            };
+            core.permissions.pending.remove(&id);
+            core.permissions.wire_ids.remove(wire_id);
+            PermissionId(id)
+        };
+        self.push_permission_closed(&[id]);
     }
 
     // ---- session updates -----------------------------------------------------------
@@ -501,19 +563,24 @@ impl Shared {
             return self.late();
         }
         let text = match content {
-            ContentBlock::Text(text) => text.text.clone(),
-            _ => "[non-text content omitted]".to_owned(),
+            ContentBlock::Text(text) => text.text.as_str(),
+            _ => "[non-text content omitted]",
         };
-        // Keep roles chronological: text held for another role is released first.
+        self.push_text(role, text, restoring);
+        Ok(())
+    }
+
+    /// Streams one text delta of `role` through redaction, keeping roles chronological.
+    pub(in crate::driver) fn push_text(&self, role: MessageRole, text: &str, restoring: bool) {
+        // Text held for another role is released first.
         for other in ROLES {
             if other != role {
                 let held = self.streams.lock().get(other).flush_at_boundary();
                 self.release_text(other, held, restoring);
             }
         }
-        let released = self.streams.lock().get(role).push(&text);
+        let released = self.streams.lock().get(role).push(text);
         self.release_text(role, released, restoring);
-        Ok(())
     }
 
     pub(super) fn release_text(&self, role: MessageRole, text: String, restoring: bool) {
@@ -816,6 +883,23 @@ impl Shared {
                 return;
             }
         };
+        self.finish_turn(
+            turn_id,
+            stop_reason,
+            reported_incomplete,
+            TurnOrigin::Prompted,
+        );
+    }
+
+    /// Ends `turn_id` with its one completion event. A turn that is not the active one is a
+    /// protocol violation. `reported_incomplete` turns carry no authoritative stop reason.
+    pub(in crate::driver) fn finish_turn(
+        &self,
+        turn_id: u64,
+        stop_reason: StopReasonKind,
+        reported_incomplete: bool,
+        origin: TurnOrigin,
+    ) {
         // One critical section decides the cancel latch, the unresolved permissions and
         // that this turn is over; a concurrent Stop lands entirely before or after it.
         let taken = {
@@ -853,6 +937,7 @@ impl Shared {
             cancel_requested: turn.cancel_requested,
             unresolved_permissions: closed.len() as u32,
             reported_incomplete,
+            origin,
         };
         // The completion event goes in first so a waiter that sees the outcome also sees
         // the event. If it cannot be queued a failure is already latched: no success.

@@ -194,6 +194,31 @@ pub struct PromptOutcome {
     /// marks such a turn as failed, so it is never eligible to quiesce.
     #[serde(default)]
     pub reported_incomplete: bool,
+    #[serde(default)]
+    pub origin: TurnOrigin,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlanStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanEntry {
+    pub text: String,
+    pub status: PlanStatus,
+}
+
+/// Who started a turn.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TurnOrigin {
+    /// A prompt the host sent.
+    #[default]
+    Prompted,
+    /// The agent continued by itself after background work finished (Claude Code).
+    Autonomous,
 }
 
 impl PromptOutcome {
@@ -298,6 +323,27 @@ pub enum AgentEventKind {
         id: PermissionId,
         resolution: PermissionResolution,
     },
+    /// The agent asks the user for input rather than permission. Only the Claude and
+    /// Codex wires send it: an ACP v1 permission option always has a kind, and ACP's
+    /// `elicitation/create` is not advertised. It closes with `PermissionClosed`.
+    Question(super::api::QuestionPrompt),
+    /// The agent started a turn by itself (`origin` is never `Prompted`); it ends with
+    /// its own `PromptFinished`. Only the Claude wire sends it.
+    TurnStarted {
+        turn: u64,
+        origin: TurnOrigin,
+    },
+    /// The agent's background work changed: `tasks` still run after their turn ended, and
+    /// `continuing` means the agent is about to continue, or is continuing, in a turn of
+    /// its own. The agent is only done when both are clear and no turn runs. Wires without
+    /// background work never send it.
+    Background {
+        tasks: u32,
+        continuing: bool,
+    },
+    /// The agent's current plan (Claude's `TodoWrite`), replacing any earlier one.
+    Plan(Vec<PlanEntry>),
+    /// The turn's one end event (prompted or started by the agent itself).
     PromptFinished(PromptOutcome),
     /// The adapter refused a mode/config change; the session continues unchanged.
     OptionRejected {
@@ -536,6 +582,7 @@ mod tests {
             cancel_requested: false,
             unresolved_permissions: 0,
             reported_incomplete: false,
+            origin: TurnOrigin::Prompted,
         }));
         assert!(matches!(overflow, PushOutcome::Overflow));
         assert!(matches!(queue.push(delta("x")), PushOutcome::Closed));
@@ -565,6 +612,7 @@ mod tests {
             cancel_requested: false,
             unresolved_permissions: 0,
             reported_incomplete: false,
+            origin: TurnOrigin::Prompted,
         };
         assert!(outcome.eligible_for_quiescence());
         outcome.cancel_requested = true;

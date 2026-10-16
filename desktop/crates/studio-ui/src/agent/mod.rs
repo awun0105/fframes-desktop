@@ -133,14 +133,16 @@ use studio_engine::containment::OwnershipPolicy;
 use studio_engine::providers::host::{self, AdapterFields, AdapterFile, McpChoice};
 use studio_engine::providers::provider_profiles;
 use studio_engine::{DraftState, ReviewPolicy, TaskScope, app_paths::AppPaths};
+use studio_harness::AgentWire;
 use studio_harness::driver::{ConfigKind, OptionValue, ToolStatus};
 use studio_theme::{METRICS, TextStyle, Theme, text_style};
 use transcript::scroll::{self, OVERDRAW_PX};
 
 use crate::kit::{
     Badge, Card, CollapsibleSection, EditorButton, Icon, IconButton, IconButtonSize, Menu,
-    MenuItem, MenuState, Notice, Select, TextInput, TextInputEvent, TextInputState, Toggle,
-    Tone as UiTone, field_row, heading, icon, label, selectable,
+    MenuItem, MenuState, Notice, SegmentOption, SegmentedControl, Select, TextInput,
+    TextInputEvent, TextInputState, Toggle, Tone as UiTone, field_row, heading, icon, label,
+    selectable,
 };
 use crate::probe::{self, BoundsProbe};
 
@@ -280,6 +282,8 @@ pub struct ConversationPanel {
     policy: OwnershipPolicy,
     saves: SaveTracker,
     mcp_choice: McpChoice,
+    /// The protocol chosen on the setup page; loaded with the form's fields.
+    wire_choice: AgentWire,
     /// Detect agents, Install adapter and the turn-on of a Select or Install click.
     agent_setup: provider_setup::AgentSetup,
     list: ListState,
@@ -379,6 +383,7 @@ impl ConversationPanel {
             policy: OwnershipPolicy::Validated,
             saves: SaveTracker::default(),
             mcp_choice: McpChoice::Baseline,
+            wire_choice: AgentWire::Acp,
             agent_setup: provider_setup::AgentSetup::default(),
             list,
             view_rows: Vec::new(),

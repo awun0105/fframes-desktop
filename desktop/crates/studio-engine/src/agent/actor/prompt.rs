@@ -417,12 +417,7 @@ impl Actor {
         let Some(driver) = &active.driver else {
             return;
         };
-        let prompt_result = if images.is_empty() {
-            driver.prompt(text)
-        } else {
-            driver.prompt_with_images(text, images)
-        };
-        match prompt_result {
+        match driver.prompt(text, images) {
             Ok(turn) => {
                 active.turn = Some(turn);
                 self.tool_rows.clear();
@@ -470,9 +465,16 @@ impl Actor {
                 self.upsert_tool(tool)
             }
             AgentEventKind::PermissionRequested(prompt) => self.on_permission(prompt),
+            AgentEventKind::Question(question) => self.on_question(question),
             AgentEventKind::PermissionClosed { id, resolution } => {
                 self.on_permission_closed(id, resolution)
             }
+            AgentEventKind::TurnStarted { turn, .. } => self.on_turn_started(turn),
+            AgentEventKind::Background { tasks, continuing } => {
+                self.on_background(tasks, continuing)
+            }
+            // The plan is shown by the transcript UI; it carries no workflow authority.
+            AgentEventKind::Plan(_) => {}
             AgentEventKind::PromptFinished(outcome) => self.on_turn_finished(outcome),
             AgentEventKind::OptionRejected {
                 option, message, ..
@@ -535,6 +537,43 @@ impl Actor {
         self.set_phase(TaskPhase::WaitingPermission);
     }
 
+    /// A question waits like a permission request and shows as one: its first question's
+    /// options are the choices, and the chosen one goes back as that question's answer.
+    pub(super) fn on_question(&mut self, question: QuestionPrompt) {
+        let Some(active) = &mut self.active else {
+            return;
+        };
+        active
+            .open_questions
+            .insert(question.id.0, question.questions.len());
+        let first = question.questions.first();
+        let title = match first {
+            Some(item) if !item.question.is_empty() => {
+                format!("{}: {}", question.title, item.question)
+            }
+            _ => question.title,
+        };
+        let options = first
+            .map(|item| {
+                item.options
+                    .iter()
+                    .map(|option| PermissionChoice {
+                        option_id: option.label.clone(),
+                        name: option.label.clone(),
+                        kind: "answer".into(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.on_permission(PermissionPrompt {
+            id: question.id,
+            turn: question.turn,
+            tool_call_id: String::new(),
+            title,
+            options,
+        });
+    }
+
     pub(super) fn on_permission_closed(
         &mut self,
         id: PermissionId,
@@ -550,6 +589,7 @@ impl Actor {
             request: id.0,
         };
         active.open_permissions.remove(&id.0);
+        active.open_questions.remove(&id.0);
         let none_left = active.open_permissions.is_empty();
         let in_repair = active.in_repair;
         let was_waiting = active.engine_waiting;
@@ -599,20 +639,28 @@ impl Actor {
         let Some(driver) = &active.driver else {
             return;
         };
-        let reply = match answer {
-            PermissionAnswer::Select(option) => PermissionReply::Select(option),
-            PermissionAnswer::Cancel => PermissionReply::Cancel,
+        let id = PermissionId(reference.request);
+        let delivered = match (answer, active.open_questions.get(&reference.request)) {
+            (PermissionAnswer::Select(option), Some(&count)) => {
+                let mut answers = vec![QuestionAnswer::default(); count.max(1)];
+                answers[0].selected.push(option);
+                driver.answer_question(id, answers)
+            }
+            (PermissionAnswer::Select(option), None) => {
+                driver.reply_permission(id, PermissionReply::Select(option))
+            }
+            (PermissionAnswer::Cancel, _) => driver.reply_permission(id, PermissionReply::Cancel),
         };
-        if let Err(error) = driver.reply_permission(PermissionId(reference.request), reply) {
+        if let Err(error) = delivered {
             self.warn(format!("The permission reply was not delivered: {error}"));
         }
     }
 
     pub(super) fn driver_call(
         &mut self,
-        call: impl FnOnce(&AcpDriver) -> Result<(), studio_harness::driver::DriverError>,
+        call: impl FnOnce(&dyn AgentDriver) -> Result<(), studio_harness::driver::DriverError>,
     ) {
-        let result = match self.active.as_ref().and_then(|a| a.driver.as_ref()) {
+        let result = match self.active.as_ref().and_then(|a| a.driver.as_deref()) {
             Some(driver) => call(driver),
             None => {
                 self.warn("There is no live agent session to change.");
@@ -656,6 +704,57 @@ impl Actor {
             self.fail_with(error);
             return;
         }
+        let (tasks, continuing) = active.background;
+        if tasks > 0 || continuing {
+            // Background work the agent started can still change the draft, and the agent
+            // may continue by itself when it finishes: capture waits for both.
+            active.capture_deferred = true;
+            self.set_phase(TaskPhase::WaitingBackground);
+            return;
+        }
+        self.capture_finished_turn();
+    }
+
+    /// The agent continued by itself after background work finished: its turn is the
+    /// task's live turn and ends with its own outcome.
+    pub(super) fn on_turn_started(&mut self, turn: u64) {
+        let Some(active) = &mut self.active else {
+            return;
+        };
+        active.turn = Some(turn);
+        active.capture_deferred = false;
+        let phase = if active.in_repair {
+            TaskPhase::Repairing
+        } else {
+            TaskPhase::Editing
+        };
+        self.tool_rows.clear();
+        self.tool_order.clear();
+        self.stream = None;
+        if let Some(task) = &mut self.task {
+            task.turns += 1;
+        }
+        self.notice("The agent continued after a background task finished.");
+        self.set_phase(phase);
+    }
+
+    pub(super) fn on_background(&mut self, tasks: u32, continuing: bool) {
+        let Some(active) = &mut self.active else {
+            return;
+        };
+        active.background = (tasks, continuing);
+        let quiet = tasks == 0 && !continuing && active.turn.is_none();
+        if quiet && std::mem::take(&mut active.capture_deferred) {
+            self.capture_finished_turn();
+        }
+    }
+
+    /// Captures after a clean turn end once no background work is live: a draft the agent
+    /// never changed is a question, anything else goes to the pipeline.
+    fn capture_finished_turn(&mut self) {
+        let Some(active) = &mut self.active else {
+            return;
+        };
         let in_repair = active.in_repair;
         let draft = active.ctx.draft.clone();
         let base = active.ctx.source_base.revision().clone();
