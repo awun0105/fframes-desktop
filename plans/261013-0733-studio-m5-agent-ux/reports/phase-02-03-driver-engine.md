@@ -127,7 +127,7 @@ Every finding of `phase-02-03-review.md` was addressed. Verification results are
 - A held message is released only when no redirect is pending; `send_now` drops a held message first, with a visible warning, so a later release cannot overwrite the redirect.
 - New harness event `AgentEventKind::SteerResult { text, accepted, message }`: exactly one per accepted `AgentDriver::steer` call. `steer` never waits. The follow-up row appears only on an accepted result; a refusal or a steer unconfirmed at turn end warns and puts the text in `ComposerView.unsent`. ACP no longer reports `OptionRejected { option: "steer" }`.
 - Codex steer no longer blocks any thread: `Input::Steer` is queued, one steer may be parked until the turn id exists, a parked steer that times out is dropped and reported rejected, and is never delivered later. A second steer while one is parked is rejected.
-- On driver retirement (finish, apply, writer spawn) the redirect, held message, open tools, questions and commands are reset and a dropped held message is reported; the plan stays.
+- On driver retirement (finish, apply, writer spawn) the redirect, held message, open tools and questions are reset and a dropped held message is reported. The plan stays, and so does the last command list: it is display-only, so the slash menu is not empty when the next prompt is typed. The next commands update replaces it; it is cleared when the adapter changes (provider switch, or a driver of another provider starting) and on a new chat.
 - A question with zero items is cancelled at once (ACP via the driver, Claude immediate deny, Codex empty answers). A lost `answer_questions` reply cancels the question and warns instead of stranding the agent.
 - The "Attached: ..." text is added to the brief row only after the attachments passed the checks, so it names only what is actually sent; refused attachments produce a warning.
 - Slash command names must match `[A-Za-z0-9:_.-]`, at most 64 characters (`CommandInfo::is_valid_name`); others are dropped. `file_uri` handles UNC and non-UTF-8 paths. Chip labels are sanitised.
@@ -162,7 +162,79 @@ Harness: steer results for ACP, Claude and Codex, a parked Codex steer that is d
 | A7 | Fixed: labels stripped of control and format characters |
 | C1 | Fixed: held released only with no redirect pending; `send_now` drops held first with a warning (workflow test) |
 | C2 | Fixed: `SteerResult`; row only after acceptance; refusal restores text (workflow test with a refusing fake agent) |
-| C3 | Fixed: redirect, held, open tools, questions and commands reset on retirement, plan kept (workflow tests; commands return with the next live session) |
+| C3 | Fixed: redirect, held, open tools and questions reset on retirement; plan and last command list kept (commands cleared on adapter change or new chat; workflow tests and a unit test) |
+| C4 | Fixed: Codex steer never blocks; a parked steer that times out is dropped and never delivered (harness test) |
+| C5 | Fixed: "Attached:" added to the brief row only after the attachments pass; refusal warns (workflow test) |
+| C6 | Checked: no consumer of transcript pages relies on replayed text (see Restored history). The early display window before the session id is stored still accepts plan and command updates; kept, they are display-only and the id is unknown then |
+| C7 | Not changed, documented limitation |
+| C8 | Fixed: engine refuses `items.len() != 1` for single replies; zero-item questions are cancelled at once on all three wires; a lost `answer_questions` cancels the question and warns; duplicate/empty Claude question texts refused |
+| Other | Workspace `image` features kept (documented); attachment jobs bounded; command names restricted to `[A-Za-z0-9:_.-]`; status-less tools keep a held message until turn end (accepted as the review says) |
+
+### Verification
+
+- `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- cargo test -p studio-engine -p studio-harness -p fframes-studio: all green on the final run (after the command-list change; the composer workflow tests again assert that commands survive the end of a task and a new chat clears them). Claude and Codex command publishing is asserted in the CLI workflow test again.
+- `studio-ui --lib`: 466. `studio-ui --test parity agent::`: 10.
+- `studio-ui/src/timeline/view.rs` is 1,803 lines; it predates this work and was not touched. Every file I added or edited is under 1,500 lines.
+- `acp-agent.py`: on `session/load` it now reassigns `SESSION_ID` to the loaded session, so replayed updates carry the loaded id; the existing restore tests still pass.
+
+Status: DONE
+Summary: Driver and engine support for commands, plan, replay-free load, steering and send modes, per-item questions and attachments is in place with harness and workflow tests; UI wiring is left to the next agent.
+Concerns/Blockers: none beyond the limitations above.
+
+## Review fixes
+
+Every finding of `phase-02-03-review.md` was addressed. Verification results are at the end of this section.
+
+### Attachments (engine, `agent/attachments.rs`)
+
+- The deny list (`.env*`, `*.pem`, `*.key`, `.git/`, `.ssh/`) is checked on the canonical path, every component, after trailing dots and spaces, `:stream` suffixes, 8.3 short names and junctions are resolved. Windows tests use real spellings, real junctions and real 8.3 aliases (`.ssh\id` has no distinct 8.3 name on this volume, so that one case skips with a stated reason).
+- Outside files are two steps: `stage_attachment(path)` returns a `StagedAttachment` (canonical path, label, size) the UI shows for confirmation; `AttachmentRequest::Staged { token }` redeems it once. The engine keeps the path and file identity (volume and index); a changed file, an expired, reused or unknown token is refused. `outside_confirmation` is gone.
+- Files are read through one checked handle: no-follow open, link count above 1 refused, size caps, regular file only. An outside file is sent as an embedded resource read from that handle, never as a path the agent could re-resolve. Inside files are linked inside the agent's draft (working copy), never at the real project root; a file absent from the draft is refused.
+- Images are always decoded and re-encoded (PNG included), EXIF orientation applied first; decode is bounded.
+- Doc comments now state only what holds (see limitations).
+
+### Sending, steering, questions (engine actor and harness)
+
+- A held message is released only when no redirect is pending; `send_now` drops a held message first, with a visible warning, so a later release cannot overwrite the redirect.
+- New harness event `AgentEventKind::SteerResult { text, accepted, message }`: exactly one per accepted `AgentDriver::steer` call. `steer` never waits. The follow-up row appears only on an accepted result; a refusal or a steer unconfirmed at turn end warns and puts the text in `ComposerView.unsent`. ACP no longer reports `OptionRejected { option: "steer" }`.
+- Codex steer no longer blocks any thread: `Input::Steer` is queued, one steer may be parked until the turn id exists, a parked steer that times out is dropped and reported rejected, and is never delivered later. A second steer while one is parked is rejected.
+- On driver retirement (finish, apply, writer spawn) the redirect, held message, open tools and questions are reset and a dropped held message is reported. The plan stays, and so does the last command list: it is display-only, so the slash menu is not empty when the next prompt is typed. The next commands update replaces it; it is cleared when the adapter changes (provider switch, or a driver of another provider starting) and on a new chat.
+- A question with zero items is cancelled at once (ACP via the driver, Claude immediate deny, Codex empty answers). A lost `answer_questions` reply cancels the question and warns instead of stranding the agent.
+- The "Attached: ..." text is added to the brief row only after the attachments passed the checks, so it names only what is actually sent; refused attachments produce a warning.
+- Slash command names must match `[A-Za-z0-9:_.-]`, at most 64 characters (`CommandInfo::is_valid_name`); others are dropped. `file_uri` handles UNC and non-UTF-8 paths. Chip labels are sanitised.
+
+### Restored history
+
+Replayed user and agent text during `session/load` is dropped before it reaches the transcript. Consumers of `transcript` / `transcript_page` were searched across `desktop/`: only harness tests read them (they pass); no engine, app or UI code relies on replayed text, and the stored conversation log is what the panel shows after a restore. No change needed.
+
+### Tests added or changed
+
+Harness: steer results for ACP, Claude and Codex, a parked Codex steer that is dropped at the request timeout without blocking, command-name validation, embedded resources gated on negotiation, UNC and non-UTF-8 URIs. Engine: 21 attachment tests (spellings, junctions, 8.3, tokens, links, images). Workflow (`app/tests/agent_workflow/composer.rs`): link points into the working copy, staged token single use and secret not stageable, outside file as embedded content, outside file refused and not named without negotiation, `send_now` over a held message, held message dropped at session end, a refused steer returning to the composer. The fake ACP agent gained a `steer-reject` flag file.
+
+### Documented limitations
+
+- Plan updates are not coalesced (kept as is). The workspace `image` feature (`desktop/Cargo.toml`) stays jpeg/gif/webp-limited.
+- Claude answers are keyed by question text, not index; an empty or duplicate text is refused.
+- `embedded_files` is false until a session is live.
+- A project file linked in the working copy may differ from the project content, and is refused if absent from the draft.
+- One Codex steer can be parked at a time; an ACP steer unconfirmed at turn end is shown as possibly not delivered.
+- Guarantees are bounded by the checks above: the identity check narrows but cannot eliminate a swap between check and read for an outside file path; reading through the checked handle is what closes it for the sent bytes.
+
+### Finding map (review IDs)
+
+| ID | Result |
+| --- | --- |
+| A1 | Fixed: deny check on the canonical path, every component, with trailing dot/space, `:stream`, 8.3 and junction tests on Windows |
+| A2 | Fixed: `stage_attachment` + single-use `Staged { token }`, file identity kept in the engine |
+| A3 | Fixed: links point into the agent's draft; verified by the workflow test comparing the link with the agent cwd |
+| A4 | Fixed: checked handle, link count > 1 refused, size caps, outside files sent as embedded content from that handle; docs corrected |
+| A5 | Fixed: images always decoded and re-encoded, EXIF orientation first |
+| A6 | Fixed: UNC and non-UTF-8 `file_uri` handling with unit tests |
+| A7 | Fixed: labels stripped of control and format characters |
+| C1 | Fixed: held released only with no redirect pending; `send_now` drops held first with a warning (workflow test) |
+| C2 | Fixed: `SteerResult`; row only after acceptance; refusal restores text (workflow test with a refusing fake agent) |
+| C3 | Fixed: redirect, held, open tools and questions reset on retirement; plan and last command list kept (commands cleared on adapter change or new chat; workflow tests and a unit test) |
 | C4 | Fixed: Codex steer never blocks; a parked steer that times out is dropped and never delivered (harness test) |
 | C5 | Fixed: "Attached:" added to the brief row only after the attachments pass; refusal warns (workflow test) |
 | C6 | Checked: no consumer of transcript pages relies on replayed text (see Restored history). The early display window before the session id is stored still accepts plan and command updates; kept, they are display-only and the id is unknown then |
@@ -179,4 +251,4 @@ Harness: steer results for ACP, Claude and Codex, a parked Codex steer that is d
 
 Status: DONE
 Summary: All review findings are fixed or documented with real Windows tests; steering has a new SteerResult event, Codex steer never blocks, and outside files go through single-use staging and embedded content.
-Concerns/Blockers: Slash commands are empty between tasks (they reappear when the next session is live); the UI should expect that. Documented limitations remain as listed above.
+Concerns/Blockers: Documented limitations remain as listed above. The adapter-change clearing is covered by a unit test of the composer state (the workflow harness has no second adapter to switch to); a new chat clearing is covered end to end.

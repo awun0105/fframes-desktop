@@ -485,6 +485,7 @@ impl Actor {
         let limits = self.shared.limits.clone();
         let active = self.active.as_mut().expect("active task");
         let identity = active.ctx.identity.clone();
+        let provider = active.adapter.provider.clone();
         let scope = controller.lock().agent_processes(&identity);
         let scope = scope.map_err(|e| Box::new(present::engine_error(&e, true)))?;
         let (resume_session, closure_changed) = if let Some(pending) =
@@ -547,6 +548,7 @@ impl Actor {
         // A pump of an earlier driver must not act on this one.
         self.driver_epoch += 1;
         let dropped = self.composer.retire();
+        self.composer.driver_started(&provider);
         let ownership = ownership.label().to_owned();
         let phase = if active.in_repair {
             TaskPhase::Repairing

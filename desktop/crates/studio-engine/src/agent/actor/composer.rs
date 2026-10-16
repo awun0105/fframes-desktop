@@ -33,7 +33,11 @@ pub(super) struct Followup {
 pub(super) struct ComposerRun {
     /// Tool calls the agent started and has not finished in the live turn.
     pub open_tools: HashSet<String>,
+    /// The agent's last command list. It outlives a driver (it is only shown) and is
+    /// replaced by the next update.
     pub commands: Vec<CommandInfo>,
+    /// The provider `commands` came from.
+    commands_provider: Option<String>,
     pub plan: Vec<PlanEntry>,
     pub questions: Vec<OpenQuestion>,
     /// A message waiting for the turn to reach a step boundary.
@@ -49,15 +53,31 @@ pub(super) struct ComposerRun {
 impl ComposerRun {
     /// Forgets everything that belonged to the driver being retired. `true` when a message
     /// the user had sent was still waiting and is dropped with it.
-    /// The plan stays: it is the task's, and the next task clears it.
+    /// The plan stays (it is the task's, and the next task clears it) and so does the last
+    /// command list, so the slash menu is not empty between tasks.
     pub(super) fn retire(&mut self) -> bool {
         let dropped = self.held.is_some() || self.redirect.is_some();
-        let plan = std::mem::take(&mut self.plan);
         *self = Self {
-            plan,
+            plan: std::mem::take(&mut self.plan),
+            commands: std::mem::take(&mut self.commands),
+            commands_provider: self.commands_provider.take(),
             ..Self::default()
         };
         dropped
+    }
+
+    /// A driver of `provider` starts. Commands of another adapter do not carry over.
+    pub(super) fn driver_started(&mut self, provider: &str) {
+        if self.commands_provider.as_deref() != Some(provider) {
+            self.commands.clear();
+        }
+        self.commands_provider = Some(provider.to_owned());
+    }
+
+    /// The conversation changes: nothing of the old agent session is shown any more.
+    pub(super) fn forget_commands(&mut self) {
+        self.commands.clear();
+        self.commands_provider = None;
     }
 }
 
@@ -579,5 +599,36 @@ impl Actor {
         };
         registry.composer = view.clone();
         view
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn command(name: &str) -> CommandInfo {
+        CommandInfo {
+            name: name.to_owned(),
+            description: String::new(),
+            input_hint: None,
+        }
+    }
+
+    #[test]
+    fn commands_outlive_a_driver_and_go_with_the_adapter_or_the_conversation() {
+        let mut run = ComposerRun::default();
+        run.driver_started("claude");
+        run.commands = vec![command("compact")];
+        run.retire();
+        assert_eq!(run.commands.len(), 1, "the list survives a retire");
+        run.driver_started("claude");
+        assert_eq!(run.commands.len(), 1, "the same adapter keeps it");
+        run.driver_started("codex");
+        assert!(run.commands.is_empty(), "another adapter clears it");
+
+        run.commands = vec![command("review")];
+        run.forget_commands();
+        run.driver_started("codex");
+        assert!(run.commands.is_empty(), "a new conversation clears it");
     }
 }

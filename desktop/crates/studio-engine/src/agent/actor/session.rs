@@ -444,6 +444,7 @@ impl Actor {
             return;
         }
         self.shared.settings.lock().adapter = Some(settings);
+        self.composer.forget_commands();
         self.settings_changed();
 
         self.next_draft_choice = Some(draft_choice);
@@ -767,6 +768,7 @@ impl Actor {
         self.tool_order.clear();
         self.permission_rows.clear();
         self.task = None;
+        self.composer.forget_commands();
         self.chat += 1;
         self.touch();
     }

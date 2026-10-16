@@ -132,8 +132,11 @@ fn commands_and_the_plan_are_published_and_the_plan_ends_with_its_task() {
     let task = w.wait_task(None);
     assert_eq!(task.phase, TaskPhase::Accepted, "{:?}", task.error);
     let view = w.snap().composer.clone();
-    // The commands belong to the live agent session and go with it; the plan stays.
-    assert!(view.commands.is_empty(), "{:?}", view.commands);
+    assert_eq!(names(&view), ["compact", "review"]);
+    assert_eq!(
+        view.commands[1].input_hint.as_deref(),
+        Some("what to review")
+    );
     assert_eq!(view.plan.len(), 2);
     assert_eq!(view.plan[0].text, "Edit the title");
     assert_eq!(
@@ -145,12 +148,19 @@ fn commands_and_the_plan_are_published_and_the_plan_ends_with_its_task() {
         studio_engine::agent::PlanStatus::Pending
     );
 
-    // The next task starts without the previous plan.
+    // The next task starts without the previous plan; the commands stay.
     w.submit(&good("second"));
     let second = w.wait_task(Some(&task.id));
     assert_eq!(second.phase, TaskPhase::Accepted, "{:?}", second.error);
     let view = w.snap().composer.clone();
     assert!(view.plan.is_empty(), "{:?}", view.plan);
+    assert_eq!(names(&view), ["compact", "review"]);
+
+    // A new chat is a new agent session: its commands are not carried over.
+    w.wf().new_chat().unwrap();
+    w.wait_composer("the commands cleared by the new chat", |c| {
+        c.commands.is_empty()
+    });
     w.assert_clean();
 }
 
@@ -167,30 +177,32 @@ fn commands_are_published_while_the_session_is_live() {
     );
     w.wf().stop().unwrap();
     let first = w.wait_task(None);
-    w.wait_composer("the commands gone with the session", |c| {
-        c.commands.is_empty()
-    });
+    // The list survives the end of the session, so the slash menu is not empty when the
+    // next prompt is typed.
+    assert_eq!(names(&w.snap().composer), ["compact", "review"]);
 
-    // The next task starts a new session, which announces its commands again.
+    // The next task's session announces its commands again; the list is replaced, not doubled.
     w.submit(&json!({"text": "again", "hang": true}));
-    let s = w.wait_composer("the commands again", |c| !c.commands.is_empty());
-    assert_eq!(names(&s.composer), ["compact", "review"]);
+    w.wait_composer("the next session live", |c| c.turn_live);
+    assert_eq!(names(&w.snap().composer), ["compact", "review"]);
     w.wf().stop().unwrap();
     w.wait_task(Some(&first.id));
 }
 
 #[test]
-fn claude_and_codex_publish_their_plan() {
+fn claude_and_codex_publish_their_commands_and_plan() {
     let w = claude("turns");
     w.cli_writes("writes.json", "first");
     w.wf().submit("TODO please make the edit").unwrap();
     assert_eq!(w.wait_task(None).phase, TaskPhase::Accepted);
+    assert_eq!(names(&w.snap().composer), ["compact", "review", "init"]);
     assert_two_step_plan(&w.snap().composer);
 
     let w = codex("turns");
     w.cli_writes("writes.json", "first");
     w.wf().submit("PLAN please make the edit").unwrap();
     assert_eq!(w.wait_task(None).phase, TaskPhase::Accepted);
+    assert_eq!(names(&w.snap().composer), ["compact", "review"]);
     assert_two_step_plan(&w.snap().composer);
 }
 
@@ -213,7 +225,7 @@ fn assert_two_step_plan(view: &ComposerView) {
 // ---- replay on load ------------------------------------------------------------------------------------------
 
 #[test]
-fn a_loaded_session_does_not_replay_its_history_and_keeps_the_plan() {
+fn a_loaded_session_does_not_replay_its_history_and_keeps_commands_and_plan() {
     let w = World::new();
     let mut first = good("seed");
     first["text"] = json!("first run said this");
@@ -250,7 +262,7 @@ fn a_loaded_session_does_not_replay_its_history_and_keeps_the_plan() {
     assert!(!text.contains("Replayed tool"), "{text}");
     // The first task's rows are shown once, not again by the replay.
     assert_eq!(agent_text(&s).matches("first run said this").count(), 1);
-    assert!(s.composer.commands.is_empty(), "{:?}", s.composer.commands);
+    assert_eq!(names(&s.composer), ["compact", "review"]);
     assert_eq!(
         s.composer
             .plan
