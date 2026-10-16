@@ -51,7 +51,7 @@ Deviations and open items:
 - The saved choice persists in app settings and is validated against the worker's reported formats before use.
 - Unmigrated projects get only the default MPEG-4 export, with a migrate notice.
 - Open: the real-export pixel match against the preview needs `SDK_BUNDLE`, which is not available on this host.
-- Open: whether this SDK's FFmpeg has libx264/libx265 is unknown; presets follow the worker's reported formats.
+- This SDK's FFmpeg reports mpeg4, libx264, libx265, libvpx-vp9, libopus and aac; `every_reported_format_exports_at_the_requested_size_and_rate` exports each reported format. Presets follow the worker's reported formats.
 - Open: manual VM checks for phases 5, 6 and 7 (panel on screen, cancel latency).
 - Tests: gpui parity tests cover the fake worker answering as a legacy SDK (support unmigrated; the migration-available route is covered by the second test), an unmigrated project ignoring a saved non-default choice and still starting, cancel, failure with its reason and a running export. The `Ready` path (worker formats, estimate) has unit tests in `studio-engine/src/export_options.rs` and `studio-ui/src/export/` only.
-- Known gaps: with no project open the keybinding shows the panel on "Checking…" with Export disabled; with no SDK the support is `Unavailable` yet Export can still be started and fails in the engine.
+- With no project or no SDK the panel does not open and an export cannot start (`the_export_panel_does_not_open_without_a_project`, `the_export_panel_does_not_open_without_an_sdk`).

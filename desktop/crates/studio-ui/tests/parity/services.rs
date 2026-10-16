@@ -225,3 +225,23 @@ fn an_unmigrated_project_exports_only_the_default_whatever_was_saved(
     studio.choose_new_path(&destination);
     studio.wait("export rendering", |t| t["export"]["state"] != "idle");
 }
+
+#[gpui::test]
+fn the_export_panel_does_not_open_without_a_project(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::new(cx);
+    studio.dispatch(ExportVideo);
+    studio.dispatch(StartExport);
+    let settled = studio.settle(Duration::from_millis(300));
+    assert_eq!(settled["export"]["panel_open"], false, "{settled:#}");
+    assert_eq!(settled["export"]["state"], "idle", "{settled:#}");
+}
+
+#[gpui::test]
+fn the_export_panel_does_not_open_without_an_sdk(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::without_managed_sdk(cx).open_project();
+    studio.dispatch(ExportVideo);
+    studio.dispatch(StartExport);
+    let settled = studio.settle(Duration::from_millis(300));
+    assert_eq!(settled["export"]["panel_open"], false, "{settled:#}");
+    assert_eq!(settled["export"]["state"], "idle", "{settled:#}");
+}

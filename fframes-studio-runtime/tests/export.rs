@@ -248,3 +248,37 @@ fn invalid_settings_fail_before_rendering() {
         assert!(!output.exists(), "{name}");
     }
 }
+
+#[test]
+fn an_exported_timing_document_matches_the_preview_frames() {
+    let temp = tempfile::tempdir().unwrap();
+    let timing = temp.path().join("timeline.json");
+    let json = r#"{"version":1,"clips":[
+        {"key":"c","trim_start_frames":0,"trim_end_frames":0},
+        {"key":"a","trim_start_frames":5,"trim_end_frames":0}]}"#;
+    std::fs::write(&timing, json).unwrap();
+    let output = temp.path().join("timed.mp4");
+    export(&output, &["--timing-file", timing.to_str().unwrap()]).unwrap();
+
+    let video = ScenesVideo::new();
+    let media_dir = temp.path().join("preview-media");
+    std::fs::create_dir_all(&media_dir).unwrap();
+    std::fs::write(media_dir.join("tone.wav"), tone_wav()).unwrap();
+    let folder = fframes::MediaDirectory::read_folder(&media_dir).unwrap();
+    let media = folder.process_media_source().unwrap();
+    let options = RenderOptions {
+        media: Some(&media),
+        ..Default::default()
+    };
+    let mut previewer = fframes::Previewer::new(&video, &options).unwrap();
+    previewer
+        .set_timing(Some(&serde_json::from_str(json).unwrap()))
+        .unwrap();
+    let mut renderer = fframes::CpuFrameRenderer::default();
+    for frame in [0, 50, 100] {
+        let rgba = previewer.render(frame, &mut renderer).unwrap();
+        let at = ((rgba.height / 2 * rgba.width + rgba.width / 2) * 4) as usize;
+        let preview = [rgba.pixels[at], rgba.pixels[at + 1], rgba.pixels[at + 2]];
+        assert_close(centre_pixel(&output, 10, frame as i64), preview);
+    }
+}

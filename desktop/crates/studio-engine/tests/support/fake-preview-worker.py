@@ -8,7 +8,8 @@ every revision can describe its own timeline, diagnostics and audio:
   frames, fps, width, height, scenes [[start,end]], tracks [[start_s,end_s]],
   inspect [{frame,severity,key,message}], render_fail_frame, audio
   (silent|tone|clip|misplaced), pixel (base byte), backend, fail_start, delay_ms,
-  export_hang, editor_objects [{component, object, bounds: [x, y, width, height]}] (every
+  export_hang, timing (offer set_timing_v1: scenes are keyed s0, s1 ... and a timing document
+  trims, splits and reorders them), editor_objects [{component, object, bounds: [x, y, width, height]}] (every
   frame carries them as exact-bounds editor metadata in video pixels)
 
 With `--export-v1` it stands in for the MP4 renderer, which it cannot be: it reports the
@@ -63,8 +64,39 @@ TRACKS = CONFIG.get("tracks", [])
 RATE = 48000
 MAX_WIDTH = 1280
 MAX_HEIGHT = 720
+TIMING = bool(CONFIG.get("timing"))
+timing_doc = None
+timing_generation = 0
 cache = arg("--audio-cache")
 os.makedirs(cache, exist_ok=True)
+
+
+def layout():
+    """The scenes of the timeline: code order, or as the timing document lays them out."""
+    keys = ["s%d" % i for i in range(len(SCENES))]
+    clips, orphans, seen, used = [], [], {}, set()
+    for clip in (timing_doc or {}).get("clips", []):
+        base = clip["key"].split("#")[0]
+        if base not in keys:
+            orphans.append(clip["key"])
+            continue
+        i = keys.index(base)
+        clips.append((i, seen.get(i, 0), clip["trim_start_frames"], clip["trim_end_frames"]))
+        seen[i] = seen.get(i, 0) + 1
+        used.add(i)
+    appended = [keys[i] for i in range(len(keys)) if i not in used]
+    clips += [(i, 0, 0, 0) for i in range(len(keys)) if i not in used]
+    placed, cursor = [], 0
+    for i, occurrence, trim_start, trim_end in clips:
+        length = SCENES[i][1] - SCENES[i][0] - trim_start - trim_end
+        placed.append((i, occurrence, trim_start, trim_end, cursor, cursor + length))
+        cursor += length
+    return placed, cursor, orphans, appended
+
+
+def clip_key(scene, occurrence):
+    """A scene's key, with the code-order suffix the real worker gives repeated ones."""
+    return "s%d" % scene if occurrence == 0 else "s%d#%d" % (scene, occurrence + 1)
 
 
 def receive():
@@ -162,10 +194,39 @@ while True:
             type="Hello", contract_version=1, supported_versions=[1], identity=identity,
             request_id=request["request_id"], fframes_version="1.1.0", runtime_version="0.1.0",
             sdk_version=arg("--sdk-version", "test"), backend=CONFIG.get("backend", "cpu"),
-            capabilities=["preview_identity_v1", "scaled_frame_v1", "inspect_v1", "prepared_audio_v1"],
+            capabilities=["preview_identity_v1", "scaled_frame_v1", "inspect_v1", "prepared_audio_v1"]
+            + (["set_timing_v1"] if TIMING else []),
             capability_gaps=CONFIG.get("capability_gaps", []), max_frame_bytes=64 * 1024 * 1024, max_control_bytes=1024 * 1024,
             max_preview_width=MAX_WIDTH, max_preview_height=MAX_HEIGHT, audio_sample_rates=[48000],
             audio_sample_format="f32le_stereo_interleaved"))
+    elif kind == "SetTiming":
+        env = request["envelope"]
+        try:
+            doc = json.loads(request["timing_json"]) if request["timing_json"] else None
+        except ValueError:
+            send(dict(type="Error", envelope=env, code="timing", message="fake timing document is not JSON"))
+            continue
+        timing_doc, timing_generation = doc, request["timing_generation"]
+        _, total, orphans, appended = layout()
+        send(dict(type="TimingApplied", envelope=env, timing_generation=timing_generation,
+                  total_frames=total, orphan_clips=orphans, appended_scenes=appended))
+    elif kind == "Timeline" and TIMING:
+        env = envelope_of(request)
+        placed, total, _, _ = layout()
+        send(dict(
+            type="Timeline", envelope=env, fps=FPS, width=WIDTH, height=HEIGHT, total_frames=total,
+            duration_seconds=total / FPS, timing_generation=timing_generation,
+            scenes=[dict(instance_id="scene-%d-%d" % (i, n), editor_instance_key=clip_key(i, n), index=k,
+                         name="s%d" % i, full_name="s%d" % i, start_frame=s, end_frame=e,
+                         start_seconds=s / FPS, end_seconds=e / FPS,
+                         clip=dict(timing_key=clip_key(i, n), clip_index=n, trim_start_frames=ts,
+                                   trim_end_frames=te, scene_index=i,
+                                   scene_frames=SCENES[i][1] - SCENES[i][0]))
+                    for k, (i, n, ts, te, s, e) in enumerate(placed)],
+            audio_tracks=[dict(file="cue.wav", start_seconds=s, end_seconds=e,
+                               mix=dict(gain_db=0.0, pan=0.0, fade_in=0.0, fade_out=0.0, offset=0.0,
+                                        voice=False, duck_under_voice=False))
+                          for s, e in TRACKS]))
     elif kind == "Timeline":
         env = envelope_of(request)
         send(dict(

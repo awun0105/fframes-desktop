@@ -57,7 +57,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ### Open
 
-- Manual check on this VM (trim, split, reorder, undo against a timeline-ready project) is not done; the parity fixture is not timeline-ready, so undo through a real engine is covered only by the engine tests and the ignored `SDK_BUNDLE` qualification.
+- Manual check on this VM (trim, split, reorder, undo against a timeline-ready project) is not done. The parity fixture runs timeline-ready with the fake worker's `timing` mode (a split is covered); undo through a real engine is covered by the engine tests and the ignored `SDK_BUNDLE` qualification.
 
 ## Success criteria
 

@@ -27,9 +27,19 @@ pub(super) struct ExportPanelState {
 }
 
 impl StudioShell {
+    /// An export needs an open project and an installed SDK, like the header action.
+    fn can_export(&self) -> bool {
+        self.presentation.project.is_some()
+            && self.presentation.session.is_some()
+            && self.presentation.agent_sdk.is_some()
+    }
+
     /// Shows the export panel in place of the editor, and asks the project's worker what it
     /// can export. The editor is out of view while it shows, so playback stops.
     pub(super) fn open_export(&mut self, cx: &mut Context<Self>) {
+        if !self.can_export() {
+            return;
+        }
         self.pause_at_painted_frame(cx);
         self.timeline_resize = None;
         self.overflow_open = false;
@@ -64,7 +74,10 @@ impl StudioShell {
     /// Asks for the destination of an export with the panel's settings, once the options
     /// are known and no export runs.
     pub(super) fn request_export(&mut self, cx: &mut Context<Self>) {
-        if self.export_cancelled.is_some() || !self.export_panel.support.can_start() {
+        if !self.can_export()
+            || self.export_cancelled.is_some()
+            || !self.export_panel.support.can_start()
+        {
             return;
         }
         self.pick(super::Picker::Export, cx);
@@ -75,6 +88,13 @@ impl StudioShell {
     /// revision (an unchanged project reuses the preview's build).
     pub(super) fn sync_export_support(&mut self, cx: &mut Context<Self>) {
         if !self.export_panel.open {
+            return;
+        }
+        // The project closed or the SDK went away under the panel.
+        if !self.can_export() {
+            self.export_panel.open = false;
+            self.export_panel.probe_key = None;
+            cx.notify();
             return;
         }
         let Some(project) = &self.presentation.project else {

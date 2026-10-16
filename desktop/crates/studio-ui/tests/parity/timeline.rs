@@ -239,3 +239,30 @@ fn undo_belongs_to_the_text_field_while_one_has_focus(cx: &mut gpui::TestAppCont
         "{in_field:?}"
     );
 }
+
+#[gpui::test]
+fn a_split_then_a_seek_does_not_present_frames_out_of_order(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed_with(
+        cx,
+        r#"{"frames":90,"fps":30,"scenes":[[0,45],[45,90]],"tracks":[[0.0,1.0]],"audio":"tone","timing":true,"vary_pixels":true}"#,
+    );
+    let ready = studio.wait("editing is enabled", |t| {
+        t["timeline"]["edit"]["enabled"] == true
+    });
+    let before = ready["timeline"]["edit"]["clips"].as_array().unwrap().len();
+    studio.dispatch(Seek { frame: 20 });
+    studio.wait("frame 20 shown", |t| t["paint_frame"] == 20);
+    studio.dispatch(SplitAtPlayhead);
+    let split = studio.wait("the split is laid out", |t| {
+        t["timeline"]["edit"]["clips"]
+            .as_array()
+            .is_some_and(|clips| clips.len() == before + 1)
+    });
+    assert_eq!(split["total_frames"], 90, "{split:#}");
+    studio.dispatch(Seek { frame: 60 });
+    let after = studio.wait("frame 60 shown after the split", |t| {
+        t["position"] == 60 && t["paint_frame"] == 60
+    });
+    assert_eq!(after["image_metrics"]["out_of_order"], 0, "{after:#}");
+    assert!(after["error"].is_null(), "{:#}", after["error"]);
+}
