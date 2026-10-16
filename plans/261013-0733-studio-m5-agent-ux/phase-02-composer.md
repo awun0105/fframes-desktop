@@ -33,7 +33,7 @@ Zeron `crates/ui/src/composer.rs` (16,330 lines): `ComposerInput`, `ComposerEven
 
 From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) and [the Cap report](../reports/research-261013-1801-cap-gpui-desktop-ui.md); see the roadmap's pattern map.
 
-1. Input: the composer is built on the kit `TextInput` (gpui `EntityInputHandler`, already in `text_input.rs`) for IME, dead keys, selection, undo and clipboard. Multiline: Enter sends and Shift+Enter inserts a newline, bound in the composer key context.
+1. Input: superseded by the 2026-10-14 decision above; the composer keeps the ported `ComposerInput` (its own `EntityInputHandler` for IME, dead keys, selection, undo and clipboard) with Cap styling. Multiline: Enter sends and Shift+Enter inserts a newline, bound in the composer key context.
 2. Steering (Zeron `acp/mod.rs`): when the agent advertises the `_session/steering` extension, send steers through it; otherwise hold the message and, at the declared boundary with no tool call open, cancel and re-prompt with it. Read the steering mode from one place, the driver's negotiated capability published in `WorkflowSnapshot`. Zeron's driver and engine descriptors disagree for Grok and Devin (`acp/mod.rs:246, 331` against `registry.rs:652, 670`); that is the bug to avoid.
 3. Stop: `session/cancel`, then the existing `shutdown_grace` and verified termination (M3 phase 4). Zeron escalates the same way.
 4. Questions: the driver's `Question` event (Claude `AskUserQuestion`, Codex `item/tool/requestUserInput`) is shown as a question listing its options rather than as allow or deny. fframes never auto-approves, unlike Zeron.
@@ -43,7 +43,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Composer on kit `TextInput`; steering extension or cancel-and-re-prompt; driver `Question` events as question cards
+- [ ] Composer on the ported `ComposerInput` ([component report](./reports/phase-02-composer-ui.md)); steering extension or cancel-and-re-prompt; driver `Question` events as question cards
 
 - [ ] Scout prompt path
 - [ ] Composer ported and split
