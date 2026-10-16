@@ -192,6 +192,9 @@ impl ConversationPanel {
             cx,
             move |this, _, cx| {
                 this.tab = tab;
+                if tab == Tab::History {
+                    this.refresh_sessions(cx);
+                }
                 cx.notify();
             },
         )

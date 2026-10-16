@@ -10,16 +10,20 @@
 //! * [`controls`] decides which controls exist in which state (pure, unit-tested).
 //! * [`studio_engine::providers::host`] holds the app-local adapter description and the workflow inbox.
 //! * [`provider_setup`] selects providers, detects and installs adapters and turns them on.
+mod attachment_flow;
 mod cards;
 pub mod changes;
 mod chat_tab;
 mod commands;
 pub mod composer;
+mod composer_host;
 pub mod controls;
 pub mod history;
+mod history_host;
 pub mod markdown;
 mod project_tab;
 pub mod provider_setup;
+mod question_card;
 mod review_entry;
 mod setup_page;
 pub mod syntax;
@@ -144,15 +148,12 @@ use crate::kit::{
     TextInputEvent, TextInputState, Toggle, Tone as UiTone, field_row, heading, icon, label,
     selectable,
 };
-use crate::probe::{self, BoundsProbe};
+use crate::probe::BoundsProbe;
 
-/// Height of the composer container and the inset of its contents.
-const COMPOSER_H: f32 = 64.;
 /// Height of a reasoning row's header, with or without the "Thinking…" badge.
 const THOUGHT_HEADER_H: f32 = 20.;
 /// Height of the header bar holding the tabs.
 const HEADER_H: f32 = 46.;
-const COMPOSER_INSET: f32 = 4.;
 
 /// Events the shell reacts to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +169,7 @@ impl EventEmitter<PanelEvent> for ConversationPanel {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Chat,
+    History,
     Project,
 }
 
@@ -267,7 +269,8 @@ pub struct ConversationPanel {
     attached: Option<Attached>,
     snapshot: Option<Arc<WorkflowSnapshot>>,
     tab: Tab,
-    prompt: Entity<TextInputState>,
+    /// The composer, the plan list and the session list.
+    host: composer_host::ComposerHost,
     /// Refreshed at the top of every render.
     theme: Theme,
     prompt_kind: Option<SubmitKind>,
@@ -301,8 +304,6 @@ pub struct ConversationPanel {
     scope_error: Option<String>,
     /// Measured bounds of the buttons a native driver must click (qualification only).
     button_bounds: std::collections::HashMap<String, [f32; 4]>,
-    /// Current prompt input bounds, used by the native shell qualification harness.
-    prompt_bounds: Option<[f32; 4]>,
     /// Current-task thumbnails are local presentation state, never workflow snapshot data.
     /// Each entry keeps the workflow's decoded thumbnail it was converted from.
     evidence_images: HashMap<String, (Arc<image::RgbaImage>, Arc<gpui::RenderImage>)>,
@@ -323,8 +324,7 @@ pub struct ConversationPanel {
     project_root: Option<std::path::PathBuf>,
 }
 
-/// A single-line field. Return in the prompt sends it; Escape in any field hands the
-/// keyboard back to the shell.
+/// A single-line field. Escape in any field hands the keyboard back to the shell.
 fn input(
     placeholder: &str,
     window: &mut Window,
@@ -336,14 +336,11 @@ fn input(
         input.set_placeholder(placeholder);
         input
     });
-    cx.subscribe(
-        &input,
-        |panel, input, event: &TextInputEvent, cx| match event {
-            TextInputEvent::Confirmed if input == panel.prompt => panel.submit(cx),
-            TextInputEvent::Cancelled => cx.emit(PanelEvent::Leave),
-            _ => (),
-        },
-    )
+    cx.subscribe(&input, |_, _, event: &TextInputEvent, cx| {
+        if matches!(event, TextInputEvent::Cancelled) {
+            cx.emit(PanelEvent::Leave);
+        }
+    })
     .detach();
     input
 }
@@ -363,12 +360,21 @@ impl ConversationPanel {
                 let _ = panel.update(cx, |panel, _| panel.maybe_request_page());
             });
         });
+        // The composer and the session list report their parts' bounds into the same map
+        // the panel's own buttons use.
+        let weak = cx.entity().downgrade();
+        let sink: crate::probe::BoundsSink = Rc::new(move |name, bounds, cx| {
+            let _ = weak.update(cx, |panel, _| {
+                panel.button_bounds.insert(name.to_owned(), bounds);
+            });
+        });
+        let theme = Theme::for_window(window, cx);
         Self {
             attached: None,
             snapshot: None,
             tab: Tab::Chat,
-            prompt: input("Describe the change you want", window, cx),
-            theme: Theme::for_window(window, cx),
+            host: composer_host::ComposerHost::new(window, theme, sink, cx),
+            theme,
             prompt_kind: None,
             setup: SetupForm {
                 provider: input("Label, for example my-adapter", window, cx),
@@ -399,7 +405,6 @@ impl ConversationPanel {
             task_scope: None,
             scope_error: None,
             button_bounds: std::collections::HashMap::new(),
-            prompt_bounds: None,
             evidence_images: HashMap::new(),
             retired_evidence_images: Vec::new(),
             thoughts_open: std::collections::HashSet::new(),
@@ -451,6 +456,7 @@ impl ConversationPanel {
         self.open_config = None;
         self.notice = None;
         self.prompt_kind = None;
+        self.clear_composer(cx);
         self.saves.cancel();
         // Stops a running install and drops every in-flight scan, install and turn-on.
         self.agent_setup.reset();
@@ -518,7 +524,7 @@ impl ConversationPanel {
     pub fn has_text_focus(&self, window: &Window, cx: &gpui::App) -> bool {
         use gpui::Focusable;
         let focused = |input: &Entity<TextInputState>| input.focus_handle(cx).is_focused(window);
-        focused(&self.prompt)
+        self.composer_has_focus(window, cx)
             || focused(&self.setup.provider)
             || focused(&self.setup.executable)
             || focused(&self.setup.args)
@@ -527,7 +533,7 @@ impl ConversationPanel {
 
     /// Redacted observation of the panel for the M3 telemetry file: counts and states,
     /// never prompt, brief or message text.
-    pub fn telemetry(&self) -> serde_json::Value {
+    pub fn telemetry(&self, cx: &gpui::App) -> serde_json::Value {
         let Some(snapshot) = &self.snapshot else {
             return serde_json::json!({"attached": false, "setup": self.setup_telemetry()});
         };
@@ -539,6 +545,7 @@ impl ConversationPanel {
         let bytes: usize = self.view_rows.iter().map(|r| r.estimated_bytes()).sum();
         serde_json::json!({
             "attached": true,
+            "tab": format!("{:?}", self.tab),
             "revision": snapshot.revision,
             "phase": snapshot.task.as_ref().map(|t| t.phase.label()),
             "repair_used": snapshot.task.as_ref().map(|t| t.repair.used),
@@ -566,7 +573,8 @@ impl ConversationPanel {
             "broker_grants": snapshot.resources.broker_grants,
             "handoff": snapshot.handoff.as_ref().map(|h| format!("{:?}", h.state)),
             "buttons": self.button_bounds,
-            "prompt_bounds": self.prompt_bounds,
+            "prompt_bounds": self.button_bounds.get("composer-input"),
+            "composer": self.composer_telemetry(cx),
             "scope_error": self.scope_error,
             "submit_scope": self.task_scope.as_ref().map(|scope| scope.label()),
             "task_scope": snapshot.task.as_ref().map(|t| t.scope.label()),
@@ -608,6 +616,7 @@ impl ConversationPanel {
             if snapshot.chat != self.chat {
                 self.chat = snapshot.chat;
                 self.reset_transcript();
+                self.reset_composer_state(cx);
             }
             if let (Some(provider), Some(launch)) =
                 (&snapshot.adapter.provider, &snapshot.adapter.last_launch)
@@ -652,6 +661,7 @@ impl ConversationPanel {
         let Some(snapshot) = self.snapshot.clone() else {
             return;
         };
+        self.sync_composer(cx);
         let controls = derive_controls(&snapshot, self.prompt_is_empty(cx), self.sdk_ready);
         if self.prompt_kind.as_ref() != Some(&controls.submit.kind) {
             let placeholder = match controls.submit.kind {
@@ -659,10 +669,9 @@ impl ConversationPanel {
                 SubmitKind::Queue => "Queue a follow-up; it runs after the current task",
                 SubmitKind::Clarify(_) => "Answer the agent's question",
             };
-            self.prompt.update(cx, |input, cx| {
-                input.set_placeholder(placeholder);
-                cx.notify();
-            });
+            self.host
+                .composer
+                .update(cx, |composer, cx| composer.set_placeholder(placeholder, cx));
             self.prompt_kind = Some(controls.submit.kind);
         }
     }
@@ -714,10 +723,6 @@ impl ConversationPanel {
         }
         changed
     }
-
-    fn prompt_is_empty(&self, cx: &gpui::App) -> bool {
-        self.prompt.read(cx).text().trim().is_empty()
-    }
 }
 
 /// The buttons whose bounds native qualification reads.
@@ -732,11 +737,18 @@ fn probed_button(id: &ElementId) -> Option<&str> {
                     | "agent-review-candidate"
                     | "agent-review-banner"
                     | "agent-tab-Chat"
+                    | "agent-tab-History"
                     | "agent-tab-Project"
+                    | "agent-stop"
+                    | "agent-held-cancel"
+                    | "agent-refused-restore"
+                    | "agent-refused-dismiss"
+                    | "agent-stage-confirm"
+                    | "agent-stage-cancel"
                     | "agent-open-setup"
                     | "agent-save-adapter"
                     | "setup-Label"
-            ) =>
+            ) || name.starts_with("question-") =>
         {
             Some(name.as_ref())
         }
@@ -821,7 +833,13 @@ fn history_line(theme: &Theme, entry: &HistoryEntry) -> gpui::Div {
 
 impl Render for ConversationPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.theme.refresh(window, cx);
+        if self.theme.refresh(window, cx) {
+            let theme = self.theme;
+            self.host
+                .composer
+                .update(cx, |composer, cx| composer.set_theme(theme, cx));
+        }
+        self.sync_questions(window, cx);
         self.sync_evidence_images();
         for image in self.retired_evidence_images.drain(..) {
             let _ = window.drop_image(image);
@@ -853,6 +871,7 @@ impl Render for ConversationPanel {
         let rail = self
             .segment_rail()
             .child(self.tab_item(Tab::Chat, "Chat", cx))
+            .child(self.tab_item(Tab::History, "History", cx))
             .child(self.tab_item(Tab::Project, "Project", cx));
         let open_setup = self.icon_button(
             "agent-open-setup",
@@ -947,6 +966,7 @@ impl Render for ConversationPanel {
         root = root.child(header);
         let body = match self.tab {
             Tab::Chat => self.chat_tab(snapshot, &controls, cx),
+            Tab::History => self.history_tab(),
             Tab::Project => self.project_tab(snapshot, &controls, cx),
         };
         root.child(body)
@@ -973,6 +993,10 @@ mod presentation_tests {
             Some("agent-open-setup")
         );
         assert_eq!(probed_button(&"setup-Label".into()), Some("setup-Label"));
+        assert_eq!(
+            probed_button(&"question-0-1-opt-2".into()),
+            Some("question-0-1-opt-2")
+        );
         assert_eq!(probed_button(&"agent-tab-Setup".into()), None);
         assert_eq!(probed_button(&"agent-discard".into()), None);
         assert_eq!(

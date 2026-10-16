@@ -71,7 +71,7 @@ impl StudioShell {
                             "timeline_open_session_len": d.timeline.envelope.identity.open_session.len(),
                             "timeline_worker_generation": d.timeline.envelope.identity.worker_generation,
                         })),
-                        "panel": shell.panel.read(cx).telemetry(),
+                        "panel": shell.panel.read(cx).telemetry(cx),
                         "preview": shell.preview_telemetry(),
                         "canvas": shell.canvas_telemetry(),
                         "buttons": serde_json::to_value(&shell.button_bounds)
@@ -281,7 +281,7 @@ impl StudioShell {
             .collect::<serde_json::Map<_, _>>()
             .into();
         value["renders"]["timeline"] = self.timeline.read(cx).renders().into();
-        value["panel"] = self.panel.read(cx).telemetry();
+        value["panel"] = self.panel.read(cx).telemetry(cx);
         value["export"] = export_telemetry(self.export_status.as_ref());
         value["export"]["panel_open"] = self.export_panel.open.into();
         value["export"]["support"] = self.export_panel.support.name().into();

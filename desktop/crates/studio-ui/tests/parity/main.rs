@@ -11,6 +11,7 @@ mod agent;
 mod audio;
 mod canvas;
 mod checkpoints;
+mod composer;
 mod keyboard;
 mod presets;
 mod services;

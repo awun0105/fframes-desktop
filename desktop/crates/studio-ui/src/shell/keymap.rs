@@ -1,7 +1,8 @@
 //! The shell's keymap and action handlers: every studio action dispatched to the window
 //! lands here.
 //!
-//! Key contexts, most specific first: `TextInput` (a focused field, bound by the kit), then
+//! Key contexts, most specific first: `TextInput` (a focused field, bound by the kit) and
+//! `AgentComposer` (the agent prompt, bound by the composer), then
 //! `Player` (the preview surface) and `Timeline` (its tracks), then `Workspace` (the window).
 //! Plain keys are bound only in `Player` and `Timeline`, which hold no text field, so typing
 //! in a field never reaches them; `Workspace` has no bindings of its own.
@@ -23,13 +24,14 @@ const TIMELINE: &str = crate::timeline::KEY_CONTEXT;
 /// The window's key context, around every other one.
 pub(super) const WORKSPACE: &str = "Workspace";
 /// The window's keys that must leave a focused text field alone.
-const WORKSPACE_OUTSIDE_FIELDS: &str = "Workspace && !TextInput";
+const WORKSPACE_OUTSIDE_FIELDS: &str = "Workspace && !TextInput && !AgentComposer";
 
 /// Binds the studio window's keys: the text fields' editing keys, then the player's and
 /// the timeline's. Call once at startup, before the window opens.
 pub fn bind_keys(cx: &mut App) {
     crate::kit::bind_text_input_keys(cx);
     crate::kit::bind_selectable_text_keys(cx);
+    crate::agent::composer::keymap::init(cx);
     cx.bind_keys(key_bindings());
 }
 

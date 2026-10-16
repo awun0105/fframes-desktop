@@ -47,38 +47,6 @@ impl ConversationPanel {
         }
     }
 
-    pub fn submit(&mut self, cx: &mut Context<Self>) {
-        let (Some(attached), Some(snapshot)) = (&self.attached, &self.snapshot) else {
-            return;
-        };
-        let controls = derive_controls(snapshot, self.prompt_is_empty(cx), self.sdk_ready);
-        if let Some(reason) = controls.submit.blocked {
-            self.say(reason, cx);
-            return;
-        }
-        if let Some(error) = &self.scope_error {
-            self.say(
-                format!("The selected timeline scope is unavailable: {error}"),
-                cx,
-            );
-            return;
-        }
-        let text = self.prompt.read(cx).text().to_owned();
-        let workflow = attached.workflow.clone();
-        let scope = self.task_scope.clone();
-        let sent = match &controls.submit.kind {
-            SubmitKind::Clarify(task) => workflow.reply_clarification(task, &text),
-            SubmitKind::Brief | SubmitKind::Queue => match scope {
-                Some(scope) => workflow.submit_scoped(&text, scope).map(|_| ()),
-                None => workflow.submit(&text).map(|_| ()),
-            },
-        };
-        if self.command(sent, cx).is_some() {
-            self.notice = None;
-            self.prompt.update(cx, |input, cx| input.set_text("", cx));
-        }
-    }
-
     pub(super) fn stop(&mut self, cx: &mut Context<Self>) {
         if let Some(workflow) = self.workflow().cloned() {
             let result = workflow.stop();
@@ -89,11 +57,19 @@ impl ConversationPanel {
     /// Answers the oldest open permission request: `option` is one of the ids it offers,
     /// `None` declines it.
     pub fn answer_oldest_permission(&mut self, option: Option<String>, cx: &mut Context<Self>) {
+        // A question is answered in its own card, never by a permission shortcut.
         let Some(reference) = self.snapshot.as_ref().and_then(|snapshot| {
             snapshot
                 .open_permissions()
-                .first()
+                .iter()
                 .map(|card| card.reference.clone())
+                .find(|reference| {
+                    !snapshot
+                        .composer
+                        .questions
+                        .iter()
+                        .any(|question| &question.reference == reference)
+                })
         }) else {
             self.say("No permission request is open.", cx);
             return;

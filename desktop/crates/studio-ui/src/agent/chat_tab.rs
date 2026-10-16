@@ -140,8 +140,7 @@ impl ConversationPanel {
     /// Shows the chat and moves the keyboard focus to its prompt.
     pub fn focus_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.tab = Tab::Chat;
-        let handle = self.prompt.read(cx).focus_handle();
-        window.focus(&handle, cx);
+        self.focus_composer(window, cx);
     }
 
     /// Sets option `option_id` to `value`, the value of the row the reader clicked in the
@@ -467,95 +466,8 @@ impl ConversationPanel {
             .flex()
             .flex_col()
             .child(column)
-            .child(
-                div()
-                    .flex_none()
-                    .px(px(12.))
-                    .pt(px(8.))
-                    .pb(px(12.))
-                    .child(self.prompt_form(controls, cx)),
-            )
+            .child(self.composer_dock(&snapshot, controls, cx))
             .into_any_element()
-    }
-
-    pub(super) fn prompt_form(&mut self, controls: &Controls, cx: &mut Context<Self>) -> gpui::Div {
-        let theme = self.theme;
-        let enabled = controls.submit.blocked.is_none();
-        let label = controls.submit.label();
-        let hint = controls.submit.blocked.clone();
-        let entity = cx.entity();
-        // An icon button: the submit label is its tooltip and accessible name.
-        let send = IconButton::editor(&theme, "agent-send", Icon::ArrowUp.path())
-            .editor_size(IconButtonSize::Small)
-            .accent(&theme)
-            .rounded(px(999.))
-            .label(label)
-            .tooltip(&theme, label)
-            .disabled(!enabled)
-            .on_click(Self::click(cx, |this, _, cx| this.submit(cx)))
-            .into_any_element();
-        let stop = controls
-            .stop
-            .is_some()
-            .then(|| self.stop_button(cx).into_any_element());
-        // A fixed 64 px container around the single-line input: the input row on top and
-        // the actions at the bottom right, so the height never depends on the content.
-        let composer = div()
-            .relative()
-            .flex_none()
-            .w_full()
-            .h(px(COMPOSER_H))
-            .rounded(px(METRICS.radius_card))
-            .bg(theme.editor.ctl)
-            .child(
-                div()
-                    .id("agent-prompt")
-                    .absolute()
-                    .top(px(COMPOSER_INSET))
-                    .left(px(COMPOSER_INSET))
-                    .right(px(COMPOSER_INSET))
-                    .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
-                        let prompt = this.prompt.clone();
-                        this.key_in_field(&prompt, event, true, window, cx);
-                    }))
-                    .child(
-                        canvas(
-                            move |bounds, _, cx| {
-                                entity.update(cx, |panel, _| {
-                                    panel.prompt_bounds = Some(probe::bounds_to_record(bounds));
-                                });
-                            },
-                            |_, _, _, _| {},
-                        )
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full(),
-                    )
-                    .child(TextInput::plain(
-                        &self.theme,
-                        "agent-prompt-input",
-                        &self.prompt,
-                    )),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .right(px(COMPOSER_INSET))
-                    .bottom(px(COMPOSER_INSET))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .children(stop)
-                    .child(send),
-            );
-        div()
-            .flex()
-            .flex_col()
-            .flex_none()
-            .gap(px(4.))
-            .child(composer)
-            .children(hint.map(|text| self.line(text)))
     }
 
     pub(super) fn stop_button(&mut self, cx: &mut Context<Self>) -> IconButton {

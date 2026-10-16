@@ -181,8 +181,17 @@ impl ConversationPanel {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let pending = self.replies.is_pending(&card.reference);
-        let open = card.state == PermissionState::Open && !pending;
+        // A question has its own card above the composer; this row only records it.
+        let is_question = self.snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot
+                .composer
+                .questions
+                .iter()
+                .any(|question| question.reference == card.reference)
+        });
+        let open = card.state == PermissionState::Open && !pending && !is_question;
         let state = match &card.state {
+            PermissionState::Open if is_question => "Answer in the question card".to_owned(),
             PermissionState::Open if pending => "Answer sent…".to_owned(),
             PermissionState::Open => "Waiting for your choice".to_owned(),
             PermissionState::Selected { option_id } => format!(
