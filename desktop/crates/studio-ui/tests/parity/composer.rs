@@ -67,13 +67,25 @@ fn button_center(t: &Value, id: &str) -> Option<(f32, f32)> {
     Some((at(0)? + at(2)? / 2., at(1)? + at(3)? / 2.))
 }
 
-/// Clicks the element the panel reports under `id`, like a pointer would.
+/// Clicks the element the panel reports under `id`, like a pointer would. The layout can
+/// still be moving (a notice appearing above the tabs), so it clicks once two measurements
+/// a frame apart agree.
 fn click_id(studio: &mut Studio, id: &str) {
-    studio.report_button_bounds();
-    let measured = studio.wait(&format!("{id} measured"), |t| {
-        !t["panel"]["buttons"][id].is_null()
-    });
-    studio.click(button_center(&measured, id).unwrap());
+    let mut last = None;
+    for _ in 0..40 {
+        studio.report_button_bounds();
+        let measured = studio.wait(&format!("{id} measured"), |t| {
+            !t["panel"]["buttons"][id].is_null()
+        });
+        let at = button_center(&measured, id).unwrap();
+        if last == Some(at) {
+            studio.click(at);
+            return;
+        }
+        last = Some(at);
+        studio.settle(Duration::from_millis(50));
+    }
+    panic!("{id} never stopped moving");
 }
 
 fn tiny_jpeg(path: &std::path::Path) {
