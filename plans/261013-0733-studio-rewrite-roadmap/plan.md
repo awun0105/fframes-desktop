@@ -24,7 +24,7 @@ This roadmap indexes six milestone plans. Each milestone ends with the app build
 | M1 | [Foundations: spikes, Cap GPUI switch, parity tests](../261013-0733-studio-m1-foundations/plan.md) | CI branch merged | 12-17d | Complete |
 | M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 27-38d | In progress (all phases done; hand checks on macOS and of the Windows title bar open) |
 | M3 | [Durable writes, containment and tools on Windows and macOS](../261013-0733-studio-m3-durable-writes/plan.md) | M1 phase 1; phases 3-5 also need M2 phases 1, 3, 8 | 18-27d | Completed (CI green on Linux, Windows and macOS, 2026-10-15) |
-| M4 | [Editing: timing doc, SDK release, timeline, playback, export](../261013-0733-studio-m4-editing/plan.md) | M2, M3 | 24-33d | Pending |
+| M4 | [Editing: timing doc, SDK release, timeline, playback, export](../261013-0733-studio-m4-editing/plan.md) | M2, M3 | 24-33d | Done with concerns |
 | M5a | [Native agent wires: Claude stream-json, Codex app-server](../261013-0733-studio-m5a-native-wires/plan.md) | M2, M3 | 10-14d | Pending |
 | M5 | [Agent UX: markdown, composer, todo, diffs, history](../261013-0733-studio-m5-agent-ux/plan.md) | M2, M3, M5a | 16-24d (re-estimated from spike S4) | Pending |
 | M6 | [Cleanup: spike names, docs, platform checks](../261013-0733-studio-m6-cleanup/plan.md) | M4, M5 | 3-4d | Pending |

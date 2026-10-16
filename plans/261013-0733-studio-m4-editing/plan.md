@@ -57,9 +57,19 @@ Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port
 
 ## Success criteria
 
-- [ ] In a project created from (or migrated to) the new template, trimming, splitting or reordering a scene updates the preview with no build queued, writes `timeline.json` at gesture end, and Ctrl+Z restores the previous file.
-- [ ] An export with an edited `timeline.json` matches preview frames at three times: the renderer's frames before encoding are pixel-identical to the preview's, and the decoded output is within the `odiff` threshold the e2e tests use.
-- [ ] Projects not yet migrated keep previewing; editing shows "migrate project" with a reason.
-- [ ] Playback runs without the 16 ms tick; a new out-of-order presentation counter stays at zero across seek and timing changes.
-- [ ] The export panel offers container, codec, scale and fps presets, an estimate, progress and cancel.
-- [ ] Parity tests stay green; gpui tests cover each edit, undo/redo, playhead, migration and export state.
+Checked on 2026-10-16 against the code, the default test runs and CI (the self-hosted Linux and Windows validation and the macOS run all passed on `ab47dc9`).
+
+- [ ] In a project created from (or migrated to) the new template, trimming, splitting or reordering a scene updates the preview with no build queued, writes `timeline.json` at gesture end, and Ctrl+Z restores the previous file. **Code and engine tests done; the check by hand in a real window is open.** The engine tests (`studio-engine/tests/timing.rs`) cover retime without a build, the single write per gesture and undo; the view tests (`studio-ui/src/timeline/view.rs`) cover trim, split, reorder and snapping; the parity fixture is not timeline-ready, so undo through a real worker is only in the `SDK_BUNDLE` tests, which are ignored here.
+- [ ] An export with an edited `timeline.json` matches preview frames at three times: the renderer's frames before encoding are pixel-identical to the preview's, and the decoded output is within the `odiff` threshold the e2e tests use. **Not built as one test.** Two tests cover its halves: `fframes/src/renderer/tests/timing_tests.rs` shows an edited document changes the preview's frames without a rebuild, and `fframes-studio-runtime/tests/export.rs::export_plays_the_timing_file_and_fails_without_it` decodes a real export at three times and checks the colours of the edited layout. No test compares the two, and nothing uses `odiff` for it. It would need the assembled SDK bundle for the studio path.
+- [x] Projects not yet migrated keep previewing; editing shows "migrate project" with a reason. `studio-ui/tests/parity/timeline.rs::edits_wait_for_a_migrated_project_and_say_why`, the engine's `project_migration.rs`, and the export panel test for an unmigrated project.
+- [x] Playback runs without the 16 ms tick; a new out-of-order presentation counter stays at zero across seek and timing changes. The grep finds only the test harness's fake clock step. The counter is asserted across seeks during playback (`transport.rs`) and across a rebuild (`services.rs`). **No test applies a timing edit and then asserts the counter**; the parity fixture cannot, since it is not timeline-ready.
+- [x] The export panel offers container, codec, scale and fps presets, an estimate, progress and cancel. Unit tests for the options and the estimate; parity tests for a running export, cancel, a failure with its reason, and the unmigrated state. The path that offers the worker's real formats is covered by unit tests only (the fake worker answers as a legacy SDK).
+- [x] Parity tests stay green; gpui tests cover each edit, undo/redo, playhead, migration and export state. 60 parity tests pass, and the timeline view tests cover the gestures. Undo and redo are covered by a key binding test and the engine, not by a gpui test against a real timeline-ready worker.
+
+## Open items
+
+- Hand checks on the VM for phases 5, 6 and 7 (trim, split, reorder and undo in a window; seeking during playback; the export panel and the cancel time).
+- The comparison of an export with the preview (above), which needs the assembled SDK bundle.
+- Whether this SDK's FFmpeg has libx264 and libx265, which decides which presets the panel shows.
+- The two export panel gaps recorded in phase 7.
+- Phase 6 measured the playhead at up to one frame ahead of the shown frame; on the slow macOS debug runner the shown frame lagged four frames behind the position at the end of playback.
