@@ -119,6 +119,7 @@ fn transition_table_matches_the_documented_lifecycle() {
     assert!(Validating.can_transition_to(RepairNeeded));
     assert!(RepairNeeded.can_transition_to(Editing));
     assert!(CandidateReady.can_transition_to(Promoting));
+    assert!(!CandidateReady.can_transition_to(Validating));
     assert!(Promoting.can_transition_to(Accepted));
     assert!(Promoting.can_transition_to(Conflict));
     // No shortcuts around validation, quiescence or promotion.
@@ -724,4 +725,48 @@ fn candidate_and_base_are_distinct_types() {
     fn takes_candidate(_: &CandidateRevision) {}
     takes_base(&TaskSourceBase::new(revision('a')));
     takes_candidate(&CandidateRevision::new(revision('a')));
+}
+
+fn candidate_ready(m: &mut AgentTaskManager) -> TaskIdentity {
+    let id = started(m);
+    m.transition(&id, TaskState::Editing).unwrap();
+    m.transition(&id, TaskState::Quiescing).unwrap();
+    let ticket = quiesce(m, &id).unwrap();
+    let candidate = CandidateRevision::new(revision('c'));
+    m.record_candidate(ticket, candidate.clone(), "m".into())
+        .unwrap();
+    m.candidate_validated(&id, &candidate).unwrap();
+    id
+}
+
+#[test]
+fn a_replacement_must_validate_and_a_failed_one_restores_the_original() {
+    let mut m = manager();
+    let id = candidate_ready(&mut m);
+    let replaced = m
+        .replace_candidate(&id, CandidateRevision::new(revision('d')), "n".into())
+        .unwrap();
+    let task = m.active().unwrap();
+    assert_eq!(task.state(), TaskState::Validating);
+    assert_eq!(task.candidate().unwrap().revision(), &revision('d'));
+    m.restore_candidate(replaced).unwrap();
+    let task = m.active().unwrap();
+    assert_eq!(task.state(), TaskState::CandidateReady);
+    assert_eq!(task.candidate().unwrap().revision(), &revision('c'));
+    assert_eq!(task.candidate_manifest(), Some("m"));
+}
+
+#[test]
+fn a_refused_replacement_changes_nothing() {
+    let mut m = manager();
+    let id = candidate_ready(&mut m);
+    m.check_mut(&id).unwrap().candidate_manifest = None;
+    assert_eq!(
+        m.replace_candidate(&id, CandidateRevision::new(revision('d')), "n".into())
+            .err(),
+        Some(TaskError::ReportMismatch)
+    );
+    let task = m.active().unwrap();
+    assert_eq!(task.state(), TaskState::CandidateReady);
+    assert_eq!(task.candidate().unwrap().revision(), &revision('c'));
 }

@@ -199,6 +199,11 @@ pub enum WorkflowError {
     Busy(&'static str),
     #[error("{0}")]
     History(String),
+    #[error("there is no candidate waiting for review")]
+    NoCandidate,
+    /// The files of a candidate or revision could not be read, or the request names none.
+    #[error("{0}")]
+    Review(String),
 }
 
 #[derive(Default)]
@@ -752,6 +757,64 @@ impl AgentWorkflow {
         // request is refused like one racing a submitted brief.
         self.shared.registry.lock().pending += 1;
         if let Err(error) = self.send(Msg::Undo(target.map(str::to_owned))) {
+            let mut registry = self.shared.registry.lock();
+            registry.pending = registry.pending.saturating_sub(1);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Before and after text of every file the candidate under review changes. Reads the
+    /// checkpoint objects: call it off the UI thread.
+    pub fn candidate_file_diffs(
+        &self,
+    ) -> Result<Vec<crate::candidate_validation::FileDiff>, WorkflowError> {
+        self.open_check()?;
+        let source = self.shared.controller.lock().candidate_diff_source();
+        source
+            .ok_or(WorkflowError::NoCandidate)?
+            .read()
+            .map_err(|e| WorkflowError::Review(e.to_string()))
+    }
+
+    /// Before and after text of every file an accepted revision changed. Reads the
+    /// checkpoint objects: call it off the UI thread.
+    pub fn revision_file_diffs(
+        &self,
+        revision: &str,
+    ) -> Result<Vec<crate::candidate_validation::FileDiff>, WorkflowError> {
+        self.open_check()?;
+        let source = self.shared.controller.lock().revision_diff_source(revision);
+        source
+            .ok_or_else(|| WorkflowError::Review(format!("{revision} is not in the history")))?
+            .read()
+            .map_err(|e| WorkflowError::Review(e.to_string()))
+    }
+
+    /// Manual review: leave `paths` out of the candidate. The remaining files become a new
+    /// candidate that must pass validation before it can be applied; if they do not, the
+    /// candidate under review is unchanged (an error row says why). Rejecting every file
+    /// discards the candidate.
+    pub fn reject_files(&self, paths: &[String]) -> Result<(), WorkflowError> {
+        if paths.is_empty() {
+            return Err(WorkflowError::Review(
+                "choose at least one file to reject".into(),
+            ));
+        }
+        self.send(Msg::RejectFiles(paths.to_vec()))
+    }
+
+    /// Reverts one file of the accepted revision `revision`: an Undo candidate that
+    /// touches only `path` is validated and published. Refused (with a reason in the
+    /// transcript) when the file changed after the revision or was already reverted.
+    pub fn revert_path(&self, revision: &str, path: &str) -> Result<(), WorkflowError> {
+        self.open_check()?;
+        self.shared.registry.lock().pending += 1;
+        let message = Msg::RevertPath {
+            target: revision.to_owned(),
+            path: path.to_owned(),
+        };
+        if let Err(error) = self.send(message) {
             let mut registry = self.shared.registry.lock();
             registry.pending = registry.pending.saturating_sub(1);
             return Err(error);

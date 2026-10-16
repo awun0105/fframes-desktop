@@ -599,6 +599,14 @@ pub struct HistoryEntry {
     pub files: usize,
     pub published: String,
     pub undoes: Option<String>,
+    /// The files an Undo entry inverted (`None` on records from before format 4: all of
+    /// `undoes`).
+    #[serde(default)]
+    pub undoes_paths: Option<Vec<String>>,
+    /// Files of this revision that were reverted one by one since (it can still be undone
+    /// for the rest).
+    #[serde(default)]
+    pub reverted_paths: Vec<String>,
     pub committed_unix: u64,
 }
 

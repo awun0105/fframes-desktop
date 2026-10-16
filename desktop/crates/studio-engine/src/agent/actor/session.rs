@@ -74,6 +74,17 @@ impl Actor {
             }
             return;
         };
+        if active.rejecting && active.phase == TaskPhase::Validating {
+            // Stop ends only the check of the remaining files; the candidate under review
+            // is untouched and still waits for the user.
+            active.gate.cancel();
+            if let Some((compiler, worker)) = &active.pipeline_scopes {
+                compiler.shutdown(Duration::ZERO);
+                worker.shutdown(Duration::ZERO);
+            }
+            self.notice("Stopping; the candidate under review is unchanged.");
+            return;
+        }
         active.stop_requested = true;
         let phase = active.phase;
         if let Some(task) = &mut self.task {

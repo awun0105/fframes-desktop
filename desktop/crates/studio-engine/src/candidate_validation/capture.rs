@@ -49,56 +49,101 @@ impl ChangeSet {
     /// Diff of two verified inventories (both sorted by path).
     pub fn between(base: &SourceInventory, candidate: &SourceInventory) -> Self {
         let mut set = Self::default();
-        let mut push = |path: &str, change: ChangeKind, kind: FileKind| {
+        for change in file_changes(base, candidate) {
             set.total += 1;
             if set.entries.len() < MAX_CHANGED_PATHS {
                 set.entries.push(ChangedPath {
-                    path: path.to_owned(),
-                    change,
-                    kind,
+                    path: change.path.to_owned(),
+                    change: change.change,
+                    kind: change.kind,
                 });
             } else {
                 set.truncated = true;
             }
-        };
-        let (mut a, mut b) = (
-            base.files.iter().peekable(),
-            candidate.files.iter().peekable(),
-        );
-        loop {
-            match (a.peek(), b.peek()) {
-                (None, None) => break,
-                (Some(old), None) => {
-                    push(old.path.as_str(), ChangeKind::Deleted, old.kind);
-                    a.next();
-                }
-                (None, Some(new)) => {
-                    push(new.path.as_str(), ChangeKind::Added, new.kind);
-                    b.next();
-                }
-                (Some(old), Some(new)) => match old.path.cmp(&new.path) {
-                    std::cmp::Ordering::Less => {
-                        push(old.path.as_str(), ChangeKind::Deleted, old.kind);
-                        a.next();
-                    }
-                    std::cmp::Ordering::Greater => {
-                        push(new.path.as_str(), ChangeKind::Added, new.kind);
-                        b.next();
-                    }
-                    std::cmp::Ordering::Equal => {
-                        if old.sha256 != new.sha256 || old.size != new.size {
-                            push(new.path.as_str(), ChangeKind::Modified, new.kind);
-                        } else if old.executable != new.executable {
-                            push(new.path.as_str(), ChangeKind::Mode, new.kind);
-                        }
-                        a.next();
-                        b.next();
-                    }
-                },
-            }
         }
         set
     }
+}
+
+/// One path that differs between two inventories, with the file on each side.
+#[derive(Debug, Clone, Copy)]
+pub struct FileChange<'a> {
+    pub path: &'a str,
+    pub change: ChangeKind,
+    pub kind: FileKind,
+    pub before: Option<&'a SourceFile>,
+    pub after: Option<&'a SourceFile>,
+}
+
+/// Every difference between two inventories (both sorted by path), unbounded: unlike
+/// [`ChangeSet`], which keeps a bounded list for display.
+pub fn file_changes<'a>(
+    base: &'a SourceInventory,
+    candidate: &'a SourceInventory,
+) -> Vec<FileChange<'a>> {
+    let mut changes = Vec::new();
+    let deleted = |old: &'a SourceFile| FileChange {
+        path: old.path.as_str(),
+        change: ChangeKind::Deleted,
+        kind: old.kind,
+        before: Some(old),
+        after: None,
+    };
+    let added = |new: &'a SourceFile| FileChange {
+        path: new.path.as_str(),
+        change: ChangeKind::Added,
+        kind: new.kind,
+        before: None,
+        after: Some(new),
+    };
+    let (mut a, mut b) = (
+        base.files.iter().peekable(),
+        candidate.files.iter().peekable(),
+    );
+    loop {
+        match (a.peek(), b.peek()) {
+            (None, None) => break,
+            (Some(old), None) => {
+                changes.push(deleted(old));
+                a.next();
+            }
+            (None, Some(new)) => {
+                changes.push(added(new));
+                b.next();
+            }
+            (Some(old), Some(new)) => match old.path.cmp(&new.path) {
+                std::cmp::Ordering::Less => {
+                    changes.push(deleted(old));
+                    a.next();
+                }
+                std::cmp::Ordering::Greater => {
+                    changes.push(added(new));
+                    b.next();
+                }
+                std::cmp::Ordering::Equal => {
+                    let change = if old.sha256 != new.sha256 || old.size != new.size {
+                        Some(ChangeKind::Modified)
+                    } else if old.executable != new.executable {
+                        Some(ChangeKind::Mode)
+                    } else {
+                        None
+                    };
+                    if let Some(change) = change {
+                        changes.push(FileChange {
+                            path: new.path.as_str(),
+                            change,
+                            kind: new.kind,
+                            before: Some(old),
+                            after: Some(new),
+                        });
+                    }
+                    a.next();
+                    b.next();
+                }
+            },
+        }
+    }
+    changes
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,6 +333,19 @@ pub fn capture_undo_candidate(
         ),
         &mut |_| {},
     )
+}
+
+/// Captures a replacement for a task's candidate: a private tree formed from the task's
+/// own source base, so the task keeps its identity, source base and scope and the result
+/// is validated and authorized like the candidate it replaces.
+pub fn capture_replacement_candidate(
+    identity: &TaskIdentity,
+    source_base: &TaskSourceBase,
+    scope: TaskScope,
+    tree: &Path,
+    checkpoints: &Checkpoints,
+) -> Result<CapturedCandidate, CandidateError> {
+    capture_tree(identity, source_base, tree, checkpoints, scope, &mut |_| {})
 }
 
 pub(super) fn capture_tree(

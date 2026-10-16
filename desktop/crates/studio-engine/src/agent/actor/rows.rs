@@ -424,6 +424,7 @@ impl Actor {
         }
         let entries = c.state().task_history().entries();
         let skip = entries.len().saturating_sub(MAX_HISTORY_ENTRIES);
+        let mut reverted = c.state().task_history().all_reverted_paths();
         self.history = entries[skip..]
             .iter()
             .map(|r| HistoryEntry {
@@ -433,6 +434,8 @@ impl Actor {
                 files: r.changes.len(),
                 published: present::short(r.published.as_str()),
                 undoes: r.undoes.clone(),
+                undoes_paths: r.undoes_paths.clone(),
+                reverted_paths: reverted.remove(&r.id).unwrap_or_default(),
                 committed_unix: r.committed_unix,
             })
             .collect();

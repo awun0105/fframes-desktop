@@ -498,11 +498,11 @@ fn a_newer_task_journal_or_database_opens_nothing_and_changes_nothing() {
     let tree = snapshot(&run.fx.root);
     let journal = fs::read(&run.tasks).unwrap();
     let mut future = journal.clone();
-    future.extend_from_slice(b"{\"format\":4,\"sequence\":99}\n");
+    future.extend_from_slice(b"{\"format\":5,\"sequence\":99}\n");
     fs::write(&run.tasks, &future).unwrap();
     let error = open_retrying(&run.fx.root, &run.fx.paths).err().unwrap();
     assert!(
-        matches!(error, EngineError::NewerFormat { found: 4, .. }),
+        matches!(error, EngineError::NewerFormat { found: 5, .. }),
         "{error}"
     );
     assert_eq!(fs::read(&run.tasks).unwrap(), future);
@@ -535,7 +535,7 @@ fn a_newer_task_journal_or_database_opens_nothing_and_changes_nothing() {
     let diagnosis = diagnose_history(&run.fx.root, &run.fx.paths).unwrap();
     assert!(matches!(
         diagnosis.task_journal,
-        TaskJournalDiagnostics::Newer { found: 4 }
+        TaskJournalDiagnostics::Newer { found: 5 }
     ));
     assert_eq!(fs::read(&run.tasks).unwrap(), future);
     assert_eq!(fs::read(run.fx.paths.database()).unwrap(), db);

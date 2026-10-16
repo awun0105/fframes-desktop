@@ -316,6 +316,7 @@ impl Actor {
             capability: offer.capability,
             pipeline_scopes: None,
             retained: None,
+            rejecting: false,
             in_repair: false,
             pending_prompt: Some((prompt, PromptKind::Brief)),
             before_pending: false,

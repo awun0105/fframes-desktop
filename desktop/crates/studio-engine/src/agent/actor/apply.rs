@@ -556,6 +556,12 @@ impl Actor {
                     );
                 }
             }
+            JobKind::Reject => {
+                // The task is still `Validating` the replacement; it ends here.
+                if self.active.is_some() {
+                    self.fail_with(error);
+                }
+            }
             JobKind::Undo => {
                 if let Some(run) = self.undo.take() {
                     run.scopes.0.shutdown(Duration::ZERO);
@@ -706,6 +712,257 @@ impl Actor {
             OutcomeKind::Discarded,
             None,
         );
+    }
+
+    // ---- reviewing file by file ------------------------------------------------------------------------
+
+    /// Leaves `paths` out of the candidate under review. The remaining files are a new
+    /// candidate that is validated like any other; only if it passes does it replace the
+    /// one under review, otherwise the original stays exactly as it was.
+    pub(super) fn reject_files(&mut self, paths: Vec<String>) {
+        let Some(active) = &self.active else {
+            self.warn("There is no candidate to review.");
+            return;
+        };
+        let Some(retained) = &active.retained else {
+            self.warn("There is no candidate waiting for review.");
+            return;
+        };
+        if active.phase != TaskPhase::AwaitingReview {
+            self.warn("There is no candidate waiting for review.");
+            return;
+        }
+        if paths.is_empty() {
+            self.warn("Choose at least one file to reject.");
+            return;
+        }
+        let changes = retained.captured.changes();
+        if !changes.truncated
+            && changes
+                .entries
+                .iter()
+                .all(|entry| paths.iter().any(|path| path == &entry.path))
+        {
+            self.notice("Every file was rejected, so the candidate was discarded.");
+            self.discard();
+            return;
+        }
+        let Some(env) = self.env() else {
+            self.error_row(present::simple_error(
+                "sdk_unavailable",
+                "No compatible SDK is installed",
+                "The remaining files are validated against the SDK; none is selected.",
+                Some("Install or select the SDK in setup."),
+                false,
+            ));
+            return;
+        };
+        let playhead = self
+            .shared
+            .playhead
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let repair_used = self.task.as_ref().map_or(0, |t| t.repair.used);
+        let root = self.shared.root_scope.clone();
+        let Some(active) = &mut self.active else {
+            return;
+        };
+        let Some(retained) = active.retained.take() else {
+            return;
+        };
+        let (compiler, worker) = (root.sub_manager(), root.sub_manager());
+        active.pipeline_scopes = Some((compiler.clone(), worker.clone()));
+        active.rejecting = true;
+        let gate = Gate::new();
+        active.gate = gate.clone();
+        self.set_phase(TaskPhase::Validating);
+        self.set_inflight(Some(gate.clone()));
+        let tx = env.tx.clone();
+        let input = RejectInput {
+            env,
+            retained,
+            rejected: paths,
+            scopes: RunScopes { compiler, worker },
+            gate,
+            playhead,
+            repair_used,
+        };
+        let refused = self.admit(JobKind::Reject, input, move |input| {
+            let end = run_reject(input);
+            let _ = tx.send(Msg::Rejected(end));
+        });
+        if let Err((message, input)) = refused {
+            input.scopes.compiler.shutdown(Duration::ZERO);
+            input.scopes.worker.shutdown(Duration::ZERO);
+            self.set_inflight(None);
+            if let Some(active) = &mut self.active {
+                active.pipeline_scopes = None;
+                active.rejecting = false;
+            }
+            self.error_row(present::simple_error(
+                "thread_failed",
+                "A background worker could not be started",
+                &message,
+                Some("Close other applications to free system resources, then try again; the candidate is unchanged."),
+                true,
+            ));
+            self.resume_review(input.retained);
+        }
+    }
+
+    /// The candidate is waiting for review again, exactly as before the operation that
+    /// borrowed it. Stop during the operation only cancelled the operation; closing (or a
+    /// pending provider switch) still ends the task.
+    fn resume_review(&mut self, retained: Box<Retained>) {
+        let stop = self.closing || self.active.as_ref().is_some_and(|a| a.stop_requested);
+        let Some(active) = &mut self.active else {
+            return;
+        };
+        active.retained = Some(retained);
+        if stop {
+            self.cancel_or_interrupt();
+        } else {
+            self.set_phase(TaskPhase::AwaitingReview);
+        }
+    }
+
+    pub(super) fn on_rejected(&mut self, end: RejectEnd) {
+        self.set_inflight(None);
+        let Some(active) = &mut self.active else {
+            return;
+        };
+        active.pipeline_scopes = None;
+        active.rejecting = false;
+        match end {
+            RejectEnd::Replaced {
+                retained,
+                changes,
+                card,
+            } => {
+                self.show_validation(changes, *card);
+                let stop = self.closing || self.active.as_ref().is_some_and(|a| a.stop_requested);
+                let Some(active) = &mut self.active else {
+                    return;
+                };
+                let revision = retained.captured.candidate().revision().clone();
+                active.retained = Some(retained);
+                if stop {
+                    self.cancel_or_interrupt();
+                } else {
+                    // The review continues with the remaining files; the reason Apply was
+                    // blocked before (if any) still holds, so it is kept.
+                    self.start_evidence(EvidenceKind::After, revision.clone());
+                    if let Some(task) = &mut self.task {
+                        let blocked = task.review.as_ref().and_then(|r| r.apply_blocked.clone());
+                        task.review = Some(ReviewView {
+                            candidate: present::short(revision.as_str()),
+                            apply_blocked: blocked,
+                        });
+                    }
+                    self.set_phase(TaskPhase::AwaitingReview);
+                    self.notice("The rejected files were left out; the remaining files passed validation and wait for your review.");
+                }
+            }
+            RejectEnd::Stranded { retained, error } => {
+                drop(retained);
+                self.fail_with(present::simple_error(
+                    "reject_restore_failed",
+                    "The candidate could not be restored after the rejection",
+                    &error.to_string(),
+                    Some("The working copy is kept. Start a new task to continue."),
+                    false,
+                ));
+            }
+            RejectEnd::Invalid { retained, card } => {
+                let summary = card.summary.clone();
+                self.push_row(RowKind::Validation(card));
+                self.error_row(present::simple_error(
+                    "reject_invalid",
+                    "The remaining files do not validate",
+                    &summary,
+                    Some("The candidate is unchanged. A file you rejected is probably needed by one you kept; reject those together or apply them all."),
+                    true,
+                ));
+                self.resume_review(retained);
+            }
+            RejectEnd::Refused { retained, error } => {
+                self.error_row(present::engine_error(&error, true));
+                self.resume_review(retained);
+            }
+            RejectEnd::Cancelled(retained) => {
+                self.notice("Stopped; the candidate under review is unchanged.");
+                self.resume_review(retained);
+            }
+        }
+    }
+
+    /// Reverts one file of an accepted revision: an Undo that touches only `path`.
+    pub(super) fn start_revert_path(&mut self, target: String, path: String) {
+        if self.active.is_some() || self.undo.is_some() {
+            self.warn("Reverting a file needs the agent to be idle.");
+            return;
+        }
+        let Some(env) = self.env() else {
+            self.error_row(present::simple_error(
+                "sdk_unavailable",
+                "No compatible SDK is installed",
+                "The reverted source is validated against the SDK; none is selected.",
+                Some("Install or select the SDK in setup."),
+                false,
+            ));
+            return;
+        };
+        let gate = Gate::new();
+        let root = self.shared.root_scope.clone();
+        let scopes = (root.sub_manager(), root.sub_manager());
+        self.undo = Some(UndoRun {
+            gate: gate.clone(),
+            scopes: scopes.clone(),
+        });
+        self.sync_registry(0);
+        self.undo_view = UndoView::InProgress {
+            phase: "Preparing to revert the file".into(),
+        };
+        self.touch();
+        self.set_inflight(Some(gate.clone()));
+        let playhead = self
+            .shared
+            .playhead
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let sink = self.shared.handoff.clone();
+        let tx = env.tx.clone();
+        let refused = self.admit(
+            JobKind::Undo,
+            (env, target, path, scopes, gate, sink),
+            move |(env, target, path, scopes, gate, sink)| {
+                let end = run_revert_path(
+                    env,
+                    target,
+                    path,
+                    RunScopes {
+                        compiler: scopes.0,
+                        worker: scopes.1,
+                    },
+                    gate,
+                    playhead,
+                    sink,
+                );
+                let _ = tx.send(Msg::Undone(end));
+            },
+        );
+        if let Err((message, (_, _, _, scopes, _, _))) = refused {
+            scopes.0.shutdown(Duration::ZERO);
+            scopes.1.shutdown(Duration::ZERO);
+            self.set_inflight(None);
+            self.undo = None;
+            self.error_row(present::simple_error(
+                "thread_failed",
+                "A background worker could not be started",
+                &message,
+                Some("Close other applications to free system resources, then try again; nothing was changed."),
+                false,
+            ));
+            self.undo_settled();
+        }
     }
 
     pub(super) fn export_candidate(&mut self, dest: &Path) {

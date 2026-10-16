@@ -34,7 +34,7 @@ use std::{
 use studio_project::{
     Manifest, OpenProject, SourceRevision,
     checkpoint::Checkpoints,
-    revision::{FileKind, SourceInventory},
+    revision::{FileKind, SourceFile, SourceInventory},
 };
 
 /// Evenly spaced representative sample (initial maximum).
@@ -57,12 +57,14 @@ const SILENCE_PEAK: f32 = 1e-4;
 
 mod capture;
 mod coverage;
+mod diff_text;
 mod probe;
 mod report;
 mod validation;
 
 pub use capture::*;
 pub use coverage::*;
+pub use diff_text::*;
 pub use probe::*;
 pub use report::*;
 pub use validation::*;

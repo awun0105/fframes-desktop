@@ -9,8 +9,8 @@ use super::{
     tools::BuildSettings,
 };
 use crate::{
-    Controller, EngineError, Promotion, PromotionError, QuiescenceEvidence, TaskIdentity,
-    TaskState, TurnCompletion, WriterGeneration, WriterObservation,
+    Controller, EngineError, Promotion, PromotionError, QuiescenceEvidence, Rejection,
+    TaskIdentity, TaskState, TurnCompletion, WriterGeneration, WriterObservation,
     candidate_validation::{CapturedCandidate, FailureContext, NextStep},
 };
 use crate::{
@@ -413,6 +413,7 @@ pub(crate) enum JobKind {
     Pipeline,
     Promote,
     Undo,
+    Reject,
     Evidence {
         task: crate::AgentTaskId,
         kind: EvidenceKind,
@@ -426,6 +427,7 @@ impl JobKind {
             Self::Pipeline => "pipeline",
             Self::Promote => "promote",
             Self::Undo => "undo",
+            Self::Reject => "reject",
             Self::Evidence { .. } => "evidence",
         }
     }
@@ -636,6 +638,249 @@ pub(crate) fn run_undo(
         return UndoEnd::ValidationFailed(Box::new(present::validation_card(&run.report)));
     }
     let _ = env.tx.send(Msg::UndoProgress("Publishing the Undo".into()));
+    let result = {
+        let Some(mut controller) = lock_unless_cancelled(&env.controller, &gate) else {
+            return UndoEnd::Cancelled;
+        };
+        controller.undo_task_gated(&preparation, &run.report, &|| gate.begin_commit())
+    };
+    match result {
+        Ok(promotion) => {
+            let _ = env.tx.send(Msg::Committed {
+                published: promotion.record.published.as_str().to_owned(),
+                kind: HandoffKind::Undo,
+            });
+            let handoff = deliver(&sink, HandoffKind::Undo, &promotion, run.staged.take());
+            UndoEnd::Committed {
+                promotion: Box::new(promotion),
+                handoff,
+                scopes,
+            }
+        }
+        Err(EngineError::Promotion(PromotionError::Declined)) => UndoEnd::Cancelled,
+        Err(error) => {
+            gate.reopen();
+            UndoEnd::Failed(error)
+        }
+    }
+}
+
+// ---- reviewing a candidate file by file ---------------------------------------------------------
+
+pub(crate) struct RejectInput {
+    pub env: Env,
+    pub retained: Box<Retained>,
+    pub rejected: Vec<String>,
+    pub scopes: RunScopes,
+    pub gate: Arc<Gate>,
+    pub playhead: usize,
+    pub repair_used: u32,
+}
+
+/// How leaving files out of a candidate ended. In every variant but `Replaced` the
+/// original candidate is the task's again (`CandidateReady`) and comes back in `retained`.
+pub(crate) enum RejectEnd {
+    /// The remaining files passed validation and are the task's candidate now; the
+    /// replaced candidate was already released.
+    Replaced {
+        retained: Box<Retained>,
+        changes: ChangeCard,
+        card: Box<ValidationCard>,
+    },
+    /// The remaining files do not validate (a file left out was needed by one kept).
+    Invalid {
+        retained: Box<Retained>,
+        card: Box<ValidationCard>,
+    },
+    /// The replacement could not be formed or settled.
+    Refused {
+        retained: Box<Retained>,
+        error: EngineError,
+    },
+    /// Stopped (or the workflow is closing) before the replacement settled.
+    Cancelled(Box<Retained>),
+    /// The original candidate could not be reinstated: the engine task still holds the
+    /// replacement in `Validating`, so the actor must end the task rather than offer the
+    /// original for review.
+    Stranded {
+        retained: Box<Retained>,
+        error: EngineError,
+    },
+}
+
+/// Gives up on a replacement: the original candidate is the task's again, or the task is
+/// reported stranded when the engine refuses to reinstate it.
+fn abandon_rejection(
+    env: &Env,
+    scopes: &RunScopes,
+    rejection: Rejection,
+    retained: Box<Retained>,
+    end: impl FnOnce(Box<Retained>) -> RejectEnd,
+) -> RejectEnd {
+    let restored = env.controller.lock().agent_abandon_rejection(rejection);
+    shut_down(scopes);
+    match restored {
+        Ok(()) => end(retained),
+        Err(error) => RejectEnd::Stranded { retained, error },
+    }
+}
+
+/// Runs [`reject_files`]; a panic in it shuts down both the replacement's and the
+/// original candidate's process scopes before it propagates (the actor then ends the
+/// task `Failed`).
+pub(crate) fn run_reject(input: RejectInput) -> RejectEnd {
+    let spare = (
+        input.scopes.compiler.clone(),
+        input.scopes.worker.clone(),
+        input.retained.scopes.compiler.clone(),
+        input.retained.scopes.worker.clone(),
+    );
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reject_files(input))) {
+        Ok(end) => end,
+        Err(panic) => {
+            for scope in [&spare.0, &spare.1, &spare.2, &spare.3] {
+                scope.shutdown(Duration::ZERO);
+            }
+            std::panic::resume_unwind(panic)
+        }
+    }
+}
+
+fn reject_files(input: RejectInput) -> RejectEnd {
+    let RejectInput {
+        env,
+        retained,
+        rejected,
+        scopes,
+        gate,
+        playhead,
+        repair_used,
+    } = input;
+    let formed = {
+        let Some(mut controller) = lock_unless_cancelled(&env.controller, &gate) else {
+            shut_down(&scopes);
+            return RejectEnd::Cancelled(retained);
+        };
+        controller.agent_reject_files(&retained.captured, &rejected)
+    };
+    let rejection = match formed {
+        Ok(rejection) => rejection,
+        Err(error) => {
+            shut_down(&scopes);
+            return RejectEnd::Refused { retained, error };
+        }
+    };
+    // From here the task is `Validating` the replacement: every exit settles it (a panic
+    // ends the task `Failed` through the actor).
+    if gate.is_cancelled() {
+        return abandon_rejection(&env, &scopes, rejection, retained, RejectEnd::Cancelled);
+    }
+    let checkpoints = match Checkpoints::new(&env.history) {
+        Ok(checkpoints) => checkpoints,
+        Err(error) => {
+            return abandon_rejection(&env, &scopes, rejection, retained, |retained| {
+                RejectEnd::Refused {
+                    retained,
+                    error: error.into(),
+                }
+            });
+        }
+    };
+    let run = run_candidate_validation(
+        rejection.captured(),
+        &checkpoints,
+        &env.config(),
+        &scopes,
+        playhead,
+        repair_used,
+    );
+    if gate.is_cancelled() {
+        return abandon_rejection(&env, &scopes, rejection, retained, RejectEnd::Cancelled);
+    }
+    let card = Box::new(present::validation_card(&run.report));
+    let settled = env
+        .controller
+        .lock()
+        .agent_settle_rejection(&rejection, &run.report);
+    match settled {
+        Ok(true) => {
+            let changes = present::change_card(rejection.captured().changes());
+            let replacement = Retained {
+                captured: rejection.captured().clone(),
+                run,
+                scopes,
+            };
+            // The replaced candidate's staged preview and processes end now, on this
+            // job thread, like a retained candidate that is dropped anywhere else.
+            shut_down(&retained.scopes);
+            drop(retained);
+            RejectEnd::Replaced {
+                retained: Box::new(replacement),
+                changes,
+                card,
+            }
+        }
+        Ok(false) => abandon_rejection(&env, &scopes, rejection, retained, |retained| {
+            RejectEnd::Invalid { retained, card }
+        }),
+        Err(error) => abandon_rejection(&env, &scopes, rejection, retained, |retained| {
+            RejectEnd::Refused { retained, error }
+        }),
+    }
+}
+
+fn shut_down(scopes: &RunScopes) {
+    scopes.compiler.shutdown(Duration::ZERO);
+    scopes.worker.shutdown(Duration::ZERO);
+}
+
+/// Reverts one file of an accepted revision: [`run_undo`] for a single path.
+pub(crate) fn run_revert_path(
+    env: Env,
+    target: String,
+    path: String,
+    scopes: RunScopes,
+    gate: Arc<Gate>,
+    playhead: usize,
+    sink: Option<Arc<dyn PreviewHandoff>>,
+) -> UndoEnd {
+    let prepared = {
+        let Some(mut controller) = lock_unless_cancelled(&env.controller, &gate) else {
+            return UndoEnd::Cancelled;
+        };
+        controller.prepare_revert_path(&target, &path)
+    };
+    let preparation = match prepared {
+        Ok(preparation) => preparation,
+        Err(error) => return UndoEnd::Failed(error),
+    };
+    if gate.is_cancelled() {
+        return UndoEnd::Cancelled;
+    }
+    let _ = env
+        .tx
+        .send(Msg::UndoProgress("Validating the reverted file".into()));
+    let checkpoints = match Checkpoints::new(&env.history) {
+        Ok(checkpoints) => checkpoints,
+        Err(error) => return UndoEnd::Failed(error.into()),
+    };
+    let mut run = run_candidate_validation(
+        preparation.captured(),
+        &checkpoints,
+        &env.config(),
+        &scopes,
+        playhead,
+        0,
+    );
+    if gate.is_cancelled() {
+        return UndoEnd::Cancelled;
+    }
+    if !run.report.passed() {
+        return UndoEnd::ValidationFailed(Box::new(present::validation_card(&run.report)));
+    }
+    let _ = env
+        .tx
+        .send(Msg::UndoProgress("Publishing the reverted file".into()));
     let result = {
         let Some(mut controller) = lock_unless_cancelled(&env.controller, &gate) else {
             return UndoEnd::Cancelled;
