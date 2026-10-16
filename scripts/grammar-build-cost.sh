@@ -4,13 +4,15 @@
 # Each variant builds into its own empty target directory, so neither reuses the other's
 # dependencies. The grammars are the `syntax-grammars` feature of studio-ui. Exits 1 when the
 # build with grammars takes more than MAX_INCREASE_PERCENT (default 20) longer than the build
-# without. The "without" build runs first, so a warm file cache favours the "with" build; the
-# limit leaves room for that and for runner noise.
+# without. A hosted runner can be a third slower for one build, and noise only ever adds time,
+# so each variant is built ROUNDS times (default 2), interleaved, and the fastest of each is
+# compared.
 #
 # Usage: scripts/grammar-build-cost.sh [work-dir]
 set -euo pipefail
 
 max_increase="${MAX_INCREASE_PERCENT:-20}"
+rounds="${ROUNDS:-2}"
 work="${1:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
 manifest="$(cd "$(dirname "$0")/.." && pwd)/desktop/Cargo.toml"
 
@@ -33,12 +35,18 @@ timed_build() { # <name> [cargo flags...]; prints the elapsed seconds
   echo $((end - start))
 }
 
-without="$(timed_build without --no-default-features)"
-with="$(timed_build with)"
+without=""
+with=""
+for _ in $(seq "$rounds"); do
+  t="$(timed_build without --no-default-features)"
+  if [ -z "$without" ] || [ "$t" -lt "$without" ]; then without="$t"; fi
+  t="$(timed_build with)"
+  if [ -z "$with" ] || [ "$t" -lt "$with" ]; then with="$t"; fi
+done
 
 # Integer percent, rounded to the nearest whole number.
 increase=$(((with - without) * 100 / (without > 0 ? without : 1)))
-summary="studio-ui clean build on ${RUNNER_OS:-$(uname -s)}: ${without}s without grammars, ${with}s with, ${increase}% more (limit ${max_increase}%)"
+summary="studio-ui clean build on ${RUNNER_OS:-$(uname -s)}, fastest of ${rounds}: ${without}s without grammars, ${with}s with, ${increase}% more (limit ${max_increase}%)"
 echo "$summary"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   echo "$summary" >> "$GITHUB_STEP_SUMMARY"
