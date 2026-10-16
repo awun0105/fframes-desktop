@@ -16,13 +16,17 @@ fn capture_waits_for_a_command_that_outlives_its_turn() {
     let w = codex("turns");
     w.cli_writes("writes.json", "first");
     w.cli_writes("late-writes.json", "late");
-    w.wf().submit("BACKGROUND please make the edit").unwrap();
+    // The command runs until released, so the wait cannot miss it on a slow machine.
+    w.wf()
+        .submit("BACKGROUND HOLD please make the edit")
+        .unwrap();
     w.wait_phase(TaskPhase::WaitingBackground);
     assert_eq!(
         w.compiler.started.load(Ordering::SeqCst),
         0,
         "the pipeline started while the command was still running"
     );
+    w.release("release");
     let task = w.wait_task(None);
     assert_eq!(task.phase, TaskPhase::Accepted, "{:?}", task.error);
     assert_eq!(task.turns, 1);
