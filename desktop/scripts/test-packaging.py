@@ -56,9 +56,9 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(locked_fframes["version"], fframes_version)
         self.assertIn(f'"{fframes_version}"', (fixture / "src/main.rs").read_text())
 
-    def test_packaged_launchers_start_the_studio_workspace_not_the_spike_ui(self):
+    def test_packaged_launchers_start_the_studio_workspace(self):
         packager = (assembly.ROOT / "desktop/scripts/package-phase-zero.py").read_text()
-        self.assertNotIn("spike-ui", packager)
+        self.assertIn('"CFBundleIdentifier": "studio.fframes.app"', packager)
         self.assertIn('bin/fframes-studio.exe") studio', packager)
         self.assertIn('fframes-studio.exe" studio %*', packager)
         self.assertIn('bin/fframes-studio" studio', packager)
@@ -138,7 +138,7 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn('p.parent()?.parent()?.join("sdk")', sdk_setup)
         main = (assembly.ROOT / "desktop/app/src/main.rs").read_text()
         self.assertIn('#![cfg_attr(windows, windows_subsystem = "windows")]', main)
-        # The shortcut passes no command: that must open the studio, not the spike.
+        # The shortcut passes no command: that must open the studio.
         self.assertIn("None => run_studio(None),", main)
 
     def test_windows_installer_rejects_incomplete_packages_before_compiling(self):

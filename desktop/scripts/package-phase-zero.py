@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a native internal spike artifact without implying native UI qualification."""
+"""Build the native internal Studio artifact without implying native UI qualification."""
 import argparse
 import hashlib
 import json
@@ -193,7 +193,7 @@ def package(output, sdk_bundle=None):
                 plistlib.dump(
                     {
                         "CFBundleExecutable": "fframes-studio",
-                        "CFBundleIdentifier": "studio.fframes.spike",
+                        "CFBundleIdentifier": "studio.fframes.app",
                         "CFBundleInfoDictionaryVersion": "6.0",
                         "CFBundleName": "fframes Studio",
                         "CFBundlePackageType": "APPL",
