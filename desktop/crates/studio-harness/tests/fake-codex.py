@@ -1,7 +1,6 @@
 """Fake `codex app-server` speaking newline-delimited JSON-RPC.
 
-Message shapes follow the transcripts recorded from codex-cli 0.162.1 (the spike in
-plans/261013-0733-studio-m1-foundations/reports/spike-native-wires) and the schema
+Message shapes follow the transcripts recorded from codex-cli 0.162.1 and the schema
 `codex app-server generate-json-schema` writes. It proves the driver's framing,
 handshake, approvals, turns, background commands and stop only.
 

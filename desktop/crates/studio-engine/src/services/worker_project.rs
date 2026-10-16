@@ -11,7 +11,6 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::ProcessTreeManager;
-use studio_harness::source_revision;
 use studio_sdk::{CompatibilityManifest, ProjectManager, environment::SdkEnvironment};
 
 /// Build and launch a portable project from an isolated SDK-bound copy.
@@ -315,9 +314,9 @@ pub fn build_worker(
 ) -> Result<(PathBuf, String, SdkEnvironment), String> {
     let env = SdkEnvironment::new(sdk, root.join("target"), manifest, true);
     ProjectManager::ensure_lockfile(root, &env, manager).map_err(|e| e.to_string())?;
-    let revision = source_revision(root).map_err(|e| e.to_string())?;
+    let revision = source_revision(root)?;
     ProjectManager::build_project(root, &env, manager).map_err(|e| e.to_string())?;
-    if source_revision(root).map_err(|e| e.to_string())? != revision {
+    if source_revision(root)? != revision {
         return Err("Source changed during worker build; retry with stable inputs".into());
     }
     let binary = root.join("target/debug").join(if cfg!(windows) {
@@ -354,4 +353,11 @@ pub fn launch_worker(
         return Err("Worker hello identity mismatch".into());
     }
     Ok(client)
+}
+
+/// Hashes portable source in stable order; compiled output never defines a revision.
+fn source_revision(root: &Path) -> Result<String, String> {
+    studio_project::SourceInventory::scan(root)
+        .map(|inventory| inventory.revision.as_str().to_owned())
+        .map_err(|e| e.to_string())
 }

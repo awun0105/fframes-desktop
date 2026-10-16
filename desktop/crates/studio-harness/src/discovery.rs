@@ -5,7 +5,6 @@
 //! resolved GUI) `PATH` are searched. Launch uses an argument array, never a shell.
 
 use crate::{
-    AdapterConfig,
     detect::NodeEntry,
     driver::{
         AcpDriver, AgentFailure, AgentWire, DriverConfig, DriverLimits, DriverMode, FailureKind,
@@ -19,6 +18,18 @@ use std::{
     time::Duration,
 };
 use studio_bootstrap::{ChildEnvironment, ProcessTreeManager};
+
+/// How one adapter is launched: an executable, its arguments and the variable names it
+/// may inherit.
+#[derive(Clone, Deserialize, Serialize)]
+pub struct AdapterConfig {
+    pub executable: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Explicit variable names to forward; values are never stored in configuration.
+    #[serde(default)]
+    pub auth_env_names: Vec<String>,
+}
 
 /// Where an adapter executable may be found besides an absolute configured path.
 #[derive(Debug, Clone, Default)]

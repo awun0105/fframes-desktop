@@ -1,7 +1,6 @@
 """Fake Claude Code CLI speaking the --print stream-json control protocol.
 
-Frame shapes follow the transcripts recorded from Claude Code 2.1.296 (the spike in
-plans/261013-0733-studio-m1-foundations/reports/spike-native-wires). It proves the
+Frame shapes follow the transcripts recorded from Claude Code 2.1.296. It proves the
 driver's framing, turn, permission, background and stop handling only.
 
 Usage: fake-claude.py <mode> <root> [claude flags...]

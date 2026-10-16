@@ -1,6 +1,5 @@
-//! Agent drivers: the [`AgentDriver`] trait every wire implements, the legacy ACP
-//! wire-shape structs, secret redaction and the production SDK-based ACP v1 driver
-//! (`AcpDriver`).
+//! Agent drivers: the [`AgentDriver`] trait every wire implements, secret
+//! redaction and the production SDK-based ACP v1 driver (`AcpDriver`).
 
 mod api;
 mod events;
@@ -28,10 +27,7 @@ pub use runtime::{
 };
 pub use transcript::{Transcript, TranscriptEntry, TranscriptPage};
 
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-
-pub const ACP_PROTOCOL_VERSION: &str = "1";
 
 /// Why a task-specific MCP stdio server configuration was rejected. Messages never
 /// contain environment values.
@@ -152,66 +148,6 @@ impl std::fmt::Debug for McpStdioServer {
             )
             .finish()
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AcpInitializeRequest {
-    pub protocol_version: String,
-    pub client_name: String,
-    pub capabilities: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ServerInfo {
-    pub name: String,
-    pub version: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AcpInitializeResponse {
-    pub protocol_version: String,
-    pub server_info: ServerInfo,
-    pub capabilities: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AcpSessionRequest {
-    pub working_dir: String,
-    pub prompt: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AcpSessionResponse {
-    pub session_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AcpPromptChunk {
-    pub session_id: String,
-    pub chunk_text: String,
-    pub is_done: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AcpPermissionRequest {
-    pub session_id: String,
-    pub tool_call_id: String,
-    pub tool_name: String,
-    pub arguments: serde_json::Value,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AcpPermissionResponse {
-    pub session_id: String,
-    pub tool_call_id: String,
-    pub granted: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AcpAuthoritativeCompletion {
-    pub session_id: String,
-    pub stop_reason: String,
-    pub modified_files: Vec<String>,
 }
 
 /// Redacts known secret patterns and tokens from diagnostic strings before persistence.
