@@ -84,11 +84,21 @@ Run after the final code change, from `desktop/`:
 - `cargo test -p studio-engine -p fframes-studio --no-fail-fast`: all passed
 ## Limitations
 
+- Review card in the default window (open defect, not fixed): the app opens at 1275x800, where the agent panel is about
+  250px tall. While a candidate waits for review and the agent's todo list is showing, the todo panel, stop note and
+  composer fill that height and the chat column above them (which holds the Apply / Discard / Review changes card) is
+  clipped to zero. A real click on the review banner in that window did nothing (screenshot 02); with the todo panel
+  collapsed, or the window maximized (screenshot 09), the card is reachable and "Review changes" opens the viewer
+  (screenshot 10). The chat column is clipped by design (composer pinned); a proper fix needs a panel layout change
+  (for example a minimum height for the review card or a collapsed-by-default todo panel), which was not attempted here.
 - Native file dialogs cannot be driven by posted messages, so file picking is covered by the parity tests only.
 - Send-now was exercised through its button; the ctrl-enter chord cannot be posted.
-- In a short window with a todo list, the candidate review card can be pushed out of view; the todo panel collapses and a larger window shows everything.
 - Intermittent, not related to this change: `services::cancelling_an_export_leaves_no_file`,
-  `services::an_unmigrated_project_exports_only_the_default_whatever_was_saved`, and once
-  `agent::undo_in_the_prompt_undoes_the_typing_there` (preview build timed out under load; passes alone).
-- Earlier remote runs on this branch failed in CI: `codex_wire::capture_waits_for_a_command_that_outlives_its_turn`
-  panicked at `workflow_world.rs:371` on the self-hosted validation; it is a timing flake outside the files touched.
+  `services::an_unmigrated_project_exports_only_the_default_whatever_was_saved`. In the full parity runs
+  `agent::undo_in_the_prompt_undoes_the_typing_there` timed out once ("preview displayed", under load); it passed alone
+  and in the final full run (77 passed).
+- Remote runs on this branch before the wiring commits failed: self-hosted validation on
+  `codex_wire::capture_waits_for_a_command_that_outlives_its_turn` (panic at `workflow_world.rs:371`), and Desktop CI on
+  macOS in `agent::switching_projects_mid_turn_shows_nothing_of_the_old_turn` (parity harness wait timeout). Both
+  commits are ancestors of the wiring work, neither test is changed here, and both read as timing flakes; no push was made
+  from this worktree, so there is no CI result for the wiring commits yet.
