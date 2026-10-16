@@ -271,10 +271,21 @@ fn an_exported_timing_document_matches_the_preview_frames() {
         ..Default::default()
     };
     let mut previewer = fframes::Previewer::new(&video, &options).unwrap();
+    let mut renderer = fframes::CpuFrameRenderer::default();
+    let centre = |rgba: &fframes::RgbaFrame| {
+        let at = ((rgba.height / 2 * rgba.width + rgba.width / 2) * 4) as usize;
+        [rgba.pixels[at], rgba.pixels[at + 1], rgba.pixels[at + 2]]
+    };
+    // Without the document the first frame is scene "a" (red); the document puts "c" first.
+    let untimed = centre(&previewer.render(0, &mut renderer).unwrap());
     previewer
         .set_timing(Some(&serde_json::from_str(json).unwrap()))
         .unwrap();
-    let mut renderer = fframes::CpuFrameRenderer::default();
+    let timed = centre(&previewer.render(0, &mut renderer).unwrap());
+    assert!(
+        untimed.iter().zip(timed).any(|(a, b)| a.abs_diff(b) > 100),
+        "the timing document did not change the preview: {untimed:?} vs {timed:?}"
+    );
     for frame in [0, 50, 100] {
         let rgba = previewer.render(frame, &mut renderer).unwrap();
         let at = ((rgba.height / 2 * rgba.width + rgba.width / 2) * 4) as usize;
