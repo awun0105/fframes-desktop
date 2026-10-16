@@ -12,6 +12,7 @@ pub mod controller;
 pub mod diagnostics;
 pub mod edit_transaction;
 pub mod engine;
+pub mod export_options;
 pub mod export_source;
 pub mod journal;
 pub mod playback_clock;

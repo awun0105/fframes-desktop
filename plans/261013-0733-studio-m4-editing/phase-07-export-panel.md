@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Export panel"
-status: pending
+status: done-with-concerns
 priority: P2
 effort: "3-4d"
 dependencies: [2, 3]
@@ -30,13 +30,28 @@ Cap `editor_export.rs` (3,120 lines): `ExportPhase` (`is_busy`, `shows_progress`
 
 ## Todo
 
-- [ ] Scout export service
-- [ ] Presets
-- [ ] Estimate
-- [ ] Progress, cancel, persistence
-- [ ] Unmigrated state
-- [ ] Tests
+- [x] Scout export service
+- [x] Presets
+- [x] Estimate
+- [x] Progress, cancel, persistence
+- [x] Unmigrated state
+- [x] Tests
 
 ## Success criteria
 
 An export from the panel on this VM matches preview frames by the M4 comparison rule (pre-encode pixel equality, decoded output within the `odiff` threshold); cancel stops the encoder within a second; parity export test green.
+
+## Implementation notes
+
+Deviations and open items:
+
+- The worker is probed when the panel opens and when the accepted revision changes, not in the background once per displayed build (a cache hit for an unchanged project).
+- `StartExport` is a new action; `ExportVideo` now opens the panel. The header action id `export-mp4` became `export`.
+- The destination extension is forced to the container's (`.mp4` / `.webm`).
+- The saved choice persists in app settings and is validated against the worker's reported formats before use.
+- Unmigrated projects get only the default MPEG-4 export, with a migrate notice.
+- Open: the real-export pixel match against the preview needs `SDK_BUNDLE`, which is not available on this host.
+- Open: whether this SDK's FFmpeg has libx264/libx265 is unknown; presets follow the worker's reported formats.
+- Open: manual VM checks for phases 5, 6 and 7 (panel on screen, cancel latency).
+- Tests: gpui parity tests cover the fake worker answering as a legacy SDK (support unmigrated; the migration-available route is covered by the second test), an unmigrated project ignoring a saved non-default choice and still starting, cancel, failure with its reason and a running export. The `Ready` path (worker formats, estimate) has unit tests in `studio-engine/src/export_options.rs` and `studio-ui/src/export/` only.
+- Known gaps: with no project open the keybinding shows the panel on "Checking…" with Export disabled; with no SDK the support is `Unavailable` yet Export can still be started and fails in the engine.

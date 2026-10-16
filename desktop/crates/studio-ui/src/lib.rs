@@ -3,6 +3,7 @@ pub mod actions;
 pub mod agent;
 pub mod app_state;
 pub mod canvas_view;
+pub mod export;
 pub mod frame_image;
 pub mod kit;
 pub mod preset_panel;

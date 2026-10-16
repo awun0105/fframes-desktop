@@ -19,10 +19,14 @@ use crate::containment::OwnershipPolicy;
 use crate::presets::{Catalog, PresetReport};
 use crate::providers::host::{HostInbox, WorkflowWake};
 use crate::services::build_service::BuildService;
-use crate::services::export_service::{ExportControl, ExportProgress, ExportRequest, export_video};
+use crate::services::export_service::{
+    CapabilitiesError, ExportControl, ExportProgress, ExportRequest, export_video,
+    probe_export_capabilities,
+};
 use crate::services::preview_coordinator::BuildSpec;
 use crate::services::teardown::{Teardown, TeardownReport};
 use crate::{JobResult, OperationTag, ProjectState, ReadyPreview};
+use fframes_studio_protocol::export::{ExportCapabilities, ExportSettings};
 use parking_lot::Mutex;
 use std::{
     path::PathBuf,
@@ -242,6 +246,7 @@ impl EngineHandle {
         &self,
         session: SessionId,
         destination: PathBuf,
+        settings: ExportSettings,
         sdk: PathBuf,
         service: BuildService,
     ) -> Result<ExportJob, String> {
@@ -291,7 +296,7 @@ impl EngineHandle {
                             sdk,
                             builds: paths.builds(),
                             destination,
-                            settings: Default::default(),
+                            settings,
                             timing_json,
                         },
                         service,
@@ -310,6 +315,49 @@ impl EngineHandle {
             })
             .map_err(|error| format!("Could not start the export job: {error}"))?;
         Ok(job)
+    }
+
+    /// Asks the worker of the accepted revision of `session` what it can export, on its own
+    /// thread: the build is the preview's when the project is unchanged. The answer arrives
+    /// once; the channel closes without one when the project closed first.
+    pub fn probe_export_capabilities(
+        &self,
+        session: SessionId,
+        sdk: PathBuf,
+        service: BuildService,
+    ) -> Result<async_channel::Receiver<Result<ExportCapabilities, CapabilitiesError>>, String>
+    {
+        let (sender, receiver) = async_channel::bounded(1);
+        let backend = self.inner.backend.clone();
+        std::thread::Builder::new()
+            .name("studio-export-capabilities".into())
+            .spawn(move || {
+                let project = {
+                    let backend = backend.lock();
+                    (backend.session == Some(session))
+                        .then(|| backend.controller.clone().zip(backend.paths.clone()))
+                        .flatten()
+                };
+                let Some((controller, paths)) = project else {
+                    return;
+                };
+                let source = controller.lock().freeze_export_source();
+                drop(controller);
+                let result = source
+                    .map_err(|error| CapabilitiesError::Other(error.to_string()))
+                    .and_then(|source| {
+                        probe_export_capabilities(
+                            &source,
+                            &sdk,
+                            &paths.builds(),
+                            &service,
+                            &studio_bootstrap::ProcessTreeManager::new(),
+                        )
+                    });
+                let _ = sender.send_blocking(result);
+            })
+            .map_err(|error| format!("Could not start the export probe: {error}"))?;
+        Ok(receiver)
     }
 
     fn queue(&self, job: Job) {
@@ -795,6 +843,7 @@ mod workflow_and_export_tests {
             .start_export(
                 SessionId(session.unwrap().0 + 1),
                 temp.path().join("out.mp4"),
+                ExportSettings::default(),
                 temp.path().join("sdk"),
                 crate::services::worker_project::shared_build_service(),
             )

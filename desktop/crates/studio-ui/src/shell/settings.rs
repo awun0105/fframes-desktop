@@ -51,7 +51,28 @@ impl SettingsPage {
 #[derive(Default)]
 pub(super) struct SettingsWriter {
     latest: AtomicU64,
+    latest_export: AtomicU64,
     write: parking_lot::Mutex<()>,
+}
+
+impl SettingsWriter {
+    pub(super) fn next_export_generation(&self) -> u64 {
+        self.latest_export.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    /// Runs `save` unless a later export choice was made meanwhile. Theme and export
+    /// saves share the lock, so neither overwrites the other's field.
+    pub(super) fn save_if_latest_export(
+        &self,
+        generation: u64,
+        save: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(), String> {
+        let _write = self.write.lock();
+        if self.latest_export.load(Ordering::Acquire) != generation {
+            return Ok(());
+        }
+        save()
+    }
 }
 
 impl StudioShell {
@@ -62,6 +83,7 @@ impl StudioShell {
         self.pause_at_painted_frame(cx);
         self.timeline_resize = None;
         self.overflow_open = false;
+        self.export_panel.open = false;
         self.settings_open = true;
         cx.notify();
     }

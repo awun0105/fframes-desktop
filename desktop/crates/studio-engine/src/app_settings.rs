@@ -5,6 +5,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 
+use fframes_studio_protocol::export::ExportSettings;
 use serde::{Deserialize, Serialize};
 use studio_proto::AppTheme;
 
@@ -12,11 +13,23 @@ use crate::app_paths::AppPaths;
 
 pub const APP_SETTINGS_FILE: &str = "app-settings.json";
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
     /// Light, dark, or following the operating system.
     pub theme: AppTheme,
+    /// The export panel's last choice, for every project. A value that no longer reads
+    /// (a format this app dropped) is the default instead of discarding the other settings.
+    #[serde(deserialize_with = "lenient_export_settings")]
+    pub export: ExportSettings,
+}
+
+fn lenient_export_settings<'de, D>(deserializer: D) -> Result<ExportSettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 pub fn app_settings_path(paths: &AppPaths) -> PathBuf {
@@ -60,11 +73,13 @@ mod tests {
 
         let dark = AppSettings {
             theme: AppTheme::Dark,
+            ..AppSettings::default()
         };
         dark.save(&paths).unwrap();
         assert_eq!(AppSettings::load(&paths), dark);
         AppSettings {
             theme: AppTheme::Light,
+            ..AppSettings::default()
         }
         .save(&paths)
         .unwrap();
@@ -83,5 +98,28 @@ mod tests {
         assert_eq!(AppSettings::load(&paths).theme, AppTheme::System);
         std::fs::write(app_settings_path(&paths), r#"{"theme":"dark","later":1}"#).unwrap();
         assert_eq!(AppSettings::load(&paths).theme, AppTheme::Dark);
+    }
+
+    #[test]
+    fn the_export_choice_survives_and_an_invalid_one_keeps_the_theme() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::new(dir.path()).unwrap();
+        let settings = AppSettings {
+            theme: AppTheme::Dark,
+            export: ExportSettings {
+                scale: 0.5,
+                ..ExportSettings::default()
+            },
+        };
+        settings.save(&paths).unwrap();
+        assert_eq!(AppSettings::load(&paths), settings);
+        std::fs::write(
+            app_settings_path(&paths),
+            r#"{"theme":"dark","export":{"container":"avi","codec":"mpeg4","scale":1.0,"fps":null}}"#,
+        )
+        .unwrap();
+        let loaded = AppSettings::load(&paths);
+        assert_eq!(loaded.theme, AppTheme::Dark);
+        assert_eq!(loaded.export, ExportSettings::default());
     }
 }

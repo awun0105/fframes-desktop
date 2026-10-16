@@ -12,8 +12,10 @@ actions!(
         BuildPreview,
         /// Stop the preview build in flight.
         CancelPreview,
-        /// Choose a destination and export the accepted revision as MP4.
+        /// Open the export panel for the accepted revision.
         ExportVideo,
+        /// Choose a destination and export with the panel's settings.
+        StartExport,
         /// Stop the export in flight.
         CancelExport,
         /// Play from the playhead, or pause.

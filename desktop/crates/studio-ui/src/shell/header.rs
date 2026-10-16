@@ -69,17 +69,14 @@ impl StudioShell {
                     cx,
                     |s, cx| s.pick(Picker::Import, cx),
                 ),
-                "export-mp4" => self.action_button(
-                    "export-mp4",
-                    "Export MP4…",
-                    enabled
-                        && project.is_some()
-                        && self.presentation.agent_sdk.is_some()
-                        && self.export_cancelled.is_none(),
+                "export" => self.action_button(
+                    "export",
+                    "Export…",
+                    enabled && project.is_some() && self.presentation.agent_sdk.is_some(),
                     true,
                     Some(Icon::Download),
                     cx,
-                    |s, cx| s.pick(Picker::Export, cx),
+                    |s, cx| s.open_export(cx),
                 ),
                 // No icon, so it keeps its label in the compact header.
                 _ => self.action_button(
@@ -204,9 +201,9 @@ fn compact_header_controls(viewport_width: f32, chrome_width: f32, project_open:
 /// no project is open, so each id is rendered once.
 fn header_actions(project_open: bool) -> Vec<&'static str> {
     if project_open {
-        vec!["create", "open", "import", "export-mp4", "close"]
+        vec!["create", "open", "import", "export", "close"]
     } else {
-        vec!["export-mp4", "close"]
+        vec!["export", "close"]
     }
 }
 
@@ -216,10 +213,10 @@ mod tests {
 
     #[test]
     fn header_hides_project_pickers_while_the_empty_state_shows() {
-        assert_eq!(header_actions(false), ["export-mp4", "close"]);
+        assert_eq!(header_actions(false), ["export", "close"]);
         assert_eq!(
             header_actions(true),
-            ["create", "open", "import", "export-mp4", "close"]
+            ["create", "open", "import", "export", "close"]
         );
     }
 

@@ -177,6 +177,12 @@ impl TimelineView {
             .map(|model| clip_segments(model, self.snapshot.as_ref()))
             .unwrap_or_default();
     }
+    /// The length of the timeline in seconds, edited timing included.
+    pub(crate) fn duration_seconds(&self) -> Option<f64> {
+        let report = self.model.as_ref()?.report();
+        (report.fps > 0).then(|| report.total_frames as f64 / report.fps as f64)
+    }
+
     pub fn selected_scope(&self) -> Result<Option<TaskScope>, String> {
         self.model
             .as_ref()

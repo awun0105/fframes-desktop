@@ -84,7 +84,8 @@ impl StudioShell {
             .on_action(cx.listener(|s, _: &actions::CancelPreview, _, cx| {
                 s.dispatch(Command::CancelBuild, cx)
             }))
-            .on_action(cx.listener(|s, _: &actions::ExportVideo, _, cx| s.pick(Picker::Export, cx)))
+            .on_action(cx.listener(|s, _: &actions::ExportVideo, _, cx| s.open_export(cx)))
+            .on_action(cx.listener(|s, _: &actions::StartExport, _, cx| s.request_export(cx)))
             .on_action(cx.listener(|s, _: &actions::CancelExport, _, cx| s.cancel_export(cx)))
             .on_action(cx.listener(|s, action: &actions::ApplyPreset, _, cx| {
                 let key = action.key.clone();

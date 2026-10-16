@@ -145,15 +145,7 @@ pub fn export_video(
         return Err("export cancelled before compilation".into());
     }
 
-    let sdk_manifest_path = sdk.join("compatibility.json");
-    let sdk_manifest = studio_sdk::CompatibilityManifest::from_json_str(
-        &fs::read_to_string(&sdk_manifest_path)
-            .map_err(|error| format!("SDK manifest {}: {error}", sdk_manifest_path.display()))?,
-    )
-    .map_err(|error| format!("SDK manifest is invalid: {error}"))?;
-    sdk_manifest
-        .validate_for_current_app_version(env!("CARGO_PKG_VERSION"))
-        .map_err(|error| format!("SDK is not compatible with this app: {error}"))?;
+    let sdk_manifest = load_sdk_manifest(&sdk)?;
 
     let subscriber = Subscriber::new(
         SubscriberKind::Tool,
@@ -172,7 +164,8 @@ pub fn export_video(
         return Err("export cancelled after compilation".into());
     }
     if !settings.is_default() || timing_json.is_some() {
-        let capabilities = export_capabilities(&build, &processes)?;
+        let capabilities =
+            export_capabilities(&build, &processes).map_err(|error| error.to_string())?;
         capabilities
             .accepts(&settings)
             .map_err(|error| format!("cannot export with these settings: {error}"))?;
@@ -337,17 +330,75 @@ fn worker_options(build: &MaterializedBuild) -> SpawnOptions {
     options
 }
 
+fn load_sdk_manifest(sdk: &Path) -> Result<studio_sdk::CompatibilityManifest, String> {
+    let path = sdk.join("compatibility.json");
+    let manifest = studio_sdk::CompatibilityManifest::from_json_str(
+        &fs::read_to_string(&path)
+            .map_err(|error| format!("SDK manifest {}: {error}", path.display()))?,
+    )
+    .map_err(|error| format!("SDK manifest is invalid: {error}"))?;
+    manifest
+        .validate_for_current_app_version(env!("CARGO_PKG_VERSION"))
+        .map_err(|error| format!("SDK is not compatible with this app: {error}"))?;
+    Ok(manifest)
+}
+
+/// What the portable worker of `source` can export. The worker is the one an export of the
+/// same source compiles, so an unchanged project answers from the build the preview
+/// already made.
+pub fn probe_export_capabilities(
+    source: &FrozenExportSource,
+    sdk: &Path,
+    builds: &Path,
+    service: &BuildService,
+    processes: &ProcessTreeManager,
+) -> Result<ExportCapabilities, CapabilitiesError> {
+    let manifest = load_sdk_manifest(sdk).map_err(CapabilitiesError::Other)?;
+    let subscriber = Subscriber::new(
+        SubscriberKind::Tool,
+        format!("export-capabilities-{}", uuid::Uuid::new_v4()),
+    );
+    let build = compile_portable_worker_via(
+        service,
+        subscriber,
+        source.project(),
+        sdk,
+        manifest,
+        builds,
+        processes,
+    )
+    .map_err(CapabilitiesError::Other)?;
+    export_capabilities(&build, processes)
+}
+
+/// Why a worker's export capabilities could not be read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CapabilitiesError {
+    /// The worker predates export settings: it exports only the default, in code order.
+    Legacy,
+    Other(String),
+}
+
+impl std::fmt::Display for CapabilitiesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Legacy => f.write_str(
+                "this project's SDK exports only MP4 in code order; migrate the project to \
+                 change export settings or timing",
+            ),
+            Self::Other(message) => f.write_str(message),
+        }
+    }
+}
+
 /// Asks the worker what it can export. Workers from before export settings exit with an
 /// error on the flag, which refuses the settings instead of exporting the default.
 fn export_capabilities(
     build: &MaterializedBuild,
     processes: &ProcessTreeManager,
-) -> Result<ExportCapabilities, String> {
-    let legacy = || {
-        "this project's SDK exports only MP4 in code order; migrate the project to change \
-         export settings or timing"
-            .to_owned()
-    };
+) -> Result<ExportCapabilities, CapabilitiesError> {
+    let legacy = || CapabilitiesError::Legacy;
+    let other = |message: String| CapabilitiesError::Other(message);
     let mut options = worker_options(build);
     options.arg(EXPORT_CAPABILITIES_FLAG);
     options.stdin(Stdio::null());
@@ -355,11 +406,13 @@ fn export_capabilities(
     options.stderr(Stdio::null());
     let child = processes
         .spawn(options)
-        .map_err(|error| format!("could not start the export renderer: {error}"))?;
+        .map_err(|error| other(format!("could not start the export renderer: {error}")))?;
     let stdout = child.lock().child_mut().stdout.take();
     let Some(stdout) = stdout else {
         let _ = child.lock().terminate_verified(Duration::from_millis(500));
-        return Err("export renderer did not provide its capabilities stream".into());
+        return Err(other(
+            "export renderer did not provide its capabilities stream".into(),
+        ));
     };
     let reader = thread::spawn(move || {
         let mut output = Vec::new();
@@ -375,11 +428,15 @@ fn export_capabilities(
             }
             Ok(None) => {
                 let _ = child.lock().terminate_verified(Duration::from_millis(500));
-                return Err("export renderer did not report its capabilities in time".into());
+                return Err(other(
+                    "export renderer did not report its capabilities in time".into(),
+                ));
             }
             Err(error) => {
                 let _ = child.lock().terminate_verified(Duration::from_millis(500));
-                return Err(format!("could not read export renderer status: {error}"));
+                return Err(other(format!(
+                    "could not read export renderer status: {error}"
+                )));
             }
         }
     };
@@ -389,10 +446,10 @@ fn export_capabilities(
     }
     let capabilities: ExportCapabilities = serde_json::from_slice(&output).map_err(|_| legacy())?;
     if capabilities.version != EXPORT_CAPABILITIES_VERSION {
-        return Err(format!(
+        return Err(other(format!(
             "export renderer reports capabilities version {}; this app reads {}",
             capabilities.version, EXPORT_CAPABILITIES_VERSION
-        ));
+        )));
     }
     Ok(capabilities)
 }

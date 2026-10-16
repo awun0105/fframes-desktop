@@ -349,6 +349,8 @@ impl Render for StudioShell {
                     .children(strip)
                     .child(if self.settings_open {
                         self.render_settings(cx)
+                    } else if self.export_panel.open {
+                        self.render_export(cx)
                     } else {
                         div()
                             .flex_1()

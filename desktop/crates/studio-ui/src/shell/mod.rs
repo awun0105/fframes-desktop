@@ -1,4 +1,5 @@
 mod engine_events;
+mod export_panel;
 mod header;
 mod keymap;
 mod layout;
@@ -187,6 +188,7 @@ pub struct StudioShell {
     /// When the accepted source started waiting for a preview that nothing is preparing.
     awaiting_since: Option<Instant>,
     export_status: Option<ExportProgress>,
+    export_panel: export_panel::ExportPanelState,
     export_cancelled: Option<Arc<ExportControl>>,
     export_processes: Option<studio_bootstrap::ProcessTreeManager>,
 }
@@ -430,6 +432,7 @@ impl StudioShell {
             presentation_refresh_pending: false,
             awaiting_since: None,
             export_status: None,
+            export_panel: Default::default(),
             export_cancelled: None,
             export_processes: None,
             output_device: OutputDevice::Default,

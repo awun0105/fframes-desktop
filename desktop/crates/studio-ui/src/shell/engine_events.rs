@@ -320,6 +320,7 @@ impl StudioShell {
     /// Hands what a new presentation changed to the views and the preview: the preset
     /// panel's state and the timing document the preview plays.
     pub(super) fn push_presentation_views(&mut self, cx: &mut Context<Self>) {
+        self.sync_export_support(cx);
         let view = self.presentation.preset.clone();
         self.preset_panel
             .update(cx, |panel, cx| panel.set_view(view, cx));
@@ -683,12 +684,16 @@ impl StudioShell {
                 .or_else(|| std::env::var_os("USERPROFILE"))
                 .map(PathBuf::from)
                 .unwrap_or_else(std::env::temp_dir);
+            let export_file_name = match self.export_settings().container {
+                fframes_studio_protocol::export::ExportContainer::Mp4 => "Exported video.mp4",
+                fframes_studio_protocol::export::ExportContainer::Webm => "Exported video.webm",
+            };
             let picker = cx.prompt_for_new_path(
                 &home,
                 Some(match kind {
                     Picker::Create => "New video",
                     Picker::PresetExport(_) => "Exported preset",
-                    Picker::Export => "Exported video.mp4",
+                    Picker::Export => export_file_name,
                     _ => "Recovered video",
                 }),
             );
@@ -797,17 +802,27 @@ impl StudioShell {
             cx.notify();
             return;
         };
-        let job = match self
-            .engine
-            .start_export(session, destination, sdk, self.builds.clone())
-        {
-            Ok(job) => job,
-            Err(error) => {
-                self.export_status = Some(ExportProgress::Failed(error));
-                cx.notify();
-                return;
-            }
-        };
+        let settings = self.export_settings();
+        // The container decides the extension: the worker refuses any other.
+        let extension = settings.container.extension();
+        let destination =
+            if destination.extension().and_then(|value| value.to_str()) == Some(extension) {
+                destination
+            } else {
+                destination.with_extension(extension)
+            };
+        let job =
+            match self
+                .engine
+                .start_export(session, destination, settings, sdk, self.builds.clone())
+            {
+                Ok(job) => job,
+                Err(error) => {
+                    self.export_status = Some(ExportProgress::Failed(error));
+                    cx.notify();
+                    return;
+                }
+            };
         let control = job.control.clone();
         self.export_cancelled = Some(control.clone());
         self.export_processes = Some(job.processes.clone());

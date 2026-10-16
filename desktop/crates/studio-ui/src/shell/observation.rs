@@ -280,6 +280,10 @@ impl StudioShell {
         value["renders"]["timeline"] = self.timeline.read(cx).renders().into();
         value["panel"] = self.panel.read(cx).telemetry();
         value["export"] = export_telemetry(self.export_status.as_ref());
+        value["export"]["panel_open"] = self.export_panel.open.into();
+        value["export"]["support"] = self.export_panel.support.name().into();
+        value["export"]["settings"] =
+            serde_json::to_value(self.export_settings()).unwrap_or_default();
         value["presets"] = self.preset_panel.read(cx).telemetry();
         value["output_devices"] = self.audio.devices().into();
         value

@@ -50,15 +50,16 @@ impl StudioShell {
                     Tone::Info,
                     format!("Export snapshot · {label} · {revision}"),
                 ),
-                ExportProgress::Rendering { done, total } => {
-                    (Tone::Info, format!("Rendering MP4 · {done}/{total} frames"))
-                }
+                ExportProgress::Rendering { done, total } => (
+                    Tone::Info,
+                    format!("Rendering video · {done}/{total} frames"),
+                ),
                 ExportProgress::Audio => (Tone::Info, "Writing and verifying audio".into()),
                 ExportProgress::Warning(message) => {
                     (Tone::Warning, format!("Export warning · {message}"))
                 }
                 ExportProgress::Verifying => {
-                    (Tone::Info, "Verifying MP4 before publication".into())
+                    (Tone::Info, "Verifying the video before publication".into())
                 }
                 ExportProgress::Complete {
                     destination,
