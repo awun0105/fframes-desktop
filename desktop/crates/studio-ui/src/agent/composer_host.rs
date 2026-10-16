@@ -358,7 +358,8 @@ impl ConversationPanel {
         let mut dock = div()
             .flex()
             .flex_col()
-            .flex_none()
+            .flex_shrink(1.)
+            .min_h_0()
             .gap(px(6.))
             .px(px(12.))
             .pt(px(8.))
@@ -377,7 +378,16 @@ impl ConversationPanel {
             );
         }
         for (index, question) in snapshot.composer.questions.iter().enumerate() {
-            dock = dock.child(self.question_card(index, question, cx));
+            // In a window too short for the whole card it takes the leftover height and
+            // scrolls, instead of pushing the composer out of view.
+            dock = dock.child(
+                div()
+                    .id(("question-scroll", index))
+                    .flex_shrink(1.)
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(self.question_card(index, question, cx)),
+            );
         }
         if let Some(held) = snapshot.composer.held.clone() {
             dock = dock.child(
