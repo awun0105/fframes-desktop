@@ -84,13 +84,14 @@ Run after the final code change, from `desktop/`:
 - `cargo test -p studio-engine -p fframes-studio --no-fail-fast`: all passed
 ## Limitations
 
-- Review card in the default window (open defect, not fixed): the app opens at 1275x800, where the agent panel is about
-  250px tall. While a candidate waits for review and the agent's todo list is showing, the todo panel, stop note and
-  composer fill that height and the chat column above them (which holds the Apply / Discard / Review changes card) is
-  clipped to zero. A real click on the review banner in that window did nothing (screenshot 02); with the todo panel
-  collapsed, or the window maximized (screenshot 09), the card is reachable and "Review changes" opens the viewer
-  (screenshot 10). The chat column is clipped by design (composer pinned); a proper fix needs a panel layout change
-  (for example a minimum height for the review card or a collapsed-by-default todo panel), which was not attempted here.
+- Review card in the default window (fixed after this report): the app opens at 1275x800, where the agent panel is
+  about 250px tall. While a candidate waited for review with the todo list showing, the todo panel, stop note and
+  composer filled that height and clipped the chat column holding the task banner, so a real click on Review changes did
+  nothing (screenshot 02). While the banner offers Apply, Discard and Review changes it now sits outside the clipped
+  column and never shrinks (in other phases it stays in the column, so a question card keeps the room it needs), and the
+  todo list scrolls in its own box like a question card. `composer::a_long_todo_list_leaves_review_reachable_at_the_default_size`
+  clicks the banner at the default size with a ten-item plan; it fails on the old layout and passes on the new one.
+  Not re-checked by a real-click screenshot.
 - Native file dialogs cannot be driven by posted messages, so file picking is covered by the parity tests only.
 - Send-now was exercised through its button; the ctrl-enter chord cannot be posted.
 - Intermittent, not related to this change: `services::cancelling_an_export_leaves_no_file`,
@@ -100,5 +101,5 @@ Run after the final code change, from `desktop/`:
 - Remote runs on this branch before the wiring commits failed: self-hosted validation on
   `codex_wire::capture_waits_for_a_command_that_outlives_its_turn` (panic at `workflow_world.rs:371`), and Desktop CI on
   macOS in `agent::switching_projects_mid_turn_shows_nothing_of_the_old_turn` (parity harness wait timeout). Both
-  commits are ancestors of the wiring work, neither test is changed here, and both read as timing flakes; no push was made
-  from this worktree, so there is no CI result for the wiring commits yet.
+  commits are ancestors of the wiring work, neither test is changed here, and both read as timing flakes. Run here
+  afterwards, each passed 5 of 5 alone and the full `agent_workflow` binary passed 3 of 3.

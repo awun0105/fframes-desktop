@@ -441,7 +441,16 @@ impl ConversationPanel {
             dock = dock.child(card);
         }
         if self.host.todo.read(cx).is_visible() {
-            dock = dock.child(self.host.todo.clone());
+            // Like a question card: scrolls in a short window rather than crowding out the
+            // task banner and the composer.
+            dock = dock.child(
+                div()
+                    .id("agent-todo-scroll")
+                    .flex_shrink(1.)
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(self.host.todo.clone()),
+            );
         }
         // The composer's own Stop covers a live turn; this one covers every other state a
         // task can be in (waiting, reviewing, queued briefs).

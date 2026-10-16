@@ -245,8 +245,16 @@ impl ConversationPanel {
             &snapshot.adapter.readiness,
             snapshot.adapter.provider.is_some(),
         );
+        // While the banner offers Apply, Discard and Review changes it sits outside the clipped
+        // column and never shrinks, so the transcript and the dock give way instead; otherwise
+        // it is clipped with the rest of the column.
+        let mut pinned_banner = None;
         if let Some(banner) = self.banner(&snapshot, controls, cx) {
-            column = column.child(banner);
+            if controls.review.is_some() {
+                pinned_banner = Some(banner);
+            } else {
+                column = column.child(banner);
+            }
         } else if !g.usable || snapshot.rows.is_empty() {
             column = column.child(
                 self.section(&g.headline)
@@ -466,6 +474,9 @@ impl ConversationPanel {
             .flex()
             .flex_col()
             .child(column)
+            .children(
+                pinned_banner.map(|banner| div().flex_none().px(px(12.)).pt(px(8.)).child(banner)),
+            )
             .child(self.composer_dock(&snapshot, controls, cx))
             .into_any_element()
     }

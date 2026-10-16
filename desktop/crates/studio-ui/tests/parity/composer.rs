@@ -7,7 +7,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::{fs, time::Duration};
-use studio_ui::actions::FocusPrompt;
+use studio_ui::actions::{FocusPrompt, ToggleReviewPolicy};
 
 fn phase(t: &Value) -> &str {
     t["panel"]["phase"].as_str().unwrap_or_default()
@@ -322,6 +322,36 @@ fn the_agents_plan_shows_as_a_todo_list(cx: &mut gpui::TestAppContext) {
     assert_eq!(items[0]["text"], "Edit the title");
     assert_eq!(items[0]["status"], "InProgress");
     assert_eq!(items[1]["status"], "Pending");
+}
+
+/// At the default window size a long todo list scrolls in its own box; the banner with
+/// Review changes stays reachable by a real click.
+#[gpui::test]
+fn a_long_todo_list_leaves_review_reachable_at_the_default_size(cx: &mut gpui::TestAppContext) {
+    let mut turn = edit_turn("reviewed");
+    turn["plan"] = Value::Array(
+        (1..=10)
+            .map(|n| json!({"text": format!("Step {n} of the edit")}))
+            .collect(),
+    );
+    let mut studio = studio_with_turns(cx, &[], vec![turn]);
+    studio.dispatch(ToggleReviewPolicy);
+    studio.wait("review before Apply", |t| {
+        t["panel"]["review_policy"] == "ManualReview"
+    });
+    type_in_composer(&mut studio, "plan and edit");
+    studio.press("enter");
+    let waiting = studio.wait("the candidate with its todo list", |t| {
+        matches!(phase(t), "Waiting for your review" | "Failed" | "Stopped")
+            && composer(t)["todo"]["visible"] == true
+    });
+    assert_eq!(phase(&waiting), "Waiting for your review", "{waiting:#}");
+
+    click_id(&mut studio, "agent-review-banner");
+    let open = studio.wait("the review window", |t| {
+        t["review"]["files"].as_u64() > Some(0)
+    });
+    assert_eq!(open["review"]["target"], "candidate", "{open:#}");
 }
 
 #[gpui::test]
