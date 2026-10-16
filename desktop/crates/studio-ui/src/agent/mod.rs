@@ -19,6 +19,7 @@ mod project_tab;
 pub mod provider_setup;
 mod setup_page;
 pub mod syntax;
+pub mod todo_panel;
 pub mod transcript;
 mod widgets;
 
