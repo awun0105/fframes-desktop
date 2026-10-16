@@ -104,7 +104,9 @@ fn playing_to_the_end_stops_on_the_last_frame_and_play_replays(cx: &mut gpui::Te
     studio.wait("playing", |t| t["playing"] == true);
     let last = |t: &serde_json::Value| t["total_frames"].as_u64().unwrap() - 1;
     let ended = studio.wait("playback reached the end", |t| {
-        t["playing"] == false && t["position"].as_u64() >= Some(last(t))
+        t["playing"] == false
+            && t["position"].as_u64() >= Some(last(t))
+            && t["paint_frame"].as_u64() == Some(last(t))
     });
     assert_eq!(
         ended["paint_frame"].as_u64(),
