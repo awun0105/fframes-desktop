@@ -1,7 +1,7 @@
 ---
 title: "M5 Agent UX: streaming markdown, composer, todos, diff review, history"
 description: "Port Zeron's markdown, composer, todo panel, change viewer and search onto the M2 transcript rows, extend the ACP driver for plans and commands, make partial apply validated, and store many sessions per project."
-status: pending
+status: in-progress
 priority: P1
 effort: "16-24d"
 branch: feat/studio-rewrite
@@ -44,7 +44,7 @@ Syntax highlighting is written as a small module with five tree-sitter grammars 
 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
-| 1 | [Streaming markdown](./phase-01-streaming-markdown.md) | 3-5d | none | Pending |
+| 1 | [Streaming markdown](./phase-01-streaming-markdown.md) | 3-5d | none | Completed |
 | 2 | [Composer](./phase-02-composer.md) | 5-7d | none | Pending |
 | 3 | [Todo panel](./phase-03-todo-panel.md) | 1-2d | none | Pending |
 | 4 | [Diff review](./phase-04-diff-review.md) | 4-6d | 1 | Pending |

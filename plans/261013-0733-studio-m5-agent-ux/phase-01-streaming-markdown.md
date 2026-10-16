@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Streaming markdown"
-status: pending
+status: completed
 priority: P1
 effort: "3-5d"
 dependencies: []
@@ -31,13 +31,23 @@ See [the plan](./plan.md). Zeron's approach: `pulldown-cmark` on a background ta
 
 ## Todo
 
-- [ ] `studio-markdown` with tests
-- [ ] Renderer, veil, selection
-- [ ] Five-grammar highlighting and CI build-time check
-- [ ] Agent and thought rows use it
-- [ ] Safe link handling
-- [ ] Tests
+- [x] `studio-markdown` with tests ([report](./reports/phase-01-studio-markdown.md))
+- [x] Renderer, veil, selection ([report](./reports/phase-01-renderer.md))
+- [x] Five-grammar highlighting and CI build-time check ([report](./reports/phase-01-syntax.md)); the `grammar-build-cost` job has not run in CI yet
+- [x] Agent and thought rows use it (one list row per transcript row, cached per top-level block; see the renderer report)
+- [x] Safe link handling ([report](./reports/phase-01-links.md))
+- [x] Tests
 
 ## Success criteria
 
 `cargo test -p studio-markdown` passes; a streamed reply with headings, lists, a table and a Rust block renders correctly on this VM; clicking a link to `tools/x.cmd` reveals it and does not run it.
+
+Status 2026-10-16: met on this Windows VM.
+
+- Tests: the desktop CI package set passes after the review fixes ([review](./reports/phase-01-review.md)) and the inline-code link port. The link criterion is also covered at component level (a gpui test gives `MarkdownRow` a project root and checks that `tools/x.cmd` reveals and never opens). The shell passing the root on open is not covered by a test.
+- By eye: a throwaway example window rendered the real `MarkdownRow` through GPUI's DirectX renderer while a reply with headings, emphasis, inline code, nested and ordered lists, an aligned table, a Rust block, a quote and a rule streamed in ([mid-stream](./reports/phase-01-visual-mid-stream.png), [finished](./reports/phase-01-visual-streamed.png)). It was not the full studio shell.
+- Real clicks in that window:
+  - The inline-code `tools/x.cmd` link opened Explorer on `tools` with `x.cmd` selected, and no `cmd` process started.
+  - The web link showed the confirmation with the full URL including its port ([confirm](./reports/phase-01-visual-link-confirm.png)), and Cancel opened nothing.
+- The check found that the table frame stretched past its columns; the frame now hugs them.
+
