@@ -2031,33 +2031,26 @@ dependencies = [
 name = "fframes-studio"
 version = "0.1.2"
 dependencies = [
- "async-channel",
  "clap",
  "cpal",
- "fframes-media",
  "fframes-studio-protocol",
  "gpui",
  "gpui_platform",
  "image",
  "libc",
  "parking_lot",
- "serde",
  "serde_json",
  "sha2",
- "smallvec",
  "studio-bootstrap",
  "studio-engine",
  "studio-harness",
  "studio-presets",
  "studio-project",
- "studio-proto",
  "studio-sdk",
  "studio-test-support",
  "studio-theme",
  "studio-ui",
  "tempfile",
- "thiserror 2.0.21",
- "uuid",
  "windows-sys 0.59.0",
 ]
 

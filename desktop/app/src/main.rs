@@ -2,7 +2,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 use clap::{Parser, Subcommand};
-use fframes_studio::StudioSpikeApp;
 use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, point, px, size};
 use std::path::PathBuf;
 
@@ -30,9 +29,6 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
         _forwarded: Vec<std::ffi::OsString>,
     },
-    /// Open the native GPUI spike window.
-    #[command(long_flag = "spike-ui")]
-    SpikeUi,
 }
 
 /// Hidden observation of the studio for test harnesses: opens a project and writes the
@@ -120,7 +116,6 @@ fn main() {
     match cli.command {
         None => run_studio(None),
         Some(Command::Studio { observation, .. }) => run_studio(observed(observation)),
-        Some(Command::SpikeUi) => run_spike_ui(),
     }
 }
 
@@ -222,33 +217,6 @@ fn run_studio(observation: Option<Observed>) {
         });
 }
 
-fn run_spike_ui() {
-    gpui_platform::application().run(move |cx: &mut App| {
-        studio_ui::kit::bind_text_input_keys(cx);
-        let bounds = Bounds::centered(None, size(px(1000.), px(1000.)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(gpui::TitlebarOptions {
-                    title: Some("fframes studio — Native GPUI Spike".into()),
-                    appears_transparent: false,
-                    traffic_light_position: None,
-                }),
-                ..Default::default()
-            },
-            move |window, cx| {
-                cx.new(|cx| {
-                    let mut app = StudioSpikeApp::new(window, cx);
-                    app.load_initial_frame(window, cx);
-                    app
-                })
-            },
-        )
-        .expect("failed to open window");
-        cx.activate(true);
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,18 +232,12 @@ mod tests {
     }
 
     #[test]
-    fn no_command_opens_the_studio_and_the_legacy_spike_flag_still_works() {
+    fn no_command_opens_the_studio() {
         assert!(parse(&[]).unwrap().command.is_none());
         for args in [&["studio"][..], &["studio", "--from-launcher", "file.txt"]] {
             assert!(matches!(
                 parse(args).unwrap().command,
                 Some(Command::Studio { .. })
-            ));
-        }
-        for args in [["spike-ui"], ["--spike-ui"]] {
-            assert!(matches!(
-                parse(&args).unwrap().command,
-                Some(Command::SpikeUi)
             ));
         }
         assert!(parse(&["unknown"]).is_err());
