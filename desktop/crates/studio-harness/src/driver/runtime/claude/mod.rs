@@ -277,6 +277,8 @@ impl AgentDriver for ClaudeDriver {
             stops_turn_in_place: true,
             steering: SteeringMode::StepBoundary,
             images: true,
+            // Claude Code's stream-json input carries only text and image blocks.
+            files: false,
         }
     }
 
@@ -358,7 +360,14 @@ impl AgentDriver for ClaudeDriver {
         drop(state);
         self.send(Input::Write(line)).inspect_err(|_| {
             self.state.lock().pending_steers.remove(&uuid);
-        })
+        })?;
+        // Claude takes the line as written; its replay only confirms the step.
+        self.shared.emit(AgentEventKind::SteerResult {
+            text: text.to_owned(),
+            accepted: true,
+            message: String::new(),
+        });
+        Ok(())
     }
 
     fn cancel_turn(&self) -> Result<(), DriverError> {

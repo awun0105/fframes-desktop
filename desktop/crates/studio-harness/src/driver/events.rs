@@ -211,6 +211,30 @@ pub struct PlanEntry {
     pub status: PlanStatus,
 }
 
+/// One slash command the agent advertises. Display and insertion only: the host types
+/// `/name` into the prompt, the agent interprets it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandInfo {
+    /// The name without the leading slash.
+    pub name: String,
+    pub description: String,
+    /// What the command expects after its name, when the agent says (`None` takes no input).
+    pub input_hint: Option<String>,
+}
+
+impl CommandInfo {
+    /// Whether `name` is safe to type into a prompt: letters, digits, `:`, `_`, `.` and
+    /// `-` only, so an agent cannot offer a command that smuggles other text (spaces,
+    /// line breaks, markup, bidirectional controls) into the composer.
+    pub fn is_valid_name(name: &str) -> bool {
+        !name.is_empty()
+            && name.len() <= 64
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '_' | '.' | '-'))
+    }
+}
+
 /// Who started a turn.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TurnOrigin {
@@ -341,8 +365,12 @@ pub enum AgentEventKind {
         tasks: u32,
         continuing: bool,
     },
-    /// The agent's current plan (Claude's `TodoWrite`), replacing any earlier one.
+    /// The agent's current plan (ACP plan updates, Claude's `TodoWrite`, Codex's plan
+    /// updates), replacing any earlier one. Displayed only; it carries no authority.
     Plan(Vec<PlanEntry>),
+    /// The slash commands the agent offers, replacing any earlier list. Sent while a
+    /// session is restored too, so a reopened session still has its commands.
+    AvailableCommands(Vec<CommandInfo>),
     /// The turn's one end event (prompted or started by the agent itself).
     PromptFinished(PromptOutcome),
     /// The adapter refused a mode/config change; the session continues unchanged.
@@ -350,6 +378,15 @@ pub enum AgentEventKind {
         option: String,
         message: String,
         code: i64,
+    },
+    /// What became of a message `AgentDriver::steer` accepted for sending: the agent took
+    /// it into the running turn (`accepted`), or did not and never will (`message` says
+    /// why). Exactly one per accepted call, matched by `text`; a message the agent did not
+    /// take is never delivered later.
+    SteerResult {
+        text: String,
+        accepted: bool,
+        message: String,
     },
     Failure(AgentFailure),
     Closed(ClosedInfo),
@@ -391,7 +428,8 @@ struct QueueInner {
     closed: bool,
 }
 
-/// Bounded FIFO. Deltas coalesce; every other event is critical and is never
+/// Bounded FIFO. Deltas coalesce and unread plans and command lists are replaced by
+/// newer ones; every other event is critical and is never
 /// dropped: when the queue is full the producer is sealed with a visible failure.
 pub struct EventQueue {
     provider: String,
@@ -464,6 +502,20 @@ impl EventQueue {
             self.ready.notify_all();
             return PushOutcome::Queued;
         }
+        // Display state is latest-wins: a newer plan or command list replaces an unread one.
+        if matches!(
+            kind,
+            AgentEventKind::Plan(_) | AgentEventKind::AvailableCommands(_)
+        ) && let Some(unread) = inner
+            .events
+            .iter_mut()
+            .rev()
+            .find(|e| std::mem::discriminant(&e.kind) == std::mem::discriminant(&kind))
+        {
+            unread.kind = kind;
+            self.ready.notify_all();
+            return PushOutcome::Queued;
+        }
         // Terminal events use reserved slots beyond the cap.
         if !terminal && inner.events.len() >= self.capacity {
             let failure = AgentFailure::new(
@@ -530,6 +582,24 @@ mod tests {
         AgentEventKind::MessageDelta {
             role: MessageRole::Agent,
             text: text.into(),
+        }
+    }
+
+    #[test]
+    fn command_names_are_plain_tokens() {
+        for good in ["compact", "review:pr", "init_2", "a.b-c"] {
+            assert!(CommandInfo::is_valid_name(good), "{good}");
+        }
+        for bad in [
+            "",
+            "two words",
+            "line\nbreak",
+            "x\u{202e}y",
+            "<b>",
+            "caf\u{e9}",
+            &"a".repeat(65),
+        ] {
+            assert!(!CommandInfo::is_valid_name(bad), "{bad:?}");
         }
     }
 

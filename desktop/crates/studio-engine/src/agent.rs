@@ -26,6 +26,9 @@
 //! GPUI never sees this module's internals: it polls [`AgentWorkflow::snapshot`] (or is
 //! woken by the optional `notify` callback) and sends commands.
 mod actor;
+mod attachments;
+mod composer;
+mod composer_ops;
 pub mod evidence_preview;
 mod jobs;
 pub mod log;
@@ -35,8 +38,15 @@ pub mod probe_cache;
 pub mod session_store;
 mod tools;
 
+pub use attachments::{
+    AttachmentRequest, FileIdentity, PreparedAttachment, StageToken, StagedAttachment,
+};
+pub use composer::{ComposerView, OpenQuestion, SteerSupport};
 pub use jobs::{JobFault, JobFaults, PreviewHandoff, PromotionHandoff};
 pub use model::*;
+pub use studio_harness::driver::{
+    CommandInfo, PlanEntry, PlanStatus, QuestionAnswer, QuestionItem, QuestionOption,
+};
 pub use tools::BuildSettings;
 
 use crate::{
@@ -206,6 +216,10 @@ pub enum WorkflowError {
     /// The files of a candidate or revision could not be read, or the request names none.
     #[error("{0}")]
     Review(String),
+    /// The composer asked for something the current agent or state cannot do; the text
+    /// says why and is meant to be shown.
+    #[error("{0}")]
+    Refused(String),
 }
 
 #[derive(Default)]
@@ -219,6 +233,9 @@ pub(crate) struct Registry {
     pub pending: usize,
     /// Operations the actor is running: a task and/or an Undo.
     pub running: usize,
+    /// The composer state as last published: what the synchronous checks of the
+    /// composer operations consult.
+    pub composer: ComposerView,
 }
 
 impl Registry {
@@ -307,6 +324,10 @@ pub(crate) struct Shared {
     evidence_images: Mutex<EvidenceImageCache>,
     pub changed: Condvar,
     pub registry: Mutex<Registry>,
+    /// Outside files waiting for the user's confirmation (see `attachments::stage`).
+    pub staged: attachments::StageStore,
+    /// Attachment checks running on their own threads.
+    pub preparing: AtomicUsize,
     /// The cancellation gate of the job the actor is running (pipeline, publication or
     /// Undo), so `stop()` can cancel it without waiting for the actor.
     pub inflight: Mutex<Option<Arc<Gate>>>,
@@ -368,6 +389,7 @@ impl AgentWorkflow {
             queue: Vec::new(),
             retained_queue: Vec::new(),
             rows: Vec::new(),
+            composer: Default::default(),
             older_rows: false,
             chat: 0,
             review_policy: ReviewPolicy::default(),
@@ -407,6 +429,8 @@ impl AgentWorkflow {
             evidence_images: Mutex::new(EvidenceImageCache::default()),
             changed: Condvar::new(),
             registry: Mutex::new(Registry::default()),
+            staged: attachments::StageStore::default(),
+            preparing: AtomicUsize::new(0),
             inflight: Mutex::new(None),
             live: Arc::new(tools::LiveTasks::default()),
             playhead: AtomicUsize::new(0),
@@ -590,7 +614,7 @@ impl AgentWorkflow {
     /// running task otherwise (the stable draft is refreshed when it starts). Returns the
     /// submission id shown in the queue.
     pub fn submit(&self, brief: &str) -> Result<u64, WorkflowError> {
-        self.submit_with_scope(brief, None)
+        self.submit_with_scope(brief, None, Vec::new())
     }
 
     /// Submits a brief bound to the timeline/source identity selected in the UI.
@@ -603,13 +627,14 @@ impl AgentWorkflow {
                 "scope belongs to another project".into(),
             ));
         }
-        self.submit_with_scope(brief, Some(scope))
+        self.submit_with_scope(brief, Some(scope), Vec::new())
     }
 
     fn submit_with_scope(
         &self,
         brief: &str,
         scope: Option<TaskScope>,
+        attachments: Vec<PreparedAttachment>,
     ) -> Result<u64, WorkflowError> {
         self.open_check()?;
         let brief =
@@ -635,6 +660,7 @@ impl AgentWorkflow {
             id,
             brief,
             scope: scope.map(Box::new),
+            attachments,
         }) {
             self.shared.registry.lock().pending -= 1;
             return Err(error);
@@ -665,6 +691,19 @@ impl AgentWorkflow {
                         && !offered.contains(option)
                     {
                         return Err(WorkflowError::UnknownChoice(option.clone()));
+                    }
+                    // The offered choices belong to the first question only.
+                    if matches!(answer, PermissionAnswer::Select(_))
+                        && registry
+                            .composer
+                            .questions
+                            .iter()
+                            .any(|q| &q.reference == reference && q.items.len() != 1)
+                    {
+                        return Err(WorkflowError::Refused(
+                            "That request does not have exactly one question; answer each one with answer_questions or decline it."
+                                .into(),
+                        ));
                     }
                     registry.open.remove(reference);
                     registry.answered.push_back(reference.clone());

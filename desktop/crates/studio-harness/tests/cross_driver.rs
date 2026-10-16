@@ -35,8 +35,7 @@ struct Fixture {
     edit: (&'static str, &'static str),
     /// A turn that runs until it is stopped.
     slow: (&'static str, &'static str),
-    /// A turn that publishes a plan, for wires whose driver reports plans. The ACP
-    /// driver drops plan updates until the M5 todo panel adds them.
+    /// A turn that publishes a plan.
     plan: Option<(&'static str, &'static str)>,
     image: (&'static str, &'static str),
     /// The mode in which the fake can continue a saved session.
@@ -61,7 +60,7 @@ const ACP: Fixture = Fixture {
     text: ("basic", "hello"),
     edit: ("permission", "edit"),
     slow: ("hang-prompt", "wait"),
-    plan: None,
+    plan: Some(("plan", "go")),
     image: ("image-ok", "look"),
     resume: "load",
     ask: None,
@@ -459,6 +458,21 @@ fn images_and_plans_are_carried() {
                 .any(|e| matches!(&e.kind, AgentEventKind::Plan(entries) if !entries.is_empty())),
             "{name}: no plan"
         );
+        // Every wire lists the commands it understands, without a leading slash.
+        let commands: Vec<_> = events
+            .iter()
+            .filter_map(|e| match &e.kind {
+                AgentEventKind::AvailableCommands(commands) => Some(commands),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(!commands.is_empty(), "{name}: no commands");
+        assert!(
+            commands.iter().all(|c| !c.name.starts_with('/')),
+            "{name}: {commands:?}"
+        );
+        assert!(commands.iter().any(|c| c.name == "compact"), "{name}");
     }
 }
 

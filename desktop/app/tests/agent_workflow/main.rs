@@ -78,6 +78,7 @@ impl World {
 mod claude_wire;
 mod close;
 mod codex_wire;
+mod composer;
 mod cycles;
 mod failures;
 mod happy_path;

@@ -84,6 +84,8 @@ struct Connection {
     continue_deadline: Option<Instant>,
     /// A turn end held until the steers sent into it are taken up.
     held_result: Option<(Value, Instant)>,
+    /// The command list last sent, so an unchanged `init` frame sends nothing.
+    commands: Vec<CommandInfo>,
 }
 
 pub(super) fn run(
@@ -103,6 +105,7 @@ pub(super) fn run(
         autonomous: None,
         continue_deadline: None,
         held_result: None,
+        commands: Vec::new(),
     };
     let result = connection.drive(&input);
     // Closing stdin lets Claude exit by itself; teardown then verifies the tree.
@@ -374,6 +377,16 @@ impl Connection {
         );
         if tool == "AskUserQuestion" {
             let questions = wire::parse_questions(&input);
+            // Claude keys its answers by question text: no question, or two with the same
+            // text (or none), cannot be answered unambiguously. Decline at once so the
+            // agent is told instead of waiting for an answer nobody can give.
+            if let Some(reason) = wire::unanswerable_questions(&questions) {
+                let _ = self
+                    .params
+                    .writer
+                    .try_send(Input::Write(wire::deny_line(&request_id, reason)));
+                return Ok(());
+            }
             let exported: Vec<QuestionItem> = questions
                 .iter()
                 .map(|question| QuestionItem {
@@ -467,6 +480,7 @@ impl Connection {
             .unwrap_or_default()
         {
             "init" => {
+                self.on_commands(frame);
                 // A held turn end is superseded: the steer started another step of it.
                 if self.held_result.take().is_some() {
                     return Ok(());
@@ -509,6 +523,50 @@ impl Connection {
         }
     }
 
+    /// The slash commands Claude Code lists in its `init` frame. Each entry is a bare name
+    /// or an object with a name, description and argument hint; the list is sent again
+    /// only when it changed.
+    fn on_commands(&mut self, frame: &Value) {
+        let Some(listed) = frame.get("slash_commands").and_then(Value::as_array) else {
+            return;
+        };
+        let commands: Vec<CommandInfo> = listed
+            .iter()
+            .filter_map(|entry| {
+                let (name, description, hint) = match entry {
+                    Value::String(name) => (name.as_str(), "", None),
+                    Value::Object(_) => (
+                        entry.get("name").and_then(Value::as_str)?,
+                        entry
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                        entry
+                            .get("argumentHint")
+                            .or_else(|| entry.get("argument_hint"))
+                            .and_then(Value::as_str)
+                            .filter(|hint| !hint.is_empty()),
+                    ),
+                    _ => return None,
+                };
+                let name = self.shared.clean(name.trim_start_matches('/'));
+                CommandInfo::is_valid_name(&name).then(|| CommandInfo {
+                    name,
+                    description: self.shared.clean(description),
+                    input_hint: hint.map(|hint| self.shared.clean(hint)),
+                })
+            })
+            .take(MAX_COMMANDS)
+            .collect();
+        if commands == self.commands {
+            return;
+        }
+        self.commands = commands.clone();
+        self.shared.flush_before_event();
+        self.shared
+            .emit(AgentEventKind::AvailableCommands(commands));
+    }
+
     /// Whether a frame belongs to the main conversation (not a subagent's). Subagent
     /// frames only show that the turn is alive.
     fn top_level(&self, frame: &Value) -> bool {
@@ -545,7 +603,7 @@ impl Connection {
             return;
         }
         self.shared.note_turn_activity();
-        self.shared.push_text(role, text, false);
+        self.shared.push_text(role, text);
     }
 
     fn on_assistant(&mut self, frame: &Value) {

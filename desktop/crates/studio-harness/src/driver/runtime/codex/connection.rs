@@ -7,6 +7,7 @@ use crate::driver::{QuestionItem, QuestionPrompt};
 use futures::SinkExt;
 use serde_json::{Value, json};
 use std::sync::mpsc as std_mpsc;
+use std::time::Instant;
 
 pub(super) struct Params {
     /// The thread's working directory: the task's draft.
@@ -99,7 +100,8 @@ enum Pending {
         turn: u64,
         slash: bool,
     },
-    Steer(std_mpsc::SyncSender<Result<(), DriverError>>),
+    /// The steer's text, to report with the answer.
+    Steer(String),
     Interrupt,
 }
 
@@ -115,6 +117,10 @@ struct CodexTurn {
     started: bool,
     /// Stop was latched before the turn started.
     interrupt_due: bool,
+    /// A steer asked before `turn/started`, with the time it was asked: sent once the turn
+    /// is announced, refused (and never sent later) if the turn ends or the request
+    /// timeout passes first.
+    parked_steer: Option<(String, Instant)>,
 }
 
 struct Connection {
@@ -186,8 +192,32 @@ impl Connection {
         self.shared.set_phase(Phase::Initialize);
         self.request(Pending::Initialize, "initialize", rpc::initialize_params())?;
         loop {
-            let Ok(next) = input.recv() else {
-                return Ok(());
+            let next = match self.turn.parked_steer.as_ref() {
+                // A parked steer must not wait for a turn announcement that never comes.
+                Some((_, asked)) => {
+                    let wait = self
+                        .shared
+                        .limits
+                        .request_timeout
+                        .saturating_sub(asked.elapsed());
+                    match input.recv_timeout(wait) {
+                        Ok(next) => next,
+                        Err(std_mpsc::RecvTimeoutError::Timeout) => {
+                            if let Some((text, _)) = self.turn.parked_steer.take() {
+                                self.steer_result(
+                                    text,
+                                    Err("Codex did not announce the turn in time"),
+                                );
+                            }
+                            continue;
+                        }
+                        Err(std_mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
+                    }
+                }
+                None => match input.recv() {
+                    Ok(next) => next,
+                    Err(_) => return Ok(()),
+                },
             };
             match next {
                 Input::Line(line) => {
@@ -215,7 +245,7 @@ impl Connection {
                 Input::Write(line) => self.write(line)?,
                 Input::Wake => self.send_cancel()?,
                 Input::Prompt { turn, text, images } => self.start_turn(turn, &text, &images)?,
-                Input::Steer { text, reply } => self.steer(&text, reply)?,
+                Input::Steer { text } => self.steer(text)?,
                 Input::Shutdown => {
                     let _ = self.shared.latch_cancel(true);
                     let _ = self.send_cancel();
@@ -290,11 +320,20 @@ impl Connection {
         )
     }
 
-    fn steer(
-        &mut self,
-        text: &str,
-        reply: std_mpsc::SyncSender<Result<(), DriverError>>,
-    ) -> Result<(), AgentFailure> {
+    /// Reports what became of one steer.
+    fn steer_result(&self, text: String, outcome: Result<(), &str>) {
+        let (accepted, message) = match outcome {
+            Ok(()) => (true, String::new()),
+            Err(message) => (false, message.to_owned()),
+        };
+        self.shared.emit(AgentEventKind::SteerResult {
+            text,
+            accepted,
+            message,
+        });
+    }
+
+    fn steer(&mut self, text: String) -> Result<(), AgentFailure> {
         // Only a turn Codex announced and that is not being stopped can take a steer.
         let open = self
             .shared
@@ -303,16 +342,23 @@ impl Connection {
             .turn
             .as_ref()
             .is_some_and(|turn| !turn.cancel_requested);
+        if open && !self.turn.started && self.turn.parked_steer.is_none() {
+            self.turn.parked_steer = Some((text, Instant::now()));
+            return Ok(());
+        }
         let Some(expected) = self.turn.id.clone().filter(|_| self.turn.started && open) else {
-            let _ = reply.try_send(Err(DriverError::NoActiveTurn));
+            self.steer_result(
+                text,
+                Err("The agent is not running a turn that takes a message"),
+            );
             return Ok(());
         };
         let params = json!({
             "threadId": self.thread_id(),
             "expectedTurnId": expected,
-            "input": rpc::input(text, &[]),
+            "input": rpc::input(&text, &[]),
         });
-        self.request(Pending::Steer(reply), "turn/steer", params)
+        self.request(Pending::Steer(text), "turn/steer", params)
     }
 
     /// A latched Stop is written once Codex announced the turn.
@@ -460,11 +506,14 @@ impl Connection {
                 }
                 self.send_cancel()
             }
-            Pending::Steer(reply) => {
-                let _ = reply.try_send(match error {
-                    None => Ok(()),
-                    Some(_) => Err(DriverError::NoActiveTurn),
-                });
+            Pending::Steer(text) => {
+                self.steer_result(
+                    text,
+                    match error {
+                        None => Ok(()),
+                        Some(_) => Err("Codex did not take the message into the turn"),
+                    },
+                );
                 Ok(())
             }
             Pending::Interrupt => Ok(()),
@@ -543,6 +592,18 @@ impl Connection {
             session_id: exported,
             restored,
         });
+        self.shared.emit(AgentEventKind::AvailableCommands(vec![
+            CommandInfo {
+                name: "compact".to_owned(),
+                description: "Summarize the conversation to free up context".to_owned(),
+                input_hint: None,
+            },
+            CommandInfo {
+                name: "review".to_owned(),
+                description: "Review the working tree changes".to_owned(),
+                input_hint: Some("optional review instructions".to_owned()),
+            },
+        ]));
         self.shared.watchdog.disarm();
         self.shared.set_ready();
         Ok(())
@@ -589,6 +650,11 @@ impl Connection {
             }
             "item/tool/requestUserInput" => {
                 let questions = rpc::parse_questions(params);
+                if questions.is_empty() {
+                    // Nothing to ask: answer with no answers so the agent is not left
+                    // waiting for a reply nobody can give.
+                    return self.write(rpc::response(&id, json!({"answers": {}})));
+                }
                 let items: Vec<QuestionItem> = questions.iter().map(|q| q.item.clone()).collect();
                 (
                     "Codex has a question".to_owned(),
@@ -743,7 +809,7 @@ impl Connection {
             return;
         }
         self.shared.note_turn_activity();
-        self.shared.push_text(role, text, false);
+        self.shared.push_text(role, text);
     }
 
     fn on_turn_started(&mut self, params: &Value) -> Result<(), AgentFailure> {
@@ -760,6 +826,9 @@ impl Connection {
         self.turn.announced = Some(id.to_owned());
         self.turn.started = true;
         self.shared.note_turn_activity();
+        if let Some((text, _)) = self.turn.parked_steer.take() {
+            self.steer(text)?;
+        }
         self.send_cancel()
     }
 
@@ -890,6 +959,9 @@ impl Connection {
         self.open_items.clear();
         self.streamed.clear();
         self.file_changes.clear();
+        if let Some((text, _)) = self.turn.parked_steer.take() {
+            self.steer_result(text, Err("The turn ended before the message could be sent"));
+        }
         self.turn = CodexTurn::default();
         self.shared
             .finish_turn(turn, stop_reason, incomplete, TurnOrigin::Prompted);

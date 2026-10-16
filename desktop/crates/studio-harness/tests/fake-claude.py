@@ -146,7 +146,8 @@ def turn(frame):
     text = set(re.findall(r"\b[A-Z]+\b", prose))
     if isinstance(content, list):
         record("images.json", [b["source"]["media_type"] for b in content if b.get("type") == "image"])
-    system("init", cwd=os.getcwd(), tools=["Bash", "Edit", "AskUserQuestion"])
+    system("init", cwd=os.getcwd(), tools=["Bash", "Edit", "AskUserQuestion"],
+           slash_commands=["compact", "/review", "init"])
     send({"type": "user", "message": frame["message"], "session_id": SESSION,
           "parent_tool_use_id": None, "uuid": frame.get("uuid"), "isReplay": True})
     if "NOLOGIN" in text:

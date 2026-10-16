@@ -157,6 +157,9 @@ def run_turn(request):
     record("images.json", [i["path"] for i in params["input"] if i.get("type") == "localImage"])
     record("turn.json", params)
     words = set(re.findall(r"\b[A-Z]+\b", " ".join(text_parts)))
+    # NOSTART: the turn is announced only once the test creates the `release` file.
+    while "NOSTART" in words and not os.path.exists(os.path.join(ROOT, "release")):
+        time.sleep(0.05)
     # The server announces the turn a little after answering turn/start.
     deadline = time.time() + 0.3
     while time.time() < deadline:

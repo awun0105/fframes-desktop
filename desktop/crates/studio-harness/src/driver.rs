@@ -15,15 +15,16 @@ pub use api::{
 };
 pub use events::{
     AgentCapabilityInfo, AgentEvent, AgentEventKind, AgentFailure, AgentOptions, ClosedInfo,
-    ConfigKind, ConfigOption, ConfigValue, EventQueue, FailureKind, InitializedInfo, MessageRole,
-    ModeOption, OptionValue, PermissionChoice, PermissionId, PermissionPrompt, PermissionReply,
-    PermissionResolution, Phase, PlanEntry, PlanStatus, PromptOutcome, StopReasonKind, ToolEvent,
-    ToolStatus, TurnOrigin,
+    CommandInfo, ConfigKind, ConfigOption, ConfigValue, EventQueue, FailureKind, InitializedInfo,
+    MessageRole, ModeOption, OptionValue, PermissionChoice, PermissionId, PermissionPrompt,
+    PermissionReply, PermissionResolution, Phase, PlanEntry, PlanStatus, PromptOutcome,
+    StopReasonKind, ToolEvent, ToolStatus, TurnOrigin,
 };
 pub use redact::{REDACTION_MARK, Redactor, StreamRedactor};
 pub use runtime::{
     AcpDriver, ClaudeDriver, CodexDriver, DriverConfig, DriverError, DriverLimits, DriverMode,
-    DriverOutcome, DriverStatus, McpStdioSupport, OwnershipSource, PromptImage, SessionInfo,
+    DriverOutcome, DriverStatus, McpStdioSupport, OwnershipSource, PromptFile, PromptImage,
+    SessionInfo,
 };
 pub use transcript::{Transcript, TranscriptEntry, TranscriptPage};
 

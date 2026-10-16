@@ -12,8 +12,8 @@ use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
 
 use super::{
     AcpDriver, AgentEvent, AgentFailure, AgentOptions, ClaudeDriver, CodexDriver, DriverConfig,
-    DriverError, DriverOutcome, OptionValue, PermissionId, PermissionReply, PromptImage,
-    PromptOutcome, SessionInfo,
+    DriverError, DriverOutcome, OptionValue, PermissionId, PermissionReply, PromptFile,
+    PromptImage, PromptOutcome, SessionInfo,
 };
 
 /// The protocol an adapter speaks on its stdio.
@@ -77,6 +77,8 @@ pub struct DriverCapabilities {
     /// The wire can carry prompt images. ACP additionally needs the agent to negotiate
     /// image prompts (`AgentCapabilityInfo::prompt_image`).
     pub images: bool,
+    /// The wire can point the agent at files ([`AgentDriver::prompt_with_files`]).
+    pub files: bool,
 }
 
 /// One question in a [`QuestionPrompt`].
@@ -136,7 +138,25 @@ pub trait AgentDriver: Send {
     fn prompt_image_budget(&self, text: &str, count: usize) -> usize;
     /// Starts a prompted turn; returns its turn id.
     fn prompt(&self, text: &str, images: Vec<PromptImage>) -> Result<u64, DriverError>;
-    /// Delivers `text` to the running turn at the driver's steering boundary.
+    /// Starts a prompted turn that also points the agent at `files`. A wire that cannot
+    /// carry files (`DriverCapabilities::files`) refuses a non-empty list instead of
+    /// dropping it.
+    fn prompt_with_files(
+        &self,
+        text: &str,
+        files: Vec<PromptFile>,
+        images: Vec<PromptImage>,
+    ) -> Result<u64, DriverError> {
+        if !files.is_empty() {
+            return Err(DriverError::Unsupported(
+                "this agent cannot take file attachments",
+            ));
+        }
+        self.prompt(text, images)
+    }
+    /// Delivers `text` to the running turn at the driver's steering boundary. Never waits
+    /// for the agent: `Ok` means the message was handed to the wire, and the agent's
+    /// answer arrives as exactly one `AgentEventKind::SteerResult`.
     fn steer(&self, text: &str) -> Result<(), DriverError>;
     /// Stops the running turn; the turn still ends with its `PromptFinished`.
     fn cancel_turn(&self) -> Result<(), DriverError>;
@@ -179,8 +199,16 @@ impl AgentDriver for AcpDriver {
             deterministic_turn_end: false,
             // Cancel keeps the adapter running for the next prompt.
             stops_turn_in_place: true,
-            steering: SteeringMode::None,
+            // A message reaches a running turn only through the `_session/steering`
+            // extension, when the adapter advertised it.
+            steering: if self.steering_negotiated() {
+                SteeringMode::StepBoundary
+            } else {
+                SteeringMode::None
+            },
             images: true,
+            // Resource links are baseline ACP content.
+            files: true,
         }
     }
 
@@ -220,10 +248,17 @@ impl AgentDriver for AcpDriver {
         AcpDriver::prompt_with_images(self, text, images)
     }
 
-    fn steer(&self, _text: &str) -> Result<(), DriverError> {
-        Err(DriverError::Unsupported(
-            "this agent cannot take a message during a turn",
-        ))
+    fn prompt_with_files(
+        &self,
+        text: &str,
+        files: Vec<PromptFile>,
+        images: Vec<PromptImage>,
+    ) -> Result<u64, DriverError> {
+        AcpDriver::prompt_with_files(self, text, files, images)
+    }
+
+    fn steer(&self, text: &str) -> Result<(), DriverError> {
+        AcpDriver::steer_turn(self, text)
     }
 
     fn cancel_turn(&self) -> Result<(), DriverError> {

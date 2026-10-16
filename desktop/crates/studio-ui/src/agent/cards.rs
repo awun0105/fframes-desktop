@@ -22,6 +22,7 @@ impl ConversationPanel {
                         .child(self.caption(match source {
                             UserSource::Brief => "You",
                             UserSource::Clarification => "You (answer)",
+                            UserSource::Followup => "You (follow-up)",
                             UserSource::Repair => "Automatic repair context (sent by Studio)",
                         }))
                         .child(

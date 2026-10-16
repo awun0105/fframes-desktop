@@ -210,6 +210,28 @@ def run_prompt(message):
         chunk("still fine")
         finish()
         return
+    if mode in ("steer", "steer-reject"):
+        chunk("working ")
+        record("turn-open.json", {})
+        return
+    if mode in ("files", "embedded"):
+        record("prompt-blocks.json", message["params"]["prompt"])
+        chunk("seen")
+        finish()
+        return
+    if mode == "plan":
+        update({"sessionUpdate": "available_commands_update", "availableCommands": [
+            {"name": "/compact", "description": "Compact the context"},
+            {"name": "review", "description": "Review changes", "input": {"hint": "what to review"}},
+        ]})
+        update({"sessionUpdate": "plan", "entries": [
+            {"content": "read the code", "priority": "high", "status": "completed"},
+            {"content": "edit it", "priority": "medium", "status": "in_progress"},
+            {"content": "test it", "priority": "low", "status": "pending"},
+        ]})
+        chunk("planned")
+        finish()
+        return
     if mode == "push-options":
         update({"sessionUpdate": "current_mode_update", "currentModeId": "plan"})
         update({"sessionUpdate": "config_option_update", "configOptions": [dict(OPTIONS["configOptions"][0], currentValue="deep")]})
@@ -467,9 +489,11 @@ for line in sys.stdin:
         result = {
             "protocolVersion": version,
             "agentInfo": {"name": "protocol-peer", "version": "test"},
-            "agentCapabilities": {"loadSession": mode == "load", "promptCapabilities": {"image": mode == "image-ok"}},
+            "agentCapabilities": {"loadSession": mode == "load", "promptCapabilities": {"image": mode == "image-ok", "embeddedContext": mode == "embedded"}},
             "authMethods": [{"id": "key", "name": "API key"}] if mode in AUTH_MODES else [],
         }
+        if mode in ("steer", "steer-reject"):
+            result["agentCapabilities"]["_meta"] = {"steering": True}
         if mode == "meta-secret":
             result["agentInfo"] = {"name": "agent-" + SECRET, "version": "v-" + SECRET}
         if mode.startswith("srvtool") and mode != "srvtool-other-agent":
@@ -490,8 +514,11 @@ for line in sys.stdin:
         elif mode in ("auth-required",) or (mode == "auth-ok" and not authed):
             send({"id": message["id"], "error": {"code": -32000, "message": "Authentication required"}})
         elif method == "session/load":
+            SESSION_ID = message["params"]["sessionId"]
             chunk("replayed question", "user_message_chunk", sid=message["params"]["sessionId"])
             chunk("replayed answer", "agent_message_chunk", sid=message["params"]["sessionId"])
+            update({"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "compact", "description": "Compact the context"}]}, message["params"]["sessionId"])
+            update({"sessionUpdate": "plan", "entries": [{"content": "resume work", "priority": "high", "status": "in_progress"}]}, message["params"]["sessionId"])
             send({"id": message["id"], "result": {}})
         else:
             result = {"sessionId": SESSION_ID}
@@ -524,6 +551,14 @@ for line in sys.stdin:
             send({"id": message["id"], "error": {"code": -32602, "message": "rejected"}})
     elif method == "session/prompt":
         run_prompt(message)
+    elif method == "_session/steering":
+        record("steering.json", message["params"])
+        if mode == "steer-reject":
+            send({"id": message["id"], "error": {"code": -32602, "message": "cannot steer now"}})
+        else:
+            send({"id": message["id"], "result": {}})
+            chunk("steered")
+            finish()
     elif method == "session/cancel":
         record("cancel.json", message)
         if mode == "hang-cancel":

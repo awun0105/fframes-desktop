@@ -69,6 +69,11 @@ INIT_MODE = os.environ.get("SCRIPTED_AGENT_INIT") or (
 )
 PROMPT_IMAGE = os.environ.get("SCRIPTED_PROMPT_IMAGE") == "1" or (root / "prompt-image").is_file()
 LOAD_SESSION = os.environ.get("SCRIPTED_LOAD_SESSION") == "1" or (root / "load-session").is_file()
+# ROOT/steering: advertise the `_session/steering` extension (a message into a running turn).
+STEERING = (root / "steering").is_file()
+# ROOT/embedded-context: advertise embedded resources in prompts.
+EMBEDDED_CONTEXT = (root / "embedded-context").is_file()
+steered = False  # a `_session/steering` request arrived
 HARD_CAP_SECONDS = 120
 DEFAULT_SCRIPT = {"text": "done", "write": {"edit.txt": "edited"}}
 
@@ -170,6 +175,12 @@ def chunk(text, kind="agent_message_chunk"):
     update({"sessionUpdate": kind, "content": {"type": "text", "text": text}})
 
 
+COMMANDS_UPDATE = {"sessionUpdate": "available_commands_update", "availableCommands": [
+    {"name": "compact", "description": "Compact the context"},
+    {"name": "review", "description": "Review the changes", "input": {"hint": "what to review"}},
+]}
+
+
 def finish(reason="end_turn"):
     """Answers the active prompt exactly once."""
     global active
@@ -195,7 +206,7 @@ def reader():
 
 
 def handle(line):
-    global active, cancelled, mode_id, model_value, mcp_servers
+    global active, cancelled, mode_id, model_value, mcp_servers, SESSION_ID
     if line is None:
         while LINGER:
             time.sleep(1)
@@ -224,7 +235,11 @@ def handle(line):
         send({"id": rid, "result": {
             "protocolVersion": 1,
             "agentInfo": {"name": "scripted-agent", "version": "test"},
-            "agentCapabilities": {"loadSession": LOAD_SESSION, "promptCapabilities": {"image": PROMPT_IMAGE}},
+            "agentCapabilities": {
+                "loadSession": LOAD_SESSION,
+                "promptCapabilities": {"image": PROMPT_IMAGE, "embeddedContext": EMBEDDED_CONTEXT},
+                **({"_meta": {"steering": True}} if STEERING else {}),
+            },
             "authMethods": [],
         }})
     elif method == "session/new":
@@ -242,12 +257,31 @@ def handle(line):
             while hold.exists() and not (root / "release-session").exists() and time.time() < deadline:
                 time.sleep(0.01)
             send({"id": rid, "result": {"sessionId": SESSION_ID, **OPTIONS}})
+            if (root / "commands").is_file():
+                update(COMMANDS_UPDATE)
     elif method in ("session/load", "session/resume"):
         record("session-load.json", params)
         if (root / "fail-load").is_file() or INIT_MODE == "fail_load":
             send({"id": rid, "error": {"code": -32002, "message": "Failed to load session"}})
         else:
+            SESSION_ID = params.get("sessionId", SESSION_ID)  # the loaded session is the one updates name
+            if method == "session/load" and (root / "replay-on-load").is_file():
+                # session/load replays the whole conversation before it answers; the client
+                # shows its own log, not this.
+                chunk("replayed question", "user_message_chunk")
+                chunk("replayed answer")
+                update({"sessionUpdate": "tool_call", "toolCallId": "replayed-tool", "title": "Replayed tool", "kind": "other", "status": "completed"})
+                update(COMMANDS_UPDATE)
+                update({"sessionUpdate": "plan", "entries": [{"content": "resume work", "priority": "high", "status": "in_progress"}]})
             send({"id": rid, "result": {"sessionId": params.get("sessionId", SESSION_ID), **OPTIONS}})
+    elif method == "_session/steering":
+        global steered
+        if (root / "steer-reject").is_file():
+            send({"id": rid, "error": {"code": -32000, "message": "cannot steer now"}})
+        else:
+            append_jsonl("steering.jsonl", params)
+            steered = True
+            send({"id": rid, "result": {}})
     elif method == "session/set_mode":
         record("set-mode.json", params)
         if params.get("modeId") in ("code", "plan"):
@@ -420,6 +454,26 @@ def run_script(script):
     if "thought" in script:
         chunk(script["thought"], "agent_thought_chunk")
 
+    if "plan" in script:
+        update({"sessionUpdate": "plan", "entries": [
+            {"content": entry["text"], "priority": "medium", "status": entry.get("status", "pending")}
+            for entry in script["plan"]
+        ]})
+
+    # Tool calls that stay open until ROOT/<close_tools_file> exists (a step boundary the
+    # test controls).
+    open_cards = tool_cards(script.get("tool_open") or [])
+    for card in open_cards:
+        update({"sessionUpdate": "tool_call", "toolCallId": card["id"], "title": card["title"], "kind": card["kind"], "status": "in_progress"})
+    if open_cards:
+        wait_until((root / script.get("close_tools_file", "close-tools")).exists)
+        for card in open_cards:
+            update({"sessionUpdate": "tool_call_update", "toolCallId": card["id"], "status": "completed"})
+
+    if script.get("wait_steer"):
+        wait_until(lambda: steered)
+        chunk("steered")
+
     if script.get("tool"):
         extra = script.get("tool_updates", 1)
         cards = tool_cards(script["tool"])
@@ -551,6 +605,20 @@ def run_prompt(message):
         "cwd": os.getcwd(),
         "script_index": index,
         "image_blocks": image_blocks,
+        "resource_links": [
+            {"uri": block.get("uri"), "name": block.get("name")}
+            for block in params.get("prompt", [])
+            if isinstance(block, dict) and block.get("type") == "resource_link"
+        ],
+        "embedded_resources": [
+            {
+                "uri": (block.get("resource") or {}).get("uri"),
+                "text": (block.get("resource") or {}).get("text"),
+                "blob": (block.get("resource") or {}).get("blob"),
+            }
+            for block in params.get("prompt", [])
+            if isinstance(block, dict) and block.get("type") == "resource"
+        ],
     })
     try:
         run_script(script)

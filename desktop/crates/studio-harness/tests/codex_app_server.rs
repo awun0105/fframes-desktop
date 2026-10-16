@@ -410,6 +410,7 @@ fn a_steer_reaches_the_running_turn_and_a_refused_one_is_an_error() {
     let events = collect_until(&*driver, |e| finished(e).is_some());
     assert_eq!(finished(events.last().unwrap()).unwrap().turn, turn);
     assert!(agent_text(&events, MessageRole::Agent).ends_with("steered"));
+    assert_eq!(steer_results(&events), [("also do this".to_owned(), true)]);
     let steer = read_json(root.path(), "steer.json");
     assert!(
         steer["expectedTurnId"]
@@ -429,10 +430,64 @@ fn a_steer_reaches_the_running_turn_and_a_refused_one_is_an_error() {
     collect_until(&*driver, |e| {
         matches!(e.kind, AgentEventKind::MessageDelta { .. })
     });
-    assert!(matches!(
-        driver.steer("refused"),
-        Err(DriverError::NoActiveTurn)
-    ));
+    // The call only hands the message over; Codex's refusal arrives as an event.
+    driver.steer("refused").unwrap();
+    let events = collect_until(&*driver, |e| finished(e).is_some());
+    assert_eq!(steer_results(&events), [("refused".to_owned(), false)]);
+}
+
+/// `(text, accepted)` of every steer answer in `events`.
+fn steer_results(events: &[AgentEvent]) -> Vec<(String, bool)> {
+    events
+        .iter()
+        .filter_map(|e| match &e.kind {
+            AgentEventKind::SteerResult { text, accepted, .. } => Some((text.clone(), *accepted)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_parked_steer_never_blocks_the_caller_and_is_dropped_when_the_turn_does_not_start() {
+    let root = tempfile::tempdir().unwrap();
+    let mut cfg = config(root.path(), "turns");
+    cfg.limits.request_timeout = Duration::from_millis(400);
+    let (driver, _manager) = start_with(cfg);
+    let turn = driver.prompt("NOSTART", Vec::new()).unwrap();
+    let asked = Instant::now();
+    driver.steer("too slow").unwrap();
+    assert!(
+        asked.elapsed() < Duration::from_millis(300),
+        "steer waited for the agent: {:?}",
+        asked.elapsed()
+    );
+    let events = collect_until(&*driver, |e| {
+        matches!(e.kind, AgentEventKind::SteerResult { .. })
+    });
+    assert_eq!(steer_results(&events), [("too slow".to_owned(), false)]);
+    // The turn starts afterwards: the dropped message is not delivered late.
+    std::fs::write(root.path().join("release"), "go").unwrap();
+    let events = collect_until(&*driver, |e| finished(e).is_some());
+    assert_eq!(finished(events.last().unwrap()).unwrap().turn, turn);
+    assert!(steer_results(&events).is_empty());
+    assert!(!root.path().join("steer.json").exists());
+}
+
+#[test]
+fn a_steer_asked_before_the_turn_is_announced_is_delivered_once_it_is() {
+    let root = tempfile::tempdir().unwrap();
+    let (driver, _manager) = start(root.path(), "turns");
+    let turn = driver.prompt("STEER me", Vec::new()).unwrap();
+    // The fixture announces the turn a moment after it answers turn/start.
+    driver.steer("right away").unwrap();
+    let events = collect_until(&*driver, |e| finished(e).is_some());
+    assert_eq!(finished(events.last().unwrap()).unwrap().turn, turn);
+    assert!(agent_text(&events, MessageRole::Agent).ends_with("steered"));
+    assert_eq!(steer_results(&events), [("right away".to_owned(), true)]);
+    assert_eq!(
+        read_json(root.path(), "steer.json")["input"][0]["text"],
+        "right away"
+    );
 }
 
 #[test]

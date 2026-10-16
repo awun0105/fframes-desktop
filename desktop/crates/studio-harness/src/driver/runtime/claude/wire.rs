@@ -137,6 +137,25 @@ pub(crate) fn answers_line(
     )
 }
 
+/// Why a question request cannot be answered, if it cannot: Claude reads the answers by
+/// question text, so an empty list, an empty text or a repeated text has no unambiguous
+/// answer.
+pub(crate) fn unanswerable_questions(questions: &[QuestionItem]) -> Option<&'static str> {
+    if questions.is_empty() {
+        return Some("The question request contained no questions.");
+    }
+    let mut seen = std::collections::HashSet::new();
+    for question in questions {
+        if question.question.trim().is_empty() {
+            return Some("A question had no text, so it cannot be answered.");
+        }
+        if !seen.insert(question.question.as_str()) {
+            return Some("Two questions had the same text, so the answers cannot be told apart.");
+        }
+    }
+    None
+}
+
 /// The questions of an `AskUserQuestion` input. Option objects give their `label`
 /// (descriptions are kept), plain strings are labels.
 pub(crate) fn parse_questions(input: &Value) -> Vec<QuestionItem> {
@@ -248,6 +267,20 @@ mod tests {
         assert_eq!(updated["answers"]["Pick one"], "B");
         assert_eq!(updated["answers"]["Which?"], json!(["X", "Y"]));
         assert_eq!(updated["answers"]["Name it"], "a name");
+    }
+
+    #[test]
+    fn a_question_request_that_cannot_be_answered_unambiguously_is_declined() {
+        assert!(unanswerable_questions(&parse_questions(&json!({"questions": []}))).is_some());
+        assert!(unanswerable_questions(&parse_questions(&json!({}))).is_some());
+        assert!(
+            unanswerable_questions(&parse_questions(&json!({"questions": [{"header": "h"}]})))
+                .is_some()
+        );
+        let twice = json!({"questions": [{"question": "Same?"}, {"question": "Same?"}]});
+        assert!(unanswerable_questions(&parse_questions(&twice)).is_some());
+        let fine = json!({"questions": [{"question": "One?"}, {"question": "Two?"}]});
+        assert!(unanswerable_questions(&parse_questions(&fine)).is_none());
     }
 
     #[test]

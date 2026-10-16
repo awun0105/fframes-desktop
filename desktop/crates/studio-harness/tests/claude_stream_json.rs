@@ -372,6 +372,10 @@ fn a_steer_taken_up_after_the_reported_end_continues_the_same_turn() {
     let events = collect_until(&*driver, |e| finished(e).is_some());
     assert_eq!(finished(events.last().unwrap()).unwrap().turn, turn);
     assert!(agent_text(&events, MessageRole::Agent).ends_with("steered"));
+    assert!(events.iter().any(|e| matches!(
+        &e.kind,
+        AgentEventKind::SteerResult { text, accepted: true, .. } if text == "also do this"
+    )));
     let steer = read_json(root.path(), "steer.json");
     assert_eq!(steer["priority"], "now");
     assert_eq!(steer["message"]["content"], "also do this");

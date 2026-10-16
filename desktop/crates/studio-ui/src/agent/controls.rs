@@ -711,6 +711,7 @@ mod tests {
             task: None,
             queue: Vec::new(),
             rows: Vec::new(),
+            composer: Default::default(),
             older_rows: false,
             chat: 0,
             review_policy: ReviewPolicy::AutoApply,

@@ -176,6 +176,7 @@ impl Actor {
             return;
         };
         self.driver_epoch += 1;
+        self.retire_composer();
         let identity = active.ctx.identity.clone();
         // Closing a driver closes its open permissions as cancelled.
         if let Some(driver) = active.driver.take() {
