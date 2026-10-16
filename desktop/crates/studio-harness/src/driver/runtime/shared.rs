@@ -458,16 +458,25 @@ impl Shared {
     }
 
     pub(super) fn on_update(&self, notification: SessionNotification) -> Result<(), RpcError> {
-        let (matches, in_turn, restoring, stopping) = {
+        let (matches, unbound, in_turn, restoring, stopping) = {
             let core = self.core.lock();
             (
                 core.session.as_deref() == Some(&*notification.session_id.0),
+                core.session.is_none(),
                 core.turn.is_some(),
                 core.restoring,
                 core.stopping,
             )
         };
-        if !matches {
+        // Agents push their command list right after `session/new` answers, which can be
+        // dispatched before the connection task has stored the new session id. Plans and
+        // command lists are display-only, so those two are accepted until the id is known.
+        let early_display = unbound
+            && matches!(
+                notification.update,
+                SessionUpdate::Plan(_) | SessionUpdate::AvailableCommandsUpdate(_)
+            );
+        if !matches && !early_display {
             return Err(self.protocol_violation("session identity mismatch"));
         }
         if stopping {
@@ -497,6 +506,9 @@ impl Shared {
                 self.on_message(MessageRole::User, &chunk.content, in_turn, restoring)
             }
             SessionUpdate::ToolCall(call) => {
+                if restoring {
+                    return Ok(());
+                }
                 if !in_turn {
                     return self.late();
                 }
@@ -511,6 +523,9 @@ impl Shared {
                 Ok(())
             }
             SessionUpdate::ToolCallUpdate(update) => {
+                if restoring {
+                    return Ok(());
+                }
                 if !in_turn {
                     return self.late();
                 }
@@ -547,9 +562,59 @@ impl Shared {
                 self.emit(AgentEventKind::Options(snapshot));
                 Ok(())
             }
-            // Plans, command lists, usage and session info carry no workflow authority.
+            // The plan is displayed, never acted on. A restored session replays its latest
+            // plan, which is kept (it is state, not transcript).
+            SessionUpdate::Plan(plan) => {
+                let entries = plan
+                    .entries
+                    .iter()
+                    .take(MAX_PLAN_ENTRIES)
+                    .map(|entry| PlanEntry {
+                        text: self.clean(&entry.content),
+                        status: match entry.status {
+                            PlanEntryStatus::InProgress => PlanStatus::InProgress,
+                            PlanEntryStatus::Completed => PlanStatus::Completed,
+                            _ => PlanStatus::Pending,
+                        },
+                    })
+                    .collect();
+                self.emit_display_state(restoring, AgentEventKind::Plan(entries));
+                Ok(())
+            }
+            // Commands are offered for the user to type; the agent interprets them.
+            SessionUpdate::AvailableCommandsUpdate(update) => {
+                let commands = update
+                    .available_commands
+                    .iter()
+                    .take(MAX_COMMANDS)
+                    .map(|command| CommandInfo {
+                        name: self.clean(command.name.trim_start_matches('/')),
+                        description: self.clean(&command.description),
+                        input_hint: command.input.as_ref().and_then(|input| match input {
+                            AvailableCommandInput::Unstructured(input) => {
+                                Some(self.clean(&input.hint))
+                            }
+                            _ => None,
+                        }),
+                    })
+                    .filter(|command| CommandInfo::is_valid_name(&command.name))
+                    .collect();
+                self.emit_display_state(restoring, AgentEventKind::AvailableCommands(commands));
+                Ok(())
+            }
+            // Usage and session info carry no workflow authority.
             _ => Ok(()),
         }
+    }
+
+    /// Emits a display-only state event (plan, command list). Held text is released first
+    /// so the order stays chronological, except while a session is being restored: the
+    /// replayed text is dropped, and releasing would only reset the stream state.
+    fn emit_display_state(&self, restoring: bool, kind: AgentEventKind) {
+        if !restoring {
+            self.flush_before_event();
+        }
+        self.emit(kind);
     }
 
     pub(super) fn on_message(
@@ -559,39 +624,40 @@ impl Shared {
         in_turn: bool,
         restoring: bool,
     ) -> Result<(), RpcError> {
-        if !in_turn && !restoring {
+        // Replayed history (`session/load`) is dropped: the host's stored conversation is
+        // the only source of rows, so a replay can never show a message twice.
+        if restoring {
+            return Ok(());
+        }
+        if !in_turn {
             return self.late();
         }
         let text = match content {
             ContentBlock::Text(text) => text.text.as_str(),
             _ => "[non-text content omitted]",
         };
-        self.push_text(role, text, restoring);
+        self.push_text(role, text);
         Ok(())
     }
 
     /// Streams one text delta of `role` through redaction, keeping roles chronological.
-    pub(in crate::driver) fn push_text(&self, role: MessageRole, text: &str, restoring: bool) {
+    pub(in crate::driver) fn push_text(&self, role: MessageRole, text: &str) {
         // Text held for another role is released first.
         for other in ROLES {
             if other != role {
                 let held = self.streams.lock().get(other).flush_at_boundary();
-                self.release_text(other, held, restoring);
+                self.release_text(other, held);
             }
         }
         let released = self.streams.lock().get(role).push(text);
-        self.release_text(role, released, restoring);
+        self.release_text(role, released);
     }
 
-    pub(super) fn release_text(&self, role: MessageRole, text: String, restoring: bool) {
+    pub(super) fn release_text(&self, role: MessageRole, text: String) {
         if text.is_empty() {
             return;
         }
         self.transcript.lock().append(role, &text);
-        // Replayed history is available through transcript pages, not live events.
-        if restoring {
-            return;
-        }
         // Events stay within the delta size cap so 256 queued events bound memory.
         for part in split_chunks(&text, MAX_DELTA_EVENT_BYTES) {
             if !self.emit(AgentEventKind::MessageDelta {
@@ -608,23 +674,23 @@ impl Shared {
     pub(super) fn flush_before_event(&self) {
         for role in ROLES {
             let held = self.streams.lock().get(role).flush_at_boundary();
-            self.release_text(role, held, false);
+            self.release_text(role, held);
         }
     }
 
-    /// Turn/restore boundary: a message never continues into the next turn or the replay
-    /// into the first live turn, so a held secret prefix cannot be completed any more and
-    /// is released with its own turn instead of leaking into the next one.
-    pub(super) fn finish_streams_at_turn_end(&self, restoring: bool) {
+    /// Turn boundary: a message never continues into the next turn, so a held secret
+    /// prefix cannot be completed any more and is released with its own turn instead of
+    /// leaking into the next one.
+    pub(super) fn finish_streams_at_turn_end(&self) {
         for role in ROLES {
             let rest = self.streams.lock().get(role).finish();
-            self.release_text(role, rest, restoring);
+            self.release_text(role, rest);
         }
     }
 
     /// True end of every stream: nothing more can ever complete a held prefix.
     pub(super) fn finish_streams(&self) {
-        self.finish_streams_at_turn_end(false);
+        self.finish_streams_at_turn_end();
     }
 
     // ---- options -------------------------------------------------------------------
@@ -925,7 +991,7 @@ impl Shared {
         };
         self.push_permission_closed(&closed);
         // Held-back text belongs to this turn; release it before the completion event.
-        self.finish_streams_at_turn_end(false);
+        self.finish_streams_at_turn_end();
         self.watchdog.disarm();
         let scan = self.child.lock().escaped_descendants();
         self.note_scan(scan);

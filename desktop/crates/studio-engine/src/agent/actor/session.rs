@@ -477,6 +477,7 @@ impl Actor {
             return;
         }
         self.shared.settings.lock().adapter = Some(settings);
+        self.composer.forget_commands();
         self.settings_changed();
 
         self.next_draft_choice = Some(draft_choice);
@@ -894,6 +895,9 @@ impl Actor {
         self.next_draft_choice = None;
         self.resume_attempt = false;
         self.resume_failed = false;
+        // The old agent session's commands and plan are not this conversation's.
+        self.composer.forget_commands();
+        self.composer.plan.clear();
         self.chat += 1;
     }
 

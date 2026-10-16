@@ -174,6 +174,15 @@ pub(super) async fn drive(
             ),
         ));
     }
+    shared.steering.store(
+        init.agent_capabilities
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get(STEERING_CAPABILITY))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        Ordering::SeqCst,
+    );
     let raw_info = initialized_info(&init, params.mcp_stdio);
     shared.claude_adapter.store(
         CLAUDE_ADAPTER_NAMES.contains(&raw_info.agent_name.as_str()),
@@ -279,7 +288,6 @@ pub(super) async fn drive(
         )
     })?;
     let (new_id, modes, config) = reply.map_err(|e| shared.rpc_failure(Phase::Session, e))?;
-    shared.finish_streams_at_turn_end(true);
     {
         let mut core = shared.core.lock();
         if let Some(id) = new_id {
@@ -384,6 +392,29 @@ pub(super) async fn command_loop(
                                 result.map(|r| Some(r.config_options)),
                                 false,
                             );
+                            async { Ok(()) }
+                        })
+                        .map_err(|e| internal(shared, e))?;
+                }
+                Command::Steer { text } => {
+                    let session = shared.core.lock().session.clone().unwrap_or_default();
+                    let request = UntypedMessage::new(
+                        STEERING_METHOD,
+                        serde_json::json!({ "sessionId": session, "text": text }),
+                    )
+                    .map_err(|e| internal(shared, e))?;
+                    let sh = shared.clone();
+                    cx.send_request(request)
+                        .on_receiving_result(move |result| {
+                            let (accepted, message) = match result {
+                                Ok(_) => (true, String::new()),
+                                Err(error) => (false, sh.clean(&error.message)),
+                            };
+                            sh.emit(AgentEventKind::SteerResult {
+                                text,
+                                accepted,
+                                message,
+                            });
                             async { Ok(()) }
                         })
                         .map_err(|e| internal(shared, e))?;

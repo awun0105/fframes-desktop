@@ -7,6 +7,7 @@
 //! the task's [`Gate`] and process scopes, so it stays actionable in every state.
 
 mod apply;
+mod composer;
 mod finish;
 mod prompt;
 mod rows;
@@ -14,7 +15,7 @@ mod session;
 mod turn;
 
 use super::{
-    AdapterSettings, PermissionAnswer, Shared, ToolSettings, WorkflowError,
+    AdapterSettings, PermissionAnswer, PreparedAttachment, Shared, ToolSettings, WorkflowError,
     jobs::{
         self, Env, Gate, HandoffOutcome, JobKind, PipelineEnd, PipelineInput, ProbeInput,
         PromoteEnd, Retained, UndoEnd, observe_writer, reap_and_observe, run_pipeline, run_probe,
@@ -79,6 +80,24 @@ pub(crate) enum Msg {
         id: u64,
         brief: String,
         scope: Option<Box<TaskScope>>,
+        attachments: Vec<PreparedAttachment>,
+    },
+    /// Deliver text to the running turn (the agent negotiated it).
+    Steer(String),
+    /// Cancel the running turn and prompt again with this message.
+    SendNow {
+        text: String,
+        attachments: Vec<PreparedAttachment>,
+    },
+    /// Send this message at the next step boundary of the running turn.
+    SendAtBoundary {
+        text: String,
+        attachments: Vec<PreparedAttachment>,
+    },
+    CancelHeld,
+    AnswerQuestions {
+        reference: PermissionRef,
+        answers: Vec<QuestionAnswer>,
     },
     SetDisplayedPreviewIdentity(Option<PreviewIdentity>),
     CancelQueued(u64),
@@ -219,6 +238,10 @@ struct Active {
     rejecting: bool,
     in_repair: bool,
     pending_prompt: Option<(String, PromptKind)>,
+    /// What the user attached to the brief; it travels with the first prompt.
+    first_attachments: Vec<PreparedAttachment>,
+    /// The conversation row of the brief, which names what was attached once it is sent.
+    brief_row: Option<RowId>,
     /// The before evidence is still rendering: the first prompt waits for it.
     before_pending: bool,
     /// The session is ready and the first prompt is waiting for `before_pending`.
@@ -249,6 +272,7 @@ struct Queued {
     brief: String,
     queued_unix: u64,
     scope: Option<TaskScope>,
+    attachments: Vec<PreparedAttachment>,
 }
 
 struct UndoRun {
@@ -330,6 +354,8 @@ pub(crate) struct Actor {
     resume_attempt: bool,
     /// Resuming failed: the stored manifest stays as it was.
     resume_failed: bool,
+    /// Composer state: commands, plan, open questions, follow-up delivery.
+    composer: composer::ComposerRun,
 }
 #[derive(Debug, Clone)]
 struct PendingResumeSession {
@@ -519,6 +545,7 @@ impl Actor {
             chat: 0,
             resume_attempt: false,
             resume_failed: false,
+            composer: Default::default(),
         };
         actor.offer_saved_session();
         actor.settings_changed();
@@ -648,7 +675,21 @@ impl Actor {
             }
             Msg::CheckAdapter => self.check_adapter(true),
             Msg::SettingsChanged => self.settings_changed(),
-            Msg::Submit { id, brief, scope } => self.submit(id, brief, scope.map(|scope| *scope)),
+            Msg::Submit {
+                id,
+                brief,
+                scope,
+                attachments,
+            } => self.submit(id, brief, scope.map(|scope| *scope), attachments),
+            Msg::Steer(text) => self.composer_steer(text),
+            Msg::SendNow { text, attachments } => self.composer_send_now(text, attachments),
+            Msg::SendAtBoundary { text, attachments } => {
+                self.composer_send_at_boundary(text, attachments)
+            }
+            Msg::CancelHeld => self.composer_cancel_held(),
+            Msg::AnswerQuestions { reference, answers } => {
+                self.composer_answer_questions(reference, answers)
+            }
             Msg::SetDisplayedPreviewIdentity(identity) => {
                 self.displayed_preview_identity = identity;
                 self.touch();

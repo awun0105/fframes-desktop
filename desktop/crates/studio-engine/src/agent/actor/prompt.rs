@@ -1,6 +1,19 @@
 //! The live turn: driver pumping, scope evidence, prompts, agent events and permissions.
 
 use super::*;
+use crate::agent::OpenQuestion;
+use studio_harness::driver::{DriverError, PromptFile};
+
+pub(super) fn prompt_failure(error: DriverError) -> AgentFailure {
+    match error {
+        DriverError::Failed(failure) => failure,
+        other => AgentFailure::new(
+            studio_harness::driver::FailureKind::PromptRejected,
+            studio_harness::driver::Phase::Prompt,
+            other.to_string(),
+        ),
+    }
+}
 
 impl Actor {
     // ---- pumping the live driver ---------------------------------------------------------------------
@@ -149,11 +162,22 @@ impl Actor {
                 return;
             }
         }
-        let (images, image_limitation) = if matches!(&kind, PromptKind::Brief) {
-            self.before_prompt_images(&identity.task, &prompt)
+        // What the user attached wins the image cap; the before evidence takes what is left.
+        let (files, user_images) = if matches!(&kind, PromptKind::Brief) {
+            self.take_first_attachments(&prompt)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        let reserved = (
+            user_images.len(),
+            user_images.iter().map(PromptImage::byte_len).sum(),
+        );
+        let (mut images, image_limitation) = if matches!(&kind, PromptKind::Brief) {
+            self.before_prompt_images(&identity.task, &prompt, reserved)
         } else {
             (Vec::new(), None)
         };
+        images.splice(0..0, user_images);
         if let Some(task) = &mut self.task
             && task.scope.compiled.is_some()
         {
@@ -168,7 +192,7 @@ impl Actor {
                 image_limitation.as_deref(),
             ));
         }
-        self.send_prompt(&prompt, images);
+        self.send_prompt_files(&prompt, files, images);
     }
 
     // ---- scope evidence ------------------------------------------------------------------------
@@ -189,6 +213,8 @@ impl Actor {
         &self,
         task: &AgentTaskId,
         prompt: &str,
+        // Images (count, PNG bytes) the user attached to the same prompt.
+        reserved: (usize, usize),
     ) -> (Vec<PromptImage>, Option<String>) {
         let Some(task_view) = self.task.as_ref().filter(|view| &view.id == task) else {
             return (Vec::new(), None);
@@ -215,7 +241,7 @@ impl Actor {
         if !supports_images {
             return (Vec::new(), Some(present::IMAGE_LIMITATION.to_owned()));
         }
-        if before.artifacts.len() > MAX_SCOPE_PROMPT_IMAGES {
+        if before.artifacts.len() + reserved.0 > MAX_SCOPE_PROMPT_IMAGES {
             return (
                 Vec::new(),
                 Some(
@@ -235,7 +261,9 @@ impl Actor {
         };
         // The text that goes with the images: its evidence section names no limitation.
         let text = format!("{prompt}{}", present::before_evidence_prompt(before, None));
-        let budget = driver.prompt_image_budget(&text, before.artifacts.len());
+        let budget = driver
+            .prompt_image_budget(&text, before.artifacts.len() + reserved.0)
+            .saturating_sub(reserved.1);
         let mut total_bytes = 0usize;
         let mut images = Vec::with_capacity(before.artifacts.len());
         for artifact in &before.artifacts {
@@ -411,40 +439,55 @@ impl Actor {
     }
 
     pub(super) fn send_prompt(&mut self, text: &str, images: Vec<PromptImage>) {
+        self.send_prompt_files(text, Vec::new(), images)
+    }
+
+    /// A prompt the driver refuses fails the task.
+    pub(super) fn send_prompt_files(
+        &mut self,
+        text: &str,
+        files: Vec<PromptFile>,
+        images: Vec<PromptImage>,
+    ) {
+        if let Err(error) = self.try_send_prompt(text, files, images) {
+            self.on_provider_failure(prompt_failure(error));
+        }
+    }
+
+    /// Starts a turn and makes it the task's live turn; the caller decides what a
+    /// refusal means.
+    pub(super) fn try_send_prompt(
+        &mut self,
+        text: &str,
+        files: Vec<PromptFile>,
+        images: Vec<PromptImage>,
+    ) -> Result<(), studio_harness::driver::DriverError> {
         let Some(active) = &mut self.active else {
-            return;
+            return Ok(());
         };
         let Some(driver) = &active.driver else {
-            return;
+            return Ok(());
         };
-        match driver.prompt(text, images) {
-            Ok(turn) => {
-                active.turn = Some(turn);
-                self.tool_rows.clear();
-                self.tool_order.clear();
-                self.stream = None;
-                let phase = if active.in_repair {
-                    TaskPhase::Repairing
-                } else {
-                    TaskPhase::Editing
-                };
-                if let Some(task) = &mut self.task {
-                    task.turns += 1;
-                }
-                self.set_phase(phase);
-            }
-            Err(error) => {
-                let failure = match error {
-                    studio_harness::driver::DriverError::Failed(f) => f,
-                    other => AgentFailure::new(
-                        studio_harness::driver::FailureKind::PromptRejected,
-                        studio_harness::driver::Phase::Prompt,
-                        other.to_string(),
-                    ),
-                };
-                self.on_provider_failure(failure);
-            }
+        let turn = if files.is_empty() {
+            driver.prompt(text, images)?
+        } else {
+            driver.prompt_with_files(text, files, images)?
+        };
+        active.turn = Some(turn);
+        self.tool_rows.clear();
+        self.tool_order.clear();
+        self.composer.open_tools.clear();
+        self.stream = None;
+        let phase = if active.in_repair {
+            TaskPhase::Repairing
+        } else {
+            TaskPhase::Editing
+        };
+        if let Some(task) = &mut self.task {
+            task.turns += 1;
         }
+        self.set_phase(phase);
+        Ok(())
     }
 
     pub(super) fn on_event(&mut self, event: AgentEvent) {
@@ -473,9 +516,21 @@ impl Actor {
             AgentEventKind::Background { tasks, continuing } => {
                 self.on_background(tasks, continuing)
             }
-            // The plan is shown by the transcript UI; it carries no workflow authority.
-            AgentEventKind::Plan(_) => {}
+            // Display only: the todo panel and the command list carry no workflow authority.
+            AgentEventKind::Plan(entries) => {
+                self.composer.plan = entries;
+                self.touch();
+            }
+            AgentEventKind::AvailableCommands(commands) => {
+                self.composer.commands = commands;
+                self.touch();
+            }
             AgentEventKind::PromptFinished(outcome) => self.on_turn_finished(outcome),
+            AgentEventKind::SteerResult {
+                text,
+                accepted,
+                message,
+            } => self.on_steer_result(text, accepted, message),
             AgentEventKind::OptionRejected {
                 option, message, ..
             } => {
@@ -543,9 +598,28 @@ impl Actor {
         let Some(active) = &mut self.active else {
             return;
         };
+        if question.questions.is_empty() {
+            // Nothing to answer: close it at once so the agent does not wait for a card
+            // nobody can fill in.
+            if let Some(driver) = &active.driver {
+                let _ = driver.reply_permission(question.id, PermissionReply::Cancel);
+            }
+            self.warn("The agent asked a question without any items; it was cancelled.");
+            return;
+        }
         active
             .open_questions
             .insert(question.id.0, question.questions.len());
+        let reference = PermissionRef {
+            task: active.ctx.identity.task.clone(),
+            writer: active.writer.map_or(0, WriterGeneration::value),
+            request: question.id.0,
+        };
+        self.composer.questions.push(OpenQuestion {
+            reference,
+            title: question.title.clone(),
+            items: question.questions.clone(),
+        });
         let first = question.questions.first();
         let title = match first {
             Some(item) if !item.question.is_empty() => {
@@ -590,6 +664,9 @@ impl Actor {
         };
         active.open_permissions.remove(&id.0);
         active.open_questions.remove(&id.0);
+        self.composer
+            .questions
+            .retain(|question| question.reference != reference);
         let none_left = active.open_permissions.is_empty();
         let in_repair = active.in_repair;
         let was_waiting = active.engine_waiting;
@@ -641,10 +718,18 @@ impl Actor {
         };
         let id = PermissionId(reference.request);
         let delivered = match (answer, active.open_questions.get(&reference.request)) {
-            (PermissionAnswer::Select(option), Some(&count)) => {
-                let mut answers = vec![QuestionAnswer::default(); count.max(1)];
-                answers[0].selected.push(option);
-                driver.answer_question(id, answers)
+            // The offered choices cover the first question only: a request with more
+            // questions is answered through `answer_questions`, never padded.
+            (PermissionAnswer::Select(option), Some(&1)) => driver.answer_question(
+                id,
+                vec![QuestionAnswer {
+                    selected: vec![option],
+                    text: None,
+                }],
+            ),
+            (PermissionAnswer::Select(_), Some(_)) => {
+                self.warn("That request asks several questions; each needs its own answer.");
+                return;
             }
             (PermissionAnswer::Select(option), None) => {
                 driver.reply_permission(id, PermissionReply::Select(option))
@@ -678,6 +763,11 @@ impl Actor {
             return;
         };
         active.turn = None;
+        // A redirect or a held message turns the end of this turn into the start of the
+        // next; that is not a failed or finished edit.
+        if self.composer_turn_finished(&outcome) {
+            return;
+        }
         if !outcome.eligible_for_quiescence() {
             let reason = if outcome.cancel_requested {
                 "was cancelled".to_owned()
@@ -704,6 +794,9 @@ impl Actor {
             self.fail_with(error);
             return;
         }
+        let Some(active) = &mut self.active else {
+            return;
+        };
         let (tasks, continuing) = active.background;
         if tasks > 0 || continuing {
             // Background work the agent started can still change the draft, and the agent

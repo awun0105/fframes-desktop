@@ -32,10 +32,9 @@ pub(super) enum Input {
         text: String,
         images: Vec<PathBuf>,
     },
-    /// Steer the running turn; the reply says whether Codex took it.
+    /// Steer the running turn; Codex's answer arrives as a `SteerResult` event.
     Steer {
         text: String,
-        reply: std_mpsc::SyncSender<Result<(), DriverError>>,
     },
 }
 
@@ -217,6 +216,8 @@ impl AgentDriver for CodexDriver {
             stops_turn_in_place: true,
             steering: SteeringMode::StepBoundary,
             images: true,
+            // The app server takes text and local images only.
+            files: false,
         }
     }
 
@@ -285,18 +286,9 @@ impl AgentDriver for CodexDriver {
                 _ => return Err(DriverError::NoActiveTurn),
             }
         }
-        let (reply, answer) = std_mpsc::sync_channel(1);
         self.send(Input::Steer {
             text: text.to_owned(),
-            reply,
-        })?;
-        match answer.recv_timeout(self.shared.limits.request_timeout) {
-            Ok(result) => result,
-            Err(std_mpsc::RecvTimeoutError::Timeout) => {
-                Err(DriverError::Busy("Codex did not answer the steer in time"))
-            }
-            Err(std_mpsc::RecvTimeoutError::Disconnected) => Err(DriverError::Closed),
-        }
+        })
     }
 
     fn cancel_turn(&self) -> Result<(), DriverError> {

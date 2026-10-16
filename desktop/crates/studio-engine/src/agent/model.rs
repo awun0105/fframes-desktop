@@ -70,6 +70,9 @@ pub enum UserSource {
     Clarification,
     /// The automatic repair context the app sent (structured, bounded).
     Repair,
+    /// A message sent while the agent was working (a steer, a send-now or a message
+    /// held for the next step boundary).
+    Followup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -673,6 +676,8 @@ pub struct WorkflowSnapshot {
     pub retained_queue: Vec<QueuedBrief>,
     /// Newest `MAX_RESIDENT_ROWS` rows (bounded by bytes too), ordered by id.
     pub rows: Vec<Arc<Row>>,
+    /// What the composer, todo panel and question cards show and may do.
+    pub composer: super::composer::ComposerView,
     /// Older rows exist in the conversation log (`history_page`).
     pub older_rows: bool,
     /// Counts the New chat resets of this workflow: rows paged in under another value

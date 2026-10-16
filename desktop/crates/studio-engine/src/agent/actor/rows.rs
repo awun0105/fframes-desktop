@@ -202,6 +202,7 @@ impl Actor {
     }
 
     pub(super) fn upsert_tool(&mut self, event: ToolEvent) {
+        self.composer_track_tool(&event);
         if let Some(&row) = self.tool_rows.get(&event.tool_call_id) {
             let event = event.clone();
             if self.update_row(row, |kind| {
@@ -353,6 +354,7 @@ impl Actor {
                 tool_workers: self.tools.as_ref().map_or(0, ToolRuntime::workers),
             },
             rows,
+            composer: self.publish_composer(),
             review_policy: self.policy,
             undo: match &self.undo {
                 Some(_) => match &self.undo_view {

@@ -67,7 +67,13 @@ impl Actor {
 
     // ---- starting tasks -------------------------------------------------------------------------------
 
-    pub(super) fn submit(&mut self, id: u64, brief: String, scope: Option<TaskScope>) {
+    pub(super) fn submit(
+        &mut self,
+        id: u64,
+        brief: String,
+        scope: Option<TaskScope>,
+        attachments: Vec<PreparedAttachment>,
+    ) {
         if self.active.is_some()
             || self.undo.is_some()
             || !self.queue.is_empty()
@@ -84,6 +90,7 @@ impl Actor {
                 brief: brief.clone(),
                 queued_unix: now_unix(),
                 scope,
+                attachments,
             });
             self.notice(format!(
                 "Queued: {}{scope_label}",
@@ -91,7 +98,7 @@ impl Actor {
             ));
             return;
         }
-        self.begin_task(brief, scope);
+        self.begin_task(brief, scope, attachments);
         self.sync_registry(1);
     }
 
@@ -104,7 +111,7 @@ impl Actor {
             let Some(next) = self.queue.pop_front() else {
                 break;
             };
-            let started = self.begin_task(next.brief, next.scope);
+            let started = self.begin_task(next.brief, next.scope, next.attachments);
             self.sync_registry(1);
             if started {
                 break;
@@ -112,7 +119,12 @@ impl Actor {
         }
     }
 
-    pub(super) fn begin_task(&mut self, brief: String, scope: Option<TaskScope>) -> bool {
+    pub(super) fn begin_task(
+        &mut self,
+        brief: String,
+        scope: Option<TaskScope>,
+        attachments: Vec<PreparedAttachment>,
+    ) -> bool {
         let display_brief = brief;
         if let Some(scope) = &scope {
             if let Err(error) = scope.validate() {
@@ -321,6 +333,8 @@ impl Actor {
             rejecting: false,
             in_repair: false,
             pending_prompt: Some((prompt, PromptKind::Brief)),
+            first_attachments: attachments,
+            brief_row: None,
             before_pending: false,
             prompt_held: false,
             evidence_cancel: Arc::new(AtomicBool::new(false)),
@@ -335,13 +349,19 @@ impl Actor {
             promoting: false,
             promote_after_evidence: false,
         });
-        self.push_row(RowKind::User {
+        // The attachment labels join this row once the first prompt actually carries them.
+        let brief_row = self.push_row(RowKind::User {
             text: present::bounded(&display_brief, MAX_ROW_TEXT_BYTES),
             source: UserSource::Brief,
         });
+        if let Some(active) = &mut self.active {
+            active.brief_row = Some(brief_row);
+        }
         // The accepted-awaiting-preview state belongs to the accepted source, not to the
         // task that follows it: only a new durable promotion replaces it.
         self.options = Default::default();
+        // A new task starts a new plan; the commands belong to the agent, not the task.
+        self.composer.plan.clear();
         self.start_before_evidence();
         if let Err(error) = self.spawn_writer() {
             self.fail_with(*error);
@@ -465,6 +485,7 @@ impl Actor {
         let limits = self.shared.limits.clone();
         let active = self.active.as_mut().expect("active task");
         let identity = active.ctx.identity.clone();
+        let provider = active.adapter.provider.clone();
         let scope = controller.lock().agent_processes(&identity);
         let scope = scope.map_err(|e| Box::new(present::engine_error(&e, true)))?;
         let (resume_session, closure_changed) = if let Some(pending) =
@@ -527,6 +548,8 @@ impl Actor {
         active.engine_waiting = false;
         // A pump of an earlier driver must not act on this one.
         self.driver_epoch += 1;
+        let dropped = self.composer.retire();
+        self.composer.driver_started(&provider);
         let ownership = ownership.label().to_owned();
         let phase = if active.in_repair {
             TaskPhase::Repairing
@@ -541,6 +564,11 @@ impl Actor {
             });
         }
         self.set_phase(phase);
+        if dropped {
+            self.warn(
+                "A message waiting to be sent was dropped because the agent session was replaced.",
+            );
+        }
         if closure_changed {
             self.notice("Saved session provider, adapter closure, or draft location changed; starting fresh session.");
         }

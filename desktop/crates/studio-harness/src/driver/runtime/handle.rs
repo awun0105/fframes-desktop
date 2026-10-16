@@ -255,7 +255,67 @@ impl AcpDriver {
         text: &str,
         images: Vec<PromptImage>,
     ) -> Result<u64, DriverError> {
+        self.prompt_with_files(text, Vec::new(), images)
+    }
+
+    /// Whether the adapter advertised the `_session/steering` extension: the only way a
+    /// message can reach a running ACP turn.
+    pub(in crate::driver) fn steering_negotiated(&self) -> bool {
+        self.shared.steering.load(Ordering::SeqCst)
+    }
+
+    /// Delivers `text` to the running turn through `_session/steering`. Refused when the
+    /// adapter did not advertise the extension, no turn runs, or the turn is being stopped.
+    pub fn steer_turn(&self, text: &str) -> Result<(), DriverError> {
+        self.require_usable()?;
+        if !self.steering_negotiated() {
+            return Err(DriverError::Unsupported(
+                "this agent cannot take a message during a turn",
+            ));
+        }
+        validate_prompt(text, &[])?;
+        match &self.shared.core.lock().turn {
+            Some(turn) if !turn.cancel_requested => {}
+            _ => return Err(DriverError::NoActiveTurn),
+        }
+        self.send(Command::Steer {
+            text: text.to_owned(),
+        })
+    }
+
+    /// Starts a prompt that also points the agent at files (ACP resource links, which every
+    /// agent must accept) and carries bounded PNG evidence. See
+    /// [`Self::prompt_with_images`] for the image rules.
+    pub fn prompt_with_files(
+        &self,
+        text: &str,
+        files: Vec<PromptFile>,
+        images: Vec<PromptImage>,
+    ) -> Result<u64, DriverError> {
         validate_prompt(text, &images)?;
+        if files.len() > MAX_PROMPT_FILE_COUNT {
+            return Err(DriverError::InvalidPrompt("too many attached files"));
+        }
+        if files.iter().any(|file| {
+            file.name().trim().is_empty() || file.path().is_some_and(|path| !path.is_absolute())
+        }) {
+            return Err(DriverError::InvalidPrompt(
+                "an attached file needs a name and an absolute path",
+            ));
+        }
+        if files.iter().any(PromptFile::is_embedded)
+            && !self
+                .initialized()
+                .is_some_and(|info| info.capabilities.prompt_embedded_context)
+        {
+            return Err(DriverError::InvalidPrompt(
+                "the adapter did not negotiate embedded file content",
+            ));
+        }
+        let mut file_blocks = Vec::with_capacity(files.len());
+        for file in &files {
+            file_blocks.push(file_block(file)?);
+        }
         if !images.is_empty()
             && !self
                 .initialized()
@@ -279,6 +339,7 @@ impl AcpDriver {
         }
         let mut content = Vec::with_capacity(images.len() + 1);
         content.push(ContentBlock::Text(TextContent::new(text)));
+        content.extend(file_blocks);
         content.extend(images.into_iter().map(|image| {
             ContentBlock::Image(ImageContent::new(STANDARD.encode(image.data), "image/png"))
         }));
@@ -393,6 +454,87 @@ impl AcpDriver {
             threads,
         )
     }
+}
+
+/// The content block of one attached file: a resource link, or the content itself as an
+/// embedded text (valid UTF-8) or binary resource.
+fn file_block(file: &PromptFile) -> Result<ContentBlock, DriverError> {
+    if let Some(path) = file.path() {
+        let uri = file_uri(path).ok_or(DriverError::InvalidPrompt(
+            "an attached file path is not valid text",
+        ))?;
+        return Ok(ContentBlock::ResourceLink(ResourceLink::new(
+            file.name(),
+            uri,
+        )));
+    }
+    let uri = format!("attachment:///{}", percent_encode(file.name()));
+    let bytes = file.content_bytes();
+    let resource = match std::str::from_utf8(bytes) {
+        Ok(text) => {
+            EmbeddedResourceResource::TextResourceContents(TextResourceContents::new(text, uri))
+        }
+        Err(_) => EmbeddedResourceResource::BlobResourceContents(BlobResourceContents::new(
+            STANDARD.encode(bytes),
+            uri,
+        )),
+    };
+    Ok(ContentBlock::Resource(EmbeddedResource::new(resource)))
+}
+
+/// The `file://` URI of an absolute path, percent-encoded. A Windows verbatim prefix,
+/// drive letters and UNC shares (`file://server/share/...`) are handled so the same link
+/// works on every host. `None` when the path is not valid UTF-8: a link must name exactly
+/// the file that was checked, never a lossy lookalike.
+fn file_uri(path: &std::path::Path) -> Option<String> {
+    let text = path.to_str()?;
+    let slashed = text.replace('\\', "/");
+    let (host, rest) = if let Some(unc) = slashed.strip_prefix("//?/UNC/") {
+        split_share(unc)
+    } else if let Some(plain) = slashed.strip_prefix("//?/") {
+        (String::new(), plain.to_owned())
+    } else if let Some(unc) = slashed.strip_prefix("//") {
+        split_share(unc)
+    } else {
+        (String::new(), slashed)
+    };
+    let mut uri = format!("file://{}", percent_encode_host(&host));
+    if !rest.starts_with('/') {
+        uri.push('/');
+    }
+    uri.push_str(&percent_encode(&rest));
+    Some(uri)
+}
+
+fn split_share(unc: &str) -> (String, String) {
+    match unc.split_once('/') {
+        Some((server, rest)) => (server.to_owned(), format!("/{rest}")),
+        None => (unc.to_owned(), String::from("/")),
+    }
+}
+
+fn percent_encode_host(host: &str) -> String {
+    host.bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                char::from(byte).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
+}
+
+fn percent_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b':' => {
+                out.push(char::from(byte));
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 /// Checks every wire shares: non-empty bounded text and at most a few non-empty PNGs.
@@ -793,6 +935,7 @@ impl Shared {
             watchdog: Watchdog::new(),
             forced_kill: AtomicBool::new(false),
             claude_adapter: AtomicBool::new(false),
+            steering: AtomicBool::new(false),
             limits,
         });
         shared
@@ -836,4 +979,46 @@ pub(super) fn spawn_failure(
         other => (FailureKind::SpawnFailed, other.to_string()),
     };
     AgentFailure::new(kind, Phase::Spawn, redactor.redact(&message))
+}
+
+#[cfg(test)]
+mod uri_tests {
+    use super::file_uri;
+    use std::path::Path;
+
+    #[test]
+    fn drive_paths_and_verbatim_prefixes_become_file_uris() {
+        assert_eq!(
+            file_uri(Path::new(r"C:\my dir\a.txt")).as_deref(),
+            Some("file:///C:/my%20dir/a.txt")
+        );
+        assert_eq!(
+            file_uri(Path::new(r"\\?\C:\p\a.txt")).as_deref(),
+            Some("file:///C:/p/a.txt")
+        );
+        assert_eq!(
+            file_uri(Path::new("/home/u/a b.txt")).as_deref(),
+            Some("file:///home/u/a%20b.txt")
+        );
+    }
+
+    #[test]
+    fn unc_shares_keep_their_host() {
+        assert_eq!(
+            file_uri(Path::new(r"\\?\UNC\srv\share\f.txt")).as_deref(),
+            Some("file://srv/share/f.txt")
+        );
+        assert_eq!(
+            file_uri(Path::new(r"\\srv\share\dir\f.txt")).as_deref(),
+            Some("file://srv/share/dir/f.txt")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_path_that_is_not_valid_text_has_no_uri() {
+        use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+        let lone_surrogate = OsString::from_wide(&[0x43, 0x3a, 0x5c, 0xd800, 0x61]);
+        assert_eq!(file_uri(Path::new(&lone_surrogate)), None);
+    }
 }

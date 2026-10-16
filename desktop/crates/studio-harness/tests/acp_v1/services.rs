@@ -68,20 +68,40 @@ fn restoration_requires_a_negotiated_capability() {
         read_json(root.path(), "session-params.json")["method"],
         "session/load"
     );
-    let text: Vec<String> = driver
+    assert!(
+        driver.transcript_page(0, 10).entries.is_empty(),
+        "replayed history is not a row source"
+    );
+    let events = driver.drain_events(256);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e.kind, AgentEventKind::MessageDelta { .. })),
+        "replay produces no live message events: {events:?}"
+    );
+    assert!(
+        events.iter().any(|e| matches!(
+            &e.kind,
+            AgentEventKind::AvailableCommands(commands) if commands[0].name == "compact"
+        )),
+        "commands survive a restore: {events:?}"
+    );
+    assert!(
+        events.iter().any(|e| matches!(
+            &e.kind,
+            AgentEventKind::Plan(entries) if entries[0].text == "resume work"
+        )),
+        "the latest plan survives a restore: {events:?}"
+    );
+    let turn = driver.prompt("go").unwrap();
+    driver.wait_turn(turn, WAIT).unwrap();
+    let live: String = driver
         .transcript_page(0, 10)
         .entries
         .iter()
-        .map(|e| format!("{:?}:{}", e.role, e.text))
+        .map(|e| e.text.clone())
         .collect();
-    assert_eq!(text, ["User:replayed question", "Agent:replayed answer"]);
-    assert!(
-        !driver
-            .drain_events(256)
-            .iter()
-            .any(|e| matches!(e.kind, AgentEventKind::MessageDelta { .. })),
-        "replay goes to the transcript, not live events"
-    );
+    assert_eq!(live, "Hello world", "only live text follows a restore");
     drop(driver.shutdown());
 
     let root = tempfile::tempdir().unwrap();

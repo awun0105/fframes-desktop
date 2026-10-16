@@ -23,19 +23,20 @@ use super::{
 use crate::{AgentSupervisor, SupervisorError, discovery::AdapterLaunch};
 use agent_client_protocol::{
     Agent, Client, ConnectionTo, Dispatch, Error as RpcError, Handled, JsonRpcMessage, Lines,
-    RawJsonRpcMessage, Responder,
+    RawJsonRpcMessage, Responder, UntypedMessage,
     schema::{
         ProtocolVersion,
         v1::{
-            AuthenticateRequest, CancelNotification, ClientCapabilities, ContentBlock, EnvVariable,
-            ImageContent, Implementation, InitializeRequest, InitializeResponse,
-            LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest, PromptRequest,
-            PromptResponse, RequestId, RequestPermissionOutcome, RequestPermissionRequest,
-            RequestPermissionResponse, ResumeSessionRequest, SelectedPermissionOutcome,
-            SessionConfigKind, SessionConfigOption, SessionConfigOptionValue,
-            SessionConfigSelectOptions, SessionModeState, SessionNotification, SessionUpdate,
-            SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason, TextContent,
-            ToolCallStatus,
+            AuthenticateRequest, AvailableCommandInput, BlobResourceContents, CancelNotification,
+            ClientCapabilities, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
+            EnvVariable, ImageContent, Implementation, InitializeRequest, InitializeResponse,
+            LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest, PlanEntryStatus,
+            PromptRequest, PromptResponse, RequestId, RequestPermissionOutcome,
+            RequestPermissionRequest, RequestPermissionResponse, ResourceLink,
+            ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigKind,
+            SessionConfigOption, SessionConfigOptionValue, SessionConfigSelectOptions,
+            SessionModeState, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
+            SetSessionModeRequest, StopReason, TextContent, TextResourceContents, ToolCallStatus,
         },
     },
 };
@@ -62,9 +63,18 @@ const CLAUDE_ADAPTER_NAMES: [&str; 2] = [
     "@agentclientprotocol/claude-agent-acp",
     "@zed-industries/claude-code-acp",
 ];
+/// The ACP extension that delivers a message to the running turn: the adapter advertises
+/// it as `agentCapabilities._meta.steering = true` and then accepts the request
+/// `_session/steering { sessionId, text }`.
+const STEERING_CAPABILITY: &str = "steering";
+const STEERING_METHOD: &str = "_session/steering";
 const MAX_PROMPT_BYTES: usize = 256 * 1024;
 const MAX_PROMPT_IMAGE_COUNT: usize = 3;
+const MAX_PROMPT_FILE_COUNT: usize = 16;
 const MAX_PENDING_PERMISSIONS: usize = 16;
+/// Plan entries and slash commands exported per update; the rest is dropped.
+const MAX_PLAN_ENTRIES: usize = 64;
+const MAX_COMMANDS: usize = 256;
 const FAILURE_DETAIL_BYTES: usize = 2048;
 /// Host commands accepted but not yet executed by the connection task.
 const COMMAND_QUEUE: usize = 8;
@@ -244,6 +254,10 @@ enum Command {
         value: OptionValue,
         key: u64,
     },
+    /// Delivers text to the running turn through the `_session/steering` extension.
+    Steer {
+        text: String,
+    },
     Shutdown,
 }
 
@@ -256,6 +270,89 @@ pub struct PromptImage {
 impl PromptImage {
     pub fn png(data: Vec<u8>) -> Self {
         Self { data }
+    }
+
+    /// Size of the PNG bytes, for measuring against a prompt budget.
+    pub fn byte_len(&self) -> usize {
+        self.data.len()
+    }
+}
+
+/// A file the agent is given: either a link to a location (an ACP resource link, never
+/// the bytes) or the content itself (an ACP embedded resource). The host decides what
+/// may be attached; the driver only carries it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PromptFile {
+    name: String,
+    source: FileSource,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum FileSource {
+    Link(std::path::PathBuf),
+    Content(Vec<u8>),
+}
+
+impl std::fmt::Debug for PromptFile {
+    /// Never prints content.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut shown = f.debug_struct("PromptFile");
+        shown.field("name", &self.name);
+        match &self.source {
+            FileSource::Link(path) => shown.field("path", path),
+            FileSource::Content(bytes) => shown.field("bytes", &bytes.len()),
+        };
+        shown.finish()
+    }
+}
+
+impl PromptFile {
+    /// A link. `path` must be absolute; `name` is the label shown to the agent.
+    pub fn new(name: impl Into<String>, path: std::path::PathBuf) -> Self {
+        Self {
+            name: name.into(),
+            source: FileSource::Link(path),
+        }
+    }
+
+    /// The content itself, for a file the agent cannot be trusted to open by path. The
+    /// adapter must have negotiated embedded context.
+    pub fn embedded(name: impl Into<String>, bytes: Vec<u8>) -> Self {
+        Self {
+            name: name.into(),
+            source: FileSource::Content(bytes),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The linked location; `None` for embedded content.
+    pub fn path(&self) -> Option<&std::path::Path> {
+        match &self.source {
+            FileSource::Link(path) => Some(path),
+            FileSource::Content(_) => None,
+        }
+    }
+
+    fn content_bytes(&self) -> &[u8] {
+        match &self.source {
+            FileSource::Content(bytes) => bytes,
+            FileSource::Link(_) => &[],
+        }
+    }
+
+    pub fn is_embedded(&self) -> bool {
+        matches!(self.source, FileSource::Content(_))
+    }
+
+    /// Size of the embedded content (0 for a link).
+    pub fn content_len(&self) -> usize {
+        match &self.source {
+            FileSource::Content(bytes) => bytes.len(),
+            FileSource::Link(_) => 0,
+        }
     }
 }
 
@@ -584,6 +681,9 @@ pub(super) struct Shared {
     forced_kill: AtomicBool,
     /// The adapter identified itself as the Claude ACP adapter at initialize.
     claude_adapter: AtomicBool,
+    /// The adapter advertised the `_session/steering` extension at initialize. Read only
+    /// through [`AcpDriver::steering_negotiated`].
+    steering: AtomicBool,
 }
 
 /// Splits `text` into pieces of at most `max` bytes on char boundaries.

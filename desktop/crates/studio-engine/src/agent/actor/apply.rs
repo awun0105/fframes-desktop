@@ -29,6 +29,8 @@ impl Actor {
             return;
         };
         self.driver_epoch += 1;
+        // The turn that led here already settled any waiting message.
+        self.composer.retire();
         let identity = active.ctx.identity.clone();
         if let Some(tools) = &self.tools {
             tools.revoke(&identity);
