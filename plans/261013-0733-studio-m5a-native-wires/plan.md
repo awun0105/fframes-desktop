@@ -1,7 +1,7 @@
 ---
 title: "M5a Native agent wires: Claude stream-json and Codex app-server"
 description: "Put the agent driver behind one trait, keep ACP for other agents, and add native drivers for Claude Code (stream-json control protocol) and Codex (app-server JSON-RPC), ported from Zeron's harness, with every approval routed to the user."
-status: in-progress
+status: completed
 priority: P1
 effort: "10-14d"
 branch: feat/studio-rewrite
@@ -40,16 +40,16 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
 | 1 | [Driver trait and wire selection](./phase-01-driver-trait.md) | 2-3d | none | Completed |
 | 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Completed except question answering: the engine's card answers only the first question and sends empty answers for the rest. Handed to [M5 phase 2](../261013-0733-studio-m5-agent-ux/phase-02-composer.md). |
 | 3 | [Codex app-server driver](./phase-03-codex-app-server.md) | 3-4d | 1 | Completed |
-| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | In progress. CI green on Windows, macOS and Linux; manual checks on macOS are open. |
+| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | Done with concerns: CI is green on Windows, macOS and Linux, and the real CLIs pass on Windows. The real-CLI checks were not run on macOS (no Mac; moved to M6 phase 2). |
 
 ## Success criteria
 
 - [x] The agent actor talks only to the driver trait; ACP, Claude and Codex implement it. The `acp_v1` tests pass with their test code unchanged; the ACP peer's `permission` mode now writes only on allow.
-- [ ] With Claude Code on this VM: a turn streams text, asks permission before an edit (deny blocks it, allow lets it through), steers, stops without killing the process, resumes, and ends only when the `result` frame arrives; the candidate is captured after writer quiescence.
-  - Against the real CLI: text, deny and allow, and stop.
-  - With the fake CLI only: steer, resume, and capture after quiescence.
-- [ ] The same with Codex on the user's machine (or wherever Codex is installed and signed in).
-  - Against the real CLI on this VM: decline and accept, stop, and an interrupted command ended by session stop.
-  - With the fake CLI only: steer and resume.
+- [x] With Claude Code on this VM: a turn streams text, asks permission before an edit (deny blocks it, allow lets it through), steers, stops without killing the process, resumes, and ends only when the `result` frame arrives; the candidate is captured after writer quiescence ([checks report](../../desktop/plans/reports/native-wires-checks.md)).
+  - Against the real CLI: text, deny and allow, stop, steer, resume, a two-question `AskUserQuestion` answered in full, and a background command. For the background command, the driver reports the work before the first `result`, Claude ends the work in a turn of its own, and the agent is idle only after the command's write.
+  - The engine's capture on that sequence (deferred until idle, nothing captured on Stop) is tested with the fake CLI, which replays the same frames.
+- [x] The same with Codex on this VM, where it is installed and signed in: decline and accept, stop, steer, resume, and an interrupted command ended by session stop, all against the real CLI.
+  - With the fake CLI only: a command that completes after its turn, and `requestUserInput` questions.
+- macOS: the real-CLI checks were not run because no Mac is available (decided 2026-10-16). CI covers macOS with the fake CLIs; the real-CLI checks moved to [M6 phase 2](../261013-0733-studio-m6-cleanup/phase-02-docs-and-platform-checks.md).
 - [x] No driver answers a request on the user's behalf. The engine still does for questions 2..n of a multi-question prompt; M5 phase 2 owns that fix. `cross_driver.rs` proves for all three wires that an unanswered permission request blocks the tool, and both native drivers run in the draft directory.
 - [x] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs: `6225af8`, [self-hosted Linux and Windows](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905684378) and [macOS 15](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905719933), 2026-10-16. The first Linux attempt hit the known intermittent export-cancel hang in the parity `services::` tests after every agent test had passed; the re-run passed.

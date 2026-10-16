@@ -18,7 +18,16 @@ Checks of the M5a drivers against the real, signed-in CLIs. Plan: [M5a native wi
 
 The whole run took 16 s. Only stop reasons and request counts were recorded; account data was not.
 
-Not covered against the real CLI: a background task followed by Claude's own turn, which is covered with the fake CLI (`claude_stream_json.rs`, and the `claude_wire` workflow cases in `app/tests/agent_workflow`).
+A second run added three checks. Each test pumps the driver until the agent is idle, which means no turn runs, no background task runs and Claude is not about to continue by itself. That is the point at which the engine may start capture.
+
+| Check | Result |
+|-------|--------|
+| A steer sent at the first text of a long list, asking for a code word instead | `steer` was accepted (`priority: "now"`). The turn ended once, `EndTurn`, after 35 characters of text that contain the code word. |
+| The session is stopped and a new driver resumes it with `--resume` | The session reports itself restored with the same id. Asked for the earlier code word, it answers `KESTREL-4417`. |
+| A Bash command run with `run_in_background` (`sleep 20 && echo done > bg.txt`), allowed by the user | 1 request. Background work was reported before the prompted turn ended. Claude then ran a turn of its own (`TurnStarted`, `Autonomous`), and both turns ended `EndTurn`. When the agent was idle, `bg.txt` existed. |
+| `AskUserQuestion` with two questions in one call, each answered with its last option | One `Question` event carrying both items. Both answers went back through `answer_question`, and Claude replied `Green, Mango`. This proves the driver. The engine's card still answers only the first question; M5 phase 2 owns that fix. |
+
+The first three ran in 57 s together with the first test; the question check took 6 s. The engine's handling of that frame sequence (capture deferred until idle, Stop during the wait) is covered with the fake CLI, which replays the same frames (`claude_wire` cases in `app/tests/agent_workflow`).
 
 ## Codex (2026-10-16)
 
@@ -43,9 +52,21 @@ Probes of the raw app server, using scripts in the session scratchpad that print
 - `review/start` replies with one turn id, and its `turn/started` announces another. `turn/interrupt` with the announced id stops it, and `turn/completed` (status `interrupted` or `completed`) carries the reply's id.
 - `review/start` with `uncommittedChanges` in a directory that is not a git repository is not refused. Its read-only commands ran without approval requests, as `untrusted` allows for commands it knows to be safe. A refused slash command still ends only its own turn, as incomplete (fake CLI test).
 
+A second run added steering and resume:
+
+| Check | Result |
+|-------|--------|
+| A `turn/steer` sent at the first text of a long list, asking for a code word instead | Accepted. The turn ended once, `EndTurn`, after 51 characters of text that contain the code word. |
+| The thread is stopped and a new driver resumes it with `thread/resume` | The thread reports itself restored with the same id. Asked for the earlier code word, it answers `KESTREL-4417`. |
+
+Both Codex tests passed in 67 s.
+
 Not covered against the real CLI:
 - a command that completes after its turn (only the stopped case above);
-- `requestUserInput` questions;
-- steering.
+- `requestUserInput` questions.
 
-These three are covered with the fake CLI (`codex_app_server.rs`, and the `codex_wire` workflow cases in `app/tests/agent_workflow`).
+These two are covered with the fake CLI (`codex_app_server.rs`, and the `codex_wire` workflow cases in `app/tests/agent_workflow`).
+
+## macOS
+
+Not run: no Mac is available (decided 2026-10-16). CI runs the fake-CLI suites on macOS 15. The real-CLI checks above move to the macOS checks of [M6 phase 2](../../../plans/261013-0733-studio-m6-cleanup/phase-02-docs-and-platform-checks.md).

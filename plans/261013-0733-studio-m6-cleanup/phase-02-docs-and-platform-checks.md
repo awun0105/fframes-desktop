@@ -26,7 +26,7 @@ Docs describe the real system, and the roadmap's Done-means list is checked by h
 - [ ] README and AGENTS.md
 - [ ] Old licensing line superseded
 - [ ] Windows checks
-- [ ] macOS checks
+- [ ] macOS checks, including the native-wire real-CLI checks moved from M5a: `cargo test -p studio-harness --test claude_real_cli --test codex_real_cli -- --ignored`, recorded in [the checks report](../../desktop/plans/reports/native-wires-checks.md). No Mac was available on 2026-10-16.
 - [ ] Report written
 
 ## Success criteria
