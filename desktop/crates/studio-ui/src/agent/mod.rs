@@ -14,6 +14,7 @@ mod cards;
 pub mod changes;
 mod chat_tab;
 mod commands;
+pub mod composer;
 pub mod controls;
 pub mod markdown;
 mod project_tab;
