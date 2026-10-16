@@ -48,7 +48,7 @@ Syntax highlighting is written as a small module with five tree-sitter grammars 
 | 2 | [Composer](./phase-02-composer.md) | 5-7d | none | In progress: component built and tested, not wired ([report](./reports/phase-02-composer-ui.md)) |
 | 3 | [Todo panel](./phase-03-todo-panel.md) | 1-2d | none | In progress: component built and tested, not fed from agent events ([report](./reports/phase-03-todo-panel.md)) |
 | 4 | [Diff review](./phase-04-diff-review.md) | 4-6d | 1 | In progress: engine, viewer and wiring done; awaiting three-platform CI of the wiring ([wiring](./reports/phase-04-wiring.md)) |
-| 5 | [Session history](./phase-05-session-history.md) | 3-4d | none | Pending |
+| 5 | [Session history](./phase-05-session-history.md) | 3-4d | none | In progress: storage, migration, list and load, and the search list built and tested, not called by the app ([report](./reports/phase-05-storage-and-list.md), [review](./reports/phase-05-review.md)); restore, resume and wiring wait for M5a |
 
 Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) compiled the todo panel and `ComposerInput` on the Cap fork with one GPUI API change. Phase 3 shrinks; phase 2 holds at 5-7d because it keeps `ComposerInput` (decided 2026-10-14) rather than building on the kit `TextInput` (8-10d).
 

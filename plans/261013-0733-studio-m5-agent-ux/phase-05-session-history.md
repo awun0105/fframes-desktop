@@ -36,11 +36,11 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 - [ ] Stored log as the single row source; replay dropped on load, with test
 
-- [ ] Scout
-- [ ] Multi-session storage and migration
-- [ ] Engine list, load, resume via existing path
-- [ ] List and search UI
-- [ ] Tests
+- [x] Scout
+- [x] Multi-session storage and migration ([report](./reports/phase-05-storage-and-list.md), [review](./reports/phase-05-review.md)); nothing calls the migration yet
+- [ ] Engine list, load, resume via existing path: list and load done; resume waits for the M5a driver work
+- [x] List and search UI (standalone, not in the panel)
+- [ ] Tests: storage, migration, list, search and load covered; reopen and resume not yet
 
 ## Success criteria
 
