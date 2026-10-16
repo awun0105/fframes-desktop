@@ -11,6 +11,7 @@
 //! * [`studio_engine::providers::host`] holds the app-local adapter description and the workflow inbox.
 //! * [`provider_setup`] selects providers, detects and installs adapters and turns them on.
 mod cards;
+pub mod changes;
 mod chat_tab;
 mod commands;
 pub mod controls;

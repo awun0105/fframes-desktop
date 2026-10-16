@@ -23,9 +23,11 @@ fframes-studio-protocol = { workspace = true }
 image = { workspace = true }
 parking_lot = { workspace = true }
 serde_json = { workspace = true }
+similar = "2"
 smallvec = { workspace = true }
 thiserror = { workspace = true }
 unicode-segmentation = "1"
+unicode-width = "0.2"
 tree-sitter = { version = "=0.26.11", optional = true }
 tree-sitter-highlight = { version = "=0.26.11", optional = true }
 tree-sitter-rust = { version = "=0.24.2", optional = true }
