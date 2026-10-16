@@ -227,6 +227,9 @@ fn assert_two_step_plan(view: &ComposerView) {
 #[test]
 fn a_loaded_session_does_not_replay_its_history_and_keeps_commands_and_plan() {
     let w = World::new();
+    // The agent advertises loading from the start: the capabilities stored with the session decide
+    // whether it can be resumed.
+    fs::write(w.agent.join("load-session"), "1").unwrap();
     let mut first = good("seed");
     first["text"] = json!("first run said this");
     w.submit(&first);
@@ -236,7 +239,6 @@ fn a_loaded_session_does_not_replay_its_history_and_keeps_commands_and_plan() {
         1
     );
 
-    fs::write(w.agent.join("load-session"), "1").unwrap();
     fs::write(w.agent.join("replay-on-load"), "1").unwrap();
     let mut manifest =
         studio_engine::agent::session_store::SessionStore::load(&w.paths, &w.snap().project)
@@ -857,4 +859,63 @@ fn claude_and_codex_refuse_files_with_a_reason() {
             "{error:?}"
         );
     }
+}
+
+// ---- commands and plan across conversations ------------------------------------------------------------------
+
+/// Runs a task that publishes two commands and a plan and checks both are on show.
+fn publish_commands_and_plan(w: &World) {
+    fs::write(w.agent.join("commands"), "1").unwrap();
+    let mut script = good("planned");
+    script["plan"] = json!([{"text": "Edit the title", "status": "in_progress"}]);
+    w.submit(&script);
+    let task = w.wait_task(None);
+    assert_eq!(task.phase, TaskPhase::Accepted, "{:?}", task.error);
+    let view = w.snap().composer.clone();
+    assert_eq!(names(&view), ["compact", "review"]);
+    assert_eq!(view.plan.len(), 1);
+}
+
+#[test]
+fn opening_another_stored_session_clears_the_plan_and_commands_until_the_agent_publishes_again() {
+    let w = World::new();
+    let project = w.snap().project.clone();
+    let other =
+        studio_engine::agent::session_store::SessionStore::create_session(&w.paths, &project, None)
+            .unwrap();
+    publish_commands_and_plan(&w);
+
+    w.wf().open_session(&other).unwrap();
+    let s = w.wait("the other session", |s| s.chat == 1);
+    assert!(s.composer.plan.is_empty(), "{:?}", s.composer.plan);
+    assert!(s.composer.commands.is_empty(), "{:?}", s.composer.commands);
+
+    // The agent of the open session announces its own again.
+    let mut script = good("again");
+    script["plan"] = json!([{"text": "Second plan"}]);
+    w.submit(&script);
+    w.wait_task(None);
+    let view = w.snap().composer.clone();
+    assert_eq!(names(&view), ["compact", "review"]);
+    assert_eq!(view.plan.len(), 1);
+    assert_eq!(view.plan[0].text, "Second plan");
+    w.assert_clean();
+}
+
+#[test]
+fn starting_a_new_chat_clears_the_plan_and_commands_until_the_agent_publishes_again() {
+    let w = World::new();
+    publish_commands_and_plan(&w);
+
+    w.wf().new_session().unwrap();
+    let s = w.wait("the new chat", |s| s.chat == 1);
+    assert!(s.composer.plan.is_empty(), "{:?}", s.composer.plan);
+    assert!(s.composer.commands.is_empty(), "{:?}", s.composer.commands);
+
+    w.submit(&good("fresh"));
+    w.wait_task(None);
+    let view = w.snap().composer.clone();
+    assert_eq!(names(&view), ["compact", "review"]);
+    assert!(view.plan.is_empty(), "{:?}", view.plan);
+    w.assert_clean();
 }

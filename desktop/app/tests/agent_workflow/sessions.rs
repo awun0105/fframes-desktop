@@ -462,3 +462,75 @@ fn switching_sessions_is_refused_while_the_compile_of_a_task_runs() {
     w.wait_task(None);
     w.assert_clean();
 }
+
+fn agent_messages(s: &WorkflowSnapshot) -> Vec<String> {
+    s.rows
+        .iter()
+        .filter_map(|r| match &r.kind {
+            RowKind::Agent { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_reopened_session_restored_by_loading_shows_each_stored_row_once_while_the_agent_replays_it() {
+    let w = World::new();
+    fs::write(w.agent.join("load-session"), "1").unwrap();
+    fs::write(w.agent.join("replay-on-load"), "1").unwrap();
+    let mut script = good("stored-answer");
+    script["text"] = json!("stored agent reply");
+    w.submit(&script);
+    w.wait_task(None);
+    store_wire_session(&w, "wire-session-to-replay");
+    let first = w.wf().sessions().unwrap()[0].id.clone();
+
+    w.wf().new_session().unwrap();
+    w.wait("the new session", |s| s.chat == 1);
+    w.wf().open_session(&first).unwrap();
+    let opened = w.wait("the stored session", |s| s.chat == 2);
+    assert_eq!(
+        agent_messages(&opened)
+            .iter()
+            .filter(|t| t.contains("stored agent reply"))
+            .count(),
+        1,
+        "{:?}",
+        opened.rows
+    );
+
+    // The next prompt loads the agent session, which replays its history before answering.
+    w.submit(&good("after-reopen"));
+    w.poll("the stored agent session is loaded", || {
+        read_load_params(&w).is_some()
+    });
+    let task = w.wait_task(None);
+    assert_eq!(task.phase, TaskPhase::Accepted, "{:?}", task.error);
+
+    let s = w.snap();
+    let rows = format!("{:?}", s.rows);
+    for replayed in ["replayed question", "replayed answer", "Replayed tool"] {
+        assert!(!rows.contains(replayed), "{replayed} was shown: {rows}");
+    }
+    assert_eq!(
+        users(&s)
+            .iter()
+            .filter(|t| t.contains("stored-answer"))
+            .count(),
+        1,
+        "{rows}"
+    );
+    assert_eq!(
+        agent_messages(&s)
+            .iter()
+            .filter(|t| t.contains("stored agent reply"))
+            .count(),
+        1,
+        "{rows}"
+    );
+    let mut ids: Vec<_> = s.rows.iter().map(|r| r.id).collect();
+    let total = ids.len();
+    ids.dedup();
+    assert_eq!(ids.len(), total, "row ids are unique: {rows}");
+    w.assert_clean();
+}
