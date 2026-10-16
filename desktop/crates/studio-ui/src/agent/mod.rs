@@ -16,6 +16,7 @@ mod chat_tab;
 mod commands;
 pub mod composer;
 pub mod controls;
+pub mod history;
 pub mod markdown;
 mod project_tab;
 pub mod provider_setup;

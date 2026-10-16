@@ -77,6 +77,20 @@ fn decode(bytes: &[u8]) -> Option<Row> {
         .map(|line| line.row)
 }
 
+/// Every stored row of the log at `path`, latest version per id, ascending by id. A missing
+/// file reads as empty; torn and unparsable lines are skipped. Read-only: nothing is
+/// created, repaired or compacted, so it is safe on a log another process owns.
+pub fn read_rows(path: &Path) -> Result<Vec<Row>, LogError> {
+    let mut latest = BTreeMap::new();
+    for_each_line(path, |line| {
+        if let Some(row) = decode(line.bytes) {
+            latest.insert(row.id, row);
+        }
+    })
+    .map_err(io_err)?;
+    Ok(latest.into_values().collect())
+}
+
 /// One physical line of the log.
 struct RawLine<'a> {
     offset: u64,
@@ -209,6 +223,18 @@ impl RowStore {
         }
         store.next = max_id + 1;
         store.repair = repair;
+        Ok(store)
+    }
+
+    /// [`Self::open`] for a log that continues another one: ids start at `min_next` at least,
+    /// so row ids stay unique across the sessions of a project.
+    pub fn open_with_floor(
+        path: PathBuf,
+        limits: RowLimits,
+        min_next: u64,
+    ) -> Result<Self, LogError> {
+        let mut store = Self::open(path, limits)?;
+        store.next = store.next.max(min_next);
         Ok(store)
     }
 
@@ -410,6 +436,19 @@ impl RowStore {
     /// `conversation-<stamp>.jsonl` (returned; `None` when there was no file) and nothing
     /// stays resident. Ids keep counting up so no id of the old conversation is reused.
     pub fn start_new(&mut self, stamp: u64) -> Result<Option<PathBuf>, LogError> {
+        // An archive inside a session directory would be neither a session nor listed.
+        let in_session_dir = self
+            .path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "sessions");
+        if in_session_dir {
+            return Err(LogError::Io(
+                "a stored session's log cannot be archived with start_new; create a new session instead"
+                    .into(),
+            ));
+        }
         self.flush()?;
         let archived = if self.path.exists() {
             let stem = self

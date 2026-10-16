@@ -10,7 +10,12 @@ use std::path::{Path, PathBuf};
 use studio_harness::driver::AgentCapabilityInfo;
 use studio_project::ProjectId;
 
-pub const SESSION_MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub mod history;
+pub mod layout;
+
+/// Version 2 lives in `sessions/<id>/manifest.json`; the field set is the same as version 1,
+/// so a version 1 file (the single-session layout) still parses and is rewritten on migration.
+pub const SESSION_MANIFEST_SCHEMA_VERSION: u32 = 2;
 pub const CONTEXT_SCHEMA_VERSION: &str = "m6-context/1";
 pub const MAX_CONTEXT_ENVELOPE_BYTES: usize = 64 * 1024; // 64 KiB
 
@@ -44,7 +49,7 @@ pub struct SessionManifest {
 
 impl SessionManifest {
     pub fn is_resumable(&self) -> bool {
-        self.schema_version == SESSION_MANIFEST_SCHEMA_VERSION
+        (1..=SESSION_MANIFEST_SCHEMA_VERSION).contains(&self.schema_version)
             && self.state == SessionManifestState::Ready
             && self.wire_session_id.is_some()
     }
@@ -164,12 +169,21 @@ fn truncate_utf8(text: &mut String, max_bytes: usize) {
 pub struct SessionStore;
 
 impl SessionStore {
+    /// Where the single-session API keeps its manifest: the current session's directory once
+    /// [`SessionStore::migrate_legacy`] has run, the legacy file before.
+    fn manifest_path(paths: &AppPaths, project_id: &ProjectId) -> PathBuf {
+        match Self::current_session_id(paths, project_id) {
+            Some(session) => layout::manifest_file(paths, project_id, &session),
+            None => paths.agent_session_manifest(project_id),
+        }
+    }
+
     pub fn save(
         paths: &AppPaths,
         project_id: &ProjectId,
         manifest: &SessionManifest,
     ) -> Result<(), String> {
-        let path = paths.agent_session_manifest(project_id);
+        let path = Self::manifest_path(paths, project_id);
         let bytes = serde_json::to_vec_pretty(manifest)
             .map_err(|e| format!("cannot serialize session manifest: {e}"))?;
         write_atomic(&path, &bytes)
@@ -179,7 +193,7 @@ impl SessionStore {
         paths: &AppPaths,
         project_id: &ProjectId,
     ) -> Result<Option<SessionManifest>, String> {
-        let path = paths.agent_session_manifest(project_id);
+        let path = Self::manifest_path(paths, project_id);
         match std::fs::read_to_string(&path) {
             Ok(text) => {
                 let manifest: SessionManifest = serde_json::from_str(&text)
@@ -195,7 +209,7 @@ impl SessionStore {
     }
 
     pub fn clear(paths: &AppPaths, project_id: &ProjectId) -> Result<(), String> {
-        let path = paths.agent_session_manifest(project_id);
+        let path = Self::manifest_path(paths, project_id);
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),

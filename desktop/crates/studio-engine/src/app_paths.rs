@@ -63,6 +63,27 @@ impl AppPaths {
     pub fn agent_session_manifest(&self, id: &studio_project::ProjectId) -> PathBuf {
         self.agent(id).join("session-manifest.json")
     }
+    /// Directory holding one subdirectory per stored agent session.
+    pub fn agent_sessions(&self, id: &studio_project::ProjectId) -> PathBuf {
+        self.agent(id).join("sessions")
+    }
+    /// One stored session: `manifest.json`, `meta.json` and `conversation.jsonl`.
+    pub fn agent_session_dir(&self, id: &studio_project::ProjectId, session: &str) -> PathBuf {
+        let dir = if is_valid_session_id(session) {
+            session
+        } else {
+            ".invalid"
+        };
+        self.agent_sessions(id).join(dir)
+    }
+    /// Names the session that the single-session API serves; absent before migration.
+    pub fn agent_session_current(&self, id: &studio_project::ProjectId) -> PathBuf {
+        self.agent_sessions(id).join("current")
+    }
+    /// The pre-multi-session conversation log (one per project).
+    pub fn legacy_conversation_log(&self, id: &studio_project::ProjectId) -> PathBuf {
+        self.project(id).join("conversation.jsonl")
+    }
     /// Retained failed drafts are moved here before the stable draft is refreshed.
     pub fn agent_archive(&self, id: &studio_project::ProjectId) -> PathBuf {
         self.agent(id).join("archive")
@@ -70,4 +91,10 @@ impl AppPaths {
     pub fn contains_source(&self, source: &Path) -> bool {
         self.data.starts_with(source) || source.starts_with(&self.data)
     }
+}
+
+/// Session ids come from the UI and from directory names: letters, digits and `-` only, so an
+/// id can never leave the sessions directory.
+pub fn is_valid_session_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
