@@ -97,6 +97,7 @@ impl World {
             auth_env_names,
             auth_method: None,
             mcp: McpChoice::Unsupported,
+            wire: studio_harness::AgentWire::Acp,
         }
     }
 
@@ -624,6 +625,7 @@ fn a_long_real_conversation_pages_back_inside_the_resident_limits() {
         ownership: studio_harness::OwnershipSource::Injected(qualified()),
         mcp: studio_harness::McpStdioSupport::Unsupported,
         auth_method: None,
+        wire: studio_harness::AgentWire::Acp,
     });
     config.limits.shutdown_grace = Duration::from_secs(1);
     let workflow = AgentWorkflow::open(config, controller).unwrap();

@@ -16,8 +16,9 @@ mod turn;
 use super::{
     AdapterSettings, PermissionAnswer, Shared, ToolSettings, WorkflowError,
     jobs::{
-        self, Env, Gate, HandoffOutcome, JobKind, PipelineEnd, PipelineInput, PromoteEnd, Retained,
-        UndoEnd, observe_writer, reap_and_observe, run_pipeline, run_probe, run_promote, run_undo,
+        self, Env, Gate, HandoffOutcome, JobKind, PipelineEnd, PipelineInput, ProbeInput,
+        PromoteEnd, Retained, UndoEnd, observe_writer, reap_and_observe, run_pipeline, run_probe,
+        run_promote, run_undo,
     },
     log::RowStore,
     model::*,
@@ -49,11 +50,12 @@ use std::{
 };
 use studio_bootstrap::ProcessTreeManager;
 use studio_harness::{
-    AcpDriver, AdapterLaunch, AgentFailure, DiscoveryReport, DriverConfig, DriverMode,
+    AdapterLaunch, AgentDriver, AgentFailure, DiscoveryReport, DriverConfig, DriverMode,
     McpStdioServer, McpStdioSupport,
     driver::{
-        AgentEvent, AgentEventKind, MessageRole, OptionValue, PermissionId, PermissionPrompt,
-        PermissionReply, PermissionResolution, PromptImage, PromptOutcome, ToolEvent,
+        AgentEvent, AgentEventKind, MessageRole, OptionValue, PermissionChoice, PermissionId,
+        PermissionPrompt, PermissionReply, PermissionResolution, PromptImage, PromptOutcome,
+        QuestionAnswer, QuestionPrompt, ToolEvent,
     },
 };
 use studio_project::revision::SourceInventory;
@@ -190,7 +192,7 @@ struct Active {
     /// Cancels the job in flight; replaced for every job so a Stop that raced the end of
     /// one job can never cancel the next.
     gate: Arc<Gate>,
-    driver: Option<AcpDriver>,
+    driver: Option<Box<dyn AgentDriver>>,
     writer: Option<WriterGeneration>,
     session: Option<String>,
     mcp: Option<McpStdioServer>,
@@ -210,7 +212,15 @@ struct Active {
     evidence_cancel: Arc<AtomicBool>,
     turn: Option<u64>,
     open_permissions: HashSet<u64>,
+    /// Open requests (a subset of `open_permissions`) that are questions, with their
+    /// question count: the user's choice is sent back as an answer, not a permission.
+    open_questions: HashMap<u64, usize>,
     engine_waiting: bool,
+    /// Background tasks the agent reported still running, and whether it is about to
+    /// continue (or is continuing) in a turn of its own. Capture waits for both to clear.
+    background: (u32, bool),
+    /// A turn ended cleanly while background work was live: capture waits for it.
+    capture_deferred: bool,
     failed: bool,
     stop_requested: bool,
     /// Publication is running and cannot be cancelled.
@@ -333,9 +343,15 @@ fn handoff_draft_choice(
     })
 }
 
-/// The identity of the program this task launches, binding a resumable session to it.
+/// The identity of the program this task launches and the wire it speaks, binding a
+/// resumable session to both. An ACP digest is unchanged from before wires existed, so
+/// saved ACP sessions still resume.
 fn session_launch_digest(active: &Active) -> Result<String, String> {
-    crate::containment::launch_identity(&active.launch).map(|identity| identity.digest())
+    let digest = crate::containment::launch_identity(&active.launch)?.digest();
+    Ok(match active.adapter.wire {
+        studio_harness::AgentWire::Acp => digest,
+        wire => format!("{}:{digest}", wire.as_str()),
+    })
 }
 
 fn split_at_boundary(text: &str, max: usize) -> (&str, &str) {
@@ -401,7 +417,9 @@ fn decode_evidence_previews(
 fn engine_state_of(phase: TaskPhase) -> TaskState {
     match phase {
         TaskPhase::Queued | TaskPhase::Starting => TaskState::ContextReady,
-        TaskPhase::Editing | TaskPhase::Repairing => TaskState::Editing,
+        TaskPhase::Editing | TaskPhase::Repairing | TaskPhase::WaitingBackground => {
+            TaskState::Editing
+        }
         TaskPhase::WaitingPermission | TaskPhase::WaitingClarification => TaskState::Waiting,
         TaskPhase::Quiescing | TaskPhase::Capturing => TaskState::Quiescing,
         TaskPhase::Validating => TaskState::Validating,

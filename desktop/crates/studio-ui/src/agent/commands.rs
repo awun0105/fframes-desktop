@@ -12,6 +12,7 @@ impl ConversationPanel {
         set(&self.setup.executable, fields.executable, cx);
         set(&self.setup.args, fields.args, cx);
         set(&self.setup.env_names, fields.env_names, cx);
+        self.wire_choice = fields.wire;
     }
 
     pub(super) fn setup_fields(&self, cx: &gpui::App) -> AdapterFields {
@@ -21,6 +22,7 @@ impl ConversationPanel {
             executable: text(&self.setup.executable),
             args: text(&self.setup.args),
             env_names: text(&self.setup.env_names),
+            wire: self.wire_choice,
         }
     }
 

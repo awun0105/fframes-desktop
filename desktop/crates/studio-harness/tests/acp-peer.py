@@ -537,8 +537,11 @@ for line in sys.stdin:
         if mode in ("perm-after-cancel", "perm-full", "meta-secret"):
             finish("cancelled" if outcome["outcome"] == "cancelled" else "end_turn")
         elif mode == "permission" and outcome["outcome"] == "selected":
-            (root / "main.rs").write_text('fn main() { println!("Permitted edit"); }')
-            chunk("Applied.")
+            if outcome["optionId"] == "allow":
+                (root / "main.rs").write_text('fn main() { println!("Permitted edit"); }')
+                chunk("Applied.")
+            else:
+                chunk("Rejected.")
             finish()
         elif mode == "permission" and outcome["outcome"] == "cancelled":
             finish("cancelled")

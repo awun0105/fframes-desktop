@@ -350,6 +350,9 @@ pub enum TaskPhase {
     WaitingPermission,
     /// The agent asked a question and ended its turn without changing the draft.
     WaitingClarification,
+    /// The agent's turn ended but a background task it started still runs; the agent
+    /// may continue by itself once it finishes. Capture waits.
+    WaitingBackground,
     /// Reaping the adapter and proving quiescence.
     Quiescing,
     Capturing,
@@ -389,6 +392,7 @@ impl TaskPhase {
             Self::Editing => "Editing",
             Self::WaitingPermission => "Waiting for your permission",
             Self::WaitingClarification => "Waiting for your answer",
+            Self::WaitingBackground => "Waiting for a background task",
             Self::Quiescing => "Finishing the agent",
             Self::Capturing => "Capturing the result",
             Self::Validating => "Validating",

@@ -277,6 +277,30 @@ impl ConversationPanel {
         let editable = controls.settings_editable;
         let mut form = self.section("Adapter");
         form = form
+            .child({
+                let entity = cx.entity();
+                let options = AgentWire::ALL
+                    .iter()
+                    .map(|wire| {
+                        SegmentOption::new(wire.label(), *wire == self.wire_choice)
+                            .disabled(!editable)
+                    })
+                    .collect();
+                field_row(
+                    &self.theme,
+                    "Protocol",
+                    SegmentedControl::settings(&self.theme, "agent-wire", options).on_select(
+                        move |index, _, app| {
+                            if let Some(&wire) = AgentWire::ALL.get(*index) {
+                                entity.update(app, |this, cx| {
+                                    this.wire_choice = wire;
+                                    cx.notify();
+                                });
+                            }
+                        },
+                    ),
+                )
+            })
             .child(field(self, "Label", &self.setup.provider.clone(), cx))
             .child(field(
                 self,

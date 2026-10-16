@@ -84,7 +84,8 @@ impl Actor {
             | TaskPhase::Editing
             | TaskPhase::Repairing
             | TaskPhase::WaitingPermission
-            | TaskPhase::WaitingClarification => {
+            | TaskPhase::WaitingClarification
+            | TaskPhase::WaitingBackground => {
                 self.finish_streaming();
                 self.finalize(
                     Some((TaskState::Cancelled, "stopped by user".into())),
@@ -196,10 +197,11 @@ impl Actor {
                 | TaskPhase::Editing
                 | TaskPhase::Repairing
                 | TaskPhase::WaitingPermission
-                | TaskPhase::WaitingClarification => {
+                | TaskPhase::WaitingClarification
+                | TaskPhase::WaitingBackground => {
                     active.gate.cancel();
                     if let Some(driver) = &active.driver {
-                        let _ = driver.cancel_prompt();
+                        let _ = driver.cancel_turn();
                     }
                     if let Some((compiler, worker)) = &active.pipeline_scopes {
                         compiler.shutdown(Duration::ZERO);

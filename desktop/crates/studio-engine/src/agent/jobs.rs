@@ -28,8 +28,8 @@ use std::{
 };
 use studio_bootstrap::ProcessTreeManager;
 use studio_harness::{
-    AcpDriver, AdapterConfig, AgentFailure, DiscoveryReport, DriverOutcome, ExecutableSearch,
-    ProbeOptions, probe_adapter,
+    AdapterConfig, AgentDriver, AgentFailure, AgentWire, DiscoveryReport, DriverOutcome,
+    ExecutableSearch, ProbeOptions, probe_adapter_on,
 };
 use studio_project::checkpoint::Checkpoints;
 
@@ -163,19 +163,32 @@ impl Env {
 
 // ---- adapter probe --------------------------------------------------------------------------
 
-pub(crate) fn run_probe(
-    adapter: AdapterConfig,
-    search: ExecutableSearch,
-    auth_method: Option<String>,
-    scratch: PathBuf,
-    timeout: Duration,
-    processes: ProcessTreeManager,
-) -> DiscoveryReport {
+pub(crate) struct ProbeInput {
+    pub adapter: AdapterConfig,
+    pub wire: AgentWire,
+    pub search: ExecutableSearch,
+    pub auth_method: Option<String>,
+    pub scratch: PathBuf,
+    pub timeout: Duration,
+    pub processes: ProcessTreeManager,
+}
+
+pub(crate) fn run_probe(input: ProbeInput) -> DiscoveryReport {
+    let ProbeInput {
+        adapter,
+        wire,
+        search,
+        auth_method,
+        scratch,
+        timeout,
+        processes,
+    } = input;
     let _ = std::fs::create_dir_all(&scratch);
     let mut options = ProbeOptions::new(scratch.clone());
     options.auth_method = auth_method;
     options.timeout = timeout;
-    let report = probe_adapter(&adapter, &search, &options, &processes);
+    // A wire this build cannot run is refused without launching the program.
+    let report = probe_adapter_on(wire, &adapter, &search, &options, &processes);
     processes.shutdown(Duration::from_millis(300));
     let _ = std::fs::remove_dir_all(&scratch);
     report
@@ -186,7 +199,7 @@ pub(crate) fn run_probe(
 pub(crate) struct PipelineInput {
     pub env: Env,
     pub identity: TaskIdentity,
-    pub driver: AcpDriver,
+    pub driver: Box<dyn AgentDriver>,
     pub session: Option<String>,
     pub writer: WriterGeneration,
     pub gate_of_tools: Option<WriterGate>,
@@ -252,7 +265,7 @@ fn progress(env: &Env, phase: TaskPhase) {
 pub(crate) fn reap_and_observe(
     env: &Env,
     identity: &TaskIdentity,
-    driver: AcpDriver,
+    driver: Box<dyn AgentDriver>,
 ) -> (DriverOutcome, Result<(), EngineError>) {
     let outcome = driver.shutdown();
     let observed = observe_writer(&env.controller, identity, &outcome);

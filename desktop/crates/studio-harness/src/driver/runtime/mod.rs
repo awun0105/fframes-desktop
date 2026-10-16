@@ -220,6 +220,9 @@ pub enum DriverError {
     /// A bounded admission limit is full; retry after the adapter answers.
     #[error("{0}")]
     Busy(&'static str),
+    /// The driver's wire cannot do this (for example steer a running turn).
+    #[error("{0}")]
+    Unsupported(&'static str),
 }
 
 #[derive(Debug)]
@@ -263,11 +266,47 @@ struct Turn {
     cancel_requested: bool,
 }
 
+/// The answer a wire sends back for one pending request.
+pub(in crate::driver) enum WireAnswer {
+    /// The raw option id the user picked.
+    Selected(String),
+    Cancelled,
+    /// Answers to a question request, in the order of its questions.
+    Answers(Vec<crate::driver::QuestionAnswer>),
+}
+
+pub(in crate::driver) enum SinkError {
+    Rpc(RpcError),
+    Failed(AgentFailure),
+}
+
+/// Writes the answer to one pending request back to the adapter. Called under the `core`
+/// lock, so it must never take it.
+pub(in crate::driver) trait PermissionSink: Send {
+    fn respond(self: Box<Self>, answer: WireAnswer) -> Result<(), SinkError>;
+}
+
+struct AcpResponder(Responder<RequestPermissionResponse>);
+
+impl PermissionSink for AcpResponder {
+    fn respond(self: Box<Self>, answer: WireAnswer) -> Result<(), SinkError> {
+        let outcome = match answer {
+            WireAnswer::Selected(raw) => {
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(raw))
+            }
+            WireAnswer::Cancelled | WireAnswer::Answers(_) => RequestPermissionOutcome::Cancelled,
+        };
+        quiet(|| self.0.respond(RequestPermissionResponse::new(outcome))).map_err(SinkError::Rpc)
+    }
+}
+
 struct PendingPermission {
-    responder: Responder<RequestPermissionResponse>,
+    sink: Box<dyn PermissionSink>,
     /// `(exported, raw)` option ids; only exported ids are ever shown to hosts.
     options: Vec<(String, String)>,
     wire_id: String,
+    /// A question request: answered with [`WireAnswer::Answers`], not an option.
+    question: bool,
 }
 
 #[derive(Default)]
@@ -316,11 +355,7 @@ impl Core {
         drained
             .into_iter()
             .map(|(id, pending)| {
-                let _ = quiet(|| {
-                    pending.responder.respond(RequestPermissionResponse::new(
-                        RequestPermissionOutcome::Cancelled,
-                    ))
-                });
+                let _ = pending.sink.respond(WireAnswer::Cancelled);
                 PermissionId(id)
             })
             .collect()
@@ -568,12 +603,18 @@ fn split_chunks(text: &str, max: usize) -> impl Iterator<Item = &str> {
     })
 }
 
+mod claude;
+mod codex;
 mod connection;
 mod handle;
+mod native_launch;
 mod shared;
 
+pub use claude::ClaudeDriver;
+pub use codex::CodexDriver;
 use connection::*;
 pub use handle::AcpDriver;
+use handle::{Owner, Threads, image_budget, spawn_owned, validate_prompt};
 
 #[cfg(test)]
 mod tests {
@@ -636,7 +677,7 @@ mod tests {
         let request = PromptRequest::new(
             "sess-1",
             vec![
-                ContentBlock::Text(TextContent::new("quote \" and \u{1} and é")),
+                ContentBlock::Text(TextContent::new("quote \" and \u{1} and Ã©")),
                 ContentBlock::Image(ImageContent::new("AAAA", "image/png")),
             ],
         );

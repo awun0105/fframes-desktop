@@ -179,7 +179,7 @@ impl Actor {
         let identity = active.ctx.identity.clone();
         // Closing a driver closes its open permissions as cancelled.
         if let Some(driver) = active.driver.take() {
-            let _ = driver.cancel_prompt();
+            let _ = driver.cancel_turn();
             if let Some(turn) = active.turn {
                 // Give the adapter the chance to acknowledge the cancel (its permission
                 // requests are already closed as cancelled); the driver kills the tree

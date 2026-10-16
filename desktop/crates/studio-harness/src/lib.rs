@@ -9,15 +9,16 @@ pub use detect::{
 };
 pub use discovery::{
     AdapterLaunch, AdapterStatus, DiscoveryReport, ExecutableSearch, ProbeOptions, ResolveError,
-    probe_adapter, resolve_executable,
+    probe_adapter, probe_adapter_on, resolve_executable,
 };
 pub use driver::{
     ACP_PROTOCOL_VERSION, AcpAuthoritativeCompletion, AcpDriver, AcpInitializeRequest,
     AcpInitializeResponse, AcpPermissionRequest, AcpPermissionResponse, AcpPromptChunk,
-    AcpSessionRequest, AcpSessionResponse, AgentEvent, AgentEventKind, AgentFailure, DriverConfig,
-    DriverError, DriverLimits, DriverMode, DriverOutcome, DriverStatus, FailureKind,
-    McpConfigError, McpStdioServer, McpStdioSupport, OwnershipSource, PromptOutcome, ServerInfo,
-    redact_sensitive_string,
+    AcpSessionRequest, AcpSessionResponse, AgentDriver, AgentEvent, AgentEventKind, AgentFailure,
+    AgentWire, DriverCapabilities, DriverConfig, DriverError, DriverLimits, DriverMode,
+    DriverOutcome, DriverStatus, FailureKind, McpConfigError, McpStdioServer, McpStdioSupport,
+    OwnershipSource, PromptOutcome, ServerInfo, SteeringMode, redact_sensitive_string,
+    start_driver,
 };
 pub use supervisor::{AgentSupervisor, QualificationStatus, SupervisorError};
 

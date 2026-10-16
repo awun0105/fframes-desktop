@@ -62,7 +62,7 @@ use std::{
 };
 use studio_bootstrap::ProcessTreeManager;
 use studio_harness::{
-    AdapterConfig, DriverLimits, ExecutableSearch, McpStdioSupport, OwnershipSource,
+    AdapterConfig, AgentWire, DriverLimits, ExecutableSearch, McpStdioSupport, OwnershipSource,
     driver::OptionValue,
 };
 use studio_project::ProjectId;
@@ -82,6 +82,8 @@ pub struct AdapterSettings {
     pub mcp: McpStdioSupport,
     /// Advertised authentication method to select explicitly, if the adapter needs one.
     pub auth_method: Option<String>,
+    /// The protocol the adapter speaks.
+    pub wire: AgentWire,
 }
 
 /// Where the task MCP route lives.

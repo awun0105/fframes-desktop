@@ -140,6 +140,41 @@ impl Studio {
             auth_env_names: vec![],
             auth_method: None,
             mcp: McpChoice::Unsupported,
+            wire: studio_harness::AgentWire::Acp,
+        };
+        let paths = AppPaths::new(studio.app_data.clone()).unwrap();
+        host::save_settings(&paths, &adapter).unwrap();
+        studio.open_project()
+    }
+
+    /// The fixture open with the fake native CLI of `wire` (`fake-claude.py` or
+    /// `fake-codex.py` of the harness tests) as its saved adapter. The fake reads its
+    /// writes from `writes.json` in [`Self::agent_evidence`] and picks each turn's
+    /// behaviour from uppercase keywords in the prompt.
+    pub fn with_native_agent(cx: &mut TestAppContext, wire: studio_harness::AgentWire) -> Self {
+        let studio = Self::new(cx);
+        let evidence = studio.agent_evidence();
+        fs::create_dir_all(&evidence).unwrap();
+        let script = match wire {
+            studio_harness::AgentWire::ClaudeStreamJson => "fake-claude.py",
+            studio_harness::AgentWire::CodexAppServer => "fake-codex.py",
+            studio_harness::AgentWire::Acp => unreachable!("use `with_agent`"),
+        };
+        let adapter = AdapterFile {
+            provider: "scripted".into(),
+            executable: python(),
+            args: vec![
+                format!(
+                    "{}/../../studio-harness/tests/{script}",
+                    studio_test_support::ENGINE_TESTS_DIR
+                ),
+                "turns".into(),
+                evidence.to_string_lossy().into_owned(),
+            ],
+            auth_env_names: vec![],
+            auth_method: None,
+            mcp: McpChoice::Unsupported,
+            wire,
         };
         let paths = AppPaths::new(studio.app_data.clone()).unwrap();
         host::save_settings(&paths, &adapter).unwrap();
