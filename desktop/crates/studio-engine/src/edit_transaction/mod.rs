@@ -63,9 +63,11 @@ pub use studio_project::publish::{FileId, NoClobber};
 /// Explicit format version of every event the task journal writes.
 ///
 /// Format 3 widened [`FileId`] to a volume id plus a 128-bit file id (`volume`, `file`;
-/// format 2 wrote `dev`, `ino`). Format-2 lines still replay, so a journal may mix both;
-/// builds from before format 3 refuse a journal that holds a format-3 line.
-pub const TASK_FORMAT: u32 = 3;
+/// format 2 wrote `dev`, `ino`). Format 4 added [`TaskRevisionRecord::undoes_paths`], the
+/// per-path form of an Undo. Lines of every older format still replay, so a journal may
+/// mix them; a build from before format 4 would read a one-path Undo as a whole one, so
+/// it refuses a journal that holds a format-4 line.
+pub const TASK_FORMAT: u32 = 4;
 /// The oldest task-journal format that still replays.
 pub const OLDEST_TASK_FORMAT: u32 = 2;
 /// Most file operations one transaction may carry (the intent is a single journal line).
@@ -289,6 +291,11 @@ pub struct TaskRevisionRecord {
     pub published: SourceRevision,
     /// The revision this entry reverses, for Undo.
     pub undoes: Option<String>,
+    /// For an Undo: exactly the paths of `undoes` it inverted (every Undo written by
+    /// format 4 records them). `None` (records written before format 4) means every path
+    /// of `undoes`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undoes_paths: Option<Vec<String>>,
     pub prompt_summary: String,
     pub changes: Vec<FileDelta>,
     /// Directories this revision created (relative, shallowest first); Undo removes the
@@ -715,6 +722,8 @@ pub struct RecordSeed {
     pub prior_history: Option<String>,
     pub prior_checkpoint: SourceRevision,
     pub undoes: Option<String>,
+    /// See [`TaskRevisionRecord::undoes_paths`].
+    pub undoes_paths: Option<Vec<String>>,
     pub prompt_summary: String,
     pub build: Option<BuildIdentity>,
     pub validation_report_sha256: String,
@@ -1070,6 +1079,7 @@ pub fn plan(
         candidate: candidate.revision.clone(),
         published: candidate.revision.clone(),
         undoes: seed.undoes,
+        undoes_paths: seed.undoes_paths,
         prompt_summary: seed.prompt_summary,
         changes,
         created_dirs,

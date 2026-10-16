@@ -368,6 +368,13 @@ impl Actor {
         if active.ctx.identity.task != task {
             return;
         }
+        // Evidence rendered for a candidate a rejection has since replaced is stale.
+        if kind == EvidenceKind::After
+            && let Some(retained) = &active.retained
+            && view.revision != present::short(retained.captured.candidate().revision().as_str())
+        {
+            return;
+        }
         let settled = view.state != EvidenceState::Pending;
         self.set_evidence(kind, view.clone());
         if kind == EvidenceKind::Before && settled {

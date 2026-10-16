@@ -19,6 +19,7 @@ use super::{
         self, Env, Gate, HandoffOutcome, JobKind, PipelineEnd, PipelineInput, PromoteEnd, Retained,
         UndoEnd, observe_writer, reap_and_observe, run_pipeline, run_probe, run_promote, run_undo,
     },
+    jobs::{RejectEnd, RejectInput, run_reject, run_revert_path},
     log::RowStore,
     model::*,
     present::{self, CliRoute, ToolRoute},
@@ -95,6 +96,13 @@ pub(crate) enum Msg {
     ExportCandidate(PathBuf),
     ExportDraft(PathBuf),
     Undo(Option<String>),
+    /// Leave these files out of the candidate under review.
+    RejectFiles(Vec<String>),
+    /// Revert one file of an accepted revision.
+    RevertPath {
+        target: String,
+        path: String,
+    },
     SetPolicy(ReviewPolicy),
     PreviewDisplayed(String),
     HandoffResolved {
@@ -135,6 +143,7 @@ pub(crate) enum Msg {
     Pipeline(PipelineEnd),
     Promote(PromoteEnd),
     Undone(UndoEnd),
+    Rejected(RejectEnd),
     /// Publication committed: sent BEFORE the preview sink runs, so an acknowledgement
     /// the sink triggers can never overtake the revision it is about.
     Committed {
@@ -200,6 +209,8 @@ struct Active {
     /// The scopes validation's compile/worker processes live in.
     pipeline_scopes: Option<(ProcessTreeManager, ProcessTreeManager)>,
     retained: Option<Box<Retained>>,
+    /// A reject job is validating the files left after a rejection: Stop cancels only it.
+    rejecting: bool,
     in_repair: bool,
     pending_prompt: Option<(String, PromptKind)>,
     /// The before evidence is still rendering: the first prompt waits for it.
@@ -657,6 +668,11 @@ impl Actor {
                 self.start_undo(target);
                 self.sync_registry(1);
             }
+            Msg::RejectFiles(paths) => self.reject_files(paths),
+            Msg::RevertPath { target, path } => {
+                self.start_revert_path(target, path);
+                self.sync_registry(1);
+            }
             Msg::SetPolicy(policy) => self.set_policy(policy),
             Msg::PreviewDisplayed(revision) => self.preview_displayed(&revision),
             Msg::HandoffResolved { published, result } => self.handoff_resolved(&published, result),
@@ -706,6 +722,7 @@ impl Actor {
             Msg::Pipeline(end) => self.on_pipeline(end),
             Msg::Promote(end) => self.on_promote(end),
             Msg::Undone(end) => self.on_undone(end),
+            Msg::Rejected(end) => self.on_rejected(end),
             Msg::Committed { published, kind } => self.on_committed(&published, kind),
             Msg::Evidence { task, kind, view } => self.on_evidence(task, kind, view),
             Msg::JobAborted { kind, message } => self.on_job_aborted(kind, &message),

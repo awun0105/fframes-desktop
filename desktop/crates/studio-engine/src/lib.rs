@@ -39,8 +39,9 @@ pub use agent_task::{
 };
 pub use canvas_selection::*;
 pub use controller::{
-    CompletionOutcome, Controller, DraftPreparationChoice, MigrationOutcome, PresetMutation,
-    PresetOutcome, ProjectMigration, Promotion, RecoveryStatus, TimingEditing, UndoPreparation,
+    CandidateDiffSource, CompletionOutcome, Controller, DraftPreparationChoice, MigrationOutcome,
+    PresetMutation, PresetOutcome, ProjectMigration, Promotion, RecoveryStatus, Rejection,
+    RevisionDiffSource, TimingEditing, UndoPreparation,
 };
 pub use edit_transaction::{
     ApplyGate, Boundary, ConflictReport, Fault, FileDelta, FileState, NoHooks, PlanError,

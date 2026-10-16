@@ -134,6 +134,7 @@ impl Controller {
             prior_history: self.record.state.task_history().head_id(),
             prior_checkpoint: self.record.state.accepted().clone(),
             undoes: None,
+            undoes_paths: None,
             prompt_summary: prompt_summary(&plan.summary),
             build: None,
             validation_report_sha256: String::new(),

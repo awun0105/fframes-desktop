@@ -34,10 +34,12 @@ use studio_project::{
 mod migration;
 mod preset;
 mod promotion;
+mod review;
 mod timing;
 pub use migration::{MigrationOutcome, ProjectMigration, TimingEditing};
 pub use preset::{PresetMutation, PresetOutcome};
 pub use promotion::{CompletionOutcome, Promotion, UndoPreparation};
+pub use review::{CandidateDiffSource, Rejection, RevisionDiffSource};
 
 /// What replaying the task journal found and did on open, and what still blocks
 /// source mutation.

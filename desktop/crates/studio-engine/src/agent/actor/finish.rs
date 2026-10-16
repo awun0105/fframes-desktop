@@ -405,6 +405,7 @@ impl Actor {
                 Msg::Pipeline(end) => self.on_pipeline(end),
                 Msg::Promote(end) => self.on_promote(end),
                 Msg::Undone(end) => self.on_undone(end),
+                Msg::Rejected(end) => self.on_rejected(end),
                 Msg::Committed { published, kind } => self.on_committed(&published, kind),
                 Msg::JobAborted { kind, message } => self.on_job_aborted(kind, &message),
                 Msg::Evidence { task, kind, view } => self.on_evidence(task, kind, view),

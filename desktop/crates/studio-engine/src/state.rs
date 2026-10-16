@@ -1,6 +1,6 @@
-use crate::edit_transaction::{TaskRevisionRecord, TransactionKind};
+use crate::edit_transaction::{FileDelta, TaskRevisionRecord, TransactionKind};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use studio_project::{ProjectId, SourceInventory, SourceRevision};
 
 /// What one scan of the project says: the revision of every file, and the revision a
@@ -122,6 +122,14 @@ impl ReviewPolicy {
     pub const SCOPE_NOTICE: &'static str = "This review setting is stored on this computer for this project. It does not travel with the project folder; a copy or restored project starts with automatic Apply.";
 }
 
+/// The paths of one revision that effective Undos have reversed.
+#[derive(Default)]
+struct Reversal<'a> {
+    /// A whole Undo covered every path.
+    whole: bool,
+    paths: BTreeSet<&'a str>,
+}
+
 /// A validated task revision list with Undo bookkeeping.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskHistory {
@@ -154,30 +162,120 @@ impl TaskHistory {
     pub(crate) fn push(&mut self, record: TaskRevisionRecord) {
         self.entries.push(record);
     }
-    /// Ids whose effect is currently reversed: targeted by an Undo that is itself not
-    /// reversed (undoing an Undo puts the original edit back in effect).
-    fn reversed(&self) -> HashSet<&str> {
+    /// What every effective Undo has reversed so far, per revision id. An Undo that was
+    /// itself undone no longer counts (undoing an Undo puts the original edit back in
+    /// effect).
+    fn reversals(&self) -> HashMap<&str, Reversal<'_>> {
         let mut targeted: HashSet<&str> = HashSet::new();
+        let mut reversals: HashMap<&str, Reversal<'_>> = HashMap::new();
         for entry in self.entries.iter().rev() {
             if entry.kind == TransactionKind::Undo
                 && !targeted.contains(entry.id.as_str())
                 && let Some(target) = entry.undoes.as_deref()
             {
                 targeted.insert(target);
+                let reversal = reversals.entry(target).or_default();
+                match &entry.undoes_paths {
+                    Some(paths) => reversal.paths.extend(paths.iter().map(String::as_str)),
+                    None => reversal.whole = true,
+                }
             }
         }
-        targeted
+        reversals
+    }
+
+    /// Whether every path of `entry` is reversed (by a whole Undo, or path by path).
+    fn fully_reversed(entry: &TaskRevisionRecord, reversals: &HashMap<&str, Reversal<'_>>) -> bool {
+        reversals.get(entry.id.as_str()).is_some_and(|reversal| {
+            reversal.whole
+                || (!entry.changes.is_empty()
+                    && entry
+                        .changes
+                        .iter()
+                        .all(|c| reversal.paths.contains(c.path.as_str())))
+        })
+    }
+
+    /// The paths of `id` that an effective Undo has reversed, in change order.
+    pub fn reverted_paths(&self, id: &str) -> Vec<String> {
+        let reversals = self.reversals();
+        self.get(id)
+            .map(|entry| Self::reverted_in(entry, &reversals))
+            .unwrap_or_default()
+    }
+
+    /// [`Self::reverted_paths`] of every revision that has any, computed in one pass.
+    pub fn all_reverted_paths(&self) -> HashMap<String, Vec<String>> {
+        let reversals = self.reversals();
+        self.entries
+            .iter()
+            .filter_map(|entry| {
+                let paths = Self::reverted_in(entry, &reversals);
+                (!paths.is_empty()).then(|| (entry.id.clone(), paths))
+            })
+            .collect()
+    }
+
+    fn reverted_in(
+        entry: &TaskRevisionRecord,
+        reversals: &HashMap<&str, Reversal<'_>>,
+    ) -> Vec<String> {
+        let Some(reversal) = reversals.get(entry.id.as_str()) else {
+            return Vec::new();
+        };
+        entry
+            .changes
+            .iter()
+            .filter(|c| reversal.whole || reversal.paths.contains(c.path.as_str()))
+            .map(|c| c.path.clone())
+            .collect()
+    }
+
+    /// The changes of `entry` that are still in effect: what a whole Undo of it inverts.
+    pub fn undoable_changes(&self, entry: &TaskRevisionRecord) -> Vec<FileDelta> {
+        let reversals = self.reversals();
+        match reversals.get(entry.id.as_str()) {
+            None => entry.changes.clone(),
+            Some(reversal) if reversal.whole => Vec::new(),
+            Some(reversal) => entry
+                .changes
+                .iter()
+                .filter(|c| !reversal.paths.contains(c.path.as_str()))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// The accepted agent edit `path` can still be reverted from: it must be an Apply that
+    /// changed `path` and whose change to it is still in effect.
+    pub fn revert_target(&self, id: &str, path: &str) -> Result<&TaskRevisionRecord, String> {
+        let entry = self
+            .get(id)
+            .ok_or_else(|| format!("revision {id} is not in this project's task history"))?;
+        if entry.kind != TransactionKind::Apply {
+            return Err("only an accepted agent edit can be reverted file by file".into());
+        }
+        if !entry.changes.iter().any(|c| c.path == path) {
+            return Err(format!(
+                "\"{}\" did not change {path}",
+                entry.prompt_summary
+            ));
+        }
+        if self.reverted_paths(id).iter().any(|p| p == path) {
+            return Err(format!("{path} was already reverted"));
+        }
+        Ok(entry)
     }
     /// The entry Undo would reverse: the requested one, or the newest agent edit that
     /// is still in effect.
     pub fn undo_target(&self, requested: Option<&str>) -> Result<&TaskRevisionRecord, String> {
-        let reversed = self.reversed();
+        let reversals = self.reversals();
         match requested {
             Some(id) => {
                 let entry = self.get(id).ok_or_else(|| {
                     format!("revision {id} is not in this project's task history")
                 })?;
-                if reversed.contains(entry.id.as_str()) {
+                if Self::fully_reversed(entry, &reversals) {
                     Err(format!("\"{}\" was already undone", entry.prompt_summary))
                 } else {
                     Ok(entry)
@@ -190,7 +288,9 @@ impl TaskHistory {
                 self.entries
                     .iter()
                     .rev()
-                    .find(|e| e.kind == TransactionKind::Apply && !reversed.contains(e.id.as_str()))
+                    .find(|e| {
+                        e.kind == TransactionKind::Apply && !Self::fully_reversed(e, &reversals)
+                    })
                     .ok_or_else(|| "Every accepted agent edit has already been undone".into())
             }
         }
@@ -675,6 +775,7 @@ mod tests {
             candidate: revision(published),
             published: revision(published),
             undoes: undoes.map(str::to_owned),
+            undoes_paths: None,
             prompt_summary: format!("edit {id}"),
             changes: vec![FileDelta {
                 path: "a.txt".into(),

@@ -65,6 +65,14 @@ impl TaskSourceBase {
     }
 }
 
+/// The candidate a replacement displaced, kept to reinstate it if the replacement fails.
+#[derive(Debug)]
+pub struct ReplacedCandidate {
+    identity: TaskIdentity,
+    candidate: CandidateRevision,
+    manifest_sha256: String,
+}
+
 /// Immutable bytes proposed by a task. Deliberately a different type from
 /// [`TaskSourceBase`] and from the M1 saved checkpoint: relabelling one as the
 /// other is a compile error.
@@ -934,6 +942,58 @@ impl AgentTaskManager {
         if task.candidate.as_ref() != Some(candidate) {
             return Err(TaskError::ReportMismatch);
         }
+        task.state = TaskState::CandidateReady;
+        Ok(())
+    }
+
+    /// Replaces the validated candidate of a `CandidateReady` task with a new one that
+    /// must itself pass validation: the task goes back to `Validating` and only a passing
+    /// report ([`Self::candidate_validated`]) makes it `CandidateReady` again. The
+    /// replaced candidate is returned so a failed validation can reinstate it
+    /// ([`Self::restore_candidate`]); a replacement never spends the repair budget.
+    pub(crate) fn replace_candidate(
+        &mut self,
+        identity: &TaskIdentity,
+        candidate: CandidateRevision,
+        manifest_sha256: String,
+    ) -> Result<ReplacedCandidate, TaskError> {
+        let task = self.check_mut(identity)?;
+        if task.state != TaskState::CandidateReady {
+            return Err(TaskError::WrongState {
+                expected: TaskState::CandidateReady,
+                actual: task.state,
+            });
+        }
+        // Check before assigning: an error must leave the validated candidate in place.
+        let (Some(previous), Some(previous_manifest)) =
+            (task.candidate.clone(), task.candidate_manifest.clone())
+        else {
+            return Err(TaskError::ReportMismatch);
+        };
+        task.candidate = Some(candidate);
+        task.candidate_manifest = Some(manifest_sha256);
+        task.state = TaskState::Validating;
+        Ok(ReplacedCandidate {
+            identity: identity.clone(),
+            candidate: previous,
+            manifest_sha256: previous_manifest,
+        })
+    }
+
+    /// The replacement did not validate: the candidate it replaced is the task's again.
+    pub(crate) fn restore_candidate(
+        &mut self,
+        replaced: ReplacedCandidate,
+    ) -> Result<(), TaskError> {
+        let task = self.check_mut(&replaced.identity)?;
+        if task.state != TaskState::Validating {
+            return Err(TaskError::WrongState {
+                expected: TaskState::Validating,
+                actual: task.state,
+            });
+        }
+        task.candidate = Some(replaced.candidate);
+        task.candidate_manifest = Some(replaced.manifest_sha256);
         task.state = TaskState::CandidateReady;
         Ok(())
     }

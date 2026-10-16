@@ -239,10 +239,10 @@ impl Journal {
     }
 }
 
-// ---- task journal (formats 2 and 3) -------------------------------------------------------
+// ---- task journal (formats 2, 3 and 4) -------------------------------------------------
 //
 // `tasks.jsonl` records file-set transactions. Every line carries an explicit `format`
-// (`TASK_FORMAT`, 3; format-2 lines still replay, see `TASK_FORMAT`); the lifecycle
+// (`TASK_FORMAT`, 4; format-2 and format-3 lines still replay, see `TASK_FORMAT`); the lifecycle
 // journal above keeps its own version-1 records untouched, so previously written
 // history stays readable. A line from a newer format is refused without truncating or
 // rewriting anything.
@@ -606,6 +606,7 @@ mod tests {
                 candidate: revision('b'),
                 published: revision('b'),
                 undoes: None,
+                undoes_paths: None,
                 prompt_summary: "edit".into(),
                 changes: vec![],
                 created_dirs: vec![],
@@ -636,7 +637,7 @@ mod tests {
     }
 
     #[test]
-    fn a_format_2_journal_with_a_pending_transaction_replays_and_takes_format_3_appends() {
+    fn a_format_2_journal_with_a_pending_transaction_replays_and_takes_current_format_appends() {
         use crate::edit_transaction::{DirIdentity, FileId, Step};
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("tasks.jsonl");
@@ -719,6 +720,82 @@ mod tests {
         assert!(replay.pending().is_empty());
     }
 
+    /// Literal lines as builds of each format wrote them: format 2 (before the file
+    /// identity rename), format 3 (before per-path Undo) and format 4.
+    const MIXED_FORMAT_LINES: [&str; 6] = [
+        r#"{"format":2,"sequence":1,"transaction":"tx2","at":1,"event":{"Intent":{"format":2,"id":"tx2","kind":"apply","base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ops":[],"dirs":[],"remove_dirs":[],"record":{"id":"tx2","kind":"apply","task":"task","generation":1,"session":[216,98,108,159,0,28,70,147,181,187,208,45,221,178,232,140],"task_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prior_history":null,"prior_checkpoint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidate":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","published":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","undoes":null,"prompt_summary":"edit","changes":[],"created_dirs":[],"build":null,"validation_report_sha256":"0000000000000000000000000000000000000000000000000000000000000000","committed_unix":7}}}}"#,
+        r#"{"format":2,"sequence":2,"transaction":"tx2","at":1,"event":{"Commit":{"id":"tx2","kind":"apply","task":"task","generation":1,"session":[216,98,108,159,0,28,70,147,181,187,208,45,221,178,232,140],"task_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prior_history":null,"prior_checkpoint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidate":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","published":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","undoes":null,"prompt_summary":"edit","changes":[],"created_dirs":[],"build":null,"validation_report_sha256":"0000000000000000000000000000000000000000000000000000000000000000","committed_unix":7}}}"#,
+        r#"{"format":3,"sequence":3,"transaction":"tx3","at":1,"event":{"Intent":{"format":3,"id":"tx3","kind":"apply","base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ops":[],"dirs":[],"remove_dirs":[],"record":{"id":"tx3","kind":"apply","task":"task","generation":1,"session":[63,221,233,111,229,7,72,106,152,148,137,111,52,105,131,251],"task_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prior_history":null,"prior_checkpoint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidate":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","published":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","undoes":null,"prompt_summary":"edit","changes":[],"created_dirs":[],"build":null,"validation_report_sha256":"0000000000000000000000000000000000000000000000000000000000000000","committed_unix":7}}}}"#,
+        r#"{"format":3,"sequence":4,"transaction":"tx3","at":1,"event":{"Commit":{"id":"tx3","kind":"apply","task":"task","generation":1,"session":[63,221,233,111,229,7,72,106,152,148,137,111,52,105,131,251],"task_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prior_history":null,"prior_checkpoint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidate":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","published":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","undoes":null,"prompt_summary":"edit","changes":[],"created_dirs":[],"build":null,"validation_report_sha256":"0000000000000000000000000000000000000000000000000000000000000000","committed_unix":7}}}"#,
+        r#"{"format":4,"sequence":5,"transaction":"tx4","at":1,"event":{"Intent":{"format":4,"id":"tx4","kind":"undo","base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ops":[],"dirs":[],"remove_dirs":[],"record":{"id":"tx4","kind":"undo","task":"task","generation":1,"session":[250,29,45,151,46,16,74,198,139,127,131,229,59,183,210,61],"task_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prior_history":null,"prior_checkpoint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidate":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","published":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","undoes":"tx3","undoes_paths":["notes.txt"],"prompt_summary":"edit","changes":[],"created_dirs":[],"build":null,"validation_report_sha256":"0000000000000000000000000000000000000000000000000000000000000000","committed_unix":7}}}}"#,
+        r#"{"format":4,"sequence":6,"transaction":"tx4","at":1,"event":{"Commit":{"id":"tx4","kind":"undo","task":"task","generation":1,"session":[250,29,45,151,46,16,74,198,139,127,131,229,59,183,210,61],"task_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prior_history":null,"prior_checkpoint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidate":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","published":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","undoes":"tx3","undoes_paths":["notes.txt"],"prompt_summary":"edit","changes":[],"created_dirs":[],"build":null,"validation_report_sha256":"0000000000000000000000000000000000000000000000000000000000000000","committed_unix":7}}}"#,
+    ];
+
+    #[test]
+    fn a_journal_mixing_formats_2_3_and_4_decodes_every_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("tasks.jsonl");
+        let mut bytes = Vec::new();
+        for line in MIXED_FORMAT_LINES {
+            bytes.extend_from_slice(line.as_bytes());
+            bytes.push(b'\n');
+        }
+        fs::write(&path, &bytes).unwrap();
+        let (mut journal, replay) = TaskJournal::open(path.clone()).unwrap();
+        assert!(replay.pending().is_empty());
+        let committed = replay.committed();
+        let ids: Vec<_> = committed.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["tx2", "tx3", "tx4"]);
+        // Older formats carry no per-path Undo; the format-4 record names its path.
+        assert_eq!(committed[0].undoes_paths, None);
+        assert_eq!(committed[1].undoes_paths, None);
+        assert_eq!(committed[2].undoes.as_deref(), Some("tx3"));
+        assert_eq!(
+            committed[2].undoes_paths,
+            Some(vec!["notes.txt".to_owned()])
+        );
+        // Reading never rewrites what is there.
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        // Later appends take the current format after the older lines.
+        journal
+            .append("tx5", &TaskEvent::Intent(Box::new(sample_intent("tx5"))))
+            .unwrap();
+        drop(journal);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with(&MIXED_FORMAT_LINES[0].to_owned()));
+        assert!(
+            text.lines()
+                .last()
+                .unwrap()
+                .starts_with(&format!("{{\"format\":{TASK_FORMAT},"))
+        );
+        assert!(TaskJournal::open(path).is_ok());
+    }
+
+    #[test]
+    fn a_format_4_record_round_trips_its_reverted_paths() {
+        let mut record = sample_intent("rt").record;
+        record.undoes = Some("earlier".into());
+        record.undoes_paths = Some(vec!["a.txt".into(), "dir/b.txt".into()]);
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(
+            json.contains(r#""undoes_paths":["a.txt","dir/b.txt"]"#),
+            "{json}"
+        );
+        assert_eq!(
+            serde_json::from_str::<crate::TaskRevisionRecord>(&json).unwrap(),
+            record
+        );
+        // A whole-revision record writes no such field, so format-3 readers see the
+        // same bytes they always did.
+        record.undoes_paths = None;
+        assert!(
+            !serde_json::to_string(&record)
+                .unwrap()
+                .contains("undoes_paths")
+        );
+    }
+
     #[test]
     fn task_journal_replays_intent_progress_and_terminal_events() {
         let tmp = tempfile::tempdir().unwrap();
@@ -781,17 +858,18 @@ mod tests {
     fn a_newer_task_journal_is_refused_without_being_changed() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("tasks.jsonl");
-        let newer = b"{\"format\":4,\"sequence\":1,\"future\":true}\n";
+        let newer = format!(
+            "{{\"format\":{},\"sequence\":1,\"future\":true}}\n",
+            TASK_FORMAT + 1
+        );
+        let newer = newer.as_bytes();
         fs::write(&path, newer).unwrap();
         let error = TaskJournal::open(path.clone()).err().unwrap();
         assert!(
             matches!(
                 error,
-                EngineError::NewerFormat {
-                    found: 4,
-                    supported: TASK_FORMAT,
-                    ..
-                }
+                EngineError::NewerFormat { found, supported, .. }
+                    if found == TASK_FORMAT + 1 && supported == TASK_FORMAT
             ),
             "{error}"
         );
