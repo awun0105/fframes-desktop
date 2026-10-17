@@ -1,4 +1,4 @@
-//! Several stored sessions per project: migration on open, New chat, switching and resuming.
+//! Several stored sessions per project: New chat, switching and resuming.
 
 use super::*;
 
@@ -43,44 +43,29 @@ fn read_load_params(w: &World) -> Option<Value> {
 }
 
 #[test]
-fn a_single_session_project_migrates_on_first_open_and_its_rows_still_show() {
+fn files_of_the_single_session_layout_are_ignored_and_left_as_they_are() {
     let mut w = World::new();
-    w.submit(&good("legacy-question"));
+    w.submit(&good("earlier-question"));
     w.wait_task(None);
     let project = w.snap().project.clone();
 
-    // Leave the project as the single-session builds did: one log and one manifest, no sessions.
-    let manifest = SessionStore::load(&w.paths, &project).unwrap().unwrap();
-    let log = SessionStore::current_log_path(&w.paths, &project);
+    // Leave the project holding only what the single-session builds wrote: one log directly in
+    // the project's directory and no sessions.
+    let log = SessionStore::current_log_path(&w.paths, &project).unwrap();
     w.workflow = None;
     w.controller = None;
-    fs::copy(&log, w.paths.legacy_conversation_log(&project)).unwrap();
-    fs::write(
-        w.paths.agent_session_manifest(&project),
-        serde_json::to_vec_pretty(&manifest).unwrap(),
-    )
-    .unwrap();
+    let old_log = w.paths.project(&project).join("conversation.jsonl");
+    fs::copy(&log, &old_log).unwrap();
+    let before = fs::read(&old_log).unwrap();
     fs::remove_dir_all(w.paths.agent_sessions(&project)).unwrap();
 
     w.restart();
     let s = w.snap();
-    assert!(has_user(&s, "legacy-question"), "{:?}", s.rows);
-    assert!(!w.paths.legacy_conversation_log(&project).exists());
-    assert!(!w.paths.agent_session_manifest(&project).exists());
+    assert!(!has_user(&s, "earlier-question"), "{:?}", s.rows);
+    assert_eq!(fs::read(&old_log).unwrap(), before);
     let sessions = w.wf().sessions().unwrap();
     assert_eq!(sessions.len(), 1);
-    assert!(sessions[0].is_current && sessions[0].rows > 0);
-    assert!(
-        !s.rows.iter().any(|r| matches!(
-            &r.kind,
-            RowKind::Notice {
-                level: NoticeLevel::Warning,
-                ..
-            }
-        )),
-        "a clean migration shows no warning: {:?}",
-        s.rows
-    );
+    assert!(sessions[0].is_current && sessions[0].rows == 0);
 }
 
 #[test]
@@ -405,6 +390,40 @@ fn a_stored_session_that_cannot_resume_refuses_a_restore_request() {
     w.submit(&good("fresh"));
     w.wait_task(Some(&first.id));
     assert!(read_load_params(&w).is_none(), "nothing is loaded");
+    w.assert_clean();
+}
+
+#[test]
+fn switching_to_and_restoring_a_session_with_a_refused_manifest_shows_the_reason() {
+    let w = World::new();
+    w.submit(&good("old-format"));
+    w.wait_task(None);
+    let project = w.snap().project.clone();
+    let first = w.wf().sessions().unwrap()[0].id.clone();
+    let manifest = w
+        .paths
+        .agent_session_dir(&project, &first)
+        .join("manifest.json");
+    let mut value: Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+    value["schema_version"] = serde_json::json!(1);
+    let foreign = serde_json::to_vec_pretty(&value).unwrap();
+    fs::write(&manifest, &foreign).unwrap();
+
+    w.wf().new_session().unwrap();
+    w.wait("the new session", |s| s.chat == 1);
+    w.wf().open_session(&first).unwrap();
+    let s = w.wait("the stored session", |s| s.chat == 2);
+    assert!(has_user(&s, "old-format"), "its rows are shown");
+    let restore = s.session_restore.as_ref().expect("the refusal is shown");
+    assert!(!restore.is_resumable, "{restore:?}");
+    let notice = restore.notice.as_deref().unwrap_or_default();
+    assert!(notice.contains("older Studio"), "{restore:?}");
+    assert!(notice.contains("manifest.json"), "{restore:?}");
+    assert!(notice.contains("read-only"), "{restore:?}");
+
+    w.wf().restore_session().unwrap();
+    w.wait("the restore refusal", |s| has_notice(s, "older Studio"));
+    assert_eq!(fs::read(&manifest).unwrap(), foreign, "left as it is");
     w.assert_clean();
 }
 

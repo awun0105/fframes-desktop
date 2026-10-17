@@ -360,10 +360,9 @@ pub struct AgentWorkflow {
 }
 
 impl AgentWorkflow {
-    /// Starts the actor for the project `controller` owns. Migrates a single-session project
-    /// into the stored-session layout (the first time), reads the current session's
-    /// conversation log and the engine's recovery state; launches nothing (no adapter probe,
-    /// no agent).
+    /// Starts the actor for the project `controller` owns. Creates the project's first stored
+    /// session when it has none, reads the current session's conversation log and the engine's
+    /// recovery state; launches nothing (no adapter probe, no agent).
     ///
     /// This replays the conversation log and refreshes the engine's recovery view before
     /// it returns, so it BLOCKS the caller for that long (and for the controller lock):
@@ -377,9 +376,9 @@ impl AgentWorkflow {
             let c = controller.lock();
             (c.project.manifest.project_id.clone(), c.processes.clone())
         };
-        // Migration and the first session come before the log opens: the migration may move
-        // the legacy log, which nothing may hold open yet.
-        let startup = session_store::SessionStore::prepare(&config.paths, &project);
+        // The first session exists before the log opens.
+        let startup = session_store::SessionStore::prepare(&config.paths, &project)
+            .map_err(WorkflowError::History)?;
         let store = RowStore::open_with_floor(startup.log, config.row_limits, startup.row_floor)
             .map_err(|e: LogError| WorkflowError::History(e.to_string()))?;
         let (tx, rx) = channel();
@@ -455,7 +454,7 @@ impl AgentWorkflow {
             tx,
         });
         // The actor publishes revision 1 before this returns.
-        let actor = Actor::new(shared.clone(), rx, store, startup.notices);
+        let actor = Actor::new(shared.clone(), rx, store);
         let thread = std::thread::Builder::new()
             .name("studio-workflow".into())
             .spawn(move || actor.run())

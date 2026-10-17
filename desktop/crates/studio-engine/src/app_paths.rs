@@ -59,10 +59,6 @@ impl AppPaths {
     pub fn agent_draft_state(&self, id: &studio_project::ProjectId) -> PathBuf {
         self.agent(id).join("draft-state.json")
     }
-    /// Durable session restoration manifest, kept beside (never inside) the draft.
-    pub fn agent_session_manifest(&self, id: &studio_project::ProjectId) -> PathBuf {
-        self.agent(id).join("session-manifest.json")
-    }
     /// Directory holding one subdirectory per stored agent session.
     pub fn agent_sessions(&self, id: &studio_project::ProjectId) -> PathBuf {
         self.agent(id).join("sessions")
@@ -76,13 +72,9 @@ impl AppPaths {
         };
         self.agent_sessions(id).join(dir)
     }
-    /// Names the session that the single-session API serves; absent before migration.
+    /// Names the session that the single-session API serves; absent until a session exists.
     pub fn agent_session_current(&self, id: &studio_project::ProjectId) -> PathBuf {
         self.agent_sessions(id).join("current")
-    }
-    /// The pre-multi-session conversation log (one per project).
-    pub fn legacy_conversation_log(&self, id: &studio_project::ProjectId) -> PathBuf {
-        self.project(id).join("conversation.jsonl")
     }
     /// Retained failed drafts are moved here before the stable draft is refreshed.
     pub fn agent_archive(&self, id: &studio_project::ProjectId) -> PathBuf {

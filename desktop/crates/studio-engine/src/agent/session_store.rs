@@ -14,8 +14,8 @@ pub mod history;
 pub mod layout;
 pub mod startup;
 
-/// Version 2 lives in `sessions/<id>/manifest.json`; the field set is the same as version 1,
-/// so a version 1 file (the single-session layout) still parses and is rewritten on migration.
+/// The only manifest schema this Studio reads and writes. A manifest of any other version is
+/// refused and left as it is (see [`SessionStore::load`]).
 pub const SESSION_MANIFEST_SCHEMA_VERSION: u32 = 2;
 pub const CONTEXT_SCHEMA_VERSION: &str = "m6-context/1";
 pub const MAX_CONTEXT_ENVELOPE_BYTES: usize = 64 * 1024; // 64 KiB
@@ -50,7 +50,7 @@ pub struct SessionManifest {
 
 impl SessionManifest {
     pub fn is_resumable(&self) -> bool {
-        (1..=SESSION_MANIFEST_SCHEMA_VERSION).contains(&self.schema_version)
+        self.schema_version == SESSION_MANIFEST_SCHEMA_VERSION
             && self.state == SessionManifestState::Ready
             && self.wire_session_id.is_some()
     }
@@ -169,56 +169,138 @@ fn truncate_utf8(text: &mut String, max_bytes: usize) {
 
 pub struct SessionStore;
 
+/// What the stored manifest of a session allows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManifestStatus {
+    /// The session has no manifest.
+    Missing,
+    /// A manifest of the current format.
+    Ok,
+    /// A manifest this Studio cannot use, with the reason shown to the user. The file is left
+    /// as it is.
+    Refused(String),
+}
+
+/// Reads a manifest file's text: the current schema only. A manifest of another version is
+/// refused with a message that names the file and says which Studio made it; nothing is
+/// rewritten.
+pub(super) fn parse_manifest(text: &str, path: &Path) -> Result<SessionManifest, String> {
+    let value: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("cannot parse session manifest {}: {e}", path.display()))?;
+    check_manifest_version(&value, path)?;
+    serde_json::from_value(value).map_err(|e| {
+        format!(
+            "The saved agent session {} is not in the format this Studio reads ({e}). It is left as it is and cannot be restored.",
+            path.display()
+        )
+    })
+}
+
+fn check_manifest_version(value: &serde_json::Value, path: &Path) -> Result<(), String> {
+    let path = path.display();
+    match value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+    {
+        Some(version) if version < u64::from(SESSION_MANIFEST_SCHEMA_VERSION) => Err(format!(
+            "The saved agent session {path} was made by an older Studio (manifest format {version}, this Studio reads format {SESSION_MANIFEST_SCHEMA_VERSION}). It is left as it is and cannot be restored."
+        )),
+        Some(version) if version > u64::from(SESSION_MANIFEST_SCHEMA_VERSION) => Err(format!(
+            "The saved agent session {path} was made by a newer Studio (manifest format {version}, this Studio reads format {SESSION_MANIFEST_SCHEMA_VERSION}). It is left as it is and cannot be restored."
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Refuses to replace or remove a manifest file that is valid JSON but not the current
+/// format. Text that is not JSON at all, or a file that cannot be read, stays replaceable.
+fn refuse_foreign_manifest(path: &Path) -> Result<(), String> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Ok(());
+    };
+    if serde_json::from_str::<serde_json::Value>(&text).is_err() {
+        return Ok(());
+    }
+    parse_manifest(&text, path).map(|_| ())
+}
 impl SessionStore {
-    /// Where the single-session API keeps its manifest: the current session's directory once
-    /// [`SessionStore::migrate_legacy`] has run, the legacy file before.
-    fn manifest_path(paths: &AppPaths, project_id: &ProjectId) -> PathBuf {
-        match Self::current_session_id(paths, project_id) {
-            Some(session) => layout::manifest_file(paths, project_id, &session),
-            None => paths.agent_session_manifest(project_id),
-        }
+    /// Where the single-session API keeps its manifest: the current session's directory.
+    /// `None` while the project holds no session.
+    fn manifest_path(paths: &AppPaths, project_id: &ProjectId) -> Option<PathBuf> {
+        Self::current_session_id(paths, project_id)
+            .map(|session| layout::manifest_file(paths, project_id, &session))
     }
 
+    /// Writes the current session's manifest. A manifest of another schema version already
+    /// there is refused and stays as it is.
     pub fn save(
         paths: &AppPaths,
         project_id: &ProjectId,
         manifest: &SessionManifest,
     ) -> Result<(), String> {
-        let path = Self::manifest_path(paths, project_id);
+        let path = Self::manifest_path(paths, project_id)
+            .ok_or_else(|| "the project has no current session".to_owned())?;
+        refuse_foreign_manifest(&path)?;
         let bytes = serde_json::to_vec_pretty(manifest)
             .map_err(|e| format!("cannot serialize session manifest: {e}"))?;
         write_atomic(&path, &bytes)
     }
 
+    /// The current session's manifest; `None` when it has none. A manifest of another schema
+    /// version is an error that says which Studio made it; the file is left untouched.
     pub fn load(
         paths: &AppPaths,
         project_id: &ProjectId,
     ) -> Result<Option<SessionManifest>, String> {
-        let path = Self::manifest_path(paths, project_id);
+        let Some(path) = Self::manifest_path(paths, project_id) else {
+            return Ok(None);
+        };
         match std::fs::read_to_string(&path) {
-            Ok(text) => {
-                let manifest: SessionManifest = serde_json::from_str(&text)
-                    .map_err(|e| format!("cannot parse session manifest: {e}"))?;
-                if manifest.schema_version > SESSION_MANIFEST_SCHEMA_VERSION {
-                    return Ok(None);
-                }
-                Ok(Some(manifest))
-            }
+            Ok(text) => parse_manifest(&text, &path).map(Some),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(format!("cannot read session manifest: {e}")),
+            Err(e) => Err(format!(
+                "cannot read session manifest {}: {e}",
+                path.display()
+            )),
         }
     }
 
+    /// Removes the current session's manifest (a manifest of another schema version stays).
     pub fn clear(paths: &AppPaths, project_id: &ProjectId) -> Result<(), String> {
-        let path = Self::manifest_path(paths, project_id);
+        let Some(path) = Self::manifest_path(paths, project_id) else {
+            return Ok(());
+        };
+        refuse_foreign_manifest(&path)?;
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(format!("cannot clear session manifest: {e}")),
         }
     }
+    /// What the stored manifest of `session` allows: the reason is what to show when a switch
+    /// or a restore is refused. Reads only; the file is never changed.
+    pub fn manifest_status(
+        paths: &AppPaths,
+        project_id: &ProjectId,
+        session: &str,
+    ) -> ManifestStatus {
+        if !layout::is_valid_session_id(session) {
+            return ManifestStatus::Missing;
+        }
+        let path = layout::manifest_file(paths, project_id, session);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => match parse_manifest(&text, &path) {
+                Ok(_) => ManifestStatus::Ok,
+                Err(reason) => ManifestStatus::Refused(reason),
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => ManifestStatus::Missing,
+            Err(e) => ManifestStatus::Refused(format!(
+                "cannot read session manifest {}: {e}",
+                path.display()
+            )),
+        }
+    }
 }
-
 static TEMPORARY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {

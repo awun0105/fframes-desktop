@@ -104,12 +104,8 @@ fn session_files_contain(w: &World, needle: &[u8]) -> bool {
     let project = w.snap().project.clone();
     let agent = w.paths.agent(&project);
     let sessions = w.paths.agent_sessions(&project);
-    let manifest = w.paths.agent_session_manifest(&project);
-    let legacy = w.paths.legacy_conversation_log(&project);
     let in_file = |path: &std::path::Path| fs::read(path).is_ok_and(|b| contains(&b, needle));
     tree_contains(&sessions, needle)
-        || in_file(&manifest)
-        || in_file(&legacy)
         || fs::read_dir(&agent)
             .into_iter()
             .flatten()

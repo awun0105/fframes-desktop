@@ -273,7 +273,7 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
     // unconfigured, and the panel shows why.
     workflow.close();
     drop(workflow);
-    fs::write(host::settings_path(&paths), "{broken").unwrap();
+    fs::write(host::registry_path(&paths), "{broken").unwrap();
     let controller = Arc::new(Mutex::new(Controller::open(&root, &paths).unwrap()));
     let opened = host::open_workflow(
         controller,
@@ -290,12 +290,56 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
             .settings_error
             .as_deref()
             .unwrap()
-            .contains("Invalid adapter JSON")
+            .contains("Invalid provider registry JSON")
     );
     assert_eq!(
         opened.result.unwrap().snapshot().adapter.readiness,
         AdapterReadiness::NotConfigured
     );
+}
+
+#[test]
+fn a_registry_of_another_version_is_reported_on_open_and_again_by_every_save() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("video");
+    create_project(&root);
+    let paths = AppPaths::new(temp.path().join("data")).unwrap();
+    let registry = host::registry_path(&paths);
+    let old = r#"{"schema_version": 1, "profiles": []}"#;
+    fs::write(&registry, old).unwrap();
+
+    let controller = Arc::new(Mutex::new(Controller::open(&root, &paths).unwrap()));
+    let opened = host::open_workflow(
+        controller,
+        paths.clone(),
+        None,
+        5,
+        Arc::new(HostInbox::default()),
+        host::WorkflowWake::new(|| ()),
+        OwnershipPolicy::Validated,
+    );
+    let reason = opened.settings_error.clone().expect("the refusal is shown");
+    assert!(reason.contains("older Studio"), "{reason}");
+    assert!(reason.contains("provider-registry.json"), "{reason}");
+    opened.result.unwrap().close();
+
+    // The Save of the Setup page writes through these; each is refused with the file named, so
+    // the panel keeps the banner (it clears it only when a save succeeds).
+    let file = AdapterFile {
+        provider: "scripted".into(),
+        executable: "/bin/true".into(),
+        args: vec![],
+        auth_env_names: vec![],
+        auth_method: None,
+        mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
+    };
+    let saved = host::save_settings(&paths, &file).unwrap_err();
+    assert!(saved.contains("older Studio"), "{saved}");
+    assert!(saved.contains("provider-registry.json"), "{saved}");
+    assert!(host::save_profile_settings(&paths, "claude", &file).is_err());
+    assert!(host::clear_settings(&paths).is_err());
+    assert_eq!(fs::read_to_string(&registry).unwrap(), old);
 }
 
 #[test]

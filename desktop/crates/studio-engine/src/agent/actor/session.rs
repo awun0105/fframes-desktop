@@ -619,7 +619,7 @@ impl Actor {
                         });
                     }
                     Err(e) => {
-                        self.warn(format!(
+                        self.warn_once(&format!(
                             "Session manifest could not be saved ({e}); session restoration is disabled."
                         ));
                         let redacted_id = manifest.redacted_id();
@@ -766,10 +766,21 @@ impl Actor {
 
     /// The user asked to restore the stored session of the open conversation.
     pub(super) fn restore_session(&mut self) {
-        let Ok(Some(manifest)) = SessionStore::load(&self.shared.paths, &self.shared.project)
-        else {
-            self.notice("No saved session manifest found to restore; fresh session will be used.");
-            return;
+        let manifest = match SessionStore::load(&self.shared.paths, &self.shared.project) {
+            Ok(Some(manifest)) => manifest,
+            Ok(None) => {
+                self.notice(
+                    "No saved session manifest found to restore; fresh session will be used.",
+                );
+                return;
+            }
+            Err(reason) => {
+                let text = format!("Saved session cannot be restored: {reason}");
+                self.session_restore = Some(Self::not_resumable_view(None, &text));
+                self.notice(text);
+                self.touch();
+                return;
+            }
         };
         if let Some(reason) = self.resume_blocker(&manifest) {
             let text =
@@ -845,9 +856,14 @@ impl Actor {
 
     /// Offers the current stored session's manifest for restoration, as it stands at launch.
     pub(super) fn offer_saved_session(&mut self) {
-        let Ok(Some(manifest)) = SessionStore::load(&self.shared.paths, &self.shared.project)
-        else {
-            return;
+        let manifest = match SessionStore::load(&self.shared.paths, &self.shared.project) {
+            Ok(Some(manifest)) => manifest,
+            Ok(None) => return,
+            // An older Studio's manifest stays as it is; say why it is not offered.
+            Err(error) => {
+                self.warn_once(&error);
+                return;
+            }
         };
         let project_id = self.shared.project.to_string();
         let compatible = {
@@ -989,6 +1005,10 @@ impl Actor {
             return;
         }
         let manifest = SessionStore::session_manifest(paths, project, id);
+        let refused = match SessionStore::manifest_status(paths, project, id) {
+            ManifestStatus::Refused(reason) => Some(reason),
+            _ => None,
+        };
         let switched = self.leave_conversation().and_then(|floor| {
             let next = self.open_session_log(id, floor)?;
             SessionStore::set_current(&self.shared.paths, &self.shared.project, id)?;
@@ -997,7 +1017,7 @@ impl Actor {
         match switched {
             Ok(next) => {
                 self.replace_conversation(next);
-                self.resume_or_read_only(manifest);
+                self.resume_or_read_only(manifest, refused);
             }
             Err(error) => self.warn(format!("The session could not be opened: {error}")),
         }
@@ -1009,12 +1029,15 @@ impl Actor {
     /// session adds nothing to its log: the outcome is shown through the restoration view, and
     /// a row is written only when something happens (the resume, or the fresh agent start).
     /// Nothing is launched here; the next prompt starts the agent.
-    fn resume_or_read_only(&mut self, manifest: Option<SessionManifest>) {
+    fn resume_or_read_only(&mut self, manifest: Option<SessionManifest>, refused: Option<String>) {
         let Some(manifest) = manifest else {
-            self.session_restore = Some(Self::not_resumable_view(
-                None,
-                "This session has no saved agent session to resume. Its stored messages are shown read-only and the next prompt starts a fresh agent session.",
-            ));
+            let text = match refused {
+                Some(reason) => format!(
+                    "{reason} Its stored messages are shown read-only and the next prompt starts a fresh agent session."
+                ),
+                None => "This session has no saved agent session to resume. Its stored messages are shown read-only and the next prompt starts a fresh agent session.".to_owned(),
+            };
+            self.session_restore = Some(Self::not_resumable_view(None, &text));
             return;
         };
         let view = if let Some(reason) = self.resume_blocker(&manifest) {

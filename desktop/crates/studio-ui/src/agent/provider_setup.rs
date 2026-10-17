@@ -415,7 +415,6 @@ impl ConversationPanel {
         self.fill_setup(Some(&adapter), cx);
         self.mcp_choice = adapter.mcp;
         self.saved_adapter = Some(adapter);
-        self.settings_error = None;
         let save = cx
             .background_executor()
             .spawn(async move { host::save_registry(&paths, &registry) });
@@ -423,6 +422,7 @@ impl ConversationPanel {
             let result = save.await;
             let _ = this.update(cx, |panel, cx| {
                 if panel.saves.finish(ticket) {
+                    panel.settings_error = result.as_ref().err().cloned();
                     let turn_on = panel.agent_setup.turn_on.finish(ticket, result.is_ok());
                     panel.notice = Some(match result {
                         Ok(()) if turn_on => panel.test_turned_on(

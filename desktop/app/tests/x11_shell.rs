@@ -134,6 +134,29 @@ fn python() -> String {
     absolute.to_string_lossy().into_owned()
 }
 
+/// Saves the scripted ACP peer as the selected adapter, the way the Setup tab does.
+fn save_scripted_peer(data: &Path, evidence: &Path) {
+    let paths = studio_engine::app_paths::AppPaths::new(data.join("fframes-studio")).unwrap();
+    studio_engine::providers::host::save_settings(
+        &paths,
+        &studio_engine::providers::host::AdapterFile {
+            provider: "scripted-peer".into(),
+            executable: python(),
+            args: vec![
+                format!(
+                    "{}/support/acp-agent.py",
+                    studio_test_support::ENGINE_TESTS_DIR
+                ),
+                evidence.to_string_lossy().into_owned(),
+            ],
+            auth_env_names: vec![],
+            auth_method: None,
+            mcp: studio_engine::providers::host::McpChoice::Unsupported,
+            wire: Default::default(),
+        },
+    )
+    .unwrap();
+}
 fn tool_available(name: &str) -> bool {
     Command::new(name)
         .arg("-help")
@@ -436,21 +459,7 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     // The adapter description exactly as the Setup tab saves it. Writer containment is
     // never a setting: the shell below is started with the explicit test-only injection
     // (`--observe-test-writer-containment`), which the panel labels as not a qualification.
-    fs::write(
-        data.join("fframes-studio/agent-adapter.json"),
-        serde_json::json!({
-            "provider": "scripted-peer",
-            "executable": python(),
-            "args": [
-                format!("{}/support/acp-agent.py", studio_test_support::ENGINE_TESTS_DIR),
-                evidence.to_string_lossy()
-            ],
-            "auth_env_names": [],
-            "mcp": "unsupported"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    save_scripted_peer(&data, &evidence);
     fs::write(
         evidence.join("plan.json"),
         serde_json::json!({"turns": [{
@@ -721,21 +730,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&runtime, fs::Permissions::from_mode(0o700)).unwrap();
     }
-    fs::write(
-        data.join("fframes-studio/agent-adapter.json"),
-        serde_json::json!({
-            "provider": "scripted-peer",
-            "executable": python(),
-            "args": [
-                format!("{}/support/acp-agent.py", studio_test_support::ENGINE_TESTS_DIR),
-                evidence.to_string_lossy()
-            ],
-            "auth_env_names": [],
-            "mcp": "unsupported"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    save_scripted_peer(&data, &evidence);
     // Two tasks; the second edit changes nothing the first one did not.
     fs::write(
         evidence.join("plan.json"),

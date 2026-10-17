@@ -1,13 +1,13 @@
-//! Integration tests for provider profiles and migration.
+//! Integration tests for provider profiles and the registry file.
 
 use serde_json::json;
 use studio_bootstrap::ProcessTreeManager;
 use studio_engine::app_paths::AppPaths;
 use studio_engine::providers::{
-    host::{self, AdapterFile, McpChoice, REGISTRY_BACKUP_SUFFIX, REGISTRY_FILE, SETTINGS_FILE},
+    host::{self, AdapterFile, McpChoice, REGISTRY_BACKUP_SUFFIX, REGISTRY_FILE},
     provider_profiles::{
         BUILTIN_ANTIGRAVITY_ID, BUILTIN_CLAUDE_ID, BUILTIN_CODEX_ID, BUILTIN_PI_ID,
-        ProviderProfile, ProviderRegistry, REGISTRY_SCHEMA_VERSION,
+        ProviderProfile, ProviderRegistry, REGISTRY_SCHEMA_VERSION, check_registry_version,
     },
 };
 use studio_harness::{
@@ -104,90 +104,144 @@ fn registry_save_load_round_trip_re_derives_builtin_and_experimental_flags() {
     );
 }
 
-#[test]
-fn migration_from_custom_adapter_preserves_all_fields_and_selects_it() {
-    let (_temp, paths) = setup_paths();
+/// What an `agent-adapter.json` of an earlier build looks like on disk.
+const OLD_ADAPTER_FILE: &str = "agent-adapter.json";
 
-    let legacy = AdapterFile {
+fn write_old_adapter_file(paths: &AppPaths) -> String {
+    let old = AdapterFile {
         provider: "My Custom Agent".into(),
         executable: "/opt/custom/agent".into(),
-        args: vec!["--acp".into(), "--fast".into()],
-        auth_env_names: vec!["CUSTOM_TOKEN".into(), "CUSTOM_API_KEY".into()],
-        auth_method: Some("custom-method".into()),
+        args: vec!["--acp".into()],
+        auth_env_names: vec!["CUSTOM_TOKEN".into()],
+        auth_method: None,
         mcp: McpChoice::Unsupported,
         wire: studio_harness::AgentWire::Acp,
-    };
-    std::fs::write(paths.data.join(SETTINGS_FILE), legacy.to_pretty()).unwrap();
-
-    let registry = host::load_registry(&paths)
-        .unwrap()
-        .expect("migrated registry");
-    assert_eq!(registry.schema_version, REGISTRY_SCHEMA_VERSION);
-    assert_eq!(
-        registry.selected_profile_id,
-        Some("my-custom-agent".to_string())
-    );
-
-    let profile = registry
-        .selected_profile()
-        .expect("selected profile exists");
-    assert_eq!(profile.label, "My Custom Agent");
-    assert_eq!(profile.adapter.executable, "/opt/custom/agent");
-    assert_eq!(profile.adapter.args, vec!["--acp", "--fast"]);
-    assert_eq!(
-        profile.adapter.auth_env_names,
-        vec!["CUSTOM_TOKEN", "CUSTOM_API_KEY"]
-    );
-    assert_eq!(
-        profile.adapter.auth_method.as_deref(),
-        Some("custom-method")
-    );
-    assert_eq!(profile.adapter.mcp, McpChoice::Unsupported);
-
-    // Rollback backup copy must exist and old file must remain intact
-    let backup_path = paths
-        .data
-        .join(format!("{SETTINGS_FILE}{REGISTRY_BACKUP_SUFFIX}"));
-    assert!(backup_path.exists(), "rollback backup must be created");
-    assert!(
-        paths.data.join(SETTINGS_FILE).exists(),
-        "legacy file remains intact"
-    );
-    assert!(
-        paths.data.join(REGISTRY_FILE).exists(),
-        "new registry file created"
-    );
+    }
+    .to_pretty();
+    std::fs::write(paths.data.join(OLD_ADAPTER_FILE), &old).unwrap();
+    old
 }
 
-#[test]
-fn migration_matches_builtin_provider_by_name() {
-    let (_temp, paths) = setup_paths();
+/// A registry file as the first registry version wrote it (no CLI names, schema version 1).
+fn write_version_one_registry(paths: &AppPaths) -> String {
+    let mut value = serde_json::to_value(ProviderRegistry::default()).unwrap();
+    value["schema_version"] = json!(1);
+    let text = serde_json::to_string_pretty(&value).unwrap();
+    std::fs::write(paths.data.join(REGISTRY_FILE), &text).unwrap();
+    text
+}
 
-    let legacy = AdapterFile {
-        provider: "Codex".into(),
-        executable: "/custom/path/codex-acp".into(),
-        args: vec!["--port".into(), "9000".into()],
-        auth_env_names: vec!["OPENAI_API_KEY".into()],
+fn adapter(provider: &str) -> AdapterFile {
+    AdapterFile {
+        provider: provider.into(),
+        executable: "/opt/custom/exec".into(),
+        args: vec![],
+        auth_env_names: vec![],
         auth_method: None,
         mcp: McpChoice::Baseline,
         wire: studio_harness::AgentWire::Acp,
-    };
-    std::fs::write(paths.data.join(SETTINGS_FILE), legacy.to_pretty()).unwrap();
-
-    let registry = host::load_registry(&paths)
-        .unwrap()
-        .expect("migrated registry");
-    assert_eq!(
-        registry.selected_profile_id,
-        Some(BUILTIN_CODEX_ID.to_string())
-    );
-
-    let profile = registry.selected_profile().unwrap();
-    assert_eq!(profile.id, BUILTIN_CODEX_ID);
-    assert_eq!(profile.adapter.executable, "/custom/path/codex-acp");
-    assert_eq!(profile.adapter.args, vec!["--port", "9000"]);
+    }
 }
 
+#[test]
+fn an_adapter_file_of_an_earlier_build_is_ignored_and_setup_is_needed() {
+    let (_temp, paths) = setup_paths();
+    let old = write_old_adapter_file(&paths);
+
+    assert_eq!(host::load_registry(&paths), Ok(None));
+    assert_eq!(host::load_settings(&paths), Ok(None));
+    assert_eq!(
+        std::fs::read_to_string(paths.data.join(OLD_ADAPTER_FILE)).unwrap(),
+        old
+    );
+    assert!(!paths.data.join(REGISTRY_FILE).exists());
+}
+
+#[test]
+fn an_adapter_file_of_an_earlier_build_survives_every_registry_write() {
+    let (_temp, paths) = setup_paths();
+    let old = write_old_adapter_file(&paths);
+
+    let mut registry = ProviderRegistry::default();
+    registry.select_profile(BUILTIN_CODEX_ID).unwrap();
+    host::save_registry(&paths, &registry).unwrap();
+    host::save_settings(&paths, &adapter("Other")).unwrap();
+    assert_eq!(
+        host::load_settings(&paths).unwrap().unwrap().executable,
+        "/opt/custom/exec"
+    );
+    host::clear_settings(&paths).unwrap();
+
+    assert!(!paths.data.join(REGISTRY_FILE).exists());
+    assert_eq!(
+        std::fs::read_to_string(paths.data.join(OLD_ADAPTER_FILE)).unwrap(),
+        old,
+        "the old file is never read, rewritten or removed"
+    );
+}
+
+#[test]
+fn a_version_one_registry_is_refused_and_left_as_it_is() {
+    let (_temp, paths) = setup_paths();
+    let old = write_version_one_registry(&paths);
+    let path = paths.data.join(REGISTRY_FILE);
+    let same = || std::fs::read_to_string(&path).unwrap() == old;
+
+    let loaded = host::load_registry(&paths).unwrap_err();
+    assert!(loaded.contains("older Studio"), "{loaded}");
+    assert_eq!(host::load_settings(&paths).unwrap_err(), loaded);
+    assert!(loaded.contains(REGISTRY_FILE), "{loaded}");
+    assert!(ProviderRegistry::parse(&old).is_err());
+    assert!(same());
+
+    // Nothing that writes may replace or remove it.
+    let mut fresh = ProviderRegistry::default();
+    fresh.select_profile(BUILTIN_CLAUDE_ID).unwrap();
+    for refused in [
+        host::save_registry(&paths, &fresh),
+        host::save_settings(&paths, &adapter("Other")),
+        host::save_profile_settings(&paths, BUILTIN_CLAUDE_ID, &adapter("claude")),
+        host::clear_registry(&paths),
+        host::clear_settings(&paths),
+    ] {
+        let error = refused.unwrap_err();
+        assert!(error.contains("older Studio"), "{error}");
+        assert!(error.contains(REGISTRY_FILE), "{error}");
+        assert!(same());
+    }
+    assert!(
+        !paths
+            .data
+            .join(format!("{REGISTRY_FILE}{REGISTRY_BACKUP_SUFFIX}"))
+            .exists(),
+        "no rollback copy is made of a file that is not replaced"
+    );
+}
+
+#[test]
+fn a_registry_that_is_replaced_keeps_a_rollback_copy_of_the_previous_one() {
+    let (_temp, paths) = setup_paths();
+    let mut first = ProviderRegistry::default();
+    first.select_profile(BUILTIN_CLAUDE_ID).unwrap();
+    host::save_registry(&paths, &first).unwrap();
+    let before = std::fs::read_to_string(paths.data.join(REGISTRY_FILE)).unwrap();
+
+    let mut second = first.clone();
+    second.select_profile(BUILTIN_CODEX_ID).unwrap();
+    host::save_registry(&paths, &second).unwrap();
+
+    let backup = paths
+        .data
+        .join(format!("{REGISTRY_FILE}{REGISTRY_BACKUP_SUFFIX}"));
+    assert_eq!(std::fs::read_to_string(backup).unwrap(), before);
+    assert_eq!(
+        host::load_registry(&paths)
+            .unwrap()
+            .unwrap()
+            .selected_profile_id,
+        Some(BUILTIN_CODEX_ID.to_string())
+    );
+}
 #[test]
 fn validation_rejects_duplicate_ids() {
     let mut registry = ProviderRegistry::default();
@@ -212,48 +266,10 @@ fn validation_rejects_duplicate_ids() {
 }
 
 #[test]
-fn validation_rejects_newer_schema_version_as_diagnostic_only() {
-    let registry = ProviderRegistry {
-        schema_version: 999,
-        ..Default::default()
-    };
-    let err = registry.validate().unwrap_err();
-    assert!(err.contains("diagnostic-only"));
-}
-
-#[test]
 fn validation_rejects_credentials_in_auth_env_names() {
     let mut registry = ProviderRegistry::default();
     registry.profiles[0].adapter.auth_env_names = vec!["sk-ant-api03-secret1234567890".into()];
     assert!(registry.validate().is_err());
-}
-
-#[test]
-fn save_registry_does_not_modify_legacy_agent_adapter_json() {
-    let (_temp, paths) = setup_paths();
-
-    let original_legacy = AdapterFile {
-        provider: "Original".into(),
-        executable: "/bin/orig".into(),
-        args: vec![],
-        auth_env_names: vec![],
-        auth_method: None,
-        mcp: McpChoice::Baseline,
-        wire: studio_harness::AgentWire::Acp,
-    };
-    let legacy_bytes = original_legacy.to_pretty();
-    std::fs::write(paths.data.join(SETTINGS_FILE), &legacy_bytes).unwrap();
-
-    let mut registry = ProviderRegistry::default();
-    registry.select_profile(BUILTIN_CODEX_ID).unwrap();
-    host::save_registry(&paths, &registry).unwrap();
-
-    // Verify agent-adapter.json is strictly untouched!
-    let legacy_after = std::fs::read_to_string(paths.data.join(SETTINGS_FILE)).unwrap();
-    assert_eq!(
-        legacy_after, legacy_bytes,
-        "legacy file must remain strictly untouched"
-    );
 }
 
 #[test]
@@ -343,26 +359,63 @@ fn scratch_probe_records_authentic_prerequisites_for_all_four_providers() {
 }
 
 #[test]
-fn version_one_registry_is_upgraded_with_first_party_cli_names() {
+fn a_registry_of_another_schema_version_is_not_parsed() {
     let mut value = serde_json::to_value(ProviderRegistry::default()).unwrap();
     value["schema_version"] = json!(1);
     for profile in value["profiles"].as_array_mut().unwrap() {
         profile.as_object_mut().unwrap().remove("cli_executable");
     }
-    let registry = ProviderRegistry::parse(&value.to_string()).unwrap();
-    assert_eq!(registry.schema_version, REGISTRY_SCHEMA_VERSION);
-    let cli = |id: &str| {
-        registry
-            .profiles
-            .iter()
-            .find(|p| p.id == id)
-            .unwrap()
-            .cli_executable
-            .clone()
-    };
-    assert_eq!(cli(BUILTIN_CLAUDE_ID), "claude");
-    assert_eq!(cli(BUILTIN_CODEX_ID), "codex");
-    assert_eq!(cli(BUILTIN_ANTIGRAVITY_ID), "");
+    assert!(ProviderRegistry::parse(&value.to_string()).is_err());
+    value["schema_version"] = json!(REGISTRY_SCHEMA_VERSION + 1);
+    assert!(ProviderRegistry::parse(&value.to_string()).is_err());
+    let named =
+        check_registry_version(&value.to_string(), "/data/provider-registry.json").unwrap_err();
+    assert!(named.contains("/data/provider-registry.json"), "{named}");
+    assert!(named.contains("newer"), "{named}");
+}
+
+#[test]
+fn valid_json_that_is_not_a_registry_is_refused_and_only_other_text_is_replaced() {
+    let (_temp, paths) = setup_paths();
+    let path = paths.data.join(REGISTRY_FILE);
+    let mut fresh = ProviderRegistry::default();
+    fresh.select_profile(BUILTIN_CLAUDE_ID).unwrap();
+
+    for shaped in [
+        r#"{"unrelated": true}"#,
+        r#"[1, 2, 3]"#,
+        r#"{"schema_version": 2, "profiles": "none"}"#,
+    ] {
+        std::fs::write(&path, shaped).unwrap();
+        let loaded = host::load_registry(&paths).unwrap_err();
+        assert!(loaded.contains(REGISTRY_FILE), "{loaded}");
+        for refused in [
+            host::save_registry(&paths, &fresh),
+            host::save_settings(&paths, &adapter("Other")),
+            host::clear_settings(&paths),
+        ] {
+            let error = refused.unwrap_err();
+            assert!(error.contains("not in the format"), "{error}");
+            assert!(error.contains(REGISTRY_FILE), "{error}");
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), shaped);
+        }
+    }
+
+    // Text that is not JSON is garbage a save may replace.
+    std::fs::write(&path, "not json {").unwrap();
+    host::save_registry(&paths, &fresh).unwrap();
+    assert!(host::load_registry(&paths).unwrap().is_some());
+}
+
+#[test]
+fn a_registry_must_carry_exactly_the_current_schema_version() {
+    for version in [0, REGISTRY_SCHEMA_VERSION + 1] {
+        let registry = ProviderRegistry {
+            schema_version: version,
+            ..Default::default()
+        };
+        assert!(registry.validate().is_err(), "version {version}");
+    }
 }
 
 #[test]

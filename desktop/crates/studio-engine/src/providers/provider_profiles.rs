@@ -1,8 +1,8 @@
 //! App-local provider registry and profile management.
 //!
-//! Provides first-party profiles for Claude, Codex, Pi, and Antigravity,
-//! migration from legacy `agent-adapter.json`, and validation preventing
-//! credentials in configuration.
+//! Provides first-party profiles for Claude, Codex, Pi, and Antigravity, and validation
+//! preventing credentials in configuration. Only the current registry schema is read: a
+//! registry made by another Studio version is refused and left as it is.
 
 use super::host::{AdapterFile, McpChoice};
 use serde::{Deserialize, Serialize};
@@ -271,33 +271,52 @@ fn builtin_cli(id: &str) -> &'static str {
     }
 }
 
+/// Refuses registry text that is valid JSON but not the current format: another `schema_version`
+/// (older or newer) or a shape this Studio does not read. `source` names the file in the message.
+/// Text that is not JSON at all passes (the parser reports it) and is the only kind a save may
+/// replace. The file itself is never changed.
+pub fn check_registry_version(text: &str, source: &str) -> Result<(), String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+        return Ok(());
+    };
+    match value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+    {
+        Some(version) if version < u64::from(REGISTRY_SCHEMA_VERSION) => Err(format!(
+            "The provider registry {source} was made by an older Studio (schema version {version}, this Studio reads version {REGISTRY_SCHEMA_VERSION}). It is left as it is; set up the agent again after moving it aside."
+        )),
+        Some(version) if version > u64::from(REGISTRY_SCHEMA_VERSION) => Err(format!(
+            "The provider registry {source} is schema version {version}, newer than this Studio reads ({REGISTRY_SCHEMA_VERSION}). It is left as it is and cannot be used."
+        )),
+        _ => serde_json::from_value::<ProviderRegistry>(value)
+            .map(|_| ())
+            .map_err(|e| {
+                format!(
+                    "The provider registry {source} is not in the format this Studio reads ({e}). It is left as it is; set up the agent again after moving it aside."
+                )
+            }),
+    }
+}
+
 impl ProviderRegistry {
-    /// Parses registry JSON from a string.
+    /// Parses registry JSON from a string. A registry of any schema version but the current
+    /// one is refused.
     pub fn parse(text: &str) -> Result<Self, String> {
         let mut registry: Self = serde_json::from_str(text)
             .map_err(|e| format!("Invalid provider registry JSON: {e}"))?;
         registry.validate()?;
-        // A version 1 registry has no CLI names; fill them in for the first-party agents.
-        let upgraded = registry.schema_version < REGISTRY_SCHEMA_VERSION;
-        registry.schema_version = REGISTRY_SCHEMA_VERSION;
         for profile in &mut registry.profiles {
             profile.builtin = is_builtin_id(&profile.id);
             profile.experimental = true;
-            if upgraded && profile.builtin && profile.cli_executable.is_empty() {
-                profile.cli_executable = builtin_cli(&profile.id).into();
-            }
         }
         Ok(registry)
     }
-
     /// Validates the registry structure, schema version, and profile contents.
     pub fn validate(&self) -> Result<(), String> {
-        if self.schema_version == 0 {
-            return Err("Registry schema_version cannot be 0.".into());
-        }
-        if self.schema_version > REGISTRY_SCHEMA_VERSION {
+        if self.schema_version != REGISTRY_SCHEMA_VERSION {
             return Err(format!(
-                "Registry schema version {} is newer than supported version {}. It is diagnostic-only and cannot be launched.",
+                "Registry schema version {} is not the version this Studio reads ({}).",
                 self.schema_version, REGISTRY_SCHEMA_VERSION
             ));
         }
@@ -322,44 +341,6 @@ impl ProviderRegistry {
         }
 
         Ok(())
-    }
-
-    /// Migrates an existing `agent-adapter.json` description into a full `ProviderRegistry`.
-    ///
-    /// Preserves all existing fields, arguments, and custom labels.
-    pub fn migrate_from_adapter_file(legacy: &AdapterFile) -> Self {
-        let mut profiles = default_builtin_profiles();
-        let legacy_norm = legacy.provider.trim().to_lowercase();
-
-        // Check if legacy matches one of the builtin providers strictly by name or id
-        let matched_builtin = profiles
-            .iter_mut()
-            .find(|p| p.id == legacy_norm || p.label.to_lowercase() == legacy_norm);
-
-        let selected_id = if let Some(builtin) = matched_builtin {
-            builtin.adapter = legacy.clone();
-            builtin.id.clone()
-        } else {
-            // Create a custom profile preserving all fields and labels
-            let custom_id = slugify(&legacy.provider);
-            let profile = ProviderProfile {
-                id: custom_id.clone(),
-                label: legacy.provider.clone(),
-                description: format!("Imported configuration for {}", legacy.provider),
-                adapter: legacy.clone(),
-                cli_executable: String::new(),
-                builtin: false,
-                experimental: true,
-            };
-            profiles.push(profile);
-            custom_id
-        };
-
-        Self {
-            schema_version: REGISTRY_SCHEMA_VERSION,
-            selected_profile_id: Some(selected_id),
-            profiles,
-        }
     }
 
     /// Returns the currently selected provider profile.

@@ -1,8 +1,10 @@
 //! Hosting of one [`AgentWorkflow`] inside the GPUI shell, without any GPUI types.
 //!
-//! * The adapter description is app-local (`<data>/agent-adapter.json`): executable,
-//!   arguments and the NAMES of the environment variables carrying sign-in. Values are
-//!   never stored, and a value pasted where a name belongs is refused.
+//! * The adapter description lives in the app-local provider registry
+//!   (`<data>/provider-registry.json`): executable, arguments and the NAMES of the environment
+//!   variables carrying sign-in. Values are never stored, and a value pasted where a name
+//!   belongs is refused. A registry of another schema version is refused and left as it is;
+//!   an `agent-adapter.json` from an earlier build is not read.
 //! * [`HostInbox`] is the only channel from workflow threads to the UI thread: the open
 //!   result, post-commit preview hand-offs and a wake flag. The UI polls it from its
 //!   existing frame loop, so no workflow thread ever touches an entity.
@@ -24,12 +26,10 @@ use std::{
 };
 use studio_harness::{AdapterConfig, AgentWire, ExecutableSearch, McpStdioSupport};
 
-/// File name of the app-local adapter description inside the app data directory.
-pub const SETTINGS_FILE: &str = "agent-adapter.json";
 /// File name of the app-local provider registry inside the app data directory.
 pub const REGISTRY_FILE: &str = "provider-registry.json";
-/// Suffix for migration backup rollback files.
-pub const REGISTRY_BACKUP_SUFFIX: &str = ".migration-bak";
+/// Suffix of the rollback copy made before the registry file is replaced.
+pub const REGISTRY_BACKUP_SUFFIX: &str = ".bak";
 
 /// How an adapter's stdio MCP support is treated (host policy; ACP v1 has no flag).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -265,16 +265,12 @@ pub fn join_args(args: &[String]) -> String {
         .join(" ")
 }
 
-pub fn settings_path(paths: &AppPaths) -> PathBuf {
-    paths.data.join(SETTINGS_FILE)
-}
-
 pub fn registry_path(paths: &AppPaths) -> PathBuf {
     paths.data.join(REGISTRY_FILE)
 }
 
-/// Reads the provider registry; migrates from `agent-adapter.json` if needed.
-/// Runs on a background thread.
+/// Reads the provider registry; `Ok(None)` when none was saved. A registry of another schema
+/// version is an error and stays on disk. Runs on a background thread.
 pub fn load_registry(
     paths: &AppPaths,
 ) -> Result<Option<super::provider_profiles::ProviderRegistry>, String> {
@@ -288,28 +284,14 @@ fn load_registry_locked(
 ) -> Result<Option<super::provider_profiles::ProviderRegistry>, String> {
     let reg_path = registry_path(paths);
     if reg_path.exists() {
-        let text = std::fs::read_to_string(&reg_path)
-            .map_err(|e| format!("Cannot read the provider registry: {e}"))?;
+        let text = std::fs::read_to_string(&reg_path).map_err(|e| {
+            format!(
+                "Cannot read the provider registry {}: {e}",
+                reg_path.display()
+            )
+        })?;
+        super::provider_profiles::check_registry_version(&text, &reg_path.display().to_string())?;
         let registry = super::provider_profiles::ProviderRegistry::parse(&text)?;
-        return Ok(Some(registry));
-    }
-
-    // If provider-registry.json does not exist, check for legacy agent-adapter.json to migrate
-    let legacy_path = settings_path(paths);
-    if legacy_path.exists() {
-        let text = std::fs::read_to_string(&legacy_path)
-            .map_err(|e| format!("Cannot read legacy adapter settings for migration: {e}"))?;
-        let legacy = match AdapterFile::parse(&text)? {
-            Some(f) => f,
-            None => return Ok(None),
-        };
-        // Save rollback backup copy before writing new registry, keeping old file intact
-        let backup_path = legacy_path.with_extension(format!("json{REGISTRY_BACKUP_SUFFIX}"));
-        backup_before_write(&legacy_path, &backup_path)?;
-        let registry =
-            super::provider_profiles::ProviderRegistry::migrate_from_adapter_file(&legacy);
-        // Save migrated registry atomically
-        write_atomic(&reg_path, registry.to_pretty().as_bytes())?;
         return Ok(Some(registry));
     }
 
@@ -317,7 +299,7 @@ fn load_registry_locked(
 }
 
 /// Saves the provider registry atomically with owner-only permissions.
-/// Legacy `agent-adapter.json` remains intact and is never overwritten.
+/// A registry file of another schema version is refused and left as it is.
 pub fn save_registry(
     paths: &AppPaths,
     registry: &super::provider_profiles::ProviderRegistry,
@@ -333,17 +315,30 @@ fn save_registry_locked(
     registry: &super::provider_profiles::ProviderRegistry,
 ) -> Result<(), String> {
     let reg_path = registry_path(paths);
-    if reg_path.exists() {
-        let backup_path = reg_path.with_extension(format!("json{REGISTRY_BACKUP_SUFFIX}"));
-        backup_before_write(&reg_path, &backup_path)?;
+    match std::fs::read_to_string(&reg_path) {
+        Ok(text) => {
+            super::provider_profiles::check_registry_version(
+                &text,
+                &reg_path.display().to_string(),
+            )?;
+            let backup_path = reg_path.with_extension(format!("json{REGISTRY_BACKUP_SUFFIX}"));
+            backup_before_write(&reg_path, &backup_path)?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(format!(
+                "Cannot read the provider registry {}: {e}",
+                reg_path.display()
+            ));
+        }
     }
     write_atomic(&reg_path, registry.to_pretty().as_bytes())
 }
 
 /// Saves the launch Detect agents filled in for one profile, found by its id, and selects
 /// that profile. Unlike [`save_settings`] nothing is matched by label, so the profile's
-/// identity and every other profile stay as they are. Creates the registry (migrating a
-/// legacy description first) when there is none yet. Runs off the UI thread.
+/// identity and every other profile stay as they are. Creates the registry when there is
+/// none yet. Runs off the UI thread.
 pub fn save_profile_settings(
     paths: &AppPaths,
     profile_id: &str,
@@ -366,61 +361,34 @@ fn backup_before_write(source: &Path, backup: &Path) -> Result<(), String> {
     })
 }
 
-/// Removes the provider registry and legacy settings.
+/// Removes the provider registry. A registry of another schema version stays: it is refused,
+/// not deleted. Runs off the UI thread.
 pub fn clear_registry(paths: &AppPaths) -> Result<(), String> {
     clear_settings(paths)
 }
 
-/// Removes `path`; a file that is already gone is not an error.
-fn remove_if_present(path: &Path, what: &str) -> Result<(), String> {
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("Cannot remove the {what}: {e}")),
-    }
-}
-
-/// Reads the saved description; `Ok(None)` when none was ever saved. Runs on a
+/// Reads the selected profile's description; `Ok(None)` when no registry was saved. Runs on a
 /// background thread.
 pub fn load_settings(paths: &AppPaths) -> Result<Option<AdapterFile>, String> {
-    if registry_path(paths).exists() {
-        match load_registry(paths)? {
-            Some(reg) => Ok(reg.selected_adapter().cloned()),
-            None => Ok(None),
-        }
-    } else {
-        match std::fs::read_to_string(settings_path(paths)) {
-            Ok(text) => AdapterFile::parse(&text),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(format!("Cannot read the adapter settings: {e}")),
-        }
-    }
+    Ok(load_registry(paths)?.and_then(|registry| registry.selected_adapter().cloned()))
 }
-
 /// Every settings mutation (save or clear) of this process runs under this lock, in call
 /// order per thread: two overlapping writers can never interleave their files or leave a
 /// stale temporary behind.
 static SETTINGS_WRITES: Mutex<()> = Mutex::new(());
 static TEMPORARY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Writes the description atomically with owner-only permissions. Runs off the UI thread.
-/// When the provider registry exists, saves as custom profile configuration without corrupting
-/// builtin defaults or mutating legacy files.
+/// Saves the description into the provider registry as custom profile configuration (without
+/// changing builtin defaults), creating the registry when there is none yet. Runs off the UI
+/// thread.
 pub fn save_settings(paths: &AppPaths, file: &AdapterFile) -> Result<(), String> {
     file.validate()?;
     let _serialized = SETTINGS_WRITES.lock();
-    let reg_path = registry_path(paths);
-    if reg_path.exists() {
-        let text = std::fs::read_to_string(&reg_path)
-            .map_err(|e| format!("Cannot read the provider registry: {e}"))?;
-        let mut registry = super::provider_profiles::ProviderRegistry::parse(&text)
-            .map_err(|e| format!("Cannot parse the provider registry: {e}"))?;
-        registry.save_custom_adapter(file.clone());
-        return write_atomic(&reg_path, registry.to_pretty().as_bytes());
-    }
-    write_atomic(&settings_path(paths), file.to_pretty().as_bytes())
+    let mut registry = load_registry_locked(paths)?.unwrap_or_default();
+    registry.save_custom_adapter(file.clone());
+    registry.validate()?;
+    save_registry_locked(paths, &registry)
 }
-
 /// Writes through a unique, exclusively created temporary that is renamed over `path` (and
 /// removed again if anything fails): a write never shares a file with another.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -454,16 +422,30 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     written
 }
 
-/// Removes the saved description (blank Setup text): the provider registry and the legacy
-/// settings. A registry that cannot be removed is reported, since it would bring the adapter
-/// back on the next open.
+/// Removes the saved description (blank Setup text): the provider registry. A registry that
+/// cannot be removed is reported, since it would bring the adapter back on the next open. One of
+/// another schema version is refused and stays.
 pub fn clear_settings(paths: &AppPaths) -> Result<(), String> {
     let _serialized = SETTINGS_WRITES.lock();
-    let registry = remove_if_present(&registry_path(paths), "provider registry");
-    let settings = remove_if_present(&settings_path(paths), "adapter settings");
-    registry.and(settings)
+    let path = registry_path(paths);
+    match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            super::provider_profiles::check_registry_version(&text, &path.display().to_string())?
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => {
+            return Err(format!(
+                "Cannot read the provider registry {}: {e}",
+                path.display()
+            ));
+        }
+    }
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Cannot remove the provider registry: {e}")),
+    }
 }
-
 // ---- inbox -------------------------------------------------------------------------------------
 
 /// The result of opening a workflow on its own thread.
@@ -644,10 +626,7 @@ pub fn open_workflow(
             let adapter = reg.selected_adapter().cloned();
             (Some(reg), adapter, None)
         }
-        Ok(None) => match load_settings(&paths) {
-            Ok(adapter) => (None, adapter, None),
-            Err(e) => (None, None, Some(e)),
-        },
+        Ok(None) => (None, None, None),
         Err(e) => (None, None, Some(e)),
     };
     let settings = adapter.as_ref().map(|a| a.resolve(&policy));
@@ -691,25 +670,6 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let paths = AppPaths::new(temp.path().join("data")).unwrap();
         (temp, paths)
-    }
-
-    #[test]
-    fn migration_stops_before_writing_when_rollback_backup_fails() {
-        let (_temp, paths) = data();
-        let legacy_path = settings_path(&paths);
-        std::fs::write(
-            &legacy_path,
-            r#"{"provider":"Custom","executable":"/opt/agent"}"#,
-        )
-        .unwrap();
-        let backup_path = legacy_path.with_extension(format!("json{REGISTRY_BACKUP_SUFFIX}"));
-        std::fs::create_dir(&backup_path).unwrap();
-
-        let error = load_registry(&paths).unwrap_err();
-
-        assert!(error.contains("rollback backup"), "{error}");
-        assert!(!registry_path(&paths).exists());
-        assert!(legacy_path.is_file());
     }
 
     #[test]
@@ -888,14 +848,14 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(settings_path(&paths))
+            let mode = std::fs::metadata(registry_path(&paths))
                 .unwrap()
                 .permissions()
                 .mode();
             assert_eq!(mode & 0o077, 0, "not readable by other users");
         }
         assert!(no_temporaries(&paths));
-        std::fs::write(settings_path(&paths), "{broken").unwrap();
+        std::fs::write(registry_path(&paths), "{broken").unwrap();
         assert!(
             load_settings(&paths).is_err(),
             "a damaged file is reported, not ignored"

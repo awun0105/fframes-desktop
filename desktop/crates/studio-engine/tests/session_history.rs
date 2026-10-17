@@ -1,15 +1,15 @@
-//! Multi-session storage: migration of the single-session layout, listing and loading.
+//! Multi-session storage: listing, loading, and refusing what an older Studio left.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use studio_engine::agent::log::{RowLimits, RowStore};
 use studio_engine::agent::model::{
     NoticeLevel, OutcomeCard, OutcomeKind, Row, RowId, RowKind, UserSource,
 };
-use studio_engine::agent::session_store::layout::LEGACY_SESSION_ID;
 use studio_engine::agent::session_store::{
-    SESSION_MANIFEST_SCHEMA_VERSION, SessionManifest, SessionManifestState, SessionStore,
+    ManifestStatus, SESSION_MANIFEST_SCHEMA_VERSION, SessionManifest, SessionManifestState,
+    SessionStore,
 };
 use studio_engine::app_paths::AppPaths;
 use studio_project::ProjectId;
@@ -106,29 +106,37 @@ fn manifest(version: u32, provider: &str, at: u64) -> SessionManifest {
     }
 }
 
-fn write_legacy_manifest(f: &Fixture, manifest: &SessionManifest) {
-    let path = f.paths.agent_session_manifest(&f.project);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, serde_json::to_vec_pretty(manifest).unwrap()).unwrap();
+fn manifest_path(f: &Fixture, id: &str) -> PathBuf {
+    f.paths
+        .agent_session_dir(&f.project, id)
+        .join("manifest.json")
 }
 
-/// A project as the single-session builds leave it: a manifest, a log and one archived log.
-fn legacy_project() -> Fixture {
+/// A project with one current session: three rows and a manifest of the current version.
+fn current_project() -> (Fixture, String) {
     let f = fixture();
-    write_legacy_manifest(&f, &manifest(1, "claude", 1_000));
+    let id = SessionStore::create_session_at(&f.paths, &f.project, None, 1_000).unwrap();
+    SessionStore::set_current(&f.paths, &f.project, &id).unwrap();
     write_log(
-        &f.paths.legacy_conversation_log(&f.project),
+        &SessionStore::session_log_path(&f.paths, &f.project, &id).unwrap(),
         &[
             user(1, 1_000, "Make the intro faster"),
             agent(2, 1_010, "Done"),
             outcome(3, 1_020, OutcomeKind::Accepted),
         ],
     );
-    write_log(
-        &f.paths.project(&f.project).join("conversation-42.jsonl"),
-        &[user(1, 500, "Older chat about colours")],
-    );
-    f
+    let current = manifest(SESSION_MANIFEST_SCHEMA_VERSION, "claude", 1_000);
+    SessionStore::save(&f.paths, &f.project, &current).unwrap();
+    (f, id)
+}
+
+/// Replaces the stored manifest of the current session with one of another schema version and
+/// returns its path and exact bytes.
+fn foreign_manifest(f: &Fixture, id: &str, version: u32) -> (PathBuf, Vec<u8>) {
+    let path = manifest_path(f, id);
+    let bytes = serde_json::to_vec_pretty(&manifest(version, "claude", 1_000)).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    (path, bytes)
 }
 
 fn ids(f: &Fixture) -> Vec<String> {
@@ -140,65 +148,17 @@ fn ids(f: &Fixture) -> Vec<String> {
 }
 
 #[test]
-fn the_single_session_api_is_untouched_before_migration() {
-    let f = fixture();
-    assert!(SessionStore::load(&f.paths, &f.project).unwrap().is_none());
-    SessionStore::save(&f.paths, &f.project, &manifest(2, "claude", 1)).unwrap();
-    assert!(f.paths.agent_session_manifest(&f.project).is_file());
-    assert!(!f.paths.agent_sessions(&f.project).exists());
-    assert_eq!(
-        SessionStore::current_log_path(&f.paths, &f.project),
-        f.paths.legacy_conversation_log(&f.project)
-    );
-    SessionStore::clear(&f.paths, &f.project).unwrap();
-    assert!(SessionStore::load(&f.paths, &f.project).unwrap().is_none());
-}
-
-#[test]
-fn a_single_session_project_migrates_with_its_rows_and_manifest() {
-    let f = legacy_project();
-    let report = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert_eq!(report.migrated, vec![LEGACY_SESSION_ID, "archive-42"]);
-    assert_eq!(report.removed_legacy.len(), 3);
-    assert!(report.kept_legacy.is_empty());
-
-    assert!(!f.paths.legacy_conversation_log(&f.project).exists());
-    assert!(!f.paths.agent_session_manifest(&f.project).exists());
-    assert!(
-        !f.paths
-            .project(&f.project)
-            .join("conversation-42.jsonl")
-            .exists()
-    );
-    assert_eq!(
-        SessionStore::current_session_id(&f.paths, &f.project).as_deref(),
-        Some(LEGACY_SESSION_ID)
-    );
-
-    // The single-session API now serves the migrated session.
+fn a_manifest_of_the_current_version_is_saved_loaded_and_cleared_in_the_current_session() {
+    let (f, id) = current_project();
     let loaded = SessionStore::load(&f.paths, &f.project)
         .unwrap()
-        .expect("manifest survives");
+        .expect("the manifest was saved");
     assert_eq!(loaded.schema_version, SESSION_MANIFEST_SCHEMA_VERSION);
     assert_eq!(loaded.provider_id, "claude");
     assert!(loaded.is_resumable());
-    assert_eq!(
-        SessionStore::current_log_path(&f.paths, &f.project),
-        f.paths
-            .agent_session_dir(&f.project, LEGACY_SESSION_ID)
-            .join("conversation.jsonl")
-    );
-    let session = SessionStore::load_session(&f.paths, &f.project, LEGACY_SESSION_ID, 100).unwrap();
-    assert_eq!(session.rows.len(), 3);
-    assert!(session.manifest.is_some());
+    assert!(manifest_path(&f, &id).is_file());
 
-    let archive = SessionStore::load_session(&f.paths, &f.project, "archive-42", 100).unwrap();
-    assert_eq!(archive.rows.len(), 1);
-    assert!(archive.manifest.is_none());
-
-    // Saving after migration writes into the session, not the legacy path.
     SessionStore::save(&f.paths, &f.project, &manifest(2, "codex", 2_000)).unwrap();
-    assert!(!f.paths.agent_session_manifest(&f.project).exists());
     assert_eq!(
         SessionStore::load(&f.paths, &f.project)
             .unwrap()
@@ -206,132 +166,218 @@ fn a_single_session_project_migrates_with_its_rows_and_manifest() {
             .provider_id,
         "codex"
     );
-}
-
-#[test]
-fn migrating_twice_changes_nothing() {
-    let f = legacy_project();
-    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    let before = ids(&f);
-    let again = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert!(again.migrated.is_empty() && again.removed_legacy.is_empty());
-    assert_eq!(ids(&f), before);
-    assert_eq!(before.len(), 2);
-}
-
-#[test]
-fn a_project_with_nothing_stored_migrates_to_nothing() {
-    let f = fixture();
-    let report = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert_eq!(report, Default::default());
-    assert!(SessionStore::current_session_id(&f.paths, &f.project).is_none());
-    assert!(ids(&f).is_empty());
-}
-
-#[test]
-fn an_interrupted_staging_directory_is_discarded_and_the_run_completes() {
-    let f = legacy_project();
-    let staging = f.paths.agent_sessions(&f.project).join(".staging-legacy");
-    fs::create_dir_all(&staging).unwrap();
-    fs::write(staging.join("conversation.jsonl"), "half a copy").unwrap();
-
-    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert!(!staging.exists());
-    let session = SessionStore::load_session(&f.paths, &f.project, LEGACY_SESSION_ID, 100).unwrap();
+    let session = SessionStore::load_session(&f.paths, &f.project, &id, 100).unwrap();
     assert_eq!(session.rows.len(), 3);
+    assert!(session.manifest.is_some());
 }
 
 #[test]
-fn a_run_interrupted_after_publishing_is_finished_by_the_rerun() {
-    let f = legacy_project();
-    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
+fn a_project_without_a_session_has_nothing_to_load_and_nowhere_to_save() {
+    let f = fixture();
+    assert!(SessionStore::load(&f.paths, &f.project).unwrap().is_none());
+    assert!(SessionStore::current_session_id(&f.paths, &f.project).is_none());
+    assert!(SessionStore::current_log_path(&f.paths, &f.project).is_none());
+    assert!(SessionStore::save(&f.paths, &f.project, &manifest(2, "claude", 1)).is_err());
+    SessionStore::clear(&f.paths, &f.project).unwrap();
+    assert!(!f.paths.agent_sessions(&f.project).exists());
+}
 
-    // Put the state of a crash between publishing and cleanup back: the pointer is not
-    // written yet and the legacy files are still there, unchanged.
-    fs::remove_file(f.paths.agent_session_current(&f.project)).unwrap();
-    let dir = f.paths.agent_session_dir(&f.project, LEGACY_SESSION_ID);
-    fs::copy(
-        dir.join("conversation.jsonl"),
-        f.paths.legacy_conversation_log(&f.project),
+#[test]
+fn files_of_the_single_session_layout_are_ignored_and_left_as_they_are() {
+    let f = fixture();
+    let old_manifest = f.paths.agent(&f.project).join("session-manifest.json");
+    let old_log = f.paths.project(&f.project).join("conversation.jsonl");
+    let old_archive = f.paths.project(&f.project).join("conversation-42.jsonl");
+    fs::create_dir_all(old_manifest.parent().unwrap()).unwrap();
+    fs::write(
+        &old_manifest,
+        serde_json::to_vec_pretty(&manifest(1, "claude", 1_000)).unwrap(),
     )
     .unwrap();
-    write_legacy_manifest(&f, &manifest(1, "claude", 1_000));
+    write_log(&old_log, &[user(1, 1_000, "Make the intro faster")]);
+    write_log(&old_archive, &[user(1, 500, "Older chat about colours")]);
+    let files = [&old_manifest, &old_log, &old_archive];
+    let before: Vec<Vec<u8>> = files.iter().map(|p| fs::read(p).unwrap()).collect();
 
-    let report = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert!(report.migrated.is_empty());
-    assert_eq!(report.removed_legacy.len(), 2);
-    assert_eq!(
-        SessionStore::current_session_id(&f.paths, &f.project).as_deref(),
-        Some(LEGACY_SESSION_ID)
-    );
-    assert!(!f.paths.legacy_conversation_log(&f.project).exists());
-    assert_eq!(ids(&f).len(), 2);
+    assert!(SessionStore::load(&f.paths, &f.project).unwrap().is_none());
+    assert!(ids(&f).is_empty());
+    let startup = SessionStore::prepare(&f.paths, &f.project).unwrap();
+    assert!(startup.log.starts_with(f.paths.agent_sessions(&f.project)));
+    assert_eq!(ids(&f).len(), 1, "only the first session of this layout");
+    let current = SessionStore::load_session(
+        &f.paths,
+        &f.project,
+        &SessionStore::current_session_id(&f.paths, &f.project).unwrap(),
+        100,
+    )
+    .unwrap();
+    assert!(current.rows.is_empty());
+    assert!(SessionStore::load(&f.paths, &f.project).unwrap().is_none());
+
+    let after: Vec<Vec<u8>> = files.iter().map(|p| fs::read(p).unwrap()).collect();
+    assert_eq!(before, after);
 }
 
 #[test]
-fn a_legacy_file_that_differs_from_its_copy_is_imported_as_its_own_session() {
-    let f = legacy_project();
-    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    write_log(
-        &f.paths.legacy_conversation_log(&f.project),
-        &[user(1, 3_000, "written by an older build after migration")],
-    );
-    let report = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert!(report.migrated.is_empty() && report.kept_legacy.is_empty());
-    assert_eq!(report.imported.len(), 1);
-    assert!(report.imported[0].starts_with("legacy-"));
-    assert_eq!(
-        report.removed_legacy,
-        vec![f.paths.legacy_conversation_log(&f.project)]
-    );
-    assert!(!f.paths.legacy_conversation_log(&f.project).exists());
+fn a_manifest_of_an_older_format_is_refused_and_left_as_it_is() {
+    let (f, id) = current_project();
+    let (path, bytes) = foreign_manifest(&f, &id, 1);
 
-    let imported =
-        SessionStore::load_session(&f.paths, &f.project, &report.imported[0], 100).unwrap();
-    assert_eq!(imported.rows.len(), 1);
-    // The earlier copy is untouched and still current.
-    let original =
-        SessionStore::load_session(&f.paths, &f.project, LEGACY_SESSION_ID, 100).unwrap();
-    assert_eq!(original.rows.len(), 3);
-    assert_eq!(
-        SessionStore::current_session_id(&f.paths, &f.project).as_deref(),
-        Some(LEGACY_SESSION_ID)
-    );
-    assert_eq!(ids(&f).len(), 3);
-}
+    let error = SessionStore::load(&f.paths, &f.project).unwrap_err();
+    assert!(error.contains("older Studio"), "{error}");
+    assert!(error.contains(&path.display().to_string()), "{error}");
+    let error = SessionStore::save(&f.paths, &f.project, &manifest(2, "codex", 2_000)).unwrap_err();
+    assert!(error.contains("older Studio"), "{error}");
+    assert!(error.contains("manifest.json"), "{error}");
+    let error = SessionStore::clear(&f.paths, &f.project).unwrap_err();
+    assert!(error.contains("older Studio"), "{error}");
+    assert!(error.contains("manifest.json"), "{error}");
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    match SessionStore::manifest_status(&f.paths, &f.project, &id) {
+        ManifestStatus::Refused(reason) => assert!(reason.contains("older Studio"), "{reason}"),
+        _ => panic!("an older manifest is refused"),
+    }
 
-#[test]
-fn a_corrupt_manifest_is_copied_verbatim_so_load_answers_the_same() {
-    let f = legacy_project();
-    let path = f.paths.agent_session_manifest(&f.project);
-    fs::write(&path, "{ not json").unwrap();
-    let before = SessionStore::load(&f.paths, &f.project).unwrap_err();
-
-    let report = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert!(report.kept_legacy.is_empty());
-    assert!(!path.exists());
-    assert_eq!(
-        SessionStore::load(&f.paths, &f.project).unwrap_err(),
-        before
-    );
-    let copy = f
-        .paths
-        .agent_session_dir(&f.project, LEGACY_SESSION_ID)
-        .join("manifest.json");
-    assert_eq!(fs::read_to_string(copy).unwrap(), "{ not json");
-    let session = SessionStore::load_session(&f.paths, &f.project, LEGACY_SESSION_ID, 100).unwrap();
+    // The session itself still lists and opens; its manifest is simply not used.
+    assert_eq!(ids(&f), vec![id.clone()]);
+    let session = SessionStore::load_session(&f.paths, &f.project, &id, 100).unwrap();
     assert_eq!(session.rows.len(), 3);
     assert!(session.manifest.is_none());
+    assert!(SessionStore::session_manifest(&f.paths, &f.project, &id).is_none());
+    assert!(!SessionStore::list_sessions(&f.paths, &f.project).unwrap()[0].resumable);
+    assert_eq!(fs::read(&path).unwrap(), bytes);
 }
 
 #[test]
-fn a_manifest_from_a_newer_schema_stays_unusable_after_migration() {
-    let f = legacy_project();
-    write_legacy_manifest(&f, &manifest(99, "claude", 1_000));
-    assert!(SessionStore::load(&f.paths, &f.project).unwrap().is_none());
-    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert!(!f.paths.agent_session_manifest(&f.project).exists());
-    assert!(SessionStore::load(&f.paths, &f.project).unwrap().is_none());
+fn a_manifest_of_a_newer_format_is_refused_and_left_as_it_is() {
+    let (f, id) = current_project();
+    let (path, bytes) = foreign_manifest(&f, &id, 99);
+
+    let error = SessionStore::load(&f.paths, &f.project).unwrap_err();
+    assert!(error.contains("newer Studio"), "{error}");
+    assert!(error.contains("manifest.json"), "{error}");
+    assert!(SessionStore::save(&f.paths, &f.project, &manifest(2, "codex", 2_000)).is_err());
+    assert!(SessionStore::clear(&f.paths, &f.project).is_err());
+    assert!(SessionStore::session_manifest(&f.paths, &f.project, &id).is_none());
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+}
+
+#[test]
+fn a_manifest_that_is_not_json_is_not_an_old_format_and_can_be_replaced_or_cleared() {
+    let (f, id) = current_project();
+    let path = manifest_path(&f, &id);
+    fs::write(&path, "{ not json").unwrap();
+    assert!(SessionStore::load(&f.paths, &f.project).is_err());
+    SessionStore::save(&f.paths, &f.project, &manifest(2, "codex", 2_000)).unwrap();
+    assert_eq!(
+        SessionStore::load(&f.paths, &f.project)
+            .unwrap()
+            .unwrap()
+            .provider_id,
+        "codex"
+    );
+    fs::write(&path, "{ not json").unwrap();
+    SessionStore::clear(&f.paths, &f.project).unwrap();
+    assert!(!path.exists());
+}
+
+#[test]
+fn valid_json_of_another_shape_is_refused_not_replaced() {
+    let (f, id) = current_project();
+    let path = manifest_path(&f, &id);
+    let bytes = br#"{"schema_version": 2, "unexpected": [1, 2]}"#.to_vec();
+    fs::write(&path, &bytes).unwrap();
+
+    let error = SessionStore::load(&f.paths, &f.project).unwrap_err();
+    assert!(error.contains("not in the format"), "{error}");
+    assert!(error.contains("manifest.json"), "{error}");
+    assert!(SessionStore::save(&f.paths, &f.project, &manifest(2, "codex", 2_000)).is_err());
+    assert!(SessionStore::clear(&f.paths, &f.project).is_err());
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert!(matches!(
+        SessionStore::manifest_status(&f.paths, &f.project, &id),
+        ManifestStatus::Refused(_)
+    ));
+}
+
+#[test]
+fn manifest_status_tells_missing_usable_and_refused_apart() {
+    let (f, id) = current_project();
+    assert!(matches!(
+        SessionStore::manifest_status(&f.paths, &f.project, &id),
+        ManifestStatus::Ok
+    ));
+    assert!(matches!(
+        SessionStore::manifest_status(&f.paths, &f.project, "no-such-session"),
+        ManifestStatus::Missing
+    ));
+    assert!(matches!(
+        SessionStore::manifest_status(&f.paths, &f.project, "../escape"),
+        ManifestStatus::Missing
+    ));
+    fs::remove_file(manifest_path(&f, &id)).unwrap();
+    assert!(matches!(
+        SessionStore::manifest_status(&f.paths, &f.project, &id),
+        ManifestStatus::Missing
+    ));
+}
+
+#[test]
+fn a_refused_manifest_stays_byte_identical_through_prepare_pointer_repair_and_new_sessions() {
+    for version in [1, 99] {
+        let (f, id) = current_project();
+        let (path, bytes) = foreign_manifest(&f, &id, version);
+
+        SessionStore::prepare(&f.paths, &f.project).unwrap();
+        break_pointer(&f, "dangling");
+        assert!(SessionStore::current_log_path(&f.paths, &f.project).is_some());
+        break_pointer(&f, "missing");
+        SessionStore::prepare(&f.paths, &f.project).unwrap();
+        // A new session is renamed into place, the one with the refused manifest is not touched.
+        let other = SessionStore::create_session_at(&f.paths, &f.project, None, 2_000).unwrap();
+        SessionStore::set_current(&f.paths, &f.project, &other).unwrap();
+        SessionStore::set_current(&f.paths, &f.project, &id).unwrap();
+        SessionStore::record_last_row_id(&f.paths, &f.project, &id, 500).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), bytes, "version {version}");
+    }
+}
+
+#[test]
+fn a_meta_with_an_unknown_field_is_never_rewritten_and_its_session_still_opens() {
+    let (f, id) = current_project();
+    let meta_path = f.paths.agent_session_dir(&f.project, &id).join("meta.json");
+    let original = fs::read_to_string(&meta_path).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&original).unwrap();
+    value["source_hash"] = serde_json::json!("abc123");
+    let foreign = serde_json::to_vec_pretty(&value).unwrap();
+    fs::write(&meta_path, &foreign).unwrap();
+
+    // What a session switch records, and a second session created next to it.
+    SessionStore::record_last_row_id(&f.paths, &f.project, &id, 900).unwrap();
+    let other = SessionStore::create_session_at(&f.paths, &f.project, None, 2_000).unwrap();
+    SessionStore::set_current(&f.paths, &f.project, &other).unwrap();
+    SessionStore::record_last_row_id(&f.paths, &f.project, &id, 1_000).unwrap();
+    assert_eq!(fs::read(&meta_path).unwrap(), foreign);
+
+    assert!(ids(&f).contains(&id));
+    let session = SessionStore::load_session(&f.paths, &f.project, &id, 100).unwrap();
+    assert_eq!(session.rows.len(), 3);
+}
+
+#[test]
+fn a_meta_of_another_schema_version_is_not_used_and_not_rewritten() {
+    let (f, id) = current_project();
+    let meta_path = f.paths.agent_session_dir(&f.project, &id).join("meta.json");
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&meta_path).unwrap()).unwrap();
+    value["schema_version"] = serde_json::json!(7);
+    let foreign = serde_json::to_vec_pretty(&value).unwrap();
+    fs::write(&meta_path, &foreign).unwrap();
+
+    SessionStore::record_last_row_id(&f.paths, &f.project, &id, 900).unwrap();
+    assert_eq!(fs::read(&meta_path).unwrap(), foreign);
+    assert!(ids(&f).contains(&id));
 }
 
 fn break_pointer(f: &Fixture, how: &str) {
@@ -344,25 +390,24 @@ fn break_pointer(f: &Fixture, how: &str) {
 }
 
 #[test]
-fn a_broken_current_pointer_is_repaired_and_never_falls_back_to_legacy_files() {
+fn a_broken_current_pointer_is_repaired_to_the_most_recent_session() {
     for how in ["missing", "garbage", "dangling"] {
-        let f = legacy_project();
-        SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-        // Make the legacy session the most recently updated one.
+        let (f, id) = current_project();
         SessionStore::save(&f.paths, &f.project, &manifest(2, "claude", 5_000)).unwrap();
         break_pointer(&f, how);
 
-        let log_path = SessionStore::current_log_path(&f.paths, &f.project);
         assert_eq!(
-            log_path,
-            f.paths
-                .agent_session_dir(&f.project, LEGACY_SESSION_ID)
-                .join("conversation.jsonl"),
+            SessionStore::current_log_path(&f.paths, &f.project),
+            Some(
+                f.paths
+                    .agent_session_dir(&f.project, &id)
+                    .join("conversation.jsonl")
+            ),
             "{how}"
         );
         assert_eq!(
             fs::read_to_string(f.paths.agent_session_current(&f.project)).unwrap(),
-            LEGACY_SESSION_ID,
+            id,
             "{how}: the pointer is rewritten"
         );
 
@@ -377,10 +422,6 @@ fn a_broken_current_pointer_is_repaired_and_never_falls_back_to_legacy_files() {
         );
         break_pointer(&f, how);
         SessionStore::save(&f.paths, &f.project, &manifest(2, "codex", 6_000)).unwrap();
-        assert!(
-            !f.paths.agent_session_manifest(&f.project).exists(),
-            "{how}"
-        );
         assert_eq!(
             SessionStore::load(&f.paths, &f.project)
                 .unwrap()
@@ -389,20 +430,12 @@ fn a_broken_current_pointer_is_repaired_and_never_falls_back_to_legacy_files() {
             "codex",
             "{how}"
         );
-
-        break_pointer(&f, how);
-        let report = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-        assert_eq!(report, Default::default(), "{how}");
-        assert_eq!(
-            SessionStore::current_session_id(&f.paths, &f.project).as_deref(),
-            Some(LEGACY_SESSION_ID),
-            "{how}"
-        );
+        assert_eq!(ids(&f).len(), 1, "{how}");
     }
 }
 
 #[test]
-fn a_project_with_sessions_but_no_pointer_is_not_treated_as_unmigrated() {
+fn a_project_with_sessions_but_no_pointer_gets_its_pointer_repaired() {
     let f = fixture();
     let id = SessionStore::create_session(&f.paths, &f.project, None).unwrap();
     assert_eq!(
@@ -411,64 +444,9 @@ fn a_project_with_sessions_but_no_pointer_is_not_treated_as_unmigrated() {
     );
     assert_eq!(
         SessionStore::current_log_path(&f.paths, &f.project),
-        SessionStore::session_log_path(&f.paths, &f.project, &id).unwrap()
+        Some(SessionStore::session_log_path(&f.paths, &f.project, &id).unwrap())
     );
 }
-
-#[test]
-fn one_item_that_cannot_be_copied_does_not_stop_the_others() {
-    let f = legacy_project();
-    // A directory where an archived log should be: copying it fails.
-    let blocked = f.paths.project(&f.project).join("conversation-7.jsonl");
-    fs::create_dir_all(&blocked).unwrap();
-
-    let report = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert_eq!(report.migrated, vec![LEGACY_SESSION_ID, "archive-42"]);
-    assert_eq!(report.failed.len(), 1);
-    assert_eq!(report.failed[0].0, "archive-7");
-    assert!(blocked.is_dir());
-    assert!(
-        !f.paths
-            .agent_sessions(&f.project)
-            .join(".staging-archive-7")
-            .exists()
-    );
-    assert_eq!(
-        SessionStore::current_session_id(&f.paths, &f.project).as_deref(),
-        Some(LEGACY_SESSION_ID)
-    );
-    assert!(!f.paths.legacy_conversation_log(&f.project).exists());
-}
-
-#[test]
-fn an_archive_with_a_very_long_stamp_gets_a_valid_unique_id() {
-    let f = fixture();
-    let one = "7".repeat(80);
-    let two = format!("{}8", "7".repeat(79));
-    for stamp in [&one, &two] {
-        write_log(
-            &f.paths
-                .project(&f.project)
-                .join(format!("conversation-{stamp}.jsonl")),
-            &[user(1, 5, "long")],
-        );
-    }
-    let report = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert_eq!(report.migrated.len(), 2);
-    assert!(report.failed.is_empty());
-    assert!(report.migrated.iter().all(|id| id.len() <= 64));
-    assert_eq!(ids(&f).len(), 2);
-    for id in &report.migrated {
-        assert_eq!(
-            SessionStore::load_session(&f.paths, &f.project, id, 10)
-                .unwrap()
-                .rows
-                .len(),
-            1
-        );
-    }
-}
-
 #[test]
 fn an_invalid_session_id_never_resolves_inside_a_real_session_directory() {
     let f = fixture();
@@ -481,29 +459,15 @@ fn an_invalid_session_id_never_resolves_inside_a_real_session_directory() {
 }
 
 #[test]
-fn start_new_refuses_a_log_inside_a_session_directory() {
-    let f = fixture();
-    let id = SessionStore::create_session(&f.paths, &f.project, None).unwrap();
-    let path = SessionStore::session_log_path(&f.paths, &f.project, &id).unwrap();
-    write_log(&path, &[user(1, 5, "keep me")]);
-    let mut store = RowStore::open(path.clone(), RowLimits::default()).unwrap();
-    let error = store.start_new(99).unwrap_err().to_string();
-    assert!(error.contains("session"), "{error}");
-    assert!(path.is_file());
-    assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 2);
-}
-
-#[test]
 fn clear_removes_only_the_current_sessions_manifest() {
-    let f = legacy_project();
-    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    let dir = f.paths.agent_session_dir(&f.project, LEGACY_SESSION_ID);
+    let (f, id) = current_project();
+    let dir = f.paths.agent_session_dir(&f.project, &id);
     SessionStore::clear(&f.paths, &f.project).unwrap();
     assert!(!dir.join("manifest.json").exists());
     assert!(dir.join("conversation.jsonl").is_file());
     assert!(dir.join("meta.json").is_file());
     assert!(SessionStore::load(&f.paths, &f.project).unwrap().is_none());
-    assert_eq!(ids(&f).len(), 2);
+    assert_eq!(ids(&f).len(), 1);
 }
 
 #[test]
@@ -513,12 +477,15 @@ fn row_ids_continue_across_sessions() {
     SessionStore::set_current(&f.paths, &f.project, &a).unwrap();
     assert_eq!(SessionStore::row_id_floor(&f.paths, &f.project, &a), 1);
     let rows: Vec<Row> = (1..=5).map(|i| agent(i, i, "a")).collect();
-    write_log(&SessionStore::current_log_path(&f.paths, &f.project), &rows);
+    write_log(
+        &SessionStore::current_log_path(&f.paths, &f.project).unwrap(),
+        &rows,
+    );
 
     let b = SessionStore::create_session_at(&f.paths, &f.project, None, 2).unwrap();
     assert_eq!(SessionStore::row_id_floor(&f.paths, &f.project, &b), 6);
     SessionStore::set_current(&f.paths, &f.project, &b).unwrap();
-    let path = SessionStore::current_log_path(&f.paths, &f.project);
+    let path = SessionStore::current_log_path(&f.paths, &f.project).unwrap();
     let floor = SessionStore::row_id_floor(&f.paths, &f.project, &b);
     let mut store = RowStore::open_with_floor(path.clone(), RowLimits::default(), floor).unwrap();
     assert_eq!(store.next_id(), RowId(6));
@@ -560,13 +527,6 @@ fn a_session_whose_log_cannot_be_read_is_marked_and_does_not_disturb_the_order()
     assert_eq!(summary.title, "Unreadable session");
     assert!(list.iter().filter(|s| s.unreadable).count() == 1);
     assert_eq!(list.iter().find(|s| s.id == ok).unwrap().title, "readable");
-}
-#[test]
-fn a_version_one_manifest_is_still_resumable_before_migration() {
-    let f = fixture();
-    write_legacy_manifest(&f, &manifest(1, "claude", 1_000));
-    let loaded = SessionStore::load(&f.paths, &f.project).unwrap().unwrap();
-    assert!(loaded.is_resumable());
 }
 
 #[test]
@@ -672,12 +632,11 @@ fn a_long_first_prompt_is_cut_for_the_title_and_repair_prompts_are_ignored() {
 
 #[test]
 fn creating_a_session_does_not_move_the_current_one() {
-    let f = legacy_project();
-    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
+    let (f, current) = current_project();
     let id = SessionStore::create_session(&f.paths, &f.project, Some("Next".into())).unwrap();
     assert_eq!(
         SessionStore::current_session_id(&f.paths, &f.project).as_deref(),
-        Some(LEGACY_SESSION_ID)
+        Some(current.as_str())
     );
     let other = SessionStore::create_session(&f.paths, &f.project, None).unwrap();
     assert_ne!(id, other);
@@ -735,115 +694,64 @@ fn loading_and_listing_never_create_anything() {
 }
 
 #[test]
-fn preparing_a_legacy_project_migrates_it_and_serves_its_log() {
-    let f = legacy_project();
-    let startup = SessionStore::prepare(&f.paths, &f.project);
-    assert!(startup.notices.is_empty(), "{:?}", startup.notices);
-    assert_eq!(
-        startup.log,
-        SessionStore::session_log_path(&f.paths, &f.project, LEGACY_SESSION_ID).unwrap()
-    );
-    assert!(startup.log.is_file());
-    assert!(!f.paths.legacy_conversation_log(&f.project).exists());
-    assert_eq!(ids(&f).len(), 2);
-}
-
-#[test]
 fn preparing_a_fresh_project_creates_its_first_session_once() {
     let f = fixture();
-    let first = SessionStore::prepare(&f.paths, &f.project);
-    assert!(first.notices.is_empty(), "{:?}", first.notices);
+    let first = SessionStore::prepare(&f.paths, &f.project).unwrap();
     assert_eq!(first.row_floor, 1);
     let current = SessionStore::current_session_id(&f.paths, &f.project).unwrap();
     assert_eq!(
-        first.log,
+        Some(first.log.clone()),
         SessionStore::current_log_path(&f.paths, &f.project)
     );
     assert!(first.log.starts_with(f.paths.agent_sessions(&f.project)));
 
-    let again = SessionStore::prepare(&f.paths, &f.project);
+    let again = SessionStore::prepare(&f.paths, &f.project).unwrap();
     assert_eq!(again.log, first.log);
     assert_eq!(ids(&f), vec![current]);
 }
 
 #[test]
-fn an_item_that_cannot_be_migrated_becomes_a_notice_and_the_rest_still_opens() {
-    let f = legacy_project();
-    fs::create_dir_all(f.paths.project(&f.project).join("conversation-7.jsonl")).unwrap();
-    let startup = SessionStore::prepare(&f.paths, &f.project);
-    assert_eq!(startup.notices.len(), 1);
-    assert!(
-        startup.notices[0].contains("archive-7"),
-        "{:?}",
-        startup.notices
-    );
+fn preparing_a_project_with_a_session_serves_it_and_creates_nothing() {
+    let (f, id) = current_project();
+    let startup = SessionStore::prepare(&f.paths, &f.project).unwrap();
     assert_eq!(
         startup.log,
-        SessionStore::session_log_path(&f.paths, &f.project, LEGACY_SESSION_ID).unwrap()
+        SessionStore::session_log_path(&f.paths, &f.project, &id).unwrap()
     );
+    assert!(startup.log.is_file());
+    assert_eq!(ids(&f), vec![id]);
 }
 
 #[test]
-fn a_legacy_conversation_that_is_not_migrated_is_never_hidden_behind_another_session() {
-    let f = legacy_project();
-    // Another session exists (an archive made it over, the legacy log did not).
-    let other = SessionStore::create_session(&f.paths, &f.project, None).unwrap();
-    assert_eq!(
-        SessionStore::current_session_id(&f.paths, &f.project),
-        None,
-        "no pointer is repaired to `{other}`"
-    );
-    assert!(!f.paths.agent_session_current(&f.project).exists());
-    assert_eq!(
-        SessionStore::current_log_path(&f.paths, &f.project),
-        f.paths.legacy_conversation_log(&f.project)
-    );
-
-    let startup = SessionStore::prepare(&f.paths, &f.project);
-    assert_eq!(
-        startup.log,
-        SessionStore::session_log_path(&f.paths, &f.project, LEGACY_SESSION_ID).unwrap(),
-        "the next successful migration serves the legacy conversation"
-    );
-    assert!(
-        fs::read_to_string(&startup.log)
-            .unwrap()
-            .contains("Make the intro faster")
-    );
+fn preparing_removes_interrupted_staging_directories_and_keeps_the_sessions() {
+    let (f, id) = current_project();
+    let staging = f.paths.agent_sessions(&f.project).join(".staging-half");
+    fs::create_dir_all(&staging).unwrap();
+    fs::write(staging.join("conversation.jsonl"), "half a copy").unwrap();
+    SessionStore::prepare(&f.paths, &f.project).unwrap();
+    assert!(!staging.exists());
+    assert_eq!(ids(&f), vec![id]);
 }
 
 #[test]
-fn a_legacy_file_that_cannot_be_removed_is_not_imported_again() {
-    let f = legacy_project();
-    SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    let legacy_log = f.paths.legacy_conversation_log(&f.project);
-    // The log was written again after the migration: it becomes a session of its own.
-    write_log(
-        &legacy_log,
-        &[user(1, 2_000, "Written after the migration")],
-    );
-    let again = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert_eq!(again.imported.len(), 1, "{again:?}");
-    let sessions = ids(&f).len();
-
-    // The removal failed last time: the same file is still there. Nothing is imported twice.
-    write_log(
-        &legacy_log,
-        &[user(1, 2_000, "Written after the migration")],
-    );
-    let third = SessionStore::migrate_legacy(&f.paths, &f.project).unwrap();
-    assert!(third.imported.is_empty(), "{third:?}");
-    assert_eq!(ids(&f).len(), sessions);
-    assert!(!legacy_log.exists());
+fn preparing_leaves_a_manifest_of_an_older_format_as_it_is() {
+    let (f, id) = current_project();
+    let (path, bytes) = foreign_manifest(&f, &id, 1);
+    let startup = SessionStore::prepare(&f.paths, &f.project).unwrap();
+    assert!(startup.log.is_file());
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert_eq!(ids(&f), vec![id]);
 }
-
 #[test]
 fn row_ids_stay_unique_when_a_session_that_used_higher_ids_is_not_current_after_a_restart() {
     let f = fixture();
     let a = SessionStore::create_session_at(&f.paths, &f.project, None, 1).unwrap();
     SessionStore::set_current(&f.paths, &f.project, &a).unwrap();
     let rows: Vec<Row> = (1..=5).map(|i| agent(i, i, "a")).collect();
-    write_log(&SessionStore::current_log_path(&f.paths, &f.project), &rows);
+    write_log(
+        &SessionStore::current_log_path(&f.paths, &f.project).unwrap(),
+        &rows,
+    );
     SessionStore::record_last_row_id(&f.paths, &f.project, &a, 5).unwrap();
     // Recording is monotonic.
     SessionStore::record_last_row_id(&f.paths, &f.project, &a, 3).unwrap();
@@ -859,7 +767,7 @@ fn row_ids_stay_unique_when_a_session_that_used_higher_ids_is_not_current_after_
     );
     SessionStore::record_last_row_id(&f.paths, &f.project, &b, 10).unwrap();
     SessionStore::set_current(&f.paths, &f.project, &a).unwrap();
-    let startup = SessionStore::prepare(&f.paths, &f.project);
+    let startup = SessionStore::prepare(&f.paths, &f.project).unwrap();
     assert_eq!(startup.row_floor, 11);
     let mut store =
         RowStore::open_with_floor(startup.log, RowLimits::default(), startup.row_floor).unwrap();
@@ -867,12 +775,19 @@ fn row_ids_stay_unique_when_a_session_that_used_higher_ids_is_not_current_after_
 }
 
 #[test]
-fn a_project_whose_sessions_cannot_be_written_keeps_serving_its_legacy_log() {
-    let f = legacy_project();
-    // A file where the sessions directory belongs: nothing can be migrated or created.
+fn a_project_whose_sessions_cannot_be_written_fails_to_prepare_and_changes_nothing() {
+    let f = fixture();
+    let old_log = f.paths.project(&f.project).join("conversation.jsonl");
+    write_log(&old_log, &[user(1, 1_000, "Make the intro faster")]);
+    let before = fs::read(&old_log).unwrap();
+    // A file where the sessions directory belongs: no session can be created.
+    fs::create_dir_all(f.paths.agent(&f.project)).unwrap();
     fs::write(f.paths.agent_sessions(&f.project), b"in the way").unwrap();
-    let startup = SessionStore::prepare(&f.paths, &f.project);
-    assert!(!startup.notices.is_empty());
-    assert_eq!(startup.log, f.paths.legacy_conversation_log(&f.project));
-    assert!(f.paths.legacy_conversation_log(&f.project).is_file());
+    let error = SessionStore::prepare(&f.paths, &f.project).unwrap_err();
+    assert!(error.contains("first session"), "{error}");
+    assert_eq!(fs::read(&old_log).unwrap(), before);
+    assert_eq!(
+        fs::read(f.paths.agent_sessions(&f.project)).unwrap(),
+        b"in the way"
+    );
 }

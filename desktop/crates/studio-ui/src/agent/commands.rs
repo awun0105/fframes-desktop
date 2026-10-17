@@ -223,7 +223,6 @@ impl ConversationPanel {
             return;
         }
         self.saved_adapter = file.clone();
-        self.settings_error = None;
         // A turn-on saves its profile by id; a plain Save goes through the label-matching
         // settings path.
         let (written, profile) = (file.clone(), target.clone());
@@ -240,6 +239,9 @@ impl ConversationPanel {
                 if !panel.saves.finish(ticket) {
                     return;
                 }
+                // The Setup banner about the saved settings follows the save: a refused
+                // registry keeps it, a successful save clears it.
+                panel.settings_error = result.as_ref().err().cloned();
                 let turn_on = panel.agent_setup.turn_on.finish(ticket, result.is_ok());
                 if result.is_ok()
                     && let (Some(profile), Some(file)) = (&target, file)

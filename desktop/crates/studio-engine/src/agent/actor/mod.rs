@@ -26,7 +26,7 @@ use super::{
     model::*,
     present::{self, CliRoute, ToolRoute},
     probe_cache::{AdapterProbeCache, ProbeKey},
-    session_store::{self, SessionManifest, SessionManifestState, SessionStore},
+    session_store::{self, ManifestStatus, SessionManifest, SessionManifestState, SessionStore},
     tools::{BuildSettings, ToolPlacement, ToolRuntime, render_scope_evidence},
 };
 use crate::agent_tools::backend::ProjectToolBackend;
@@ -480,14 +480,7 @@ fn engine_state_of(phase: TaskPhase) -> TaskState {
 }
 
 impl Actor {
-    /// `startup_warnings` become warning rows before the first snapshot (a text already in the
-    /// transcript is not added again, so a persistent failure does not repeat on every open).
-    pub(crate) fn new(
-        shared: Arc<Shared>,
-        rx: Receiver<Msg>,
-        store: RowStore,
-        startup_warnings: Vec<String>,
-    ) -> Self {
+    pub(crate) fn new(shared: Arc<Shared>, rx: Receiver<Msg>, store: RowStore) -> Self {
         let mut actor = Self {
             shared,
             rx,
@@ -550,9 +543,6 @@ impl Actor {
         actor.offer_saved_session();
         actor.settings_changed();
         actor.detect_interrupted();
-        for warning in startup_warnings {
-            actor.warn_once(&warning);
-        }
         actor.refresh_idle();
         actor.publish(true);
         actor
