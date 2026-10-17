@@ -1,6 +1,6 @@
 # Studio design system
 
-The Studio window is built from one theme and one component kit, each its own crate: `desktop/crates/studio-theme` holds the tokens and `desktop/crates/studio-ui/src/kit` the components. Screens use these and do not declare colours, sizes or fonts of their own. `app.rs` and `agent_spike.rs` (the spike UI) are the only exceptions.
+The Studio window is built from one theme and one component kit, each its own crate: `desktop/crates/studio-theme` holds the tokens and `desktop/crates/studio-ui/src/kit` the components. Screens use these and do not declare colours, sizes or fonts of their own.
 
 Studio follows the `theme` setting: `System` (the default) tracks the OS light or dark appearance at runtime, `Light` and `Dark` fix it. Surfaces are flat; there is no glass.
 
@@ -49,8 +49,8 @@ Icons are Lucide SVGs embedded by `desktop/app/src/assets.rs` and named by `kit:
 ## Screen behaviours
 
 - The overflow menu in the transport bar always lists Refresh, Save checkpoint, Restore as copy, Reveal retained draft and Reveal checkpoint. Actions that do not apply are disabled rows, and the rows keep the ids their buttons had (`refresh`, `checkpoint`, `restore`, `draft`, `reveal-checkpoint`).
-- `agent-send` is an icon button (`Icon::ArrowUp`); its tooltip and accessible name are the submit label, and the reason it is blocked stays visible as text under the composer.
-- Reasoning rows stay collapsed. While one streams, its header shows a "Thinking..." badge; the header has a fixed height so the row does not change size when the badge goes away.
+- The composer's send control is a labelled `Button` (`composer-send`) whose label is the current send action (Send, Steer, Send at boundary); while a turn runs a second outline button (`composer-send-now`) cancels and sends. When sending is not possible the reason shows as text beside the controls (`desktop/crates/studio-ui/src/agent/composer/mod.rs`).
+- Reasoning rows stay collapsed. While one streams, its header shows a "Thinking…" badge; the header has a fixed height so the row does not change size when the badge goes away.
 - The setup screen remembers which step was active when setup failed and marks it failed (earlier steps done, later ones pending). Install, build and render run as one pipeline, so a failure inside it is attributed to "Install SDK".
 
 ## Keyboard and focus
@@ -59,9 +59,9 @@ Every control is a tab stop (disabled ones are skipped), shows a 2 px `accent` f
 
 ## Telemetry ids
 
-Native tests and qualification scripts find controls by the bounds the app reports. Element ids and labels are chosen by the caller and must not change. A control that is measured passes `.on_bounds(BoundsProbe::new(..).into_bounds_handler())` (`BoundsProbe` is in `desktop/crates/studio-ui/src/probe.rs`), and the callback receives `[left, top, width, height]` on every prepaint. Components never invent ids that a test looks up.
+Tests find controls by the bounds the app reports, through the observation telemetry described in [architecture, production probes](architecture.md#13-production-probes). Element ids and labels are chosen by the caller and must not change. A control that is measured passes `.on_bounds(BoundsProbe::new(..).into_bounds_handler())` (`BoundsProbe` is in `desktop/crates/studio-ui/src/probe.rs`), and the callback receives `[left, top, width, height]` on every prepaint. Components never invent ids that a test looks up.
 
-While qualifying, the agent panel's `buttons` telemetry also reports `agent-tab-Chat`, `agent-tab-Project`, `agent-undo`, `agent-open-setup`, `agent-save-adapter` and the `setup-Label` field next to `agent-policy` and `agent-apply`, so the native shell test clicks measured bounds instead of fixed window coordinates.
+While telemetry is being written, the agent panel's `buttons` telemetry reports the ids listed in `probed_button` in `desktop/crates/studio-ui/src/agent/mod.rs` (the panel's tabs, Apply, Undo, Stop, review, setup and question controls), so the X11 shell test clicks measured bounds instead of fixed window coordinates and the parity tests can check what was laid out.
 
 ## Deliberate differences from Cap
 

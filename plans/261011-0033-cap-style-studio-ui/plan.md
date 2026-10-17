@@ -47,7 +47,7 @@ In this plan, open to veto:
 
 ## Licensing line
 
-Cap's desktop app is AGPL-3.0; fframes is MIT. Take design values and behavior as facts from the spec; do not copy, translate or closely paraphrase Cap's Rust code. Work from the spec tables rather than open Cap files. Icons come from Lucide (ISC) with its licence in `desktop/packaging/sdk/notices/`. This is an engineering judgement, not legal advice.
+Superseded: code may be ported directly from Cap and Zeron under the [roadmap's porting rules](../261013-0733-studio-rewrite-roadmap/plan.md#porting-rules-all-milestones). Icons come from Lucide (ISC) with its licence in `desktop/packaging/sdk/notices/`.
 
 ## Hard constraint: telemetry and ids
 

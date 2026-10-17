@@ -1,3 +1,5 @@
+> This is a historical record, not the current design; see [README.md](README.md) and [architecture.md](architecture.md) for Studio as built.
+
 # Desktop feasibility and native qualification
 
 Date: 2026-10-01. Status: implementation available; Phase Zero qualification **PENDING**.

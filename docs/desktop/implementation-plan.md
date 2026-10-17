@@ -1,3 +1,5 @@
+> This is a historical record, not the current design; see [README.md](README.md) and [architecture.md](architecture.md) for Studio as built.
+
 # Implementation plan
 
 This plan implements the [agent-driven product](README.md) and [architecture](architecture.md). It is organized by evidence gates: each milestone must demonstrate a working user path before the next layer relies on it.

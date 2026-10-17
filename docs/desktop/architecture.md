@@ -1,43 +1,44 @@
 # Product and technical architecture
 
-This is a proposed architecture based on the [research findings](research.md). Unless explicitly marked implemented, types, paths and APIs below are design examples, not existing fframes APIs.
+This document describes fframes Studio as it is built in [`desktop/`](../../desktop). It names the owning crate, module or test for each part instead of repeating its details; when this text and the source disagree, the source wins. How to run and use the app is in the [README](README.md). The [research findings](research.md), the [implementation plan](implementation-plan.md) and the [feasibility record](phase-zero-feasibility.md) are history.
 
 ## 1. The product contract
 
-Studio is a visual workspace for making videos with coding agents. The default experience is a brief, an agent conversation, a preview and a timeline. A user can work without reading Rust; the resulting project remains understandable and editable as Rust.
+Studio is a visual workspace for making videos with coding agents. The default experience is an agent conversation, a preview and a timeline. A user can work without reading Rust; the resulting project remains understandable and editable as Rust.
 
 The app owns the authoring loop:
 
 **Brief or selection → grounded task → agent source edit → compile → inspect → preview → accepted revision → export.**
 
-Templates seed source, assets and editor metadata. They do not restrict the user to a fixed set of template parameters. A code/diff drawer is available for advanced users but does not dominate the workspace.
+Templates seed source, assets and editor metadata. They do not restrict the user to a fixed set of template parameters. A review window shows the agent's changes as diffs when the user asks for it; it does not dominate the workspace.
 
 ### Main workspace
 
 ```text
-┌ Project name · agent/model · revision/build status ───────── Export ┐
-│ Project / assets │                  Preview               │ Agent │
-│ Scenes           │          canvas and selection          │ chat  │
-│ Style presets    │                                       │       │
-│                  │ Play / pause / frame / time / zoom      │ Scope │
-├──────────────────┴───────────────────────────────────────┤prompt │
-│ Timeline: scenes · audio · selected range · diagnostics   │       │
-└───────────────────────────────────────────────────────────┴───────┘
+┌ Project name · file, project and export actions ········ Settings ┐
+│ Agent | Project | Assets | Style │            Player             │
+│                                  │   preview, canvas selection   │
+│ Agent: Chat | History | Project  │                               │
+│ transcript, plan, composer       │ transport: play, frame, build │
+├──────────────────────────────────┴───────────────────────────────┤
+│ Timeline: ruler · scene clips · audio files · Mix · minimap      │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-The scope above the composer reads, for example, **Title · Intro · 4.2s**, **Scene: Outro**, or **Whole video**. A selected scope can be removed or expanded before sending. During a build, the preview identifies the last successful revision; a new candidate appears only once it is ready.
+The layout follows Cap's editor ([`shell/layout.rs`](../../desktop/crates/studio-ui/src/shell/layout.rs)): the sidebar and the player sit above a full-width timeline, and the grip between them resizes the split. The sidebar's first tab is the agent panel. During a build, the preview keeps showing the last successful revision; a new candidate appears only once it is ready.
 
 ### Core workflows
 
 | Action        | User-facing behavior                                 | Engine responsibility                                                      |
 | ------------- | ---------------------------------------------------- | -------------------------------------------------------------------------- |
-| Create        | Choose format/preset, add assets, describe the video | Scaffold Rust project, resolve style, submit agent task                    |
+| Create        | Choose a folder, add assets, describe the video      | Scaffold the Rust project from the template, submit agent tasks           |
 | Prompt edit   | Select project/scene/range and describe a change     | Freeze context, stage edits, validate and create revision                  |
 | Canvas edit   | Click a supported element, then prompt               | Resolve frame-specific ID/source ownership and attach evidence             |
 | Preset change | Choose a preset or edit tokens                       | Update bound values and ask the agent to adapt unbound design where needed |
-| Compare/undo  | View earlier video or undo the last task             | Restore an app-owned revision without discarding unrelated user changes    |
+| Timing edit   | Split, trim or move clips on the timeline            | Rewrite `timeline.json` without a rebuild                                  |
+| Review/undo   | Read the diff, accept a subset, or undo a task       | Revalidate the subset; restore an accepted revision without discarding unrelated user changes |
 | Handoff       | Continue with a different coding agent               | Stop the previous writer and transfer grounded project/task context        |
-| Export        | Choose file/quality and save                         | Render an immutable accepted revision with progress/cancel                 |
+| Export        | Choose format/quality and save                       | Render an immutable accepted revision with progress/cancel                 |
 
 ## 2. Execution boundaries
 
@@ -45,52 +46,62 @@ The scope above the composer reads, for example, **Title · Intro · 4.2s**, **S
 flowchart TB
   subgraph App["Studio app"]
     UI["GPUI UI: main thread"]
-    Engine["Project engine: async services"]
-    AgentHost["Agent host and process supervisor"]
+    Engine["Engine thread: commands and events"]
+    Workflow["Agent workflow actor"]
     Build["Build service and SDK manager"]
-    UI <-->|typed commands/events| Engine
-    Engine <--> AgentHost
+    UI -->|Command| Engine
+    Engine -->|EngineEvent| UI
+    UI <-->|snapshots and commands| Workflow
     Engine <--> Build
+    Workflow <--> Build
   end
-  AgentHost <-->|ACP stdio or native driver| Agent["Coding agent subprocess"]
-  Agent --> Draft["Writable draft source"]
-  Agent <-->|MCP or CLI facade| Tools["Project tools"]
-  Tools <--> Engine
+  Workflow <-->|Claude stream-json, Codex app-server or ACP| Agent["Coding agent subprocess"]
+  Agent --> Draft["Stable draft working copy"]
+  Agent <-->|studio-mcp or studio-tools| Broker["Tool broker"]
+  Broker <--> Workflow
   Build --> Artifact["Immutable project executable"]
-  Engine <-->|versioned IPC control| Worker["Renderer worker"]
+  Engine <-->|preview protocol| Worker["Project preview worker"]
   Artifact --> Worker
   Worker -->|bounded frames / timeline / audio| Engine
   Engine --> Store["Project files, revisions, journals"]
 ```
 
-GPUI owns the only desktop UI event loop. The app's engine runs async work outside that thread and exposes typed commands/events. Blocking compilation, decoding, rendering and file indexing run in appropriate subprocesses or worker threads. ACP SDK executor requirements must be checked during the integration spike; a driver can own a dedicated executor without making the UI wait.
+GPUI owns the only UI event loop. Everything that blocks (compilation, decoding, rendering, hashing, file indexing, process teardown) runs on engine, workflow, job or worker threads, or in subprocesses. Each agent driver runs its connection on a thread it owns ([`driver/runtime/mod.rs`](../../desktop/crates/studio-harness/src/driver/runtime/mod.rs)), so the UI never waits on an agent.
 
-The project renderer is a compiled executable containing the user's concrete Video implementation, fframes and a small Studio runtime bridge. Keeping it outside the GPUI process solves the generic Rust type boundary and allows process recovery after a project panic/crash. It also avoids linking the UI's GPU stack to every project's renderer implementation.
+The project renderer is a compiled executable containing the user's concrete Video implementation, fframes and the Studio runtime bridge ([`fframes-studio-runtime`](../../fframes-studio-runtime)). Keeping it outside the GPUI process solves the generic Rust type boundary and allows recovery after a project panic or crash. It also keeps the UI's GPU stack out of every project's renderer.
 
-Process separation is crash isolation, not a security sandbox. Agent subprocesses, Cargo build scripts, procedural macros and user video constructors execute code. The app must disclose the actual provider/build access policy and use OS confinement only where it has implemented and tested it.
+Process separation is crash isolation, not a security sandbox. Agent subprocesses, Cargo build scripts, procedural macros and user video constructors execute code. Studio verifies writer containment (see [Writer containment](#writer-containment)) and says what it does not observe.
 
 ### Workspace layout
 
-```text
-desktop/                          separate Cargo workspace and lockfile
-  Cargo.toml
-  rust-toolchain.toml
-  crates/
-    studio-protocol/              commands, events, IPC schemas
-    studio-project/               metadata, source index, revisions
-    studio-agent/                 ACP client, drivers, lifecycle
-    studio-presets/               tokens, preset resolution/import
-    studio-engine/                task, build, preview orchestration
-    studio-media/                 presentation conversion and audio
-    studio-ui/                    GPUI components and interaction
-  app/                            fframes-studio executable
-  packaging/                      icons, installers, runtime manifests
+`desktop/` is its own Cargo workspace with its own lockfile and toolchain ([`desktop/Cargo.toml`](../../desktop/Cargo.toml), [`desktop/rust-toolchain.toml`](../../desktop/rust-toolchain.toml)). Its members are:
 
-fframes-studio-runtime/            GPUI-free library in core workspace
-                                  generic project worker entry point
-```
+| Member | What it owns |
+| --- | --- |
+| `app` | The `fframes-studio` package: [`main.rs`](../../desktop/app/src/main.rs) (opens the window, binds the keymap, hidden observation flags), [`assets.rs`](../../desktop/app/src/assets.rs) (embedded icons), the `studio-tools` and `studio-mcp` binaries, the `ui_gallery` example and the app-level tests |
+| `crates/studio-project` | Portable project metadata (`studio.json`), source inventory and revisions, project lifecycle and the new-project template |
+| `crates/studio-presets` | GPUI-free style presets: schema, tokens, precedence, package import/export, CSS token import, bundled presets |
+| `crates/studio-engine` | The engine: controller, journals, edit transactions, the engine thread, build/preview/audio/export services, timing, the agent workflow, tool broker and provider registry |
+| `crates/studio-bootstrap` | Process supervision: tracked children, process trees, job objects and process groups, escape scans |
+| `crates/studio-sdk` | Managed SDK manifests, download, install, doctor, release manifests, and the `studio_setup` binary |
+| `crates/studio-harness` | Agent drivers (ACP, Claude stream-json, Codex app-server), adapter discovery, detection and install |
+| `crates/studio-proto` | Identities shared by the engine and the UI: `SessionId`, `CommandId`, `AppTheme` |
+| `crates/studio-theme` | Colour tokens, metrics, type and shadows of the Studio chrome |
+| `crates/studio-ui` | The component kit, the shell, the timeline, the agent panel, the review window and the parity tests |
+| `crates/studio-markdown` | UI-free block markdown parsing with incremental reparse for streamed text |
+| `crates/studio-test-support` | Test-only helpers shared by the crates' tests (dev-dependency only) |
 
-The renderer bridge belongs with fframes because generated projects depend on it. The GPUI workspace uses the core libraries through their normal workspace/path dependencies where required, and pins one coherent GPUI revision. The root workspace must explicitly support the nested workspace arrangement; no GPUI dependencies should leak into existing core/CLI builds.
+Two crates live in the core fframes workspace because generated projects depend on them: [`fframes-studio-protocol`](../../fframes-studio-protocol) (the preview and export protocol between the app and a project worker) and [`fframes-studio-runtime`](../../fframes-studio-runtime) (the worker entry point a project links). No GPUI dependency reaches the core workspace.
+
+### Engine commands, events and session lifetimes
+
+The window talks to the engine through [`EngineHandle`](../../desktop/crates/studio-engine/src/engine/handle.rs). A [`Command`](../../desktop/crates/studio-engine/src/engine/backend.rs) (create, open, import, refresh, checkpoint, build, close, SDK and preset operations, timeline edits) goes onto the engine thread, which runs one job at a time in the order sent and answers each with exactly one `EngineEvent::CommandFinished`. That event carries the `CommandId`, the result and a fresh `Presentation` taken right after the command. `EngineHandle::refresh` answers with `Refreshed`, a fresh `Presentation`. The preview coordinator hands what a build reported (compiled, failed or ready) to `EngineHandle::preview_news`; the engine answers with `PreviewGated`, which says whether the open project, in its current state, lets the ready preview be installed. A monitor thread reports what no command asked about: `SourceChanged` when the open project's files change on disk, and `CleanupProblem` when background teardown fails. An open agent workflow reports a published snapshot with `WorkflowChanged`.
+
+A `SessionId` ([`studio-proto`](../../desktop/crates/studio-proto/src/lib.rs)) names one opened project from open until close or replacement; reopening the folder that is already open keeps it. Every session-scoped event carries it, and the window drops events from a session it has left, so a closed project can never change the view. `CommandFinished` is never filtered: it is what moves the window to the session its presentation shows. The agent workflow of a session is opened with a serial and stamped with the same session.
+
+The UI never locks the backend or a controller. The single synchronous exception is the install fence ([`engine/fence.rs`](../../desktop/crates/studio-engine/src/engine/fence.rs)): `EngineHandle::with_install_fence` takes the controller's guard only when it is free and no source scan is pending, and otherwise defers. `presentation_verdict` decides whether a presentation that arrives while a preview is being prepared replaces, cancels or is older than what the window knows.
+
+The project session (`SessionId`) is unrelated to the stored agent conversation sessions described in [section 4](#stored-conversation-sessions).
 
 ## 3. Project format and authority
 
@@ -100,122 +111,117 @@ my-video/
   Cargo.lock
   src/
     lib.rs                        Video and scene registration
-    main.rs                       normal fframes CLI
-    scenes/intro.rs                agent-editable scene implementation
-    bin/studio_worker.rs           generated runtime bridge entry
+    video.rs                      template video
+    main.rs                       normal fframes CLI, reads timeline.json
+    bin/studio_worker.rs          generated runtime bridge entry
   media/                          copied imports and embedded fonts
   style/
     tokens.json                   resolved preset values
     overrides.json                user-owned overrides
     guide.md                      design and motion instructions
-    references/                   optional visual examples
+  timeline.json                   timing document: play order, trims, splits
   studio.json                     portable app metadata and SDK pin
   AGENTS.md                       generated project guidance
   .fframes/
     context/                      task packets, ignored
-    cache/                        derived indices/thumbnails, ignored
+    cache/                        derived data and staged timing writes, ignored
 ```
 
-App data outside the project stores managed SDKs, adapter installs, active draft workspaces, session journals and revision objects. Authentication credentials belong to provider-managed storage or OS credential facilities, not portable project files.
+The template is in [`desktop/crates/studio-project/templates/`](../../desktop/crates/studio-project/templates) and is written by [`lifecycle.rs`](../../desktop/crates/studio-project/src/lifecycle.rs).
+
+App data outside the project stores adapter installs, the agent draft, stored agent sessions, journals, build copies and revision objects ([`app_paths.rs`](../../desktop/crates/studio-engine/src/app_paths.rs)); managed SDKs install under `~/.fframes/sdk` ([`sdk_setup.rs`](../../desktop/crates/studio-engine/src/sdk_setup.rs)). Authentication credentials belong to the providers' own storage, never to project files or Studio settings.
 
 | Data                                                | Authority                                                           |
 | --------------------------------------------------- | ------------------------------------------------------------------- |
-| Scene layout, animation, timing and audio placement | Rust source plus any explicit runtime configuration it reads        |
+| Scene layout, animation and audio placement         | Rust source plus any explicit runtime configuration it reads        |
+| Play order, trims and splits                        | `timeline.json`, applied by the worker at run time                  |
 | Active preset and local overrides                   | Style files, versioned with the project                             |
 | Scene/object editor identities and source anchors   | Explicit source registration plus a revision-specific derived index |
 | Timeline durations, overlaps and track positions    | Compiled renderer output                                            |
-| Session transcript and build state                  | Local app journal/database                                          |
+| Agent conversations                                 | App-local session store (`conversation.jsonl` per session)          |
+| Task history and build state                        | Local app journal/database                                          |
 | Thumbnails, bounds and search index                 | Disposable revision-keyed caches                                    |
-
-studio.json records project/schema ID, SDK release, entry target, preset identity/hash and display metadata. It must not invent an independent editable copy of scene durations that disagrees with Rust. An old project without editor annotations can still open with project/scene/range prompts; it should report that element selection is unavailable.
 
 ### Implemented portable foundation contracts
 
-The GPUI-free [studio-project models](../../desktop/crates/studio-project/src/lib.rs) own portable metadata, validated relative paths and source identity. [Manifest](../../desktop/crates/studio-project/src/manifest.rs) defines `studio.json` version 1, including stable project identity, display metadata, an exact SDK compatibility digest, explicit Cargo manifest/package/worker target, asset references and instruction version. Optional canvas hints are informational; Rust remains authoritative. Parsing is read-only and checks the version before constructing typed state. Unknown versions never become writable manifests; no migrations are registered yet. Future migrations must preserve the original first.
+[`studio-project`](../../desktop/crates/studio-project/src/lib.rs) owns portable metadata, validated relative paths and source identity. [`manifest.rs`](../../desktop/crates/studio-project/src/manifest.rs) defines `studio.json`: stable project identity, display metadata, the exact SDK compatibility digest, the Cargo manifest/package/worker target, asset references and the generated instruction version. Parsing is read-only and checks the schema version and the instruction version first. A project of an earlier version is refused with "made by an older Studio … The project is left as it is and cannot be opened"; a project of a later version asks to update Studio. Nothing migrates, repairs or rewrites it.
 
-[Source inventory](../../desktop/crates/studio-project/src/revision.rs) hashes sorted UTF-8 relative names, explicit file kinds and streamed content digests. It includes unknown durable files as well as Rust, Cargo, media, guidance and style files. Only root `.git`, root `target`, `.fframes/context` and `.fframes/cache` are excluded. Nested folders named `frames` or `target` remain source. Declared assets and Cargo entries cannot live in excluded trees. Links, special files and nonportable names return corrective errors. Unix file opens use held directory descriptors and no-follow opens for every descendant component. Windows rejects reparse points and checks components before and after opening; interactive platform qualification remains open.
+[Source inventory](../../desktop/crates/studio-project/src/revision.rs) hashes sorted UTF-8 relative names, explicit file kinds, executable status and streamed content digests. It includes unknown durable files as well as Rust, Cargo, media, guidance, style and timing files. Only root `.git`, root `target`, `.fframes/context` and `.fframes/cache` are excluded. Links, special files and nonportable names return corrective errors. Unix opens use held directory descriptors and no-follow opens for every component; Windows rejects reparse points and checks components before and after opening. A checkpoint inventory of an earlier format is refused, not read.
 
-Inventory version 1 also protects executable status, measured from the same opened file as its bytes. Readers verify both historical unversioned hashes without rewriting immutable manifests. Byte-only legacy hashes cannot authorize executable restoration or prove an unchanged relocated source with executable files; their recorded bytes remain exportable.
+[`ProjectState`](../../desktop/crates/studio-engine/src/state.rs) belongs to one open-project controller. Current source, accepted checkpoint, candidate and successful build are separate identities. Jobs move from queued to running and then succeeded, failed or interrupted; a cancellation request rejects completion installation until the interruption is recorded. Every completion carries project, session, base source, operation and generation; source edits advance the generation and interrupt obsolete work.
 
-[ProjectState](../../desktop/crates/studio-engine/src/state.rs) belongs to one open-project controller. A fresh `OpenSession` identifies each open, including reopen. Current source, accepted checkpoint, immutable proposed candidate and successful build are separate identities. A checkpoint records saved bytes, not compilation success. Jobs move from queued to running and then succeeded, failed or interrupted; cancellation requests reject completion installation until interruption is recorded.
+The [`Controller`](../../desktop/crates/studio-engine/src/controller.rs) implements checkpoints, per-project ownership locks, source reconciliation and interrupted recovery. A synced append-only [journal](../../desktop/crates/studio-engine/src/journal.rs) is the lifecycle authority; SQLite ([`store.rs`](../../desktop/crates/studio-engine/src/store.rs)) holds its projection, recents and SDK selection. Immutable manifests reference verified content-addressed objects outside the source. Recovery preserves external edits and accepted and draft identities; **Restore as copy** exports an independent folder instead of replacing the checkout. A database or journal written by a newer Studio opens for read-only diagnostics only ([`diagnostics.rs`](../../desktop/crates/studio-engine/src/diagnostics.rs)); one written by an older Studio is refused and left byte for byte.
 
-Every completion carries project, session, base source, operation and generation. The filesystem owner must supply a freshly reconciled inventory immediately before installation and serialize source mutation with installation. A scan alone is not an atomic filesystem snapshot. Source edits advance generation, clear candidate/build identities, retain the accepted checkpoint and interrupt obsolete work. Even an edit followed by restoring identical bytes invalidates earlier operations once reconciled.
+[Build materialization](../../desktop/crates/studio-engine/src/build_materialization.rs) binds captured Cargo files to the exact managed SDK in a separate tree, with isolated config, lock, target and build cwd. Unsupported external dependencies or configuration produce diagnostics.
 
-[Controller](../../desktop/crates/studio-engine/src/controller.rs) implements checkpoint/draft jobs, per-project ownership locks, source reconciliation and interrupted recovery. A synced append-only intent/commit journal is the lifecycle authority; SQLite stores its transactional projection, recents and SDK selection. Immutable manifests reference streamed, verified content-addressed objects outside source. Truncated journal tails are preserved separately; interior corruption stops recovery. Recovery preserves external edits and accepted/draft identities. Explicit restore exports an independent copy instead of replacing the current checkout. Agent validation/promotion/Undo remain later work.
+Project import preserves pre-existing dirty files and Git history. Checkpoints use app-owned snapshots; Undo never resets a user's checkout.
 
-Failed scans and identity mismatches invalidate derived state and interrupt old operations before history writes, so repairing identical source cannot resurrect a stale result. Recovery inventories update source only after project identity matches and never count as successful reconciliation. Startup/capture failures settle queued or running work without changing accepted. A committed record reaches memory before SQLite projection; write failures report recovery requirements. The shell exports the selected immutable checkpoint independently of current-source validation. Root and scoped process managers serialize spawn/publication, cleanup and terminal shutdown through a shared lifecycle lock; scoped cleanup preserves unrelated children and root ownership of cleanup survivors.
+### Timing document and revision
 
-[Lifecycle](../../desktop/crates/studio-project/src/lifecycle.rs) creates a portable ordinary Rust crate or imports by publishing a sidecar without rewriting source/Git/instructions. [Build materialization](../../desktop/crates/studio-engine/src/build_materialization.rs) binds captured Cargo files to the exact managed SDK in a separate tree, with isolated config/lock/target and workspace-root build cwd. Unsupported external dependencies/configuration produce diagnostics. The [native shell](../../desktop/crates/studio-ui/src/shell/mod.rs) owns a serialized background backend and bounded immutable presentation; filesystem notifications are hints, with revision checks before completion. Terminal process-owner shutdown rejects late background spawns. Project/asset/recovery/SDK controls are functional; preview, timeline, agent editing and preset regions remain honest empty states.
+`timeline.json` is a `fframes::TimingDoc` (see the root [`AGENTS.md`](../../AGENTS.md), section "Scenes"). The engine mirrors the format without linking fframes ([`timing/doc.rs`](../../desktop/crates/studio-engine/src/timing/doc.rs)); the worker checks trims against scene lengths when it applies a document.
 
-For desktop-created templates, prefer runtime media loading for large/changing files and runtime style loading in the video constructor. Existing include_media_dir! projects remain supported, with an explicit rebuild after embedded assets change.
+The inventory classifies the file as `FileKind::Timing`. It is part of the source revision but not of the build revision (`SourceInventory::build_revision`), so a timing-only change keeps the build, its preview and its export binding.
 
-Project import preserves pre-existing dirty files and Git history. Desktop-managed checkpoints should use app-owned snapshots or a private history store; Undo must not use a blanket git reset --hard on a user's checkout.
+The open project owns a timing session on its controller ([`timing/mod.rs`](../../desktop/crates/studio-engine/src/timing/mod.rs), [`controller/timing.rs`](../../desktop/crates/studio-engine/src/controller/timing.rs)): split, trim and move, a drag bracketed as one gesture, and snapshot undo and redo. `TimelineSnapshot::generation` changes with every document the preview should play, and the preview coordinator lays the displayed worker out again without a rebuild. The end of a gesture writes the file once ([`timing/file.rs`](../../desktop/crates/studio-engine/src/timing/file.rs)): the new bytes are staged in `.fframes/cache/timing/`, the live file must still be the one the session loaded or wrote, and both moves are atomic no-replace renames; an interrupted write is adopted on the next open. A timing edit writes no journal record. It is refused during an agent task, while a publication is blocked, while an earlier mutation is unresolved and until a preview of the current build has reported its scenes. An outside change or an agent edit that publishes a new document reloads it and clears the history with a notice. History lasts for the project session. Export plays the session's document.
 
 ## 4. Agent integration and handoff
 
 ### App-owned interface
 
-Each driver exposes discovery, authentication status, session creation/restoration, prompt submission, cancellation, supported options and an event stream. Normalize events such as:
+Every driver implements [`AgentDriver`](../../desktop/crates/studio-harness/src/driver/api.rs): session start and restore, prompt submission with images and files where the wire allows, cancellation, permission and question replies, options, and one bounded event queue ([`events.rs`](../../desktop/crates/studio-harness/src/driver/events.rs)). Each prompted turn ends with exactly one `PromptFinished`. `DriverCapabilities` states what a wire can do: deterministic turn ends, stopping a turn in place, steering (`None`, `StepBoundary`, `TurnBoundary`), images and files. Text is redacted before it reaches events, transcripts or diagnostics ([`redact.rs`](../../desktop/crates/studio-harness/src/driver/redact.rs)).
 
-```text
-SessionReady
-MessageDelta
-ToolStarted / ToolUpdated / ToolFinished
-PermissionRequested / InputRequested
-ConfigUpdated
-PromptFinished { reason }
-AgentActivityChanged
-ProcessExited / ProtocolError
-```
+### Agent wires
 
-Keep provider ID, session ID, task ID and sequence numbers on events. Retain raw diagnostic detail locally with credentials redacted. Transcript rendering should be virtualized and batched so token streaming cannot stall video playback.
+`AgentWire` selects the implementation:
 
-ACP v1 is the initial generic driver. Prefer the official Rust SDK for wire types/framing and own the subprocess supervisor separately. Native Claude/Codex/Pi drivers are optional implementations behind the same interface, activated when provider qualification shows a concrete missing behavior.
+- `ClaudeStreamJson`: Claude Code over its `--print` stream-json control protocol, one `claude` process per session ([`runtime/claude/`](../../desktop/crates/studio-harness/src/driver/runtime/claude/mod.rs)).
+- `CodexAppServer`: Codex over `codex app-server` JSON-RPC, one process and thread per session ([`runtime/codex/`](../../desktop/crates/studio-harness/src/driver/runtime/codex/mod.rs)).
+- `Acp`: Agent Client Protocol v1 on the official Rust SDK ([`runtime/mod.rs`](../../desktop/crates/studio-harness/src/driver/runtime/mod.rs)), for every other agent, including Pi and Antigravity.
+
+The wire is part of the saved adapter description and is chosen with the **Protocol** control on the Agent settings page. The four built-in profiles in [`provider_profiles.rs`](../../desktop/crates/studio-engine/src/providers/provider_profiles.rs) start with the ACP adapter of each agent; choosing the Claude Code or Codex protocol and pointing the executable at the `claude` or `codex` CLI uses the native wire. Discovery is explicit for all three wires: resolution never searches the global `PATH` implicitly ([`discovery.rs`](../../desktop/crates/studio-harness/src/discovery.rs)), and detection only checks that files exist ([`detect.rs`](../../desktop/crates/studio-harness/src/detect.rs)).
 
 ### Capability-driven behavior
 
-Display model/config options advertised by the agent. Use image content only when supported, embedded resources only when supported, and session restoration only when supported. For scoped tasks, negotiated image-capable agents receive bounded PNG blocks; otherwise they receive text artifact references with a visible limitation. The native review panel can still display locally decoded, bounded thumbnails independent of ACP image support.
-
-The app may initially decline optional ACP filesystem/terminal client capabilities and let the provider use its own workspace tools, as Zeron does. Add host-mediated operations only when they provide a tested benefit; implement path checks, output limits, cancellation and process ownership before advertising them.
+Studio shows only the model and mode options an agent advertises, and the slash commands it lists. Images go to an agent only when its wire, and for ACP its negotiated capability, accepts them; otherwise scoped tasks send text artifact references with a visible limitation. Session restoration is used only where the wire supports it.
 
 ### Session and writer ownership
 
-Allow one active agent writer per project. Use a stable, app-owned draft workspace path for a persistent provider session, so session restoration does not silently change its working directory. Before a new task, reconcile that workspace to the accepted revision and deliver a context refresh. If the provider cannot safely refresh/reset context, start a new session.
+One active agent writer per project. Each project has one stable draft working copy in app data ([`agent_task/draft.rs`](../../desktop/crates/studio-engine/src/agent_task/draft.rs)), so a restored provider session never changes its working directory. Before a new task the draft is reconciled to the accepted revision.
 
-An agent switch is a controlled handoff:
+An agent switch is a controlled handoff, owned by the workflow actor ([`actor/session.rs`](../../desktop/crates/studio-engine/src/agent/actor/session.rs)):
 
-1. Cancel the old task or wait for its explicit completion; reap owned processes and close pending requests.
-2. Choose whether the new agent continues the captured draft or starts from the accepted revision. Preserve both versions until the user chooses.
-3. Create a session for the new provider with the same project instructions, selection, style, current source, previous outcome and open problems.
-4. Record that conversation state/model-specific memory has not transferred. Store the outgoing session for later access.
+1. Retain the queued messages, stop the old writer and verify that its process scope is torn down.
+2. Let any running publication or Undo settle, then let the user choose the retained draft or the accepted source. The choice is rechecked before the new writer starts.
+3. Start the new provider with the project instructions, selection, style, current source, previous outcome and open problems.
+4. State that conversation memory did not transfer.
 
-Queued follow-up prompts wait for the current writer. Mid-turn steering is an optional provider capability, not the baseline for editing transactions.
+### Agent workflow
 
-### Implemented native workflow (M3 Stage 4, local development)
+[`AgentWorkflow`](../../desktop/crates/studio-engine/src/agent.rs) is the per-project owner of a task's lifecycle and has no GPUI types. Its actor thread ([`actor/mod.rs`](../../desktop/crates/studio-engine/src/agent/actor/mod.rs)) serializes every command, pumps the live driver, owns the task state machine and publishes immutable `WorkflowSnapshot`s whose rows are `Arc`-shared. Blocking work (adapter probes, the quiesce → capture → validate pipeline, publication, Undo) runs on job threads ([`jobs.rs`](../../desktop/crates/studio-engine/src/agent/jobs.rs)) and reports back with one message; Stop reaches them through the task's gate and process scopes, so it works in every state. The shell hosts the workflow through [`providers/host.rs`](../../desktop/crates/studio-engine/src/providers/host.rs), whose inbox is the only channel from workflow threads to the UI thread.
 
-`AgentWorkflow` (`studio_engine::agent`, GPUI-free) is the per-project owner of the task lifecycle above; the shell hosts it through `studio_engine::providers::host`. The shell's `Backend` holds the `Controller` in an `Arc<Mutex<_>>` shared with the workflow, which locks it only for short engine calls and for capture and publication on its own job threads; the UI thread only `try_lock`s it. Everything blocking (log replay, adapter RPC, hashing, compile, inspection, history reads) runs on the actor, job or open threads. The workflow publishes immutable `Arc<WorkflowSnapshot>`s (rows are `Arc`-shared so a view diffs by pointer) and wakes the frame loop through an inbox; commands only enqueue. The panel (`crates/studio-ui/src/agent/mod.rs`) renders snapshots with `gpui::list` (visible rows plus a bounded overscan); `agent/transcript/rows.rs` turns a snapshot into list operations (in-place re-measure for updated cards and streaming text, splices for appended, evicted and paged-in rows) and composes paged history under the same 400-row / 4 MiB bound the workflow itself keeps; `agent/transcript/scroll.rs` re-pins the list to new rows while the reader is within 70 px of the end; `controls.rs` derives which controls exist per state, provider-owned setup guidance, reply correlation and key routing as pure functions.
+A committed revision reaches playback through a promotion handoff: the workflow queues it, the UI thread adopts it at the latest playhead with a fresh audio epoch, and the accepted source is labelled as awaiting its preview until the matching preview is installed. Nothing that owns a process is reaped on the UI thread; superseded previews, build scopes and workers go to the [teardown owner](../../desktop/crates/studio-engine/src/services/teardown.rs).
 
-A commit reaches playback through `PreviewHandoff`: the workflow thread queues `PromotionHandoff { promotion, staged }`, the UI thread calls `StudioShell::adopt_promotion`, answers with `report_handoff`, and reports `preview_displayed` when the matching preview is installed. The accepted source is labelled as awaiting its preview until then; only committed engine events change acceptance. Nothing that owns a process is ever reaped on the UI thread: superseded, rejected, stale or cancelled staged previews, build scopes and displayed workers go to the background `teardown` owner (a bounded, non-blocking hand-off; the coordinator fences the build under its mailbox lock first, so a result from a build being torn down can never be applied, and problems come back as reports the frame loop shows). The install commit holds the controller's non-blocking guard from the final `can_install` check through the coordinator commit and the preview-state install, so a workflow publication or a reconcile cannot interleave (a busy controller defers the install), and a command's fresh presentation cancels only preparation that is obsolete under the state it returns: the preparation adopted for the matching current promotion survives a racing Refresh, and a presentation older than what the shell knows replaces nothing. Project open, close and replace close the workflow first; the shell never starts an agent. Authenticated-provider behavior (writer process-group model, repair with a real adapter, MCP/CLI support, restart recovery with a real account) is **not** qualified; see [phase-zero-feasibility.md](phase-zero-feasibility.md#qualification-history) for the ledger and its limits.
+The panel ([`studio-ui/src/agent/`](../../desktop/crates/studio-ui/src/agent/mod.rs)) renders snapshots in a virtualized `gpui::list`. [`transcript/rows.rs`](../../desktop/crates/studio-ui/src/agent/transcript/rows.rs) turns a snapshot into list operations and keeps the panel's retention inside 400 rows and 4 MiB; [`controls.rs`](../../desktop/crates/studio-ui/src/agent/controls.rs) decides which controls exist in which state as pure, tested functions. Agent text is rendered as markdown from [`studio-markdown`](../../desktop/crates/studio-markdown/src/lib.rs) with paint-only syntax colours, and links go through a policy that never launches a file ([`markdown/links.rs`](../../desktop/crates/studio-ui/src/agent/markdown/links.rs)).
 
-### Implemented M6 provider profiles, handoff and session continuity (development only)
+The composer ([`composer/`](../../desktop/crates/studio-ui/src/agent/composer/mod.rs)) owns only what the user types; every attachment check runs in the engine ([`agent/attachments.rs`](../../desktop/crates/studio-engine/src/agent/attachments.rs)) and every composer operation is checked again by the actor ([`composer_ops.rs`](../../desktop/crates/studio-engine/src/agent/composer_ops.rs)).
 
-`studio_engine::providers::host` loads the versioned, app-local `provider-registry.json` (migrating the legacy adapter config when needed); the registry stores profile definitions and the selected profile, never credential values. Built-in Claude, Codex, Pi and Antigravity entries remain experimental. The picker and the Agent settings page report readiness separately from qualification and do not start an adapter because a project opens or Detect agents runs; an explicit Select (in the picker or a Detect row) or a successful Install adapter saves the adapter and then starts at most one connection test, the Check adapter probe, and only while no task runs. The plain Save never tests. Registry schema version 2 adds an optional `cli_executable` per profile (version 1 files are upgraded on read). Detect agents (`studio-harness::detect`) only checks file existence and never launches; launching still uses only the saved absolute path or the managed adapters directory. The existing custom/legacy adapter path remains available.
+### Stored conversation sessions
 
-Handoff is owned by the existing per-project workflow actor. It retains queued briefs while the outgoing writer is stopped, closes old capabilities and verifies process-scope teardown before capturing choices. Any active publication/Undo settles before the accepted/source/draft identity is offered; the actor rechecks that identity before it creates an incoming writer. The user explicitly chooses the retained draft or accepted source, and the incoming task receives bounded context rather than an implied transfer of native conversation memory. The session manifest is app-local and versioned, stores the opaque driver session ID separately from redacted presentation, and is resumable only when project/draft identity, source/accepted revisions, and the resolved executable/argument/auth-name launch digest still match. Unsupported, changed or unsafe records remain retained but cannot be resumed; the panel offers a fresh session or dismissal. These code paths have fixture and UI-contract coverage, not authentic-provider qualification.
+Each project keeps its agent conversations in app data under `agent/sessions/<id>/` with `manifest.json`, `meta.json` and `conversation.jsonl`, and a `current` pointer ([`session_store/layout.rs`](../../desktop/crates/studio-engine/src/agent/session_store/layout.rs)). Row ids stay unique across a project's sessions. The History tab lists and searches them ([`session_store/history.rs`](../../desktop/crates/studio-engine/src/agent/session_store/history.rs), [`studio-ui/src/agent/history/`](../../desktop/crates/studio-ui/src/agent/history/mod.rs)). A manifest is resumable only when the project, draft, source and accepted revisions and the launch identity ([`containment.rs`](../../desktop/crates/studio-engine/src/containment.rs)) still match, and the configured provider can resume it ([`actor/session.rs`](../../desktop/crates/studio-engine/src/agent/actor/session.rs)); otherwise it is not resumed and the panel says why. A manifest or registry made by an older Studio is refused and left as it is; files of the earlier single-session layout are ignored.
 
-The picker shows, per provider, the writer containment its last launch verified in this run of the studio (kept in memory, never stored) and makes no recommendation. Containment is checked by the process supervisor for the adapter it just spawned (`TrackedChild::containment`: a job object confirmed by `IsProcessInJob` before the suspended adapter runs on Windows; an owned process group with a pinned leader and an escape scan on Linux and macOS); the driver reports it (`AcpDriver::ownership`) and the capture gate only lets a contained writer's candidate through, after demoting it for any escape or unverifiable scan observed during the task. No qualification ledger is read. The repository's [last M6 ledger](https://github.com/khanhthanhdev/fframes-desktop/blob/037b391e80690e85ca8329d14129dc97b746eadc/desktop/qualification/m6-results.json), removed with the qualification harness, ranked all four built-ins as insufficient evidence. M6 CLI-backend export does not implement the later M7 native export UI or release packaging.
+The provider registry (`provider-registry.json`) stores profiles and the selected profile, never credential values; only the names of sign-in environment variables are kept.
 
-### Implemented M4 presets and scoped editing (local development, Linux x64)
+### Writer containment
 
-- **Presets.** `desktop/crates/studio-presets` (GPUI-free) owns schema v1, typed tokens and aliases, preset → project → scene precedence, canonical hashes, bounded no-follow directory import/export with no-clobber publication, an allowlisted CSS custom-property importer with a per-declaration report, and three bundled presets (`editorial`, `pulse`, `quiet-motion`).
-- **Project snapshot.** Applying a preset is a source-fenced durable file-set mutation (`Controller::apply_preset`), recorded as `TransactionKind::Preset`, never as an agent task or in task history. It writes `style/tokens.json` (resolved), `style/overrides.json` (user-owned, preserved on reapply; only an explicit reset clears it), `style/guide.md`, `style/preset.json` and flat `media/preset-*` fonts/images, because `MediaDirectory::read_folder` reads only top-level files. Mutation is enabled on Linux, macOS and Windows when the project folder's filesystem proves no-clobber publication (`probe_no_clobber`); otherwise the controls show the reason and stay disabled.
-- **Runtime.** `fframes::Styles` (feature `styles`) parses the resolved JSON once in the video constructor; generated projects load it with `include_str!`. The generated scaffold and two-preset relocation render pass on a locally assembled managed SDK built from this checkout without an overlay; this is development evidence, not a published SDK release.
-- **Scoped tasks.** The timeline selection (whole project, scene instance, half-open frame range) is frozen into the task context with its project/source/preview identity, overlap and boundary frames, active style snapshot and bounded exact scene-name source candidates. A queued scope whose displayed preview changes is marked stale and refused, never remapped. Before evidence is rendered from the frozen base revision and after evidence from the validated candidate as app-owned artifacts released with the task. Negotiated ACP image capability receives a bounded image block for each prompt artifact; unsupported capability falls back to task-owned artifact ids, hashes and frame indexes in text, never inline base64. The native review panel separately decodes at most six task-owned PNGs / 8 MiB of encoded data into small before/after thumbnails; decoded handles stay in presentation-only state, outside serialized snapshots. Candidate validation adds the selected and adjacent boundary frames and still broadens for shared Rust/Cargo/style/media or uncertain changes.
-- **Evidence limits.** Development gates ran on native Linux/Xvfb with the scripted ACP peer; they do not qualify a real provider, physical display/audio, Windows or macOS. The evidence preview count is aggregate-only telemetry; no artifact ids, paths or pixels are logged. See the [last M4 ledger](https://github.com/khanhthanhdev/fframes-desktop/blob/037b391e80690e85ca8329d14129dc97b746eadc/desktop/qualification/m4-results.json).
+A settings value never qualifies a writer. The process supervisor verifies containment for the adapter it just spawned ([`studio-bootstrap` process](../../desktop/crates/studio-bootstrap/src/process/mod.rs)): on Windows the adapter starts suspended in a job object that refuses breakaway and `IsProcessInJob` must confirm it before it runs; on Linux and macOS it leads its own process group with a pinned leader, and an escape scan (`/proc`, or `proc_listpids`) finds descendants that leave it. Observations during a task can only demote the result, and the capture gate lets only a contained writer's candidate through ([`containment.rs`](../../desktop/crates/studio-engine/src/containment.rs)). Work a pre-existing service does on the adapter's behalf (COM, Task Scheduler, `systemd-run`, D-Bus activation, `launchd`) is outside the job or group and is not observed. A test harness may inject an ownership; that is labelled as injected wherever it is shown and exists only in debug builds.
+
+### Scoped tasks
+
+The timeline selection (whole project, scene instance, half-open frame range) or a canvas selection is frozen into the task context with its project, source and preview identity, style snapshot and bounded scene source candidates ([`task_scope.rs`](../../desktop/crates/studio-engine/src/task_scope.rs)). A queued scope whose preview changed is refused, never remapped. Before and after evidence frames are task-owned artifacts; the review panel decodes at most six of them into thumbnails ([`evidence_preview.rs`](../../desktop/crates/studio-engine/src/agent/evidence_preview.rs); the cap is `MAX_IMAGES` in `EvidenceImageCache` in [`agent.rs`](../../desktop/crates/studio-engine/src/agent.rs)).
 
 ## 5. The edit transaction
 
-Agent edits are draft changes until validated. The default requested edit can apply automatically after validation, with Undo and comparison available; an optional review setting can require Apply. Permission to edit a project should not create a separate confirmation for every ordinary task.
+Agent edits are draft changes until validated. The default review policy applies a validated candidate automatically, with Undo and review available; the manual policy requires Apply. The policy is app-local per project.
 
 ```mermaid
 stateDiagram-v2
@@ -230,29 +236,27 @@ stateDiagram-v2
   Accepted --> [*]
   Building --> RepairNeeded: compile failure
   Inspecting --> RepairNeeded: validation failure
-  RepairNeeded --> Editing: bounded repair attempt
-  RepairNeeded --> Failed: budget or retry limit
+  RepairNeeded --> Editing: one automatic repair
+  RepairNeeded --> Failed: repair limit
   Editing --> Cancelled
   Building --> Cancelled
   Inspecting --> Cancelled
   CandidateReady --> Conflict: accepted base changed
 ```
 
-The task freezes a base revision, assets/style revision and user selection. After the agent stops writing, take an immutable candidate snapshot before building it. Do not compile/render changing source while a task is still in progress unless explicitly labeling it as an unvalidated live draft.
+The task freezes a base revision, style revision and user selection. After the writer is quiescent, the draft is captured twice into content-addressed objects and any difference fails the capture ([`candidate_validation/`](../../desktop/crates/studio-engine/src/candidate_validation/mod.rs)), so a changing tree is never validated.
 
-Validate compilation, scene/timeline availability, critical diagnostics and representative frames. Inspect the selected range and neighboring boundaries; when shared functions change, broaden coverage to affected scenes. Audio changes require appropriate loudness/placement checks. The app can send bounded repair tasks with structured compiler/inspection output; expose the retry count and allow Stop.
+Validation compiles through the shared build service, probes a worker with its own process scope and produces an immutable `ValidationReport`: build identity, diagnostics, coverage of the selected range and its boundaries, representative frames and prepared audio. A cached compiler success alone never passes. At most one automatic repair turn runs.
 
-Promotion checks that the accepted base still matches the task's base. Apply a journaled file set with content-hash conflict checks; if unrelated edits occurred, perform a safe merge or show a conflict. Multi-file promotion is a recoverable transaction, not a claim that ordinary filesystem writes are globally atomic.
-
-Associate the revision with its prompt, changed files, preset hash, SDK version, build artifact and validation report. Export always names a specific accepted revision; background prompts do not change an active export.
+Before Apply, the reviewer can read every changed file and keep a subset ([`controller/review.rs`](../../desktop/crates/studio-engine/src/controller/review.rs)); the subset is validated again. Publication is a journaled file-set transaction ([`edit_transaction/`](../../desktop/crates/studio-engine/src/edit_transaction/mod.rs)) with before and after hashes, staged bytes and atomic no-replace renames; where the filesystem cannot prove no-replace publication, the Apply gate is blocked. An outside writer's race keeps every variant and stops as a conflict. Undo applies the guarded inverse of one accepted revision and is validated the same way. Reverting one file after Apply (`AgentWorkflow::revert_path`) builds an undo candidate for that file alone; it is validated the same way and refused when the file changed since or was already reverted.
 
 ## 6. Selection and source retrieval
 
 ### Start with scopes that already have evidence
 
-The first version supports whole-project, scene and absolute time-range selection. Convert UI seconds into the current video's integer frame domain and use half-open ranges [start, end). Show overlapping active scenes and let the user choose one or both rather than assuming a single scene at a crossfade.
+Studio supports whole-project, scene, absolute time-range and canvas selection. UI seconds convert into the video's integer frame domain with half-open ranges [start, end). Overlapping active scenes are shown so the user can pick one or both.
 
-A timeline selection is an editing scope, not a guarantee that only those frames can change. Editing a shared animation/helper or retiming a scene can affect later frames. Context retrieval and validation must account for those dependencies.
+A timeline selection is an editing scope, not a guarantee that only those frames can change. Editing a shared helper or retiming a scene can affect later frames, so validation broadens for shared Rust, Cargo, style or media changes.
 
 ### Stable identities for element selection
 
@@ -262,32 +266,27 @@ The opt-in editor contract is implemented by `Video::editor_instance_key`,
 printable, bounded author keys. Apply `.with_source_anchor("src/lib.rs", "render_frame",
 Some("unique-marker"))` only for an explicit source hint, and `.with_style_tokens([...])` only
 for registered token bindings. `render_id()` produces a reversible SVG ID; annotate a rendered
-group with it. The generated starter does this once in `StudioVideo::new` and reads resolved
-style fields in `render_frame`. Content, typography, paint order and position do not define the
-identity. Repeated instances require distinct repeat keys. An absent anchor is normal and never
-implies that the application knows the source span.
+group with it. Content, typography, paint order and position do not define the identity.
+Repeated instances require distinct repeat keys. An absent anchor is normal and never implies
+that the application knows the source span.
 
 The renderer converts these IDs into an editor index plus frame-specific object geometry. The
-scaled-frame response carries metadata atomically with the image: its envelope supplies the
-complete `PreviewIdentity` and request ID; metadata names the frame/seek, full video-pixel
-dimensions, identity-index and geometry digests, parent, optional anchor/token bindings, bounds,
-paint order and `ExactBounds` / `ApproximateBounds` / `Unsupported` support. Worker negotiation
-adds `editor_frame_v1` as an optional capability, so older M2 workers continue image/audio
-preview while exact-object selection remains unavailable. The current contract caps each frame
-at 4,096 objects and metadata at 1 MiB. Invalid or over-limit metadata disables semantic
-selection visibly instead of publishing a partial list as complete.
+scaled-frame response carries metadata atomically with the image: the complete `PreviewIdentity`
+and request ID, frame/seek, full video-pixel dimensions, identity-index and geometry digests,
+parent, optional anchor/token bindings, bounds, paint order and `ExactBounds` /
+`ApproximateBounds` / `Unsupported` support. Workers declare `editor_frame_v1` as an optional
+capability ([`preview_worker_client.rs`](../../desktop/crates/studio-engine/src/services/preview_worker_client.rs));
+a worker without it keeps image and audio preview while exact-object selection is unavailable.
+Each frame is capped at 4,096 objects and 1 MiB of metadata. Invalid or over-limit metadata
+disables semantic selection visibly instead of publishing a partial list as complete.
 
-A lexical `static_hash` remains a rendering-cache identity. It changes with markup, can be shared
-by identical subtrees and does not distinguish dynamic instances; it must never be the editor
-object ID. Automatic macro source locations are not claimed: registered anchors resolve only
-against hash-verified immutable project source and must identify a unique marker within the named
-Rust symbol.
+A lexical `static_hash` remains a rendering-cache identity and is never the editor object ID.
+Registered anchors resolve only against hash-verified immutable project source and must
+identify a unique marker within the named Rust symbol.
 
 ### Hit testing
 
-`studio-engine::CanvasViewport` maps logical pointer coordinates through fit/letterboxing, pointer-centred zoom and pan into full-resolution video pixels. It uses the same transform for image and overlay and clamps rectangle endpoints to the painted image. `hit_test` accepts only metadata for the exact displayed frame/seek/geometry digest; topmost paint order wins, while cycling exposes overlapping objects and parent groups. A selection is retained across frames only when its full semantic tuple is present under the same preview identity. New source, a stale reply, an absent object or malformed metadata clears/refuses it; it is never rebound by display name, index or nearby bounds. Click pauses at the painted frame. Shift-drag creates a clamped nonsemantic rectangle; Escape clears the object selection. Legacy/unannotated workers preserve preview, timeline and scene/range workflows with a visible selection-unavailable reason.
-
-Bounding-box selection is approximate for non-rectangular objects. A shader/video layer is selectable as a layer; an arbitrary pixel inside it is not necessarily a separately editable object. Fall back to a rectangle/time selection with a screenshot when no semantic object is available.
+[`CanvasViewport`](../../desktop/crates/studio-engine/src/canvas_selection.rs) maps pointer coordinates through fit, letterboxing, pointer-centred zoom and pan into full-resolution video pixels, with the same transform for image and overlay. `hit_test` accepts only metadata for the exact displayed frame, seek and geometry digest; topmost paint order wins, and cycling exposes overlapping objects and parent groups. A selection survives across frames only when its full semantic tuple is present under the same preview identity; it is never rebound by name, index or nearby bounds. Click pauses at the painted frame, Shift-drag creates a clamped rectangle without semantic identity, and Escape clears the selection.
 
 ### Frozen selection packet
 
@@ -318,17 +317,15 @@ Bounding-box selection is approximate for non-rectangular objects. A shader/vide
 }
 ```
 
-Frame and pixel evidence are invalidated when source/style/assets change. If metadata belongs to another generation, regenerate it or ask the user to reselect; never pass stale coordinates as an exact object identity.
+Frame and pixel evidence are invalidated when source, style or assets change. Metadata from another generation is never passed as an exact object identity.
 
 ### Retrieval strategy
 
-Begin with deterministic retrieval: IDs → source anchors → containing Rust implementation → imported helpers/tokens/assets. Use a Rust syntax index and symbol/text search to gather a small relevant context set. Add vector/semantic retrieval only if actual task data shows it improves results.
-
-For arbitrary legacy projects, type/file/text matching is a best-effort fallback. Surface uncertainty rather than pretending it is an exact source map. The agent receives retrieval results as pointers and snippets and can request full files or additional dependency context.
+Retrieval is deterministic: IDs → source anchors → containing Rust implementation → imported helpers, tokens and assets, through a bounded Rust syntax index. For projects without annotations, type, file and text matching is a best-effort fallback whose uncertainty is reported. The agent receives pointers and snippets and can request full files.
 
 ## 7. Style presets and design systems
 
-A preset is a portable, versioned directory or archive:
+A preset is a portable, versioned directory:
 
 ```text
 preset.json                      name, version, supported token schema
@@ -339,59 +336,43 @@ assets/                          reusable images/SVGs
 examples/                        reference frames and optional Rust snippets
 ```
 
-Support colors, typography, spacing, radii, stroke widths, shadows where the renderer supports them, and motion tokens such as durations, stagger and easing/spring parameters. Resolve aliases and validate cycles/types/units. Store a snapshot in each project so later preset updates do not silently alter existing videos.
+[`studio-presets`](../../desktop/crates/studio-presets/src/lib.rs) owns schema v1, typed tokens and aliases, preset → project → scene precedence, canonical hashes, bounded no-follow package import and export, the allowlisted CSS custom-property importer with a per-declaration report, and the bundled presets. CSS custom properties are an import format only; there is no CSS layout engine.
 
-CSS custom properties are an **import format**. Parse a declared subset of values from a supplied CSS token block and convert it to canonical typed JSON. This does not add a browser CSS layout/cascade engine to GPUI or fframes. Report unsupported selectors, functions, units and component rules instead of inventing an approximate interpretation. Define px/rem conversion relative to declared design dimensions/base typography; keep UI display pixels separate from video coordinates.
+Applying a preset is a source-fenced durable file-set mutation ([`controller/preset.rs`](../../desktop/crates/studio-engine/src/controller/preset.rs)) recorded as `TransactionKind::Preset`, never as an agent task. It writes the resolved tokens, keeps `style/overrides.json` unless the user resets it, and writes flat `media/preset-*` files because `MediaDirectory::read_folder` reads only top-level files ([`preset_state.rs`](../../desktop/crates/studio-engine/src/preset_state.rs)). It is enabled only where the project's filesystem proves no-clobber publication.
 
-Use precedence: preset defaults → project overrides → explicit scene/element overrides. Reapplying a preset preserves user overrides unless the user requests a reset. Store instruction text, font availability, contrast rules and examples alongside tokens; numbers alone do not describe a design system.
-
-Prefer a typed runtime Styles accessor loaded once in the video constructor. Agents use semantic names such as color.accent and typography.title rather than copying literal values throughout scenes. A token change can refresh bound values without source rewriting; hardcoded or structural design changes still require an agent task.
-
-Separate application chrome appearance from the video's preset. A pink brand video should not automatically make every Studio panel pink.
+Projects read styles through `fframes::Styles` once in the video constructor. Agents use semantic token names rather than copying literal values. Studio's own chrome theme ([`studio-theme`](../../desktop/crates/studio-theme/src/lib.rs)) is separate from any video preset.
 
 ### Guiding different agents
 
-Keep one canonical, versioned fframes instruction bundle and reference it in every task packet. Materialize provider-specific skill entry points only as needed and preserve user-written instruction files. ACP does not provide a universal skill-installation/discovery mechanism.
-
-The existing skill is a starting point, but desktop instructions should route preview/build/inspection through Studio tools and explain IDs, style bindings and draft transactions. Avoid asking the agent to start a second native preview window, install packages globally, or accept snapshot baselines without review.
+Each project carries generated `AGENTS.md` guidance from the template. Desktop instructions route preview, build and inspection through Studio tools and explain IDs, style bindings and draft transactions; they do not ask the agent to start a second preview window, install packages globally or accept snapshot baselines without review.
 
 ## 8. Preview, timeline and audio
 
-### Bootstrap and persistent preview
+### Playback pipeline
 
-For the first integration slice, Studio can build a project once and invoke its compiled CLI for timeline JSON, PNG frames, inspection and a cached draft MP4. This proves the authoring loop. It does not establish smooth interactive frame generation.
+1. **Build.** The [build service](../../desktop/crates/studio-engine/src/services/build_service.rs) compiles one artifact per build key (project, immutable build revision, SDK digest, toolchain, target, entry, features, profile, backend and the resolved compile environment). Preview, agent tools and validation share it: equal keys compile once, and cancelling one subscriber never stops another. Leased entries are never evicted.
+2. **Worker.** The project's worker runs `--preview-worker` ([`worker_project.rs`](../../desktop/crates/studio-engine/src/services/worker_project.rs)). [`WorkerClient`](../../desktop/crates/studio-engine/src/services/worker_client.rs) supervises it over bounded JSON control on standard output plus a loopback binary transport for pixels and PCM; [`PreviewWorkerClient`](../../desktop/crates/studio-engine/src/services/preview_worker_client.rs) negotiates hello, capabilities (`editor_frame_v1`, `set_timing_v1`), timeline, scaled frames, inspection and prepared audio. The protocol types are in [`fframes-studio-protocol`](../../fframes-studio-protocol).
+3. **Preparation.** The [preview coordinator](../../desktop/crates/studio-engine/src/services/preview_coordinator.rs) prepares a `StagedPreview` (worker, timeline, inspection, first frame, PCM) in the background. Nothing displays it until it is committed under the install fence; failed or cancelled builds and source edits keep the previous worker.
+4. **Frames.** One render and one latest desired target coalesce playback requests; completions with a stale identity, seek serial or clock epoch cannot replace the main image. Thumbnails ([`thumbnail_cache.rs`](../../desktop/crates/studio-engine/src/services/thumbnail_cache.rs)) yield to main frames.
+5. **Audio.** The [audio service](../../desktop/crates/studio-engine/src/services/audio_service.rs) owns CPAL output on dedicated threads. A positioned reader and windowed-sinc resampler feed a fixed ring; the callback allocates nothing, takes no lock and does no I/O. [`PlaybackClock`](../../desktop/crates/studio-engine/src/playback_clock.rs) maps submitted samples against predicted output timestamps, which are not a measurement of the physical DAC. Device loss and no-device playback fall back to a monotonic clock; mute keeps consuming samples.
+6. **Install.** A rebuild keeps the old playback until the candidate is ready, then freezes the mapped position, primes the newest seek and commits worker, timeline, first frame and audio together under a fresh output epoch.
+7. **Teardown.** Every superseded object that owns a process goes to the [teardown owner](../../desktop/crates/studio-engine/src/services/teardown.rs); a hand-off never blocks.
 
-The implemented M2 path keeps the concrete Video, media provider, Previewer and CPU renderer caches alive in an immutable project worker. Its additive `--preview-worker` contract negotiates hello, timeline, scaled frames, inspection, prepared PCM/windows and shutdown; the legacy `--worker` route remains unchanged. Standard output carries bounded JSON control; pixels and PCM windows use a loopback binary transport. Optional M5 element metadata and source retrieval are described in section 6; export remains later scope.
-
-Each message includes protocol version, project/source revision, worker generation and request ID. A paused seek is latest-wins. Reject late results from superseded requests or old renderer generations. On a successful rebuild, start a new worker, prepare its first frame, then switch atomically at the UI model level while preserving/clamping playhead and selection.
-
-### Frame contract and memory
-
-Define dimensions, byte stride, channel order, alpha mode, color space and frame number in the frame header. fframes' RgbaFrame is straight RGBA; other paths may produce premultiplied data. Convert into the representation expected by the pinned GPUI API once at the presentation boundary and verify with known colors/transparency.
-
-A bounded binary transport remains the selected implementation. One render and one latest desired target coalesce playback requests; stale identity/seek serial/clock-epoch completions cannot replace the main image. Thumbnails yield to main-frame requests and use a separate completion destination. Do not send full-resolution base64 images inside ACP or control JSON. Shared memory is not required by M2.
-
-At 1280×720, one RGBA frame is about 3.5 MiB; 30 frames per second moves about 105 MiB/s before extra copies. Use preview resolution, bounded queues, latest-wins coalescing and explicit GPUI image eviction. Zero-copy texture interop between Skia and GPUI is a later platform-specific optimization.
+Each message includes the protocol version, project and source revision, worker generation and request ID. Frames are straight RGBA with an explicit header and are converted once at the presentation boundary.
 
 ### Timeline authority and edits
 
-Render the scene track and audio placements from the compiled TimelineReport. Cache thumbnails/waveforms by revision and media hash. Timeline geometry and selection logic belong in a UI-independent model, following Cap's separation.
+The timeline view ([`studio-ui/src/timeline/`](../../desktop/crates/studio-ui/src/timeline)) follows Cap's editor timeline. The scene rows draw the engine's timing clips in play order, mapped to compiled scenes by timing key; audio files and a **Mix** row with the prepared mix's waveform ([`waveform.rs`](../../desktop/crates/studio-engine/src/waveform.rs)) follow. Its geometry and selection logic are UI-independent ([`timeline.rs`](../../desktop/crates/studio-engine/src/timeline.rs)). Split, trim and move edit `timeline.json` as described in [section 3](#timing-document-and-revision); other structural changes go through an agent task and become authoritative only after compilation.
 
-Initially, a scene resize/reorder/trim gesture creates an agent request and ghosted pending change. The timeline becomes authoritative only after compilation produces the new report. Where future projects expose typed runtime parameters for duration/order, direct controls can update those parameters through the same revision transaction. Avoid two independent timelines with different timing rules.
+### Export
 
-### Audio and presentation clock
+The [export service](../../desktop/crates/studio-engine/src/services/export_service.rs) asks the worker which formats it can encode ([`export_options.rs`](../../desktop/crates/studio-engine/src/export_options.rs)), freezes the accepted source ([`export_source.rs`](../../desktop/crates/studio-engine/src/export_source.rs)) and renders it with the session's timing document, with progress and cancel. The project is held only while its source is frozen, never while rendering.
 
-The worker prepares the core sequential stereo mix for an immutable revision. The app validates and retains its open PCM file and materialization lease off the UI thread. A dedicated native owner creates/controls/drops CPAL streams. A bounded positioned reader and windowed-sinc resampler feed a fixed SPSC ring; the callback only converts channels/sample formats, consumes packets, writes silence on underrun/mute, and publishes atomic timestamps. It performs no allocation, locking or I/O. Long-project streaming mix preparation remains later scope.
-
-`PlaybackClock` maps epoch-relative submitted samples against callback/predicted playback time, clamps to submitted samples and the inclusive end cursor, and rejects stale/backward timestamps. These are predicted output times, not measured physical DAC position. Invalid timestamp backends expose an estimated-latency mode. No-device/device-loss playback uses an explicit monotonic fallback; mute continues sample consumption. Pause/seek/device changes invalidate old output and re-prime the matching first frame before resuming.
-
-Keep the audio revision coupled to the visible renderer revision. Rebuilds preserve old playback until candidate readiness, then freeze the current mapped position, re-prime its newest seek serial and reserve a fresh output epoch before committing the worker, timeline, first frame and audio together. Cancellation/precommit failure resumes the old revision; source checkpoints do not advance. Physical output residual/pause-drain latency and other native platforms remain qualification gates in the M2 record.
-
-Use the same selected rendering backend and fonts/media for preview and export. A tiny-skia fallback cannot reproduce Skia-only shaders; report that capability gap or use a validated Skia CPU path. GPUI acceleration and fframes renderer acceleration are separate capabilities.
+Preview and export use the same backend, fonts and media. The CPU backend cannot run Skia shaders; the worker declares that gap and validation shows it as a warning.
 
 ## 9. Agent-facing fframes tools
 
-Expose a narrow task-scoped MCP server and an equivalent local CLI facade:
+The task-scoped tools are defined in [`agent_tools.rs`](../../desktop/crates/studio-engine/src/agent_tools.rs):
 
 | Tool                        | Purpose                                                   |
 | --------------------------- | --------------------------------------------------------- |
@@ -401,45 +382,50 @@ Expose a narrow task-scoped MCP server and an equivalent local CLI facade:
 | timeline                    | Compiled scene/audio structure                            |
 | render_frame / render_strip | Return image artifacts for a requested revision/range     |
 | inspect                     | Structured diagnostics tied to frames/scenes              |
-| audio_analyze / audio_at    | Mix quality and placement evidence                        |
 | style_context               | An optional registered object tuple/token; returns the immutable preset/token snapshot, origin and explicit binding status (never infers a token from a literal) |
 | build_status                | Current candidate artifact and compiler diagnostics       |
 
-All nine read-only methods share one app-owned task capability and dispatcher across the GUI,
-`studio-tools` and `studio-mcp`; the three selection/retrieval calls use the same project and
-revision checks and reply budgets as the original six. `source_lookup` indexes only immutable,
-inventory-hash-verified Rust bytes: no `rustc`, macro execution, app-local files or arbitrary
-path reads. The syntax index is deterministic and bounded to 256 Rust files / 1 MiB per file /
-8 MiB total; lookups return at most eight 4 KiB snippets and 32 KiB of text, with helper
-exploration bounded to depth two and 32 edges. Omitted files may be read on demand only through
-their immutable checkpoint object and the same per-file/hash checks. Parse failures, duplicate
-markers, ambiguity, truncation, cfg/macros and non-type-resolved helper candidates stay explicit
-in results. Indexes are derived per revision and capped at four entries / 32 MiB. A task's frozen
-base selection remains queryable while its writer is active; draft requests continue through the
-existing writer gate and never silently substitute base bytes. The agent retains its own coding
-tools. fframes tools neither accept arbitrary shell commands nor provide a second unrestricted
-filesystem interface.
+All nine methods share one app-owned task capability and one dispatcher across the GUI, the `studio-tools` CLI and the `studio-mcp` stdio server. They are read-only: no shell, no filesystem write, no general file access and no export. `source_lookup` indexes only immutable, inventory-hash-verified Rust bytes (no `rustc`, no macro execution) and is bounded to 256 files, 1 MiB per file and 8 MiB in total; lookups return at most eight 4 KiB snippets and 32 KiB of text. Replies are bounded to 256 KiB of JSON; images are app-owned PNG artifacts of at most 8 MiB with ids, hashes and expiry ([`backend/artifacts.rs`](../../desktop/crates/studio-engine/src/agent_tools/backend/artifacts.rs)), never inline base64. Draft bindings take the [writer gate](../../desktop/crates/studio-engine/src/agent_tools/backend/writer_gate.rs) and capture the draft first, so a changing tree is never compiled.
 
-Return image artifacts in a supported form and with size limits; include text diagnostics for providers without visual input. Project build dependencies and toolchains are managed by the app's build service, not repeatedly installed by each agent.
+### Tool broker transports
+
+The [broker](../../desktop/crates/studio-engine/src/agent_tools/broker.rs) serves the dispatcher on a local endpoint ([`transport.rs`](../../desktop/crates/studio-engine/src/agent_tools/transport.rs)):
+
+- Unix: a 0600 socket `broker.sock` in a private runtime directory; every peer's uid must be the current user's ([`transport/unix.rs`](../../desktop/crates/studio-engine/src/agent_tools/transport/unix.rs)).
+- Windows: a named pipe with a random name, created as the first instance with remote clients refused and a DACL that grants only the current user; the server reads the client token and refuses another user, a restricted token and an AppContainer ([`transport/windows.rs`](../../desktop/crates/studio-engine/src/agent_tools/transport/windows.rs)).
+
+A capability is a private file bound to one task, project and revision; only its path travels on the command line, and the secret stays in the file and in broker memory ([`client.rs`](../../desktop/crates/studio-engine/src/agent_tools/client.rs)). The MCP server ([`mcp.rs`](../../desktop/crates/studio-engine/src/agent_tools/mcp.rs)) speaks newline-delimited JSON-RPC and forwards `tools/call` unchanged to the broker. The per-project route (backend, broker and writer gate) is created on the first task that can use it, and every task is revoked and unregistered on every exit path ([`agent/tools.rs`](../../desktop/crates/studio-engine/src/agent/tools.rs)).
 
 ## 10. Installation, builds and updates
 
-An ordinary Rust project requires a compiler, compatible crate dependencies, a linker and relevant native libraries/OS SDK pieces. Packaging the GPUI app does not remove this requirement.
+An ordinary Rust project requires a compiler, compatible crate dependencies, a linker and native libraries. Packaging the GPUI app does not remove this requirement, so Studio installs a versioned, app-managed SDK: a pinned Rust toolchain, a tested fframes and runtime release, prebuilt FFmpeg and a platform build configuration ([`studio-sdk`](../../desktop/crates/studio-sdk/src/lib.rs), [`sdk_setup.rs`](../../desktop/crates/studio-engine/src/sdk_setup.rs)). The SDK is assembled by [`assemble-phase-zero-sdk.py`](../../desktop/scripts/assemble-phase-zero-sdk.py) and packaged with the app by [`package-phase-zero.py`](../../desktop/scripts/package-phase-zero.py).
 
-Use a versioned, app-managed SDK consisting of a pinned Rust toolchain, tested fframes/runtime release, offline/vendorable Rust dependencies where practical, prebuilt Skia/FFmpeg libraries, a known codec set and a platform build configuration. Treat reuse of precompiled Rust artifacts as a cache optimization: it depends on exact compiler/features/target compatibility and is not a stable plugin format.
-
-Phase zero must establish how macOS SDK/linker and Windows SDK/runtime needs can be satisfied and redistributed. If a fully managed native build is unavailable for a platform, show the prerequisite or offer an explicit remote-build alternative; do not advertise a terminal-free local path that has not been demonstrated. WASM compilation is an alternative research direction, but today's browser bridge and native shader/media differences mean it is not a drop-in equivalent.
-
-Keep the installer relatively small; download the tested SDK once during guided setup, with progress, disk-size information, resumable downloads and an offline bundle option. Users should never have to run just init-repo or install Node solely for the UI. Agent adapters may need Node or another runtime; manage that separately and reuse an already installed provider when supported.
-
-Ship verified packages for each qualified platform, with runtime libraries, fonts, icons/file associations, checksums and signed updates. Pin app/SDK/worker protocol compatibility and retain one usable previous SDK for rollback. Imported custom dependencies may require extra builds; record this as an advanced compatibility path.
-
-The release-manifest v1 contract records source, target, app/SDK compatibility, protocols, runtime inventory and artifact hashes under a domain-separated Ed25519 signature. Verification rejects unknown signers, incompatible targets and replay except for an exact locally retained recovery pair. The release policy lists no eligible target and keeps consumer release disabled; no production release key, signed feed or consumer-qualified installer is configured, so these contracts do not imply that updates or consumer publication are available.
+The release-manifest v1 contract ([`release-manifest.rs`](../../desktop/crates/studio-sdk/src/release-manifest.rs)) records source, target, app/SDK compatibility, protocols, runtime inventory and artifact hashes under a domain-separated Ed25519 signature. Verification rejects unknown signers, incompatible targets and replay. Consumer release stays disabled in the release policy; unsigned preview releases are published by [Desktop Release](../../.github/workflows/desktop-release.yml).
 
 ## 11. Persistence and recovery
 
-Use an app-local database for project/session metadata and an append-only task journal for lifecycle/recovery. Large media, screenshots and build artifacts stay in files with retention limits. Keep portable project settings in the project rather than only in the database.
+An app-local SQLite database holds project and session metadata; append-only journals hold lifecycle and task history. Large media, screenshots and build artifacts stay in files with retention limits. Portable project settings stay in the project.
 
-After a crash, recover to the last accepted revision, mark unfinished agent/build/export tasks interrupted, clean up owned workers and offer the retained draft. Never treat process exit as proof that its edits compiled or were applied. Closing a window cancels/reaps jobs by default; a later background-job mode should be explicit.
+After a crash Studio recovers to the last accepted revision, marks unfinished agent, build and export work interrupted, rolls back unfinished transactions only where files still hold the transaction's bytes, cleans up owned workers and offers the retained draft. Process exit is never treated as proof that edits compiled or were applied. Closing the project or the window cancels and reaps the task, tool broker, compilers and workers.
 
-Record latency/memory/build timings locally to tune the pipeline. Remote telemetry and cloud sync are separate opt-in product decisions.
+Every durable format is versioned. A file of a newer format is refused with "update Studio"; a file of an older format is refused with "made by an older Studio" and left byte for byte. No path migrates, repairs, quarantines or recreates it.
+
+## 12. Test strategy
+
+- **Unit tests** sit next to the code. Pure decisions (panel controls, steering, keymaps, timeline geometry, fences) are written as functions so they are tested without a window.
+- **Engine integration tests** ([`studio-engine/tests/`](../../desktop/crates/studio-engine/tests)) run the real controller, journals and services against a fake compiler and a fake preview worker ([`support/`](../../desktop/crates/studio-engine/tests/support)). Refusal tests write an old format, open it through the real code path, check the "older Studio" message and check that the file is unchanged afterwards: see [`studio-project/tests/manifest.rs`](../../desktop/crates/studio-project/tests/manifest.rs), [`studio-project/tests/revision.rs`](../../desktop/crates/studio-project/tests/revision.rs), [`session_history.rs`](../../desktop/crates/studio-engine/tests/session_history.rs), [`task_recovery.rs`](../../desktop/crates/studio-engine/tests/task_recovery.rs), [`provider_profiles.rs`](../../desktop/crates/studio-engine/tests/provider_profiles.rs) and the unit tests in [`store.rs`](../../desktop/crates/studio-engine/src/store.rs) and [`journal.rs`](../../desktop/crates/studio-engine/src/journal.rs).
+- **Driver tests** ([`studio-harness/tests/`](../../desktop/crates/studio-harness/tests)) drive each wire against a scripted peer: `acp-peer.py` and the `acp_v1` suite, `fake-claude.py`, `fake-codex.py`, and `cross_driver.rs` for behavior every wire must share. `claude_real_cli.rs` and `codex_real_cli.rs` run against the real, signed-in CLIs and are ignored by default.
+- **Workflow tests** ([`app/tests/agent_workflow/`](../../desktop/app/tests/agent_workflow/main.rs)) run the agent workflow against real subprocesses: the scripted ACP agent, the fake Claude and Codex CLIs and the fake worker. A scripted peer proves transport and workflow, never a provider.
+- **Parity tests** ([`studio-ui/tests/parity/`](../../desktop/crates/studio-ui/tests/parity/main.rs)) drive the whole shell headless in GPUI's test context through its actions and observe telemetry, the engine and files on disk; only `harness.rs` names the root view.
+- **Real SDK and native tests** are ignored by default and run in the full self-hosted CI run: the real worker round trip, managed and portable workers, preview coordination, timeline controls, audio parity and the X11 shell test ([`x11_shell.rs`](../../desktop/app/tests/x11_shell.rs)), which runs the real binary on Xvfb with xdotool.
+- **Scripts.** [`test-packaging.py`](../../desktop/scripts/test-packaging.py) and [`test-release-gate.py`](../../desktop/scripts/test-release-gate.py) test packaging and the release gate.
+
+Where each suite runs is listed in [self-hosted runners](self-hosted-runners.md); the platform coverage is in the [README](README.md#platforms).
+
+## 13. Production probes
+
+Three observation points stay in the shipped app because tests and packaging read them:
+
+- **Telemetry.** `fframes-studio studio --observe-project DIR --observe-telemetry FILE` opens a project and writes the shell's redacted state every 250 ms: phase, counts, resource bounds and measured control bounds, never prompts or message text ([`shell/observation.rs`](../../desktop/crates/studio-ui/src/shell/observation.rs), flags in [`main.rs`](../../desktop/app/src/main.rs)). It sends no command. `--observe-test-writer-containment` is a test injection that only debug builds accept.
+- **`bounds_probe`.** Kit components report their laid-out bounds through `bounds_probe` ([`kit/interact.rs`](../../desktop/crates/studio-ui/src/kit/interact.rs)) and `BoundsProbe` ([`probe.rs`](../../desktop/crates/studio-ui/src/probe.rs)), so tests click what the shell actually drew. The agent panel's measured ids are listed in `probed_button` ([`agent/mod.rs`](../../desktop/crates/studio-ui/src/agent/mod.rs)).
+- **`qualification.json`.** Every package carries a build record (platform, build time, SDK included) written by [`package-phase-zero.py`](../../desktop/scripts/package-phase-zero.py) and read by [`finalize-native-package.py`](../../desktop/scripts/finalize-native-package.py); the Windows installer and signing scripts require it to be present.

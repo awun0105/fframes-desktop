@@ -21,6 +21,12 @@ gh workflow run "Desktop self-hosted validation" -R khanhthanhdev/fframes-deskto
 | X11 shell tests (the real app on Xvfb, driven with xdotool) | self-hosted Linux | full runs |
 | Linux test build | self-hosted Linux | full runs |
 | fmt, tests, clippy for pull requests from other repositories | hosted Ubuntu ([Desktop CI](../../.github/workflows/desktop.yml)) | those pull requests |
+| tests and clippy on macOS (`desktop-macos`) | hosted `macos-15` (Desktop CI) | pull requests that touch desktop paths, and **Run workflow** |
+| dependency sources and advisories (`cargo deny`) | hosted Ubuntu (Desktop CI) | pull requests that touch desktop paths, and **Run workflow** |
+
+There is no self-hosted macOS runner. macOS is covered only by the hosted Desktop CI job and the
+macOS build in [Desktop Release](../../.github/workflows/desktop-release.yml); it is not checked by
+hand.
 
 The repository is public, so the self-hosted workflow runs only on `push` and **Run workflow**.
 Never add a `pull_request` trigger to it: anyone could then run code on these machines, as root.
@@ -90,6 +96,8 @@ Both runners keep state in the runner's tool cache folder (`<runner>/_work/_tool
   disk runs low, delete it; the next run rebuilds everything once.
 - `fframes-ffmpeg/<key>` (Linux): the FFmpeg install for one version of its build script. Old
   keys can be deleted.
+- `fframes-ffmpeg/<distribution>` (Windows): the pinned FFmpeg download, checked against its
+  SHA-256. Old distributions can be deleted.
 
 ## Test builds
 

@@ -237,7 +237,10 @@ cargo test -- --nocapture
 /scripts/new-video.sh      # curl | bash bootstrap for cargo-fframes
 /e2e                       # End-to-end visual regression test
 /examples                  # Example video projects (each is a lib + bin + editor bridge)
+/desktop                   # fframes Studio: native GPUI desktop app, its own Cargo workspace
 ```
+
+fframes Studio (`/desktop`) is documented in [docs/desktop/README.md](docs/desktop/README.md).
 
 ## Creating a New Video
 
