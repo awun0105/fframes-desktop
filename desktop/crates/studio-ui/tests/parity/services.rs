@@ -5,12 +5,12 @@ use std::{
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
-use studio_ui::actions::{BuildPreview, CancelExport, CancelPreview, ExportVideo, StartExport};
+use studio_ui::actions::{CancelExport, CancelPreview, ExportVideo, StartExport};
 
 #[gpui::test]
 fn build_shows_the_preview(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::open(cx);
-    studio.dispatch(BuildPreview);
+    studio.build_preview();
     let shown = studio.wait("preview displayed", |t| {
         t["preview"]["status"] == "displayed"
     });
@@ -23,7 +23,7 @@ fn build_shows_the_preview(cx: &mut gpui::TestAppContext) {
 fn cancelling_a_build_stops_the_compile(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::open(cx);
     studio.compiler.release.store(false, Ordering::SeqCst);
-    studio.dispatch(BuildPreview);
+    studio.build_preview();
     studio.wait("compile started", |t| t["preview"]["status"] == "building");
     studio.compiler.wait_started(1);
     studio.dispatch(CancelPreview);
@@ -43,7 +43,7 @@ fn cancelling_a_build_stops_the_compile(cx: &mut gpui::TestAppContext) {
 fn a_failed_build_is_shown(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::open(cx);
     studio.compiler.fail.store(true, Ordering::SeqCst);
-    studio.dispatch(BuildPreview);
+    studio.build_preview();
     let failed = studio.wait("build failed", |t| t["preview"]["status"] == "error");
     assert!(
         failed["preview"]["error"]
@@ -69,7 +69,7 @@ fn a_failed_rebuild_keeps_the_displayed_preview_until_a_build_succeeds(
         t["current_source_revision"] != source && t["busy"] == false
     });
     studio.compiler.fail.store(true, Ordering::SeqCst);
-    studio.dispatch(BuildPreview);
+    studio.build_preview();
     let failed = studio.wait("rebuild failed", |t| t["preview"]["status"] == "error");
     assert_eq!(failed["displayed_revision"], displayed, "{failed:#}");
     assert_eq!(failed["audio_identity_matches"], true, "{failed:#}");
@@ -79,7 +79,7 @@ fn a_failed_rebuild_keeps_the_displayed_preview_until_a_build_succeeds(
         t["current_source_revision"] == source && t["busy"] == false
     });
     studio.compiler.fail.store(false, Ordering::SeqCst);
-    studio.dispatch(BuildPreview);
+    studio.build_preview();
     let rebuilt = studio.wait("rebuilt", |t| {
         t["preview"]["status"] == "displayed" && t["busy"] == false
     });
@@ -143,7 +143,7 @@ fn thumbnails_arriving_behind_the_export_panel_are_kept(cx: &mut gpui::TestAppCo
     });
     studio.dispatch(ExportVideo);
     studio.wait("export panel open", |t| t["export"]["panel_open"] == true);
-    studio.dispatch(BuildPreview);
+    studio.build_preview();
     let rebuilt = studio.wait("the new preview's thumbnails cached", |t| {
         t["displayed_revision"] != displayed && t["thumbnail_metrics"]["entries"] == 12
     });

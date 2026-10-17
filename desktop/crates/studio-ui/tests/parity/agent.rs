@@ -7,7 +7,7 @@ use crate::{
 use serde_json::{Value, json};
 use std::{fs, time::Duration};
 use studio_ui::actions::{
-    AnswerPermission, ApplyCandidate, BuildPreview, Seek, SubmitPrompt, ToggleReviewPolicy,
+    AnswerPermission, ApplyCandidate, Seek, SubmitPrompt, ToggleReviewPolicy,
 };
 
 const BRIEF: &str = "Make the title red";
@@ -77,7 +77,7 @@ fn space_types_in_the_prompt_and_enter_sends_it(cx: &mut gpui::TestAppContext) {
 #[gpui::test]
 fn undo_in_the_prompt_undoes_the_typing_there(cx: &mut gpui::TestAppContext) {
     let mut studio = studio_with_agent(cx);
-    studio.dispatch(BuildPreview);
+    studio.build_preview();
     studio.wait("preview displayed", |t| {
         t["preview"]["status"] == "displayed"
     });

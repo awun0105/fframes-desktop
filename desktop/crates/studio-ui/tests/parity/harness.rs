@@ -239,9 +239,30 @@ impl Studio {
         Self::with_config(cx, config).display()
     }
 
+    /// Starts a preview build. The shell ignores a command while another one is in flight,
+    /// so this dispatches only when the shell is idle and checks that the build was taken
+    /// (the shell is busy right after). An accepted build is never sent again: a second one
+    /// would cancel and restart it.
+    pub fn build_preview(&mut self) {
+        let _watchdog = Watchdog::arm("a preview build to start");
+        let deadline = Instant::now() + WAIT;
+        loop {
+            self.cx.executor().advance_clock(CLOCK_STEP);
+            self.cx.run_until_parked();
+            if self.telemetry()["busy"] == false {
+                self.dispatch(studio_ui::actions::BuildPreview);
+                let after = self.telemetry();
+                assert!(after["busy"] == true, "the build was not taken: {after:#}");
+                return;
+            }
+            assert!(Instant::now() < deadline, "the shell never became idle");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     fn display(self) -> Self {
         let mut studio = self.open_project();
-        studio.dispatch(studio_ui::actions::BuildPreview);
+        studio.build_preview();
         studio.wait("preview displayed", |t| {
             t["preview"]["status"] == "displayed" && t["total_frames"] == 90
         });

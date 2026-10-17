@@ -87,6 +87,24 @@ fn click_id(studio: &mut Studio, id: &str) {
     panic!("{id} never stopped moving");
 }
 
+/// Opens the History tab, which lists the stored sessions once on opening. A click can
+/// still land on the old layout, so it clicks again until the panel shows the tab; opening
+/// it twice only lists again.
+fn open_history(studio: &mut Studio) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        click_id(studio, "agent-tab-History");
+        let shown = studio.settle(Duration::from_millis(100));
+        if shown["panel"]["tab"] == "History" {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the History tab never opened"
+        );
+    }
+}
+
 fn tiny_jpeg(path: &std::path::Path) {
     let mut out = std::io::Cursor::new(Vec::new());
     image::DynamicImage::new_rgb8(8, 4)
@@ -374,7 +392,7 @@ fn the_history_lists_searches_and_reopens_stored_sessions(cx: &mut gpui::TestApp
     studio.press("enter");
     studio.wait("the first task accepted", |t| phase(t) == "Accepted");
 
-    click_id(&mut studio, "agent-tab-History");
+    open_history(&mut studio);
     studio.wait("one stored session", |t| {
         composer(t)["history"]["shown"].as_array().map(Vec::len) == Some(1)
     });
@@ -387,7 +405,7 @@ fn the_history_lists_searches_and_reopens_stored_sessions(cx: &mut gpui::TestApp
     studio.press("enter");
     studio.wait("the second task accepted", |t| phase(t) == "Accepted");
 
-    click_id(&mut studio, "agent-tab-History");
+    open_history(&mut studio);
     let listed = studio.wait("two stored sessions", |t| {
         composer(t)["history"]["shown"].as_array().map(Vec::len) == Some(2)
     });
