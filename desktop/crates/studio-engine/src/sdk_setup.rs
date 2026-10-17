@@ -83,7 +83,14 @@ pub fn resolve_manifest(
         .chain([&active])
         .filter_map(|bundle| read(bundle).ok())
         .find(for_host)
-        .ok_or_else(|| missing_sdk_bundle_message(host.unwrap_or("this platform")))
+        .ok_or_else(|| {
+            // An installed SDK this Studio cannot read is named, not reported as missing.
+            let installed = active.join("compatibility.json");
+            match read(&active) {
+                Err(error) if installed.is_file() => format!("{}: {error}", installed.display()),
+                _ => missing_sdk_bundle_message(host.unwrap_or("this platform")),
+            }
+        })
 }
 
 /// Install only the SDK. Product setup must not generate a project.

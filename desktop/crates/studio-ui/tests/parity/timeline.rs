@@ -192,7 +192,7 @@ fn the_fit_button_fits_a_zoomed_timeline_again(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
-fn edits_wait_for_a_migrated_project_and_say_why(cx: &mut gpui::TestAppContext) {
+fn edits_wait_for_a_ready_timeline_and_say_why(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed(cx);
     let shown = studio.wait("the edit state is reported", |t| {
         t["timeline"]["edit"]["enabled"].is_boolean()

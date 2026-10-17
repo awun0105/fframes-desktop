@@ -38,7 +38,7 @@ fn killed_at_every_durable_job_boundary_replays_without_source_overwrite() {
             "Video",
             sdk_pin(&compatibility),
             &compatibility.fframes_version,
-            compatibility.studio_runtime_version(),
+            &compatibility.runtime_version,
         )
         .unwrap();
         let accepted = {
@@ -122,7 +122,7 @@ fn missing_object_and_newer_database_fail_without_mutating_source() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let controller = Controller::open(&root, &paths).unwrap();
@@ -163,7 +163,7 @@ fn failed_checkpoint_transitions_to_failed_allowing_retry() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();
@@ -195,7 +195,7 @@ fn missing_declared_asset_allows_checkpoint_recovery() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();
@@ -229,7 +229,7 @@ fn database_failure_after_journal_commit_does_not_rollback_accepted() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();
@@ -302,7 +302,7 @@ fn database_failure_during_startup_settles_job_and_preserves_draft_for_retry() {
             "Video",
             sdk_pin(&compatibility),
             &compatibility.fframes_version,
-            compatibility.studio_runtime_version(),
+            &compatibility.runtime_version,
         )
         .unwrap();
         let mut controller = Controller::open(&root, &paths).unwrap();
@@ -357,7 +357,7 @@ fn missing_asset_during_checkpoint_never_accepts_and_retry_after_repair_succeeds
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();
@@ -406,7 +406,7 @@ fn failed_invalidation_write_cannot_resurrect_an_old_result_after_source_repair(
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();
@@ -443,7 +443,7 @@ fn failed_draft_publication_retains_attempt_and_retry_uses_a_new_directory() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();

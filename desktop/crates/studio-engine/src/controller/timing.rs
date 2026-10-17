@@ -7,7 +7,7 @@
 //! unresolved earlier mutation refuses it.
 use super::Controller;
 use crate::{
-    EngineError, OperationTag, TimingEditing,
+    EngineError, OperationTag,
     edit_transaction::{ApplyGate, Boundary, Fault, PromotionError},
     timing::{
         TimelineCommand, TimelineSnapshot, TimingDoc,
@@ -24,12 +24,17 @@ const CHANGED_OUTSIDE: &str = "timeline.json changed outside the studio; the tim
 /// Shown when an agent edit published a new document.
 const PUBLISHED_BY_AGENT: &str = "An agent edit published a new timeline.json; the timeline was reloaded and its undo history cleared";
 
+/// Whether Studio may change the project's timing (`timeline.json`) now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TimingEditing {
+    Enabled,
+    /// Disabled with the reason to show next to the controls.
+    Disabled(String),
+}
+
 impl Controller {
     /// Whether the timeline can be edited now, with the reason when it cannot.
     pub fn timing_mutation(&mut self) -> TimingEditing {
-        if let TimingEditing::Disabled(reason) = self.timing_editing() {
-            return TimingEditing::Disabled(reason);
-        }
         if let Err(error) = self.ensure_mutable() {
             return TimingEditing::Disabled(error.to_string());
         }

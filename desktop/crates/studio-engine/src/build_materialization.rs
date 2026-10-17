@@ -41,41 +41,16 @@ pub struct FrameworkSet<'a> {
 }
 
 /// The framework `project` builds against in the SDK described by `compatibility`, or
-/// `None` when that SDK cannot build it. A project pinned to this SDK and generated with
-/// the current instructions uses the current framework. One generated with the first
-/// instructions keeps the SDK's legacy framework, also when it is pinned to one of the
-/// earlier SDKs that framework continues, until it is migrated.
+/// `None` when the project is pinned to another SDK.
 pub fn framework_for<'a>(
     project: &studio_project::manifest::Manifest,
     compatibility: &'a CompatibilityManifest,
 ) -> Option<FrameworkSet<'a>> {
-    let current = FrameworkSet {
+    (project.sdk == sdk_pin(compatibility)).then_some(FrameworkSet {
         fframes_version: &compatibility.fframes_version,
-        runtime_version: compatibility.studio_runtime_version(),
+        runtime_version: &compatibility.runtime_version,
         rel_path: FRAMEWORK_REL_PATH,
-    };
-    let legacy = compatibility.legacy.as_ref().map(|legacy| FrameworkSet {
-        fframes_version: &legacy.fframes_version,
-        runtime_version: &legacy.runtime_version,
-        rel_path: &legacy.framework_rel_path,
-    });
-    let first_instructions = project.generated_instruction_version
-        < studio_project::manifest::CURRENT_INSTRUCTION_VERSION;
-    if project.sdk == sdk_pin(compatibility) {
-        Some(match legacy {
-            Some(legacy) if first_instructions => legacy,
-            _ => current,
-        })
-    } else if first_instructions
-        && compatibility
-            .legacy
-            .as_ref()
-            .is_some_and(|legacy| legacy.sdk_releases.contains(&project.sdk.release))
-    {
-        legacy
-    } else {
-        None
-    }
+    })
 }
 
 /// SDK binding never mutates portable source, its lock/config, or the installed SDK.

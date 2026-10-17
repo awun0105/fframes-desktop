@@ -269,7 +269,7 @@ fn source(samples: &[[f32; 2]], rate: u32) -> Arc<crate::PreparedAudioSource> {
         "AudioTest",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let lease =

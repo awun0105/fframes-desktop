@@ -2,6 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CompatibilityManifest",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "schema_version",
     "sdk_id",
@@ -12,6 +13,7 @@
     "rust_toolchain",
     "fframes_version",
     "cargo_fframes_version",
+    "runtime_version",
     "artifacts",
     "ffmpeg",
     "host_prerequisites"
@@ -84,19 +86,13 @@
       }
     },
     "runtime_version": { "type": "string" },
-    "legacy": {
-      "type": "object",
-      "required": ["fframes_version", "runtime_version", "framework_rel_path", "sdk_releases"],
-      "properties": {
-        "fframes_version": { "type": "string" },
-        "runtime_version": { "type": "string" },
-        "framework_rel_path": { "type": "string", "minLength": 1 },
-        "sdk_releases": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
-        }
-      }
+    "preview_contract_versions": {
+      "type": "array",
+      "items": { "type": "integer", "const": 1 }
+    },
+    "preview_capabilities": {
+      "type": "array",
+      "items": { "type": "string" }
     },
     "host_prerequisites": {
       "type": "array",

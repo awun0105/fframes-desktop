@@ -63,7 +63,7 @@ fn generated_title_identity_geometry_and_source_anchor_survive_managed_render() 
         "M5 managed selection fixture",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        manifest.studio_runtime_version(),
+        &manifest.runtime_version,
     )
     .expect("generate current Studio starter project");
 

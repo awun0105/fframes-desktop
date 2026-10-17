@@ -98,8 +98,7 @@ pub struct CodeScene {
 }
 
 /// Why a timeline cannot be edited from a worker's report.
-pub const TIMING_UNSUPPORTED: &str =
-    "this preview cannot apply timing documents; migrate the project and rebuild the preview";
+pub const TIMING_UNSUPPORTED: &str = "this preview's worker does not report the timing of its scenes, so its timeline cannot be edited";
 
 /// The video's scenes in code order, read from a worker's timeline whatever document it
 /// was laid out with: every scene appears at least once (the worker appends the scenes

@@ -31,15 +31,14 @@ use studio_project::{
     revision::{FileKind, TIMING_FILE},
 };
 
-mod migration;
 mod preset;
 mod promotion;
 mod review;
 mod timing;
-pub use migration::{MigrationOutcome, ProjectMigration, TimingEditing};
 pub use preset::{PresetMutation, PresetOutcome};
 pub use promotion::{CompletionOutcome, Promotion, UndoPreparation};
 pub use review::{CandidateDiffSource, Rejection, RevisionDiffSource};
+pub use timing::TimingEditing;
 
 /// What replaying the task journal found and did on open, and what still blocks
 /// source mutation.
@@ -95,8 +94,6 @@ pub struct Controller {
     agent_scope: Option<AgentScope>,
     agent: AgentTaskManager,
     drafts: DraftStore,
-    /// Committed project migrations and their undos, oldest first.
-    migrations: Vec<crate::edit_transaction::TaskRevisionRecord>,
     /// The timing document of this session and its edit history.
     timing: crate::timing::TimingSession,
 }
@@ -167,7 +164,7 @@ impl Controller {
             )
         })?;
         // Compatibility and identity are decided from read-only looks at the database
-        // and both journals before anything is migrated, quarantined or replayed: an
+        // and both journals before anything is quarantined or replayed: an
         // unsupported (newer or damaged) history, a foreign identity or a duplicate
         // project ID is refused with every byte of the app-local history untouched.
         let previous =
@@ -211,7 +208,6 @@ impl Controller {
             (project, source_degraded) = open_source(root)?;
         }
         let task_records = task_replay.committed();
-        let migrations = task_replay.committed_migrations();
         let history_was_available = previous.is_some();
         if let Some(previous) = &previous {
             // A relocated project must still hold what the history last saw (judged
@@ -373,16 +369,14 @@ impl Controller {
             agent_scope: None,
             agent,
             drafts,
-            migrations,
             timing,
         };
         controller.heal_manifest_reference();
-        controller.heal_migration_manifest();
         Ok(controller)
     }
     /// Read-only look at everything app-local that decides whether this project can be
     /// opened: the database (version), the lifecycle journal and the task journal
-    /// (formats, interior damage). Nothing is created, migrated, quarantined or
+    /// (formats, interior damage). Nothing is created, quarantined or
     /// replayed. Returns the last known record of the project.
     fn preflight_history(
         database: &Path,

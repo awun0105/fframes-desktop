@@ -377,7 +377,7 @@ fn real_sdk_candidates_play_their_own_timing_document() {
             "Timing",
             studio_engine::build_materialization::sdk_pin(manifest),
             &manifest.fframes_version,
-            manifest.studio_runtime_version(),
+            &manifest.runtime_version,
         )
         .unwrap();
     });

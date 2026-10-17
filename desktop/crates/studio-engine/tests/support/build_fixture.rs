@@ -113,7 +113,7 @@ pub fn create_project(root: &Path) -> OpenProject {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap()
 }

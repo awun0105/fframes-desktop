@@ -1145,7 +1145,7 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
         "Native canvas selection",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        manifest.studio_runtime_version(),
+        &manifest.runtime_version,
     )
     .unwrap();
     assert!(sdk.join("compatibility.json").is_file());

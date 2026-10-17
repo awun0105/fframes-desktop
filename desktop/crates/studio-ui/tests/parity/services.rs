@@ -162,68 +162,14 @@ fn the_export_panel_opens_and_settles_on_the_projects_options(cx: &mut gpui::Tes
             && t["export"]["support"] != "probing"
             && t["export"]["support"] != "unknown"
     });
-    assert_eq!(settled["export"]["support"], "unmigrated", "{settled:#}");
+    // The fake worker does not answer the capabilities flag.
+    assert_eq!(settled["export"]["support"], "unavailable", "{settled:#}");
     // Without a stated choice the export is the default one.
     assert_eq!(
         settled["export"]["settings"],
         serde_json::to_value(fframes_studio_protocol::export::ExportSettings::default()).unwrap(),
         "{settled:#}"
     );
-}
-
-/// A project of the earlier template: the checked-in scaffold with the first instructions.
-fn make_legacy(project: &std::path::Path) {
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../app/tests/fixtures/pre_m4_project");
-    std::fs::remove_file(project.join("src/video.rs")).unwrap();
-    for file in [
-        "AGENTS.md",
-        "Cargo.toml",
-        "src/lib.rs",
-        "src/main.rs",
-        "src/bin/studio_worker.rs",
-    ] {
-        std::fs::copy(fixture.join(file), project.join(file)).unwrap();
-    }
-    let mut opened = studio_project::open(project).unwrap();
-    opened.manifest.generated_instruction_version = 1;
-    studio_project::lifecycle::write_manifest(project, &opened.manifest).unwrap();
-}
-
-#[gpui::test]
-fn an_unmigrated_project_exports_only_the_default_whatever_was_saved(
-    cx: &mut gpui::TestAppContext,
-) {
-    let studio = Studio::new(cx);
-    make_legacy(&studio.project_file(""));
-    let paths = studio_engine::app_paths::AppPaths::new(studio.path("data")).unwrap();
-    let half = fframes_studio_protocol::export::ExportSettings {
-        scale: 0.5,
-        ..Default::default()
-    };
-    studio_engine::app_settings::AppSettings {
-        export: half,
-        ..Default::default()
-    }
-    .save(&paths)
-    .unwrap();
-    let mut studio = studio.open_project();
-    studio.dispatch(ExportVideo);
-    let settled = studio.wait("export options known", |t| {
-        t["export"]["panel_open"] == true
-            && t["export"]["support"] != "probing"
-            && t["export"]["support"] != "unknown"
-    });
-    assert_eq!(settled["export"]["support"], "unmigrated", "{settled:#}");
-    assert_eq!(
-        settled["export"]["settings"],
-        serde_json::to_value(fframes_studio_protocol::export::ExportSettings::default()).unwrap(),
-        "{settled:#}"
-    );
-    let destination = studio.path("export.mp4");
-    studio.dispatch(StartExport);
-    studio.choose_new_path(&destination);
-    studio.wait("export rendering", |t| t["export"]["state"] != "idle");
 }
 
 #[gpui::test]

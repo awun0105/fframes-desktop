@@ -153,7 +153,7 @@ mod tests {
             "Video",
             sdk_pin(&compatibility),
             &compatibility.fframes_version,
-            compatibility.studio_runtime_version(),
+            &compatibility.runtime_version,
         )
         .unwrap();
         let mut controller = Controller::open(&root, &paths).unwrap();

@@ -6,8 +6,6 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 1;
-/// The runtime and protocol version of manifests that do not name one.
-pub const FIRST_RUNTIME_VERSION: &str = "0.1.0";
 /// Where the current framework crates live inside the SDK.
 pub const FRAMEWORK_REL_PATH: &str = "framework/framework";
 
@@ -34,6 +32,8 @@ pub enum ManifestError {
     MovingUrlProhibited { name: String, url: String },
     #[error("json parsing error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("made by another Studio version ({0}); it is left as it is")]
+    OtherStudio(String),
     #[error("validation error: {0}")]
     Validation(String),
 }
@@ -74,19 +74,10 @@ pub struct HostPrerequisiteProbe {
     pub required: bool,
 }
 
-/// An earlier framework release that this SDK still builds, for projects that pin it.
+/// Unknown fields are refused: the digest projects pin is computed over exactly these
+/// fields, so a manifest with others was made for another Studio.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LegacyFramework {
-    pub fframes_version: String,
-    /// Version of `fframes-studio-runtime` and `fframes-studio-protocol`.
-    pub runtime_version: String,
-    /// The crates' directory inside the SDK, like [`FRAMEWORK_REL_PATH`].
-    pub framework_rel_path: String,
-    /// `sdk_id`s of the earlier SDKs whose projects this framework continues.
-    pub sdk_releases: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompatibilityManifest {
     pub schema_version: u32,
     pub sdk_id: String,
@@ -97,35 +88,30 @@ pub struct CompatibilityManifest {
     pub rust_toolchain: RustToolchainInfo,
     pub fframes_version: String,
     pub cargo_fframes_version: String,
-    /// Version of `fframes-studio-runtime` and `fframes-studio-protocol`; absent means
-    /// [`FIRST_RUNTIME_VERSION`]. Absent fields are not serialized, so the digest of an
-    /// earlier manifest, which projects pin, stays the same.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_version: Option<String>,
+    /// Version of `fframes-studio-runtime` and `fframes-studio-protocol`.
+    pub runtime_version: String,
     pub artifacts: Vec<SdkArtifact>,
     pub ffmpeg: FfmpegManifestInfo,
     pub host_prerequisites: Vec<HostPrerequisiteProbe>,
-    /// Absent in v1 SDK manifests. Absence means the legacy worker contract only.
+    /// The preview contracts the SDK's worker serves; empty (and not written) when it has
+    /// no preview worker, which still builds and exports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preview_contract_versions: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preview_capabilities: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub legacy: Option<LegacyFramework>,
 }
 
 impl CompatibilityManifest {
     pub fn from_json_str(json: &str) -> Result<Self, ManifestError> {
-        let manifest: Self = serde_json::from_str(json)?;
+        let manifest: Self = serde_json::from_str(json).map_err(|error| {
+            if error.to_string().starts_with("unknown field") {
+                ManifestError::OtherStudio(error.to_string())
+            } else {
+                error.into()
+            }
+        })?;
         manifest.validate()?;
         Ok(manifest)
-    }
-
-    /// Version of `fframes-studio-runtime` and `fframes-studio-protocol` in this SDK.
-    pub fn studio_runtime_version(&self) -> &str {
-        self.runtime_version
-            .as_deref()
-            .unwrap_or(FIRST_RUNTIME_VERSION)
     }
 
     pub fn validate(&self) -> Result<(), ManifestError> {
@@ -182,29 +168,12 @@ impl CompatibilityManifest {
             }
         }
 
-        if let Some(legacy) = &self.legacy {
-            let path = &legacy.framework_rel_path;
-            if path.is_empty()
-                || path.contains("..")
-                || path.starts_with('/')
-                || Path::new(path).is_absolute()
-            {
-                return Err(ManifestError::InvalidArtifactPath { path: path.clone() });
-            }
-            if legacy.sdk_releases.is_empty()
-                || legacy.sdk_releases.iter().any(String::is_empty)
-                || legacy.sdk_releases.contains(&self.sdk_id)
-            {
-                return Err(ManifestError::Validation(
-                    "legacy framework must name earlier SDK releases".into(),
-                ));
-            }
-            for version in [&legacy.fframes_version, &legacy.runtime_version] {
-                Version::parse(version).map_err(|error| {
-                    ManifestError::Validation(format!("invalid legacy version {version}: {error}"))
-                })?;
-            }
-        }
+        Version::parse(&self.runtime_version).map_err(|error| {
+            ManifestError::Validation(format!(
+                "invalid runtime_version '{}': {error}",
+                self.runtime_version
+            ))
+        })?;
 
         // Validate ffmpeg relative paths
         for path_str in [&self.ffmpeg.headers_rel_path, &self.ffmpeg.libs_rel_path] {
@@ -355,48 +324,38 @@ mod tests {
             manifest.digest(),
             "69844c9c836606ee4ad359616e359af1d1f9bba9c03f29d323ed2d41eee53ffd"
         );
-        // The manifest before `runtime_version` existed keeps the digest projects pinned.
-        let mut earlier = manifest;
-        earlier.fframes_version = "1.2.0".into();
-        earlier.runtime_version = None;
-        assert_eq!(
-            earlier.digest(),
-            "ea63cd1fcc3487be84bf7100cc219b8498585e29a3dc8b908f3e418f8f85884a"
-        );
     }
 
     #[test]
-    fn runtime_version_and_legacy_framework_are_optional_and_validated() {
-        let mut manifest = CompatibilityManifest::default_linux_x64();
-        manifest.runtime_version = None;
-        assert_eq!(manifest.studio_runtime_version(), FIRST_RUNTIME_VERSION);
-        manifest.runtime_version = Some("0.2.0".into());
-        manifest.legacy = Some(LegacyFramework {
-            fframes_version: "1.2.0".into(),
-            runtime_version: "0.1.0".into(),
-            framework_rel_path: "framework/framework-legacy".into(),
-            sdk_releases: vec!["studio-sdk-x86_64-unknown-linux-gnu-v2".into()],
-        });
-        manifest.validate().unwrap();
-        let parsed =
-            CompatibilityManifest::from_json_str(&serde_json::to_string(&manifest).unwrap())
-                .unwrap();
-        assert_eq!(parsed, manifest);
-        assert_eq!(parsed.studio_runtime_version(), "0.2.0");
+    fn runtime_version_is_required_and_unknown_fields_are_refused() {
+        let manifest = CompatibilityManifest::default_linux_x64();
+        let mut raw = serde_json::to_value(&manifest).unwrap();
+        raw.as_object_mut().unwrap().remove("runtime_version");
+        let error = CompatibilityManifest::from_json_str(&raw.to_string()).unwrap_err();
+        assert!(error.to_string().contains("runtime_version"), "{error}");
 
-        let invalid = |change: fn(&mut LegacyFramework)| {
-            let mut manifest = manifest.clone();
-            change(manifest.legacy.as_mut().unwrap());
-            manifest.validate().is_err()
-        };
-        assert!(invalid(
-            |legacy| legacy.framework_rel_path = "../escape".into()
+        // An SDK that also carries the framework of earlier releases is not read.
+        let mut raw = serde_json::to_value(&manifest).unwrap();
+        raw["legacy"] = serde_json::json!({
+            "fframes_version": "1.2.0",
+            "runtime_version": "0.1.0",
+            "framework_rel_path": "framework/framework-legacy",
+            "sdk_releases": ["studio-sdk-x86_64-unknown-linux-gnu-v2"],
+        });
+        let error = CompatibilityManifest::from_json_str(&raw.to_string()).unwrap_err();
+        assert!(matches!(error, ManifestError::OtherStudio(_)), "{error}");
+        assert!(
+            error.to_string().contains("unknown field `legacy`"),
+            "{error}"
+        );
+        assert!(error.to_string().contains("another Studio"), "{error}");
+
+        let mut invalid = manifest;
+        invalid.runtime_version = "one".into();
+        assert!(matches!(
+            invalid.validate(),
+            Err(ManifestError::Validation(_))
         ));
-        assert!(invalid(|legacy| legacy.sdk_releases.clear()));
-        assert!(invalid(|legacy| legacy.fframes_version = "one".into()));
-        let mut own_release = manifest.clone();
-        own_release.legacy.as_mut().unwrap().sdk_releases = vec![own_release.sdk_id.clone()];
-        assert!(own_release.validate().is_err());
     }
 
     #[test]

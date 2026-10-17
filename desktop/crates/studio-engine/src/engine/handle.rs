@@ -20,8 +20,7 @@ use crate::presets::{Catalog, PresetReport};
 use crate::providers::host::{HostInbox, WorkflowWake};
 use crate::services::build_service::BuildService;
 use crate::services::export_service::{
-    CapabilitiesError, ExportControl, ExportProgress, ExportRequest, export_video,
-    probe_export_capabilities,
+    ExportControl, ExportProgress, ExportRequest, export_video, probe_export_capabilities,
 };
 use crate::services::preview_coordinator::BuildSpec;
 use crate::services::teardown::{Teardown, TeardownReport};
@@ -325,8 +324,7 @@ impl EngineHandle {
         session: SessionId,
         sdk: PathBuf,
         service: BuildService,
-    ) -> Result<async_channel::Receiver<Result<ExportCapabilities, CapabilitiesError>>, String>
-    {
+    ) -> Result<async_channel::Receiver<Result<ExportCapabilities, String>>, String> {
         let (sender, receiver) = async_channel::bounded(1);
         let backend = self.inner.backend.clone();
         std::thread::Builder::new()
@@ -344,7 +342,7 @@ impl EngineHandle {
                 let source = controller.lock().freeze_export_source();
                 drop(controller);
                 let result = source
-                    .map_err(|error| CapabilitiesError::Other(error.to_string()))
+                    .map_err(|error| error.to_string())
                     .and_then(|source| {
                         probe_export_capabilities(
                             &source,
@@ -633,7 +631,7 @@ mod tests {
             "Video",
             sdk_pin(&compatibility),
             &compatibility.fframes_version,
-            compatibility.studio_runtime_version(),
+            &compatibility.runtime_version,
         )
         .unwrap();
         let mut environment = StudioEnvironment::system();
@@ -680,7 +678,7 @@ mod tests {
             "Video",
             sdk_pin(&compatibility),
             &compatibility.fframes_version,
-            compatibility.studio_runtime_version(),
+            &compatibility.runtime_version,
         )
         .unwrap();
         let mut environment = StudioEnvironment::system();
@@ -727,7 +725,7 @@ mod workflow_and_export_tests {
             "Video",
             sdk_pin(&compatibility),
             &compatibility.fframes_version,
-            compatibility.studio_runtime_version(),
+            &compatibility.runtime_version,
         )
         .unwrap();
         let mut environment = StudioEnvironment::system();

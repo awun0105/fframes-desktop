@@ -1,4 +1,4 @@
-use crate::{Controller, JobState, ProjectMigration, TimingEditing};
+use crate::{Controller, JobState};
 use std::path::PathBuf;
 use studio_project::{ProjectId, SourceRevision};
 
@@ -21,13 +21,6 @@ pub struct ProjectPresentation {
     pub file_count: usize,
     pub history_available: bool,
     pub worker_available: bool,
-    /// Whether the project can move to the selected SDK's current framework; filled in
-    /// by the backend, which knows the SDK.
-    pub migration: ProjectMigration,
-    /// Whether timing and export settings may be edited, with the reason when not.
-    pub timing: TimingEditing,
-    /// Whether the last migration can be undone.
-    pub migration_undo: bool,
 }
 impl ProjectPresentation {
     pub fn from_controller(controller: &Controller) -> Self {
@@ -81,9 +74,6 @@ impl ProjectPresentation {
             file_count: project.inventory.files.len(),
             history_available: controller.history_was_available,
             worker_available: project.worker_available,
-            migration: ProjectMigration::Current,
-            timing: controller.timing_editing(),
-            migration_undo: controller.undoable_migration().is_some(),
         }
     }
 }

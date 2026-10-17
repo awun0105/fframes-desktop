@@ -246,6 +246,8 @@ impl Journal {
 // any repair or quarantine runs, without truncating or rewriting anything.
 
 const TASK_MAX_ENTRY_BYTES: usize = 4 * 1024 * 1024;
+/// How a transaction of the removed migration kind starts its `kind` field.
+const MIGRATION_KIND: &[u8] = br#""kind":"migration""#;
 
 #[derive(Serialize, Deserialize)]
 struct TaskEntry {
@@ -291,8 +293,7 @@ pub struct TaskReplay {
 
 impl TaskReplay {
     /// Committed *task* revisions in commit order: the source of the history projection.
-    /// Studio preset mutations and migrations are committed transactions too, but never
-    /// task history.
+    /// Studio preset mutations are committed transactions too, but never task history.
     pub fn committed(&self) -> Vec<TaskRevisionRecord> {
         self.committed_where(|kind| matches!(kind, TransactionKind::Apply | TransactionKind::Undo))
     }
@@ -300,11 +301,6 @@ impl TaskReplay {
     /// Committed Studio preset mutations in commit order.
     pub fn committed_presets(&self) -> Vec<TaskRevisionRecord> {
         self.committed_where(|kind| kind == TransactionKind::Preset)
-    }
-
-    /// Committed project migrations and their undos in commit order.
-    pub fn committed_migrations(&self) -> Vec<TaskRevisionRecord> {
-        self.committed_where(|kind| kind == TransactionKind::Migration)
     }
 
     fn committed_where(&self, kind: impl Fn(TransactionKind) -> bool) -> Vec<TaskRevisionRecord> {
@@ -474,7 +470,21 @@ fn scan_task_journal(
         };
         let header: EntryHeader = serde_json::from_slice(&line).map_err(|e| corrupt(&e))?;
         check_task_format(path, header.format)?;
-        let entry: TaskEntry = serde_json::from_slice(&line).map_err(|e| corrupt(&e))?;
+        let entry: TaskEntry = serde_json::from_slice(&line).map_err(|e| {
+            // Project migrations were transactions of this format; this Studio no longer
+            // reads them. Compact JSON spells the kind this way only as a field.
+            if line
+                .windows(MIGRATION_KIND.len())
+                .any(|window| window == MIGRATION_KIND)
+            {
+                EngineError::OlderRecord {
+                    what: format!("{} (task journal)", path.display()),
+                    holds: "records a project migration".into(),
+                }
+            } else {
+                corrupt(&e)
+            }
+        })?;
         if entry.sequence != sequence + 1 {
             return Err(corrupt(&"non-monotonic sequence"));
         }
@@ -634,7 +644,6 @@ mod tests {
                 validation_report_sha256: "0".repeat(64),
                 committed_unix: 0,
                 preset: None,
-                migration: None,
             },
         }
     }
@@ -675,6 +684,52 @@ mod tests {
         }
         fs::write(path, &bytes).unwrap();
         bytes
+    }
+
+    #[test]
+    fn a_task_journal_recording_a_project_migration_is_refused_and_left_as_it_is() {
+        let line = |sequence: u64, event: TaskEvent, kind: &str| {
+            let mut line = serde_json::to_string(&TaskEntry {
+                format: TASK_FORMAT,
+                sequence,
+                transaction: "t1".into(),
+                at: 1,
+                event,
+            })
+            .unwrap()
+            .replace(r#""kind":"apply""#, &format!(r#""kind":"{kind}""#));
+            line.push('\n');
+            line
+        };
+        let intent = sample_intent("t1");
+        let record = intent.record.clone();
+        // Pending: the migration's intent is the last line. Committed: an apply
+        // follows the migration, so its record is interior.
+        let pending = line(1, TaskEvent::Intent(Box::new(intent.clone())), "migration");
+        let committed = [
+            line(1, TaskEvent::Intent(Box::new(intent.clone())), "migration"),
+            line(2, TaskEvent::Commit(Box::new(record.clone())), "migration"),
+            line(3, TaskEvent::Intent(Box::new(intent)), "apply"),
+            line(4, TaskEvent::Commit(Box::new(record)), "apply"),
+        ]
+        .concat();
+        for journal in [pending, committed] {
+            let tmp = tempfile::tempdir().unwrap();
+            let path = tmp.path().join("tasks.jsonl");
+            fs::write(&path, &journal).unwrap();
+            for error in [
+                TaskJournal::open(path.clone()).err().unwrap(),
+                TaskJournal::inspect(&path).err().unwrap(),
+            ] {
+                assert!(matches!(error, EngineError::OlderRecord { .. }), "{error}");
+                let message = error.to_string();
+                assert!(message.contains("tasks.jsonl"), "{message}");
+                assert!(message.contains("project migration"), "{message}");
+                assert!(message.contains("older Studio"), "{message}");
+            }
+            assert_eq!(fs::read_to_string(&path).unwrap(), journal);
+            assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 1);
+        }
     }
 
     #[test]
@@ -730,7 +785,6 @@ mod tests {
         for key in [
             "undoes_paths",
             "preset",
-            "migration",
             "before_mode",
             "after_mode",
             "slot_dir",

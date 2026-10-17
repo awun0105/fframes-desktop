@@ -4,8 +4,7 @@
 Generates a fresh project, renders the *same* `src/lib.rs` under two bundled presets
 (the pixels must differ), takes a project override and a Reapply, closes and reopens the
 project and finally relocates it, then compares the token / font / resource hashes and the
-rendered pixels of every stage. A legacy project without a style snapshot must also open,
-build and render, and only gain `style/` once a preset is applied.
+rendered pixels of every stage.
 
 The Rust half is `desktop/app/tests/real_sdk_presets.rs` (an ignored test); this script
 prepares the SDK, runs it and then re-checks everything it wrote *independently*: file
@@ -188,22 +187,6 @@ def verify(out):
         gone = inspections[f"{label}_font_removed"]
         check(gone["exit"] == 2, f"inspect without the {label} font exited {gone['exit']}, not 2: {gone['output']}")
         check("font" in gone["output"].lower(), f"{label}: the failure does not name a font: {gone['output']}")
-    legacy = report["legacy"]
-    check(
-        legacy["opened_without_styles"] and legacy["lib_rs_unchanged"] and legacy["cargo_unchanged"],
-        "legacy project",
-    )
-    check(legacy["template"] == "pre-m4", "legacy project is not the pre-M4 scaffold")
-    legacy_fixture = ROOT / "desktop/app/tests/fixtures/pre_m4_project"
-    check(
-        digest(legacy_fixture / "src/lib.rs") == legacy["lib_rs_sha256"],
-        "legacy lib.rs differs from the checked-in pre-M4 scaffold",
-    )
-    check(
-        digest(legacy_fixture / "Cargo.toml") == legacy["cargo_sha256"],
-        "legacy Cargo.toml differs from the checked-in pre-M4 scaffold",
-    )
-    check(legacy["pixel_sha256"], "legacy render")
     # Report.
     print("\nPreset relocation: PASS")
     print(f"  SDK id: {report['sdk_id']}")
@@ -220,10 +203,6 @@ def verify(out):
     print("  inspect (no system fonts): passes with each preset's top-level font file, exits 2 when it is removed")
     for label, result in inspections.items():
         print(f"    {label:<28} exit {result['exit']}")
-    print(
-        "  pre-M4 legacy project without styles: opened, built and rendered "
-        f"({legacy['pixel_sha256'][:16]}); applying a preset later left src/lib.rs and Cargo.toml untouched"
-    )
 
 
 def main():

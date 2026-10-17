@@ -58,3 +58,26 @@ fn restore_copies_the_last_checkpoint_into_a_new_folder(cx: &mut gpui::TestAppCo
         "// after the checkpoint\n"
     );
 }
+
+#[gpui::test]
+fn a_project_from_an_older_studio_is_refused_and_left_as_it_is(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::new(cx);
+    // Projects from before timing documents were generated with instructions version 1.
+    let manifest = studio.project_file("studio.json");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+    value["generated_instruction_version"] = 1.into();
+    fs::write(&manifest, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+    let before = fs::read(&manifest).unwrap();
+    let project = studio.project_file("");
+    studio.dispatch(studio_ui::actions::OpenProject);
+    studio.choose_path(&project);
+    let refused = studio.wait("open refused", |t| {
+        t["busy"] == false && !t["error"].is_null()
+    });
+    assert_eq!(refused["project_open"], false, "{refused:#}");
+    let error = refused["error"].to_string();
+    assert!(error.contains("studio.json"), "{error}");
+    assert!(error.contains("older Studio"), "{error}");
+    assert_eq!(fs::read(&manifest).unwrap(), before);
+}

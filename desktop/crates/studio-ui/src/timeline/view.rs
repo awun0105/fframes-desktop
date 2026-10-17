@@ -1845,7 +1845,7 @@ mod tests {
         let (view, cx, edits) = editable(cx);
         view.update(cx, |view, cx| {
             let mut locked = snapshot(&[("a", 30, 0, 0), ("b", 30, 0, 0), ("c", 30, 0, 0)]);
-            locked.editing = TimingEditing::Disabled("Migrate the project to edit".into());
+            locked.editing = TimingEditing::Disabled("Build the preview to edit".into());
             view.set_snapshot(Some(locked), cx);
             view.set_position(40);
             view.split_at_playhead(cx);
@@ -1853,7 +1853,7 @@ mod tests {
         cx.run_until_parked();
         let metrics = view.read_with(cx, |view, _| view.qualification_metrics());
         assert_eq!(metrics["edit"]["enabled"], false);
-        assert_eq!(metrics["edit"]["reason"], "Migrate the project to edit");
+        assert_eq!(metrics["edit"]["reason"], "Build the preview to edit");
         // A press on a clip edge grabs nothing.
         let [left, top, width, height] = clip_bounds(&view, cx, 1);
         press(cx, left + width - 2., top + height / 2.);

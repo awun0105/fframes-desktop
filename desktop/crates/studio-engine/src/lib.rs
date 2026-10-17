@@ -19,7 +19,6 @@ pub mod playback_clock;
 pub mod preset_state;
 pub mod presets;
 pub mod preview_state;
-pub mod project_migration;
 pub mod project_presentation;
 pub mod providers;
 pub mod sdk_setup;
@@ -39,9 +38,9 @@ pub use agent_task::{
 };
 pub use canvas_selection::*;
 pub use controller::{
-    CandidateDiffSource, CompletionOutcome, Controller, DraftPreparationChoice, MigrationOutcome,
-    PresetMutation, PresetOutcome, ProjectMigration, Promotion, RecoveryStatus, Rejection,
-    RevisionDiffSource, TimingEditing, UndoPreparation,
+    CandidateDiffSource, CompletionOutcome, Controller, DraftPreparationChoice, PresetMutation,
+    PresetOutcome, Promotion, RecoveryStatus, Rejection, RevisionDiffSource, TimingEditing,
+    UndoPreparation,
 };
 pub use edit_transaction::{
     ApplyGate, Boundary, ConflictReport, Fault, FileDelta, FileState, NoHooks, PlanError,
@@ -101,6 +100,11 @@ pub enum EngineError {
         found: u32,
         supported: u32,
     },
+    /// Data of the current format holding a record only an older Studio wrote.
+    #[error(
+        "{what} {holds}, which only an older Studio made. It is left as it is and cannot be opened"
+    )]
+    OlderRecord { what: String, holds: String },
     #[error("{0}")]
     Diagnostic(String),
 }

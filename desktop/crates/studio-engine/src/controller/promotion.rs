@@ -325,7 +325,6 @@ impl Controller {
             remove_dirs: Vec::new(),
             reverses: Vec::new(),
             preset: None,
-            migration: None,
         };
         let publication = Publication {
             captured,
@@ -658,7 +657,6 @@ impl Controller {
             remove_dirs: preparation.remove_dirs.clone(),
             reverses: preparation.reverses.clone(),
             preset: None,
-            migration: None,
         };
         let publication = Publication {
             captured,

@@ -7,13 +7,11 @@ use fframes_studio_protocol::export::ExportSettings;
 use gpui::{Context, IntoElement};
 use studio_engine::app_paths::AppPaths;
 use studio_engine::app_settings::AppSettings;
-use studio_engine::services::export_service::CapabilitiesError;
 
 use super::StudioShell;
 use crate::export::panel::{ExportPanel, ExportPanelModel};
 use crate::export::progress::ExportPhase;
 use crate::export::settings::ExportSupport;
-use studio_engine::ProjectMigration;
 
 /// The export panel's state in the shell.
 #[derive(Default)]
@@ -83,9 +81,8 @@ impl StudioShell {
         self.pick(super::Picker::Export, cx);
     }
 
-    /// Brings the answer of the worker up to date with the accepted revision: a project
-    /// that is not migrated answers without asking; otherwise the worker is asked once per
-    /// revision (an unchanged project reuses the preview's build).
+    /// Brings the answer of the worker up to date with the accepted revision: the worker is
+    /// asked once per revision (an unchanged project reuses the preview's build).
     pub(super) fn sync_export_support(&mut self, cx: &mut Context<Self>) {
         if !self.export_panel.open {
             return;
@@ -108,10 +105,6 @@ impl StudioShell {
             return;
         }
         self.export_panel.probe_key = Some(key.clone());
-        if matches!(project.migration, ProjectMigration::Available) {
-            self.export_panel.support = ExportSupport::Unmigrated;
-            return;
-        }
         let Some(sdk) = self
             .presentation
             .agent_sdk
@@ -143,8 +136,7 @@ impl StudioShell {
                 }
                 shell.export_panel.support = match result {
                     Ok(Ok(capabilities)) => ExportSupport::Ready(Box::new(capabilities)),
-                    Ok(Err(CapabilitiesError::Legacy)) => ExportSupport::Unmigrated,
-                    Ok(Err(CapabilitiesError::Other(reason))) => ExportSupport::Unavailable(reason),
+                    Ok(Err(reason)) => ExportSupport::Unavailable(reason),
                     Err(_) => ExportSupport::Unavailable("the project closed".into()),
                 };
                 cx.notify();

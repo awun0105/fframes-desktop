@@ -23,7 +23,7 @@ fn overlay_keeps_source_and_sdk_unchanged_and_rejects_external_dependencies() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let build = materialize(
@@ -85,7 +85,7 @@ fn contained_dependency_with_absolute_path_is_rewritten_to_copied_workspace() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
 
@@ -143,7 +143,7 @@ fn cancelled_copy_removes_partial_tree_and_preserves_captured_source() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let bytes = vec![93; 2 * 1024 * 1024];
@@ -186,30 +186,22 @@ fn cancelled_copy_removes_partial_tree_and_preserves_captured_source() {
 }
 
 #[test]
-fn projects_bind_to_the_framework_their_pin_and_instructions_select() {
+fn projects_bind_to_the_framework_of_the_sdk_they_are_pinned_to() {
     let temp = tempfile::tempdir().unwrap();
     let sdk = temp.path().join("sdk");
     let builds = temp.path().join("builds");
     let mut compatibility = CompatibilityManifest::default_linux_x64();
     compatibility.fframes_version = "9.0.0".into();
-    compatibility.runtime_version = Some("9.1.0".into());
-    compatibility.legacy = Some(studio_sdk::manifest::LegacyFramework {
-        fframes_version: "1.2.0".into(),
-        runtime_version: "0.1.0".into(),
-        framework_rel_path: "framework/framework-legacy".into(),
-        sdk_releases: vec!["studio-sdk-earlier".into()],
-    });
+    compatibility.runtime_version = "9.1.0".into();
     compatibility.validate().unwrap();
-    for tree in ["framework/framework", "framework/framework-legacy"] {
-        for name in [
-            "fframes",
-            "fframes-studio-runtime",
-            "fframes-studio-protocol",
-        ] {
-            let dir = sdk.join(tree).join(name);
-            fs::create_dir_all(&dir).unwrap();
-            fs::write(dir.join("Cargo.toml"), "[package]").unwrap();
-        }
+    for name in [
+        "fframes",
+        "fframes-studio-runtime",
+        "fframes-studio-protocol",
+    ] {
+        let dir = sdk.join("framework/framework").join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Cargo.toml"), "[package]").unwrap();
     }
     fs::create_dir_all(sdk.join("framework/vendor")).unwrap();
     let fframes_path = |project: &studio_project::OpenProject| {
@@ -221,42 +213,25 @@ fn projects_bind_to_the_framework_their_pin_and_instructions_select() {
         let path = cargo["dependencies"]["fframes"]["path"].as_str().unwrap();
         Ok::<_, studio_project::ProjectError>(std::path::PathBuf::from(path))
     };
-    let current_sdk = fs::canonicalize(&sdk).unwrap();
 
-    let current = studio_project::create(
-        &temp.path().join("current"),
-        "Video",
-        sdk_pin(&compatibility),
-        "9.0.0",
-        "9.1.0",
-    )
-    .unwrap();
+    let root = temp.path().join("current");
+    let current =
+        studio_project::create(&root, "Video", sdk_pin(&compatibility), "9.0.0", "9.1.0").unwrap();
     assert_eq!(
         fframes_path(&current).unwrap(),
-        current_sdk.join("framework/framework/fframes")
-    );
-
-    // A project from an earlier SDK, before migration.
-    let root = temp.path().join("legacy");
-    let mut legacy =
-        studio_project::create(&root, "Video", sdk_pin(&compatibility), "1.2.0", "0.1.0").unwrap();
-    legacy.manifest.generated_instruction_version = 1;
-    legacy.manifest.sdk.release = "studio-sdk-earlier".into();
-    studio_project::lifecycle::write_manifest(&root, &legacy.manifest).unwrap();
-    let legacy = studio_project::open(&root).unwrap();
-    assert_eq!(
-        fframes_path(&legacy).unwrap(),
-        current_sdk.join("framework/framework-legacy/fframes")
+        fs::canonicalize(&sdk)
+            .unwrap()
+            .join("framework/framework/fframes")
     );
 
     let cargo = fs::read_to_string(root.join("Cargo.toml")).unwrap();
     for (edited, reason) in [
         (
-            cargo.replace("=0.1.0", "=9.1.0"),
+            cargo.replacen("=9.1.0", "=0.1.0", 1),
             "mixed framework releases",
         ),
         (
-            cargo.replace("version = \"=1.2.0\"\n", ""),
+            cargo.replace("version = \"=9.0.0\"\n", ""),
             "a framework crate without a version",
         ),
     ] {
@@ -267,13 +242,11 @@ fn projects_bind_to_the_framework_their_pin_and_instructions_select() {
     }
     fs::write(root.join("Cargo.toml"), &cargo).unwrap();
 
-    for (instructions, release) in [(1, "studio-sdk-unknown"), (2, "studio-sdk-earlier")] {
-        let mut manifest = legacy.manifest.clone();
-        manifest.generated_instruction_version = instructions;
-        manifest.sdk.release = release.into();
-        studio_project::lifecycle::write_manifest(&root, &manifest).unwrap();
-        let project = studio_project::open(&root).unwrap();
-        let error = fframes_path(&project).unwrap_err().to_string();
-        assert!(error.contains("SDK pin mismatch"), "{error}");
-    }
+    // A project pinned to any other SDK release is not built with this one.
+    let mut manifest = current.manifest.clone();
+    manifest.sdk.release = "studio-sdk-earlier".into();
+    studio_project::lifecycle::write_manifest(&root, &manifest).unwrap();
+    let project = studio_project::open(&root).unwrap();
+    let error = fframes_path(&project).unwrap_err().to_string();
+    assert!(error.contains("SDK pin mismatch"), "{error}");
 }

@@ -97,7 +97,7 @@ fn real_failed_build_and_invalid_source_preserve_seekable_immutable_revision_and
         "Revision test",
         sdk_pin(&m),
         &m.fframes_version,
-        m.studio_runtime_version(),
+        &m.runtime_version,
     )
     .unwrap();
     let paths = AppPaths::new(temp.path().join("history")).unwrap();
@@ -455,7 +455,7 @@ fn the_listener_is_woken_once_per_drain_when_the_coordinator_has_news() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        compatibility.studio_runtime_version(),
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();

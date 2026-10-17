@@ -14,8 +14,6 @@ pub enum ExportSupport {
     Probing,
     /// The worker answered: its formats and the video's size and frame rate.
     Ready(Box<ExportCapabilities>),
-    /// The project predates export settings: only the default export, in code order.
-    Unmigrated,
     /// The worker could not be asked; the export itself reports why it cannot run.
     Unavailable(String),
 }
@@ -34,7 +32,7 @@ impl ExportSupport {
         matches!(self, Self::Ready(_))
     }
 
-    /// An export may start: the options are known, or known to be only the default.
+    /// An export may start: the options are known, or the worker could not be asked.
     pub fn can_start(&self) -> bool {
         !matches!(self, Self::Unknown | Self::Probing)
     }
@@ -61,7 +59,6 @@ impl ExportSupport {
             Self::Unknown => "unknown",
             Self::Probing => "probing",
             Self::Ready(_) => "ready",
-            Self::Unmigrated => "unmigrated",
             Self::Unavailable(_) => "unavailable",
         }
     }
@@ -96,7 +93,6 @@ mod tests {
     fn an_export_starts_once_the_options_are_known() {
         assert!(!ExportSupport::Unknown.can_start());
         assert!(!ExportSupport::Probing.can_start());
-        assert!(ExportSupport::Unmigrated.can_start());
         assert!(ExportSupport::Unavailable("x".into()).can_start());
         assert!(ready(&FORMATS).can_start());
     }
@@ -104,17 +100,15 @@ mod tests {
     #[test]
     fn only_a_worker_that_answered_lets_the_settings_change() {
         assert!(ready(&FORMATS).is_editable());
-        assert!(!ExportSupport::Unmigrated.is_editable());
+        assert!(!ExportSupport::Unavailable("x".into()).is_editable());
         assert!(!ExportSupport::Probing.is_editable());
     }
 
     #[test]
-    fn an_unmigrated_project_exports_only_the_default() {
-        assert_eq!(ExportSupport::Unmigrated.formats(), [FORMATS[0]]);
-        assert_eq!(
-            ExportSupport::Unmigrated.settings_for(webm()),
-            ExportSettings::default()
-        );
+    fn without_an_answer_only_the_default_is_exported() {
+        let unavailable = ExportSupport::Unavailable("x".into());
+        assert_eq!(unavailable.formats(), [FORMATS[0]]);
+        assert_eq!(unavailable.settings_for(webm()), ExportSettings::default());
     }
 
     #[test]

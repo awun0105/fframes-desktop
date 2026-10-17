@@ -246,15 +246,6 @@ impl RenderOnce for ExportPanel {
                 )
                 .into_any_element(),
             ),
-            ExportSupport::Unmigrated => Some(
-                Notice::new(
-                    "export-unmigrated",
-                    Tone::Info,
-                    "This project uses the earlier framework · migrate it to choose other formats, sizes and frame rates",
-                )
-                .body("Until then it exports MPEG-4 in MP4, in code order.")
-                .into_any_element(),
-            ),
             ExportSupport::Unavailable(reason) => Some(
                 Notice::new(
                     "export-unavailable",

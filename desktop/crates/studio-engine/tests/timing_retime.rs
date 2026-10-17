@@ -102,7 +102,7 @@ fn real_worker_plays_timeline_edits_without_a_rebuild() {
         "Retime",
         sdk_pin(&m),
         &m.fframes_version,
-        m.studio_runtime_version(),
+        &m.runtime_version,
     )
     .unwrap();
     let paths = AppPaths::new(temp.path().join("history")).unwrap();

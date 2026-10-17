@@ -180,7 +180,7 @@ impl World {
                         "M5 selected-title workflow",
                         studio_engine::build_materialization::sdk_pin(manifest),
                         &manifest.fframes_version,
-                        manifest.studio_runtime_version(),
+                        &manifest.runtime_version,
                     )
                     .unwrap();
                 } else {

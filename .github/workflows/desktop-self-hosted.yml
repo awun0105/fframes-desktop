@@ -43,7 +43,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The SDK assembler exports the legacy framework from an earlier commit.
           fetch-depth: 0
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -188,7 +187,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The SDK assembler exports the legacy framework from an earlier commit.
           fetch-depth: 0
       # The runner service does not inherit the interactive profile: it has no ~/.cargo/bin,
       # FFMPEG_DIR, LIBCLANG_PATH or `python` (spawned by test fixtures) on its environment.

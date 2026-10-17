@@ -345,8 +345,12 @@ impl SdkInstaller {
         let active = self.active_sdk_dir();
         let installed_manifest_path = active.join("compatibility.json");
         let installed_manifest = match fs::read_to_string(&installed_manifest_path) {
-            Ok(json) => CompatibilityManifest::from_json_str(&json)
-                .map_err(|error| InstallError::Other(format!("installed SDK manifest: {error}")))?,
+            Ok(json) => CompatibilityManifest::from_json_str(&json).map_err(|error| {
+                InstallError::Other(format!(
+                    "installed SDK {}: {error}; move that SDK folder aside to install this one",
+                    installed_manifest_path.display()
+                ))
+            })?,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
@@ -1081,6 +1085,30 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn an_installed_sdk_of_another_studio_is_refused_by_name_and_left_as_it_is() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installer = SdkInstaller::new(tmp.path().join("sdk_home"));
+        let mut manifest = CompatibilityManifest::default_linux_x64();
+        manifest.target_triple = current_target_triple().into();
+        let active = installer.active_sdk_dir();
+        fs::create_dir_all(&active).unwrap();
+        // The v3 SDK also carried the framework of earlier releases.
+        let mut installed = serde_json::to_value(&manifest).unwrap();
+        installed["legacy"] = serde_json::json!({"sdk_releases": ["v2"]});
+        let bytes = serde_json::to_vec_pretty(&installed).unwrap();
+        fs::write(active.join("compatibility.json"), &bytes).unwrap();
+
+        let error = installer
+            .reusable_active_for_app(&manifest, env!("CARGO_PKG_VERSION"), None)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("compatibility.json"), "{error}");
+        assert!(error.contains("another Studio"), "{error}");
+        assert_eq!(fs::read(active.join("compatibility.json")).unwrap(), bytes);
+        assert_eq!(fs::read_dir(&active).unwrap().count(), 1);
     }
 
     #[test]
