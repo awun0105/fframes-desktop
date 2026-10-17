@@ -34,7 +34,7 @@ Out of scope:
 |---|-------|--------|-----------|--------|
 | 1 | [Remove the spike](./phase-01-remove-spikes-and-old-modules.md): spike files, `--spike-ui`, the harness's handwritten ACP session, bundle id `studio.fframes.spike`, unused app dependencies; `worker_roundtrip` rewritten as a real test on `WorkerClient` | 1-1.5d | none | Done |
 | 2 | Agent data without compatibility: session layout migration, manifest v1, `agent-adapter.json` and registry v1 ([inventory](./reports/compat-inventory.md#agent-sessions-phase-2)) | 1.5d | 1 | Done |
-| 3 | Durable data without compatibility: journal formats 2 and 3, `FileId` aliases, old-record defaults, source inventory v0 and the Timing hash identity, SQLite v1 ([inventory](./reports/compat-inventory.md#durable-data-phase-3)) | 1.5-2d | 2 | Pending |
+| 3 | Durable data without compatibility: journal formats 2 and 3, `FileId` aliases, old-record defaults, source inventory v0 and the Timing hash identity, SQLite v1 ([inventory](./reports/compat-inventory.md#durable-data-phase-3), [report](./reports/phase-03-durable-data.md)) | 1.5-2d | 2 | Done |
 | 4 | Project migration removed: pre-M4 projects, `LegacyFramework`, optional SDK manifest fields, the migration UI ([inventory](./reports/compat-inventory.md#project-migration-and-the-old-sdk-framework-phase-4)) | 2d | 3 | Pending |
 | 5 | [Flaky tests and leftover limitations](./phase-05-flaky-tests-and-leftover-limitations.md), on the code phase 4 leaves; the export-cancel hang is measured first | 2d | 4 | Pending |
 | 6 | [Docs, roadmap and Windows hand checks](./phase-06-docs-and-platform-checks.md) | 1.5d | 5 | Pending |
@@ -43,7 +43,7 @@ The phases run in sequence in one worktree, each by one agent. Each phase passes
 
 Phases 2 to 4 change how durable data is handled. A reviewer checks each diff, focusing on the refusal paths, before it is committed.
 
-`feat/studio-rewrite` is fast-forwarded only when every phase is green on all-platform CI.
+**Decision 2026-10-17 (plan owner): Windows local tests are the only gate.** CI is not run or waited on. `feat/studio-rewrite` is fast-forwarded when every phase passes fmt, clippy and the full local test sets on Windows. The criteria below that name macOS or self-hosted Linux CI no longer apply.
 
 Rules for phases 2 to 4:
 - A `#[serde(default)]` becomes required only where the current writer always emits that field. A round-trip test of a current record with every optional field empty proves which fields stay optional.
