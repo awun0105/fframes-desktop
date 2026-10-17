@@ -247,11 +247,18 @@ impl Backend {
                     .map(PathBuf::from)
                     .or(fallback)
                     .ok_or("Select an installed SDK before building preview")?;
+                let manifest_path = sdk.join("compatibility.json");
                 let compatibility = CompatibilityManifest::from_json_str(
-                    &std::fs::read_to_string(sdk.join("compatibility.json"))
-                        .map_err(|e| e.to_string())?,
+                    &std::fs::read_to_string(&manifest_path).map_err(|e| {
+                        format!("{}: SDK manifest unavailable: {e}", manifest_path.display())
+                    })?,
                 )
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| {
+                    format!(
+                        "{}: this SDK cannot be read ({e}); install the current SDK in Setup",
+                        manifest_path.display()
+                    )
+                })?;
                 if !compatibility
                     .preview_contract_versions
                     .contains(&fframes_studio_protocol::PREVIEW_CONTRACT_VERSION)
