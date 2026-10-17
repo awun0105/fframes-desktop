@@ -494,6 +494,9 @@ fn a_check_still_running_when_the_adapter_changes_is_redone_for_the_new_adapter(
     // The scripted peer's check is still running when the adapter is replaced: its result
     // describes the old adapter and must never be shown for the new one.
     let w = World::new();
+    // The peer answers the check's `initialize` only once released, so the check cannot
+    // finish before the wait sees it running.
+    w.release("hold-initialize");
     w.wf().check_adapter().unwrap();
     w.wait("the check of the scripted peer", |s| {
         s.adapter.readiness == AdapterReadiness::Checking
@@ -501,6 +504,7 @@ fn a_check_still_running_when_the_adapter_changes_is_redone_for_the_new_adapter(
     let mut changed = w.adapter_settings();
     changed.adapter.executable = "definitely-not-an-adapter-xyz".into();
     w.wf().set_adapter(Some(changed)).unwrap();
+    w.release("release-initialize");
     let s = w.wait("the probe result", |s| {
         matches!(s.adapter.readiness, AdapterReadiness::Checked { .. })
     });

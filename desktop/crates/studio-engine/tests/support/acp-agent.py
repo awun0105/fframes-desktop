@@ -36,7 +36,8 @@ calls.jsonl, mcp-call.json, prompt-counter, prompts.jsonl, permission-<id>.json,
 cancels.jsonl, helper.pid, escape.pid, set-mode.json, set-config.json.
 
 Gates (files in ROOT the test creates): if `hold-session` exists, `session/new` is answered
-only once `release-session` exists (the engine task can be changed in between).
+only once `release-session` exists (the engine task can be changed in between); likewise
+`hold-initialize` and `release-initialize` for `initialize` (an adapter check stays running).
 `wait_file_late` waits for that file AFTER the script's writes/helpers, just before the
 turn ends. `linger` makes the process ignore SIGTERM and stdin EOF (only SIGKILL ends
 it), so shutdown takes its whole grace period. `flood_pace` `{"every":N,"sleep_ms":M}` sleeps M ms after every N flooded tool cards so a long
@@ -232,6 +233,10 @@ def handle(line):
     if method == "initialize":
         if INIT_MODE == "exit":
             die(3)
+        hold = root / "hold-initialize"
+        deadline = time.time() + HARD_CAP_SECONDS
+        while hold.exists() and not (root / "release-initialize").exists() and time.time() < deadline:
+            time.sleep(0.01)
         send({"id": rid, "result": {
             "protocolVersion": 1,
             "agentInfo": {"name": "scripted-agent", "version": "test"},
