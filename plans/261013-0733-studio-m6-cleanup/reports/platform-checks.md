@@ -46,6 +46,8 @@ The one stale hit, a `studio-harness/src/driver.rs` comment about the removed ha
 
 1. **The built-in Claude and Codex profiles start on ACP, not the native wires.** All four built-in profiles in `studio-engine/src/providers/provider_profiles.rs` use `AgentWire::Acp`, and Install adapter installs the `@agentclientprotocol` packages. The Claude stream-json and Codex app-server wires run only after the user picks them in the Agent page's Protocol control and points the executable at the `claude` or `codex` CLI. The roadmap contract says Claude Code and Codex use native drivers. The docs describe the code as built. Whether the defaults change is an owner decision.
 
+2. **Fixed during the hand checks: an older installed SDK blocked setup and builds.** With the v2 SDK from 2026-10-12 in `~\.fframes\sdk\active`, SDK setup failed and **Build preview** reported "missing field `runtime_version` at line 70 column 1". The reuse check parsed the installed manifest and treated a manifest this Studio cannot read as an error. It is now simply not reusable, so setup installs the current SDK and keeps the older one, unchanged, as the previous SDK; the Build error names the file. Test: `an_installed_sdk_from_an_older_release_is_not_reused_and_is_left_as_it_is` in `studio-sdk`. Checked by installing v4 into a copy of the real SDK home: `active` became v4, and `previous` held the v2 manifest byte for byte.
+
 ## Unresolved
 
 - Every hand-check row waits for the owner's RDP session.
