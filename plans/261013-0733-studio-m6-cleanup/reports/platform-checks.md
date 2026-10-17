@@ -1,6 +1,6 @@
 # Platform checks
 
-Windows hand checks need the owner's RDP session, because real input cannot be driven from an agent session. Until that session happens, every hand-check row is **pending**. Rows that local commands can settle were run on 2026-10-17 on Windows Server 2022, on `feat/studio-m6` after phase 5 ([`8b1fcbf`](https://github.com/khanhthanhdev/fframes-desktop/commit/8b1fcbf)) plus the phase 6 changes.
+Windows hand checks need the owner's RDP session, because real input cannot be driven from an agent session. Until that session happens, every hand-check row is **pending**. The [hand-check guide](./hand-check-guide.md) walks through them with prepared projects. Rows that local commands can settle were run on 2026-10-17 on Windows Server 2022, on `feat/studio-m6` after phase 5 ([`8b1fcbf`](https://github.com/khanhthanhdev/fframes-desktop/commit/8b1fcbf)) plus the phase 6 changes.
 
 ## Roadmap Done-means items on Windows
 
