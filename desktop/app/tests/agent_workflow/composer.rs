@@ -186,6 +186,31 @@ fn commands_are_published_while_the_session_is_live() {
 }
 
 #[test]
+fn the_commands_of_one_adapter_are_not_shown_for_another() {
+    let w = World::new();
+    fs::write(w.agent.join("commands"), "1").unwrap();
+    w.submit(&good("first"));
+    let first = w.wait_task(None);
+    assert_eq!(first.phase, TaskPhase::Accepted, "{:?}", first.error);
+    assert_eq!(names(&w.snap().composer), ["compact", "review"]);
+
+    // The other adapter's agent announces no commands of its own.
+    fs::remove_file(w.agent.join("commands")).unwrap();
+    let mut other = w.adapter_settings();
+    other.provider = "scripted-other".into();
+    w.wf().set_adapter(Some(other)).unwrap();
+    w.submit(&good("second"));
+    let second = w.wait_task(Some(&first.id));
+    assert_eq!(second.phase, TaskPhase::Accepted, "{:?}", second.error);
+    assert!(
+        w.snap().composer.commands.is_empty(),
+        "{:?}",
+        names(&w.snap().composer)
+    );
+    w.assert_clean();
+}
+
+#[test]
 fn claude_and_codex_publish_their_commands_and_plan() {
     let w = claude("turns");
     w.cli_writes("writes.json", "first");
