@@ -49,7 +49,7 @@ pub enum McpConfigError {
 ///
 /// Env values may be secrets: the driver adds every value to its redaction set and
 /// `Debug` prints only the variable names. Fields are public for reading; build with
-/// [`McpStdioServer::new`] (the driver and legacy session re-validate before sending).
+/// [`McpStdioServer::new`] (the driver re-validates before sending).
 #[derive(Clone, PartialEq, Eq)]
 pub struct McpStdioServer {
     pub name: String,
