@@ -20,12 +20,11 @@ Old data is refused, never repaired or destroyed. A project or history that only
 | --- | --- | --- |
 | `studio.json` with `generated_instruction_version` 1 (pre-M4) | `Manifest::parse`, before the controller creates or opens anything app-local | `ProjectError` on `studio.json` / `generated_instruction_version`: "made by an older Studio (version 1, this Studio reads 2)"; "The project is left as it is and cannot be opened". A higher version says "newer Studio" / "Update Studio". |
 | `studio.json` of another `schema_version` | same | same wording; the old "Use a Studio version with an explicit migration" is gone. |
-| `tasks.jsonl` (format 4) holding a migration transaction, committed or pending | `scan_task_journal`, used by `TaskJournal::open` and the read-only `inspect` the controller runs first | `EngineError::OlderRecord`: "… (task journal) records a project migration, which only an older Studio made. It is left as it is and cannot be opened". The agent surface maps it to `older_format`. |
-| SDK `compatibility.json` with a `legacy` field (installed v3 SDK) or any other unknown field | `CompatibilityManifest::from_json_str` (`deny_unknown_fields`) | `ManifestError::OtherStudio`: "made by another Studio version (unknown field `legacy` …); it is left as it is". Setup names the installed SDK's `compatibility.json` and says to move that SDK folder aside to install this one (`reusable_active_for_app`); on a host without a built-in manifest, `resolve_manifest` names it instead of reporting a missing SDK. Nothing is moved or deleted. |
+| SDK `compatibility.json` with an unknown field (such as the v3 SDK's `legacy`) | `CompatibilityManifest` deserialisation (`deny_unknown_fields`) | serde's `unknown field` error. |
 
-### Decision: a targeted journal refusal, not a format bump
+### Decision 2026-10-17 (owner): no compatibility handling for M4/M5 data
 
-Removing the `Migration` kind would otherwise turn such a journal into "malformed interior task journal … repair the journal", a corruption message. Bumping `TASK_FORMAT` to 5 would refuse every current project's history, including the many that never held a migration. The refusal is applied only when a line fails to decode and contains the compact `"kind":"migration"` field; that text cannot come from string content, where its quotes are escaped. A project that was migrated by the M4/M5 Studio is therefore refused for good. That follows the owner decision of 2026-10-17 (no compatibility with old formats).
+The studio is a rewrite, so data written by the M4/M5 Studio gets no special case. A journal that holds a migration record fails as a malformed journal. An installed v3 SDK fails with its parse error until it is removed. A project pinned to a v3 SDK reports "SDK pin mismatch" and is recreated. An earlier version of this phase added a targeted journal refusal and a named refusal for an installed v3 SDK; both were removed.
 
 ### Decision: the SDK preview fields stay optional
 
@@ -34,12 +33,7 @@ Removing the `Migration` kind would otherwise turn such a journal into "malforme
 ## Tests
 
 - `studio-project/tests/manifest.rs`: `a_project_of_other_instructions_is_refused_with_the_studio_that_made_it` (1 = older, 3 = newer); the schema-version test asserts older/newer wording.
-- `journal.rs`: `a_task_journal_recording_a_project_migration_is_refused_and_left_as_it_is` (pending and interior committed migration, through `open` and `inspect`; bytes identical, one file in the directory).
-- `tests/task_recovery.rs`, through the real `Controller::open`:
-  - `a_task_journal_recording_a_project_migration_is_refused_by_the_project`;
-  - `a_project_generated_by_an_older_studio_is_refused_and_left_as_it_is`.
-
-  Both assert the message, a byte-identical app data tree and source tree, and no new files.
+- `tests/task_recovery.rs`: `a_project_generated_by_an_older_studio_is_refused_and_left_as_it_is`, through the real `Controller::open`. It asserts the message, a byte-identical app data tree and source tree, and no new files.
 - Parity `checkpoints::a_project_from_an_older_studio_is_refused_and_left_as_it_is`: the UI's Open shows the refusal, the project stays closed, `studio.json` is unchanged.
 - `studio-sdk`: `runtime_version_is_required_and_unknown_fields_are_refused`; the bundled digest test is unchanged.
 - `materialization.rs`: `projects_bind_to_the_framework_of_the_sdk_they_are_pinned_to` (current binding, mixed releases and missing versions refused, another pin refused).
@@ -49,29 +43,21 @@ Removing the `Migration` kind would otherwise turn such a journal into "malforme
 
 - `real_sdk_presets.rs` and `native-export.rs`'s Linux export test are `#[ignore]` and need an assembled SDK; they compile, and only their legacy halves were removed.
 - `assemble-phase-zero-sdk.py` was not run (no SDK inputs on this machine); it parses and `test-packaging.py`, which imports it, passes.
-- An installed SDK of release v3 is refused for its `legacy` field, and setup stops until that folder is moved aside by hand. Phase 6's Windows hand checks need a v4 SDK assembled from this branch.
-- A project made by the M4/M5 Studio (current instructions, no migration record) still opens. It is pinned to a v3 SDK digest that no v4 SDK matches, so build and SDK selection report the existing "SDK pin mismatch" / "Incompatible SDK pin". Refusing such projects on open would need this Studio to recognise old SDK releases; that is left as it is.
-
-- `studio-sdk/src/install.rs`: `an_installed_sdk_of_another_studio_is_refused_by_name_and_left_as_it_is` (the installed manifest is byte-identical and nothing is added next to it).
+- An installed v3 SDK must be removed by hand before a v4 SDK installs. Phase 6's Windows hand checks need a v4 SDK assembled from this branch.
 
 ## Review
 
 A reviewer traced every open path: `Controller::open` and its read-only preflight, backend Open, Locate, Independent and Create, diagnostics, and relocation. Nothing writes before either refusal. A torn last line holding a migration would be quarantined, but no old Studio could leave one: a torn migrate intent means `studio.json` is still at version 1 and is refused first, and an undo intent always follows complete interior migration lines. Both decisions were judged sound.
 
-One blocking finding, fixed: with `deny_unknown_fields`, a machine with the v3 SDK installed could not install v4. The bare parse error stopped setup without saying why. The refusal now names the installed `compatibility.json`, says another Studio version made it, and says to move that SDK folder aside; nothing is moved or deleted. Minor findings fixed:
-- `resolve_manifest` names an unreadable installed SDK instead of reporting it missing.
-- The schema now refuses unknown fields and declares the preview fields.
-- The export wording in this report.
-- Nits: an identity closure, a redundant `map_err`, a one-element loop, and the timing message.
+One blocking finding: an installed v3 SDK stops setup with a bare parse error. It was first fixed with a named refusal, then dropped under the owner decision above. Minor findings fixed: the schema refuses unknown fields and declares the preview fields; the export wording in this report; an identity closure, a redundant `map_err`, a one-element loop, and the timing message.
 
-Left as recorded above: M4/M5 projects pinned to v3 still open and report a pin mismatch. Phase 6 needs allow-list entries for the migration refusal in `journal.rs` and the `legacy` field in the `studio-sdk` test. `docs/desktop/README.md` and `phase-zero-feasibility.md` still describe migration (phase 6). The workflows keep `fetch-depth: 0`; only the stale comment went. SDK selection, the Build command and export read `compatibility.json` too; they show the "made by another Studio version" reason without the file path. No code re-pins a project to another SDK, so a project pinned to v3 can only be built by recreating it.
+Left for phase 6: `docs/desktop/README.md` and `phase-zero-feasibility.md` still describe migration. The workflows keep `fetch-depth: 0`; only the stale comment went.
 
 ## Checks (Windows, local)
 
-All run after the review fixes:
+All run after the review fixes; after the owner decision, fmt, clippy, `studio-sdk`, `studio-project`, the engine library, `task_recovery` and `agent_task` were run again and pass:
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-- `cargo test -p studio-sdk`: 36 passed.
 - `cargo test -p studio-engine -p fframes-studio -p studio-project -p studio-harness --no-fail-fast`: all pass.
 - `cargo test -p studio-ui --lib`: 473 passed.
 - `cargo test -p studio-ui --test parity --no-fail-fast -- --skip services::cancelling_an_export_leaves_no_file`: 77 passed, 0 failed. `agent::undo_in_the_prompt_undoes_the_typing_there` passed in both runs.
