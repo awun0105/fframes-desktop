@@ -225,7 +225,7 @@ pub fn engine_error(error: &EngineError, retained: bool) -> StructuredError {
             "The history was written by a newer Studio",
             "Update Studio. Source and history were not changed.",
         ),
-        EngineError::OlderFormat { .. } | EngineError::OlderRecord { .. } => (
+        EngineError::OlderFormat { .. } => (
             "older_format",
             "The history was made by an older Studio",
             "It cannot be opened by this Studio and was left as it is.",

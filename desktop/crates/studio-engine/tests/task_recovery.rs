@@ -586,26 +586,6 @@ fn a_task_journal_of_an_older_format_is_refused_by_the_project_and_left_as_it_is
 }
 
 #[test]
-fn a_task_journal_recording_a_project_migration_is_refused_by_the_project() {
-    let (run, c, result) = run(None);
-    result.unwrap();
-    drop(c);
-    // The committed apply, as an older Studio recorded its project migrations.
-    let text = fs::read_to_string(&run.tasks).unwrap();
-    let migrated = text.replace(r#""kind":"apply""#, r#""kind":"migration""#);
-    assert_ne!(migrated, text);
-    fs::write(&run.tasks, migrated).unwrap();
-    let data = bytes_of_tree(&run.fx.paths.data);
-    let tree = snapshot(&run.fx.root);
-    let error = open_retrying(&run.fx.root, &run.fx.paths).err().unwrap();
-    assert!(matches!(error, EngineError::OlderRecord { .. }), "{error}");
-    assert_refused_as_older(&error, "tasks.jsonl");
-    assert!(error.to_string().contains("project migration"), "{error}");
-    assert_eq!(bytes_of_tree(&run.fx.paths.data), data);
-    assert_eq!(snapshot(&run.fx.root), tree);
-}
-
-#[test]
 fn a_project_generated_by_an_older_studio_is_refused_and_left_as_it_is() {
     let fx = fixture();
     drop(open_retrying(&fx.root, &fx.paths).unwrap());

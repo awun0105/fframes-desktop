@@ -100,11 +100,6 @@ pub enum EngineError {
         found: u32,
         supported: u32,
     },
-    /// Data of the current format holding a record only an older Studio wrote.
-    #[error(
-        "{what} {holds}, which only an older Studio made. It is left as it is and cannot be opened"
-    )]
-    OlderRecord { what: String, holds: String },
     #[error("{0}")]
     Diagnostic(String),
 }

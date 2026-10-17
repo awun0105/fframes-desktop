@@ -32,8 +32,6 @@ pub enum ManifestError {
     MovingUrlProhibited { name: String, url: String },
     #[error("json parsing error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("made by another Studio version ({0}); it is left as it is")]
-    OtherStudio(String),
     #[error("validation error: {0}")]
     Validation(String),
 }
@@ -75,7 +73,7 @@ pub struct HostPrerequisiteProbe {
 }
 
 /// Unknown fields are refused: the digest projects pin is computed over exactly these
-/// fields, so a manifest with others was made for another Studio.
+/// fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompatibilityManifest {
@@ -103,13 +101,7 @@ pub struct CompatibilityManifest {
 
 impl CompatibilityManifest {
     pub fn from_json_str(json: &str) -> Result<Self, ManifestError> {
-        let manifest: Self = serde_json::from_str(json).map_err(|error| {
-            if error.to_string().starts_with("unknown field") {
-                ManifestError::OtherStudio(error.to_string())
-            } else {
-                error.into()
-            }
-        })?;
+        let manifest: Self = serde_json::from_str(json)?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -343,12 +335,10 @@ mod tests {
             "sdk_releases": ["studio-sdk-x86_64-unknown-linux-gnu-v2"],
         });
         let error = CompatibilityManifest::from_json_str(&raw.to_string()).unwrap_err();
-        assert!(matches!(error, ManifestError::OtherStudio(_)), "{error}");
         assert!(
             error.to_string().contains("unknown field `legacy`"),
             "{error}"
         );
-        assert!(error.to_string().contains("another Studio"), "{error}");
 
         let mut invalid = manifest;
         invalid.runtime_version = "one".into();
