@@ -9,6 +9,8 @@ pub struct PreviewWorkerClient {
     next_request: u64,
     hello: Option<PreviewHelloResponse>,
     timeline: Option<PreviewTimelineResponse>,
+    /// Why the worker was stopped; later requests report it instead of a broken pipe.
+    stopped: Option<String>,
 }
 fn invalid(message: impl Into<String>) -> WorkerClientError {
     WorkerClientError::Other(message.into())
@@ -26,7 +28,13 @@ impl PreviewWorkerClient {
             next_request: 0,
             hello: None,
             timeline: None,
+            stopped: None,
         }
+    }
+    /// Kills a worker whose connection can no longer be trusted and keeps the first reason.
+    fn stop(&mut self, reason: &WorkerClientError) {
+        let _ = self.transport.force_crash();
+        self.stopped.get_or_insert_with(|| reason.to_string());
     }
     /// Capabilities the negotiated worker declared unavailable (for example
     /// `shader_preview`). Empty before negotiation.
@@ -148,6 +156,12 @@ impl PreviewWorkerClient {
         e: &PreviewEnvelope,
         bulk: bool,
     ) -> Result<(PreviewResponse, Option<Vec<u8>>), WorkerClientError> {
+        if let Some(reason) = &self.stopped {
+            return Err(invalid(format!(
+                "The preview worker was stopped after an error ({reason}); build the preview again"
+            )));
+        }
+        let mut refused = false;
         let dimensions = match (request, &self.timeline) {
             (PreviewRequest::ScaledFrame(req), Some(t)) => {
                 let scaled = |n: usize| {
@@ -179,6 +193,8 @@ impl PreviewWorkerClient {
                 return Err(invalid("Preview response identity/request mismatch"));
             }
             if let PreviewResponse::Error(error) = &response {
+                // A refusal of this request is a whole message: the worker keeps serving.
+                refused = true;
                 return Err(invalid(format!("{}: {}", error.code, error.message)));
             }
             if let (PreviewRequest::ScaledFrame(request), PreviewResponse::ScaledFrame(frame)) =
@@ -256,8 +272,11 @@ impl PreviewWorkerClient {
             Ok((response, bytes))
         });
         // Once framing is untrusted, never reuse a potentially half-drained connection.
-        if result.is_err() {
-            let _ = self.transport.force_crash();
+        // A refusal that came after the deadline was discarded with the killed worker.
+        if let Err(error) = &result
+            && !(refused && !self.transport.is_crashed())
+        {
+            self.stop(error);
         }
         result
     }
@@ -297,7 +316,7 @@ impl PreviewWorkerClient {
                 Ok(h)
             }
             Err(e) => {
-                let _ = self.transport.force_crash();
+                self.stop(&e);
                 Err(e)
             }
         }
@@ -362,8 +381,9 @@ impl PreviewWorkerClient {
                 Ok(f)
             }
             _ => {
-                let _ = self.transport.force_crash();
-                Err(invalid("Preview frame geometry/seek/scale mismatch"))
+                let error = invalid("Preview frame geometry/seek/scale mismatch");
+                self.stop(&error);
+                Err(error)
             }
         }
     }
@@ -480,8 +500,9 @@ impl PreviewWorkerClient {
                 Ok(bytes.unwrap())
             }
             _ => {
-                let _ = self.transport.force_crash();
-                Err(invalid("Audio destination/offset mismatch"))
+                let error = invalid("Audio destination/offset mismatch");
+                self.stop(&error);
+                Err(error)
             }
         }
     }
@@ -702,6 +723,31 @@ mod tests {
         let oversized = "x".repeat(MAX_TIMING_DOC_BYTES + 1);
         assert!(bounded.set_timing(Some(oversized), 1).is_err());
         assert_eq!(bounded.next_request, 1);
+    }
+
+    #[test]
+    fn a_refused_request_keeps_the_worker_and_a_broken_reply_stops_it_with_its_reason() {
+        let refusal = PreviewResponse::Error(PreviewError {
+            envelope: Some(timing_envelope(2)),
+            code: "INVALID_TIMING".into(),
+            message: "trim too long".into(),
+        });
+        let mut worker = scripted_worker(true, vec![refusal, laid_out(3, 0)]);
+        let refused = worker.set_timing(Some("{}".into()), 5).unwrap_err();
+        assert!(refused.to_string().contains("INVALID_TIMING"));
+        assert!(!worker.transport.is_crashed());
+        assert_eq!(worker.timeline().unwrap().timing_generation, 0);
+
+        // A reply to another request: framing is untrusted, so the worker is stopped and
+        // later requests say why instead of writing to its closed pipe.
+        let mut broken = scripted_worker(true, vec![laid_out(9, 0), laid_out(3, 0)]);
+        assert!(broken.timeline().is_err());
+        assert!(broken.transport.is_crashed());
+        let later = broken.timeline().unwrap_err().to_string();
+        assert!(
+            later.contains("stopped") && later.contains("mismatch"),
+            "{later}"
+        );
     }
 
     #[test]

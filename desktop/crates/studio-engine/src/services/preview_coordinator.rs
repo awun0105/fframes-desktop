@@ -1071,9 +1071,11 @@ fn retime(c: &mut StagedParts, timing: PreviewTiming, d: &SeekIntent) -> Result<
         .set_timing(timing.json, timing.generation)
         .map_err(|e| e.to_string())?;
     let position = d.position.min(timeline.total_frames);
+    let mut prepared = None;
     let laid_out = (|| {
         let boundary_inspection = inspect_boundaries(&mut c.worker, &timeline)?;
         let audio = c.worker.prepare_audio(48000).map_err(|e| e.to_string())?;
+        prepared = Some(audio.artifact_id.clone());
         let source = c
             .worker
             .retain_audio_source(&audio, || c.scope.is_shutdown())?;
@@ -1094,6 +1096,10 @@ fn retime(c: &mut StagedParts, timing: PreviewTiming, d: &SeekIntent) -> Result<
     let (boundary_inspection, ready) = match laid_out {
         Ok(laid_out) => laid_out,
         Err(error) => {
+            // The worker keeps at most two mixes; the displayed one stays.
+            if let Some(artifact_id) = prepared {
+                let _ = c.worker.release_audio(artifact_id);
+            }
             let _ = c
                 .worker
                 .set_timing(c.timing_json.clone(), c.ready.timeline.timing_generation);

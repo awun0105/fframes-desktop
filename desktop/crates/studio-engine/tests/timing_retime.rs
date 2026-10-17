@@ -164,7 +164,8 @@ fn real_worker_plays_timeline_edits_without_a_rebuild() {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    // A document the worker rejects leaves the displayed layout as it was.
+    // A document the worker rejects leaves the displayed layout as it was, and the same
+    // worker keeps serving frames.
     p.set_timing(PreviewTiming {
         json: Some(
             r#"{"version":1,"clips":[{"key":"intro","trim_start_frames":100000,"trim_end_frames":0}]}"#
@@ -173,6 +174,28 @@ fn real_worker_plays_timeline_edits_without_a_rebuild() {
         generation: edited.generation + 100,
     });
     assert!(wait_retimed(&p).is_err());
+    let serial = state.seek(1, state.scale()).unwrap();
+    p.seek(SeekIntent {
+        identity: retimed.identity().clone(),
+        serial,
+        position: 1,
+        scale: state.scale(),
+    });
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let e = p.events();
+        if let Some((_, error)) = e.error {
+            panic!("frame after a rejected document: {error}");
+        }
+        if let Some(frame) = e.frame
+            && state.accepts_frame(&frame)
+        {
+            assert_eq!(frame.response.frame_index, 1);
+            break;
+        }
+        assert!(Instant::now() < deadline, "frame after a rejected document");
+        std::thread::sleep(Duration::from_millis(10));
+    }
     p.set_timing(edited.clone());
 
     // A new build of the same source starts with the session's document.
