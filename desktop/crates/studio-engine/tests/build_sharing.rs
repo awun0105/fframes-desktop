@@ -668,16 +668,21 @@ fn cancelling_the_ui_compile_scope_leaves_a_tool_subscriber_running() {
         )
         .unwrap();
     coordinator.cancel_build();
-    std::thread::sleep(Duration::from_millis(150));
+    // The UI detaches on the teardown owner's thread, after `cancel_build` returns.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(svc.status(&key), BuildState::Compiling { subscribers: 1 }) {
+        assert!(
+            Instant::now() < deadline,
+            "the UI never detached: {:?}",
+            svc.status(&key)
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     assert_eq!(
         compiler.killed.load(Ordering::SeqCst),
         0,
         "the tool still wants this build"
     );
-    assert!(matches!(
-        svc.status(&key),
-        BuildState::Compiling { subscribers: 1 }
-    ));
     compiler.release.store(true, Ordering::SeqCst);
     assert!(tool.wait(&never).unwrap().build().manifest.is_file());
     assert_eq!(compiler.started.load(Ordering::SeqCst), 1);
