@@ -166,6 +166,8 @@ pub struct PumpMetrics {
     pub render_max_ms: f64,
     pub queue_high_water: usize,
     pub thumbnail_queue_high_water: usize,
+    /// Thumbnails delivered to the UI.
+    pub thumbnails: usize,
     pub owned_processes: usize,
 }
 /// What a cancelled build owned: handed to the teardown owner (or reaped inline by
@@ -951,6 +953,7 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
                     {
                         // Separate completion destination: never touches s.frame or desired.
                         s.thumbnail = Some((key, frame));
+                        s.metrics.thumbnails += 1;
                     }
                 }
                 shared.lock().active_thumbnail = None;

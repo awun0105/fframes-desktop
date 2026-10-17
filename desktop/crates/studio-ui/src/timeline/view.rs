@@ -79,8 +79,8 @@ pub struct TimelineView {
     /// How often the view rendered; playback must not render it.
     renders: u64,
     cache: ThumbnailCache<gpui::RenderImage>,
-    pending_thumbnail: Option<(ThumbnailKey, PreviewFrame)>,
-    clear_cache: bool,
+    /// Images that left the cache; the window releases them at the next render.
+    retired: Vec<Arc<gpui::RenderImage>>,
     release_failures: usize,
 }
 impl EventEmitter<TimelineEvent> for TimelineView {}
@@ -108,8 +108,7 @@ impl TimelineView {
             painted_segments: 0,
             renders: 0,
             cache: ThumbnailCache::default(),
-            pending_thumbnail: None,
-            clear_cache: false,
+            retired: Vec::new(),
             release_failures: 0,
         }
     }
@@ -142,8 +141,7 @@ impl TimelineView {
         self.refresh_clips();
         self.drag = None;
         self.minimap_drag = None;
-        self.clear_cache = true;
-        self.pending_thumbnail = None;
+        self.retired.extend(self.cache.clear());
         self.emit_scope_changed(cx);
         cx.notify();
     }
@@ -157,8 +155,7 @@ impl TimelineView {
         self.minimap_drag = None;
         self.position = 0;
         self.playing = false;
-        self.clear_cache = true;
-        self.pending_thumbnail = None;
+        self.retired.extend(self.cache.clear());
         self.emit_scope_changed(cx);
         cx.notify();
     }
@@ -306,8 +303,14 @@ impl TimelineView {
                     .viewport
                     .thumbnail_frames(model)
                     .contains(&key.frame_index)
-        }) {
-            self.pending_thumbnail = Some((key, frame));
+        }) && let Ok(image) = create_render_image(&frame.response.header, &frame.pixels)
+        {
+            // Cached on arrival, not at the next render: the timeline is not drawn while the
+            // export panel or settings cover the editor, and a thumbnail that is not cached
+            // is asked for again.
+            let bytes =
+                frame.response.header.width as usize * frame.response.header.height as usize * 4;
+            self.retired.extend(self.cache.insert(key, image, bytes));
             cx.notify();
         }
     }
@@ -905,20 +908,8 @@ fn fraction_to_zoom(fraction: f32, fit: f64) -> f64 {
 impl Render for TimelineView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.renders += 1;
-        if self.clear_cache {
-            for image in self.cache.clear() {
-                self.release_failures += usize::from(window.drop_image(image).is_err());
-            }
-            self.clear_cache = false;
-        }
-        if let Some((key, frame)) = self.pending_thumbnail.take()
-            && let Ok(image) = create_render_image(&frame.response.header, &frame.pixels)
-        {
-            let bytes =
-                frame.response.header.width as usize * frame.response.header.height as usize * 4;
-            for image in self.cache.insert(key, image, bytes) {
-                self.release_failures += usize::from(window.drop_image(image).is_err());
-            }
+        for image in self.retired.drain(..) {
+            self.release_failures += usize::from(window.drop_image(image).is_err());
         }
         let wanted = self.thumbnail_requests();
         if wanted != self.wanted {

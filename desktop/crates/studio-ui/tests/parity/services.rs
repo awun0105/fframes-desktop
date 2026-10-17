@@ -125,6 +125,36 @@ fn cancelling_an_export_leaves_no_file(cx: &mut gpui::TestAppContext) {
     assert!(!destination.exists());
 }
 
+/// The export panel covers the editor, so the timeline is not drawn; the thumbnails of a
+/// preview installed behind it are still kept as they arrive, and the worker stops drawing
+/// thumbnails once the visible ones are there.
+#[gpui::test]
+fn thumbnails_arriving_behind_the_export_panel_are_kept(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed(cx);
+    let shown = studio.wait("the visible thumbnails cached", |t| {
+        t["thumbnail_metrics"]["entries"] == 12
+    });
+    let displayed = shown["displayed_revision"].clone();
+    let file = studio.project_file("src/lib.rs");
+    let original = fs::read(&file).unwrap();
+    fs::write(&file, [&original[..], b"\n// edited\n"].concat()).unwrap();
+    studio.wait("the edit is seen", |t| {
+        t["current_source_revision"] != shown["current_source_revision"] && t["busy"] == false
+    });
+    studio.dispatch(ExportVideo);
+    studio.wait("export panel open", |t| t["export"]["panel_open"] == true);
+    studio.dispatch(BuildPreview);
+    let rebuilt = studio.wait("the new preview's thumbnails cached", |t| {
+        t["displayed_revision"] != displayed && t["thumbnail_metrics"]["entries"] == 12
+    });
+    assert_eq!(rebuilt["export"]["panel_open"], true, "{rebuilt:#}");
+    let settled = studio.settle(Duration::from_millis(500));
+    assert_eq!(
+        settled["pump_metrics"]["thumbnails"], rebuilt["pump_metrics"]["thumbnails"],
+        "{settled:#}"
+    );
+}
+
 #[gpui::test]
 fn a_failed_export_is_shown(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed_with(cx, r#"{"frames":90}"#);
