@@ -70,8 +70,7 @@ fn a_project_from_an_older_studio_is_refused_and_left_as_it_is(cx: &mut gpui::Te
     fs::write(&manifest, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
     let before = fs::read(&manifest).unwrap();
     let project = studio.project_file("");
-    studio.dispatch(studio_ui::actions::OpenProject);
-    studio.choose_path(&project);
+    studio.open_path(&project);
     let refused = studio.wait("open refused", |t| {
         t["busy"] == false && !t["error"].is_null()
     });

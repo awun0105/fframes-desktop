@@ -22,6 +22,11 @@ impl StudioShell {
         cx.notify();
     }
 
+    /// Whether the agent prompt, or a question's text field, holds the keyboard focus.
+    pub fn prompt_focused(&self, window: &gpui::Window, cx: &gpui::App) -> bool {
+        self.panel.read(cx).composer_has_focus(window, cx)
+    }
+
     /// The studio's observation entry: opens `project` and writes the agent panel's redacted state
     /// (phase, counts, bounds; never prompts or message text) to `output` every 250 ms.
     /// Nothing is launched and no command is sent; an operator drives the real panel.

@@ -229,8 +229,7 @@ fn undo_belongs_to_the_text_field_while_one_has_focus(cx: &mut gpui::TestAppCont
             .any(|name| name.ends_with("UndoTimelineEdit")),
         "{outside:?}"
     );
-    studio.dispatch(studio_ui::actions::FocusPrompt);
-    studio.settle(std::time::Duration::from_millis(50));
+    studio.focus_prompt();
     let in_field = studio.actions_bound_to("secondary-z");
     assert!(
         !in_field

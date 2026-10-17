@@ -7,8 +7,7 @@ use crate::{
 use serde_json::{Value, json};
 use std::{fs, time::Duration};
 use studio_ui::actions::{
-    AnswerPermission, ApplyCandidate, BuildPreview, FocusPrompt, OpenProject, Seek, SubmitPrompt,
-    ToggleReviewPolicy,
+    AnswerPermission, ApplyCandidate, BuildPreview, Seek, SubmitPrompt, ToggleReviewPolicy,
 };
 
 const BRIEF: &str = "Make the title red";
@@ -46,8 +45,7 @@ fn rows<'a>(t: &'a Value, kind: &str) -> Vec<&'a Value> {
 
 /// Types [`BRIEF`] into the prompt and sends it, then waits for the permission request.
 fn send_brief(studio: &mut Studio) -> Value {
-    studio.dispatch(FocusPrompt);
-    studio.settle(Duration::from_millis(50));
+    studio.focus_prompt();
     studio.type_text(BRIEF);
     studio.dispatch(SubmitPrompt);
     studio.wait("the permission request", |t| {
@@ -60,8 +58,7 @@ fn send_brief(studio: &mut Studio) -> Value {
 #[gpui::test]
 fn space_types_in_the_prompt_and_enter_sends_it(cx: &mut gpui::TestAppContext) {
     let mut studio = studio_with_agent(cx);
-    studio.dispatch(FocusPrompt);
-    studio.settle(Duration::from_millis(50));
+    studio.focus_prompt();
     studio.type_text("Make");
     studio.press("space");
     studio.type_text("the title red");
@@ -86,8 +83,7 @@ fn undo_in_the_prompt_undoes_the_typing_there(cx: &mut gpui::TestAppContext) {
     });
     studio.dispatch(Seek { frame: 30 });
     studio.wait("at 30", |t| t["position"] == 30);
-    studio.dispatch(FocusPrompt);
-    studio.settle(Duration::from_millis(50));
+    studio.focus_prompt();
     studio.type_text(BRIEF);
     studio.press("backspace backspace backspace");
     studio.press(if cfg!(target_os = "macos") {
@@ -197,8 +193,7 @@ fn native_prompt_asks_permission_and_applies(
     studio.wait("review before Apply", |t| {
         t["panel"]["review_policy"] == "ManualReview"
     });
-    studio.dispatch(FocusPrompt);
-    studio.settle(Duration::from_millis(50));
+    studio.focus_prompt();
     studio.type_text("EDIT the title");
     studio.dispatch(SubmitPrompt);
     let asking = studio.wait("the permission request", |t| {
@@ -258,10 +253,7 @@ fn switching_projects_mid_turn_shows_nothing_of_the_old_turn(cx: &mut gpui::Test
     let original = source(&studio);
     send_brief(&mut studio);
     let other = studio.another_project("other");
-    // The shell ignores Open while it is still preparing the first project.
-    studio.wait("the first project ready", |t| t["busy"] == false);
-    studio.dispatch(OpenProject);
-    studio.choose_path(&other);
+    studio.open_path(&other);
     let switched = studio.wait("the other project with its own agent", |t| {
         t["busy"] == false
             && t["project_path"]
@@ -297,10 +289,7 @@ fn the_agent_of_the_project_switched_to_still_updates_the_panel(cx: &mut gpui::T
     .unwrap();
     send_brief(&mut studio);
     let other = studio.another_project("other");
-    // The shell ignores Open while it is still preparing the first project.
-    studio.wait("the first project ready", |t| t["busy"] == false);
-    studio.dispatch(OpenProject);
-    studio.choose_path(&other);
+    studio.open_path(&other);
     studio.wait("the other project with its own agent", |t| {
         t["busy"] == false
             && t["project_path"]
@@ -308,8 +297,7 @@ fn the_agent_of_the_project_switched_to_still_updates_the_panel(cx: &mut gpui::T
                 .is_some_and(|path| path.ends_with("other"))
             && t["panel"]["attached"] == true
     });
-    studio.dispatch(FocusPrompt);
-    studio.settle(Duration::from_millis(50));
+    studio.focus_prompt();
     studio.type_text(BRIEF);
     studio.dispatch(SubmitPrompt);
     let replied = studio.wait("the second reply", |t| {
@@ -347,8 +335,7 @@ fn new_rows_stay_pinned_unless_the_reader_scrolled_up_past_the_threshold(
     )
     .unwrap();
     let send = |studio: &mut Studio, tools: usize| {
-        studio.dispatch(FocusPrompt);
-        studio.settle(Duration::from_millis(50));
+        studio.focus_prompt();
         studio.type_text(BRIEF);
         studio.dispatch(SubmitPrompt);
         // The turn is over, so no row arrives after the reader moves the list.

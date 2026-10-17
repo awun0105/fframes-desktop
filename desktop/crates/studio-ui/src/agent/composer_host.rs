@@ -123,7 +123,7 @@ impl ConversationPanel {
     }
 
     /// Whether the composer or a question's text field holds the keyboard focus.
-    pub(super) fn composer_has_focus(&self, window: &Window, cx: &App) -> bool {
+    pub(crate) fn composer_has_focus(&self, window: &Window, cx: &App) -> bool {
         self.host
             .composer
             .read(cx)

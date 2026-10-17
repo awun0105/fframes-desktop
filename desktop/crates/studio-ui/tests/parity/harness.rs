@@ -204,11 +204,25 @@ impl Studio {
         project
     }
 
+    /// Chooses `path` in the Open dialog. The shell ignores Open while a command or another
+    /// dialog is in flight, so this waits until the dialog is actually up.
+    pub fn open_path(&mut self, path: &Path) {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            self.wait("the shell idle", |t| t["busy"] == false);
+            self.dispatch(studio_ui::actions::OpenProject);
+            if self.cx.did_prompt_for_paths() {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the Open dialog never opened");
+        }
+        self.choose_path(path);
+    }
+
     pub fn open_project(self) -> Self {
         let mut studio = self;
         let project = studio.project.clone();
-        studio.dispatch(studio_ui::actions::OpenProject);
-        studio.choose_path(&project);
+        studio.open_path(&project);
         studio.wait("project open", |t| {
             t["project_open"] == true && t["busy"] == false
         });
@@ -275,6 +289,28 @@ impl Studio {
             std::thread::sleep(Duration::from_millis(2));
         }
         self.telemetry()
+    }
+
+    /// Moves the keyboard focus to the agent prompt and waits until it holds it.
+    pub fn focus_prompt(&mut self) {
+        self.dispatch(studio_ui::actions::FocusPrompt);
+        let _watchdog = Watchdog::arm("the prompt focused");
+        let deadline = Instant::now() + WAIT;
+        loop {
+            self.cx.executor().advance_clock(CLOCK_STEP);
+            self.cx.run_until_parked();
+            let focused = self
+                .window
+                .update(&mut self.cx, |shell, window, cx| {
+                    shell.prompt_focused(window, cx)
+                })
+                .expect("the window is open");
+            if focused {
+                return;
+            }
+            assert!(Instant::now() < deadline, "the prompt never took the focus");
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 
     /// Types `text` into the focused field.

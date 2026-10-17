@@ -7,7 +7,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::{fs, time::Duration};
-use studio_ui::actions::{FocusPrompt, ToggleReviewPolicy};
+use studio_ui::actions::ToggleReviewPolicy;
 
 fn phase(t: &Value) -> &str {
     t["panel"]["phase"].as_str().unwrap_or_default()
@@ -56,8 +56,7 @@ fn evidence(studio: &Studio, name: &str) -> Vec<Value> {
 }
 
 fn type_in_composer(studio: &mut Studio, text: &str) {
-    studio.dispatch(FocusPrompt);
-    studio.settle(Duration::from_millis(50));
+    studio.focus_prompt();
     studio.type_text(text);
 }
 
