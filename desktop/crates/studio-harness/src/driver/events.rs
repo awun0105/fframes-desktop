@@ -632,6 +632,35 @@ mod tests {
     }
 
     #[test]
+    fn a_burst_of_plans_yields_one_unread_plan_holding_the_latest() {
+        let plan = |text: &str| {
+            AgentEventKind::Plan(vec![PlanEntry {
+                text: text.into(),
+                status: PlanStatus::InProgress,
+            }])
+        };
+        let queue = EventQueue::new("p".into(), "t".into(), 8);
+        queue.push(plan("step 0"));
+        queue.push(delta("a"));
+        for i in 1..100 {
+            assert!(matches!(
+                queue.push(plan(&format!("step {i}"))),
+                PushOutcome::Queued
+            ));
+        }
+        let events = queue.drain(10);
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert_eq!(events[0].sequence, 1);
+        assert!(matches!(
+            &events[0].kind,
+            AgentEventKind::Plan(entries) if entries[0].text == "step 99"
+        ));
+        // A plan already read is not replaced: the next one is a new event.
+        queue.push(plan("step 100"));
+        assert_eq!(queue.drain(10)[0].sequence, 3);
+    }
+
+    #[test]
     fn critical_overflow_fails_visibly_instead_of_dropping() {
         let queue = EventQueue::new("p".into(), "t".into(), 4);
         for i in 0..4 {
