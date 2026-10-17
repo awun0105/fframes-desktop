@@ -530,6 +530,40 @@ fn a_session_whose_log_cannot_be_read_is_marked_and_does_not_disturb_the_order()
 }
 
 #[test]
+fn a_listing_reflects_every_change_since_the_previous_listing() {
+    let f = fixture();
+    let first = SessionStore::create_session_at(&f.paths, &f.project, None, 100).unwrap();
+    let log = SessionStore::session_log_path(&f.paths, &f.project, &first).unwrap();
+    write_log(&log, &[user(1, 100, "Make the intro faster")]);
+    let before = SessionStore::list_sessions(&f.paths, &f.project).unwrap();
+    assert_eq!(before.len(), 1);
+    assert!(before[0].is_current);
+
+    write_log(
+        &log,
+        &[
+            user(1, 100, "Make the intro faster"),
+            outcome(2, 500, OutcomeKind::Accepted),
+        ],
+    );
+    let second =
+        SessionStore::create_session_at(&f.paths, &f.project, Some("Second".into()), 200).unwrap();
+    SessionStore::set_current(&f.paths, &f.project, &second).unwrap();
+    let after = SessionStore::list_sessions(&f.paths, &f.project).unwrap();
+    let order: Vec<_> = after.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(order, [first.as_str(), second.as_str()]);
+    assert_eq!(after[0].rows, 2);
+    assert_eq!(after[0].updated_unix, 500);
+    assert_eq!(after[0].outcome, Some(OutcomeKind::Accepted));
+    assert!(!after[0].is_current);
+    assert!(after[1].is_current);
+    assert_eq!(after[1].title, "Second");
+
+    fs::remove_dir_all(f.paths.agent_session_dir(&f.project, &second)).unwrap();
+    assert_eq!(ids(&f), [first]);
+}
+
+#[test]
 fn sessions_list_newest_first_with_title_agent_and_outcome() {
     let f = fixture();
     let mk = |title: Option<&str>, rows: &[Row], provider: Option<(&str, u64)>| {

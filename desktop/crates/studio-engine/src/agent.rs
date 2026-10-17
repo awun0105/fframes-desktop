@@ -987,7 +987,8 @@ impl AgentWorkflow {
     /// The project's stored sessions, most recently updated first, each with its title,
     /// agent, outcome and whether it is the current one and can be resumed.
     ///
-    /// Reads every session log in full: call it off the UI thread, not on every keystroke.
+    /// Reads the log of every session changed since the last listing: call it off the UI
+    /// thread, not on every keystroke.
     /// The newest rows of the running session reach disk with the next snapshot, so its
     /// entry can lag the transcript by a moment.
     pub fn sessions(&self) -> Result<Vec<session_store::history::SessionSummary>, WorkflowError> {

@@ -6,7 +6,10 @@
 //! notifications from `session/load` must be dropped by the driver side) and the manifest that
 //! says how to resume it (`SessionManifest::is_resumable`, `wire_session_id`).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::SystemTime;
 
 use studio_project::ProjectId;
 
@@ -62,25 +65,43 @@ impl SessionStore {
     /// whose files cannot be read still appears, with what could be read (see
     /// [`SessionSummary::unreadable`]). A project without sessions yields an empty list.
     ///
-    /// Reads every log in full, so call it off the UI thread and not on every keystroke.
+    /// A session's summary is kept in memory and reused while the size and modification time
+    /// of its log, manifest and meta files are unchanged; otherwise its log is read in full.
+    /// Call it off the UI thread and not on every keystroke.
     pub fn list_sessions(
         paths: &AppPaths,
         project: &ProjectId,
     ) -> Result<Vec<SessionSummary>, String> {
-        let entries = match std::fs::read_dir(paths.agent_sessions(project)) {
+        let dir = paths.agent_sessions(project);
+        let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                summaries().remove(&dir);
+                return Ok(Vec::new());
+            }
             Err(e) => return Err(format!("cannot read sessions directory: {e}")),
         };
         let current = Self::current_session_id(paths, project);
+        let mut cached = summaries().remove(&dir).unwrap_or_default();
+        let mut kept = HashMap::new();
         let mut out = Vec::new();
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             if is_valid_session_id(&name) && entry.path().is_dir() {
-                let is_current = current.as_deref() == Some(name.as_str());
-                out.push(summarize(paths, project, name, is_current));
+                let stamp = stamp(paths, project, &name);
+                let mut summary = match cached.remove(&name) {
+                    Some((old, summary)) if old == stamp => summary,
+                    _ => summarize(paths, project, name.clone()),
+                };
+                summary.is_current = current.as_deref() == Some(name.as_str());
+                // A log that failed to open (held by a scanner, say) is read again next time.
+                if !summary.unreadable {
+                    kept.insert(name, (stamp, summary.clone()));
+                }
+                out.push(summary);
             }
         }
+        summaries().insert(dir, kept);
         out.sort_by(|a, b| {
             b.updated_unix
                 .cmp(&a.updated_unix)
@@ -117,12 +138,34 @@ impl SessionStore {
     }
 }
 
-fn summarize(
-    paths: &AppPaths,
-    project: &ProjectId,
-    id: String,
-    is_current: bool,
-) -> SessionSummary {
+/// Size and modification time of each file a summary is built from; `None` for a missing or
+/// unreadable file.
+type Stamp = [Option<(u64, SystemTime)>; 3];
+
+fn stamp(paths: &AppPaths, project: &ProjectId, id: &str) -> Stamp {
+    [
+        layout::log_file(paths, project, id),
+        layout::manifest_file(paths, project, id),
+        layout::meta_file(paths, project, id),
+    ]
+    .map(|path| {
+        let meta = std::fs::metadata(path).ok()?;
+        Some((meta.len(), meta.modified().ok()?))
+    })
+}
+
+/// Summaries of the last listing, per sessions directory and session id.
+type Summaries = HashMap<PathBuf, HashMap<String, (Stamp, SessionSummary)>>;
+
+fn summaries() -> MutexGuard<'static, Summaries> {
+    static SUMMARIES: OnceLock<Mutex<Summaries>> = OnceLock::new();
+    SUMMARIES
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+fn summarize(paths: &AppPaths, project: &ProjectId, id: String) -> SessionSummary {
     let manifest = layout::read_manifest(&layout::manifest_file(paths, project, &id));
     let meta = layout::read_meta(&layout::meta_file(paths, project, &id));
     let (rows, unreadable) = match log::read_rows(&layout::log_file(paths, project, &id)) {
@@ -189,7 +232,7 @@ fn summarize(
         outcome,
         prompt_text,
         rows: rows.len(),
-        is_current,
+        is_current: false,
         resumable: manifest.as_ref().is_some_and(SessionManifest::is_resumable),
         unreadable,
     }
