@@ -327,6 +327,69 @@ fn a_history_page_asked_for_an_earlier_conversation_is_refused() {
     w.wait("the new session", |s| s.chat == 1);
 }
 
+/// The offer made when the project opens applies the stored capabilities, as opening the
+/// session does; with resume support the same session is still offered.
+#[test]
+fn the_session_offered_at_startup_is_resumable_only_when_its_agent_can_resume() {
+    for (load_session, resumable) in [(false, false), (true, true)] {
+        let mut w = World::new();
+        if load_session {
+            fs::write(w.agent.join("load-session"), "1").unwrap();
+        }
+        w.submit(&good("before-the-restart"));
+        w.wait_task(None);
+        store_wire_session(&w, "wire-session-at-startup");
+        w.restart();
+        let s = w.wait("the offer", |s| s.session_restore.is_some());
+        let restore = s.session_restore.as_ref().unwrap();
+        assert_eq!(restore.is_resumable, resumable, "{restore:?}");
+        if !resumable {
+            assert!(
+                restore
+                    .notice
+                    .as_deref()
+                    .is_some_and(|n| n.contains("does not support resuming")),
+                "{restore:?}"
+            );
+        }
+    }
+}
+
+/// The startup offer follows the configured agent: refused while another one is configured,
+/// offered again once the agent that ran it is back.
+#[test]
+fn the_session_offered_at_startup_follows_an_adapter_change() {
+    let mut w = World::new();
+    fs::write(w.agent.join("load-session"), "1").unwrap();
+    w.submit(&good("before-the-restart"));
+    w.wait_task(None);
+    store_wire_session(&w, "wire-session-at-startup");
+    w.restart();
+    w.wait("the offer", |s| {
+        s.session_restore.as_ref().is_some_and(|r| r.is_resumable)
+    });
+
+    let own = w.adapter_settings();
+    let mut other = own.clone();
+    other.provider = "scripted-other".into();
+    w.wf().set_adapter(Some(other)).unwrap();
+    let s = w.wait("the refused offer", |s| {
+        s.session_restore.as_ref().is_some_and(|r| !r.is_resumable)
+    });
+    let notice = s.session_restore.as_ref().unwrap().notice.clone();
+    assert!(
+        notice
+            .as_deref()
+            .is_some_and(|n| n.contains("the configured agent is scripted-other")),
+        "{notice:?}"
+    );
+
+    w.wf().set_adapter(Some(own)).unwrap();
+    w.wait("the offer for the agent that ran it", |s| {
+        s.session_restore.as_ref().is_some_and(|r| r.is_resumable)
+    });
+}
+
 #[test]
 fn row_ids_stay_unique_across_sessions_and_restarts() {
     let mut w = World::new();

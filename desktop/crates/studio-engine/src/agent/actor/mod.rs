@@ -344,6 +344,9 @@ pub(crate) struct Actor {
     switch_target: Option<String>,
     switch_pending: Option<SwitchPendingView>,
     session_restore: Option<SessionRestoreView>,
+    /// The offer made when the project opened; while `session_restore` still equals it, a
+    /// settings change makes the offer again for the new provider.
+    startup_offer: Option<SessionRestoreView>,
     next_draft_choice: Option<crate::DraftPreparationChoice>,
     next_handoff_context: Option<super::session_store::BoundedHandoffContext>,
     pending_resume_session: Option<PendingResumeSession>,
@@ -531,6 +534,7 @@ impl Actor {
             switch_target: None,
             switch_pending: None,
             session_restore: None,
+            startup_offer: None,
             next_draft_choice: None,
             next_handoff_context: None,
             pending_resume_session: None,
@@ -540,8 +544,9 @@ impl Actor {
             resume_failed: false,
             composer: Default::default(),
         };
-        actor.offer_saved_session();
+        // The offer is judged against the configured provider, so the settings come first.
         actor.settings_changed();
+        actor.offer_saved_session();
         actor.detect_interrupted();
         actor.refresh_idle();
         actor.publish(true);
@@ -664,7 +669,12 @@ impl Actor {
                 self.defer(message)
             }
             Msg::CheckAdapter => self.check_adapter(true),
-            Msg::SettingsChanged => self.settings_changed(),
+            Msg::SettingsChanged => {
+                self.settings_changed();
+                if self.startup_offer.is_some() && self.session_restore == self.startup_offer {
+                    self.offer_saved_session();
+                }
+            }
             Msg::Submit {
                 id,
                 brief,

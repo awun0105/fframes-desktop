@@ -854,7 +854,9 @@ impl Actor {
         }
     }
 
-    /// Offers the current stored session's manifest for restoration, as it stands at launch.
+    /// Offers the current stored session's manifest for restoration, as it stands at launch,
+    /// judged against the configured provider. Made again when the settings change while the
+    /// offer is still shown.
     pub(super) fn offer_saved_session(&mut self) {
         let manifest = match SessionStore::load(&self.shared.paths, &self.shared.project) {
             Ok(Some(manifest)) => manifest,
@@ -877,21 +879,27 @@ impl Actor {
                     Ok(None) | Ok(Some(DraftState::Accepted { .. }))
                 )
         };
-        let is_resumable = manifest.is_resumable() && compatible;
+        // The same gate as opening or restoring the session: the configured provider and the
+        // stored capabilities decide before the project state does.
+        let blocker = self.resume_blocker(&manifest);
+        let is_resumable = blocker.is_none() && compatible;
         self.session_restore = Some(SessionRestoreView {
             provider_id: manifest.provider_id.clone(),
             redacted_session_id: manifest.redacted_id(),
             is_resumable,
             last_source_revision: manifest.last_source_revision.clone(),
-            notice: if is_resumable {
-                Some(
+            notice: Some(match blocker {
+                _ if is_resumable => {
                     "Saved session found; adapter compatibility will be checked before launch."
-                        .to_string(),
-                )
-            } else {
-                Some("Previous session is incompatible with the current project state (fresh session available).".to_string())
-            },
+                        .to_string()
+                }
+                Some(reason) => format!(
+                    "The saved session cannot be resumed: {reason} (fresh session available)."
+                ),
+                None => "Previous session is incompatible with the current project state (fresh session available).".to_string(),
+            }),
         });
+        self.startup_offer = self.session_restore.clone();
     }
 
     /// Makes `next` the open conversation and forgets everything tied to the previous one:
