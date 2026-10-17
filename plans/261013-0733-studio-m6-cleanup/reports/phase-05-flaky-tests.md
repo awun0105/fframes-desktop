@@ -56,6 +56,17 @@ Hypotheses 1 (unbounded pipe-EOF joins), 2 (inline shutdown contention) and 4 (q
 
 The plan's diagnosis was that the shell ignores Open while it is preparing. That does not match the macOS failure. An ignored Open would leave no paths prompt, and `choose_path` would then panic with "no pending paths prompt". The CI log shows a wait timeout instead. The test never failed locally, so the cause is unproven. `open_path` removes the one race that can be seen by reading, an Open dispatched while the shell is still busy. If macOS fails again, the timeout message now names the stage it waited for.
 
+### Parity under load (found during phase 6)
+
+A `cargo test --workspace` run, and parity runs next to the `studio-engine` suite, failed about 2 in 9 times, in two tests. The full telemetry of each failure gave the cause, and neither was the focus race above.
+
+- `undo_in_the_prompt_undoes_the_typing_there` timed out waiting for the preview: `preview.status` was `absent`, no build ran and the shell was idle. The shell's `dispatch` drops any command sent while another one is in flight (`shell/engine_events.rs`), so a `BuildPreview` that arrives during a brief busy window is lost. What made the shell busy at that moment was not identified; the agent evidence folder is outside the project, so it is not a source-change refresh. The harness `build_preview` dispatches only when the shell is idle and asserts that the shell is busy right after, so a dropped build fails at once. Every parity site that starts a build uses it.
+- `composer::the_history_lists_searches_and_reopens_stored_sessions` timed out waiting for two stored sessions. The panel was still on the Chat tab, showing the first listing, so the second History click never landed. The list is fetched once per opening, so the test now clicks until the panel shows the History tab (`open_history`). The session summary cache was not involved: the stale entry was the earlier listing.
+
+`focus_prompt` stays. The earlier unexplained undo timeout fits the first cause, but it was not captured, so this is not proven.
+
+Owner decision, no change in M6: in the app, a Build pressed while another command runs is dropped without feedback.
+
 ## Limitations
 
 | Item | Result | Test |
@@ -100,4 +111,4 @@ A code review of the diff found no blocking issue. Its four medium findings were
 
 - The cause of the macOS project-switch failure is unproven (see above).
 - Linux and macOS CI were not run, by the owner's decision for M6. The 3 consecutive CI runs in the plan's validation are still open.
-- One of 14 full parity runs had a wait timeout in `undo_in_the_prompt_undoes_the_typing_there`, on the first run after a rebuild. The cause is unexplained; the other 13 runs, and the 30 runs of the test alone, passed.
+- One of 14 full parity runs had a wait timeout in `undo_in_the_prompt_undoes_the_typing_there`, on the first run after a rebuild. It was not captured; it fits the dropped-build cause described under "Parity under load".
