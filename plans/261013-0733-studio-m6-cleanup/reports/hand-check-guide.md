@@ -6,17 +6,17 @@ Step-by-step checks for the rows of [platform checks](./platform-checks.md) that
 
 | Item | Where |
 | --- | --- |
-| Release build of `feat/studio-m6` at `931fea3` | `C:\Users\Administrator\fframes-m6\desktop\target\release\fframes-studio.exe` |
+| Release build of `feat/studio-m6` at `21a7f13` | `C:\Users\Administrator\fframes-m6\desktop\target\release\fframes-studio.exe` |
 | SDK bundle `studio-sdk-x86_64-pc-windows-msvc-v4`, assembled from the same checkout | `C:\Users\Administrator\fframes-m6\desktop\target\phase-zero-sdk` |
 | Launcher (sets `FFRAMES_SDK_BUNDLE`, puts FFmpeg's DLLs on `PATH`) | `C:\Users\Administrator\studio-hand-checks\start-studio.ps1` |
-| Mock projects | `C:\Users\Administrator\studio-hand-checks\01-…` to `05-…` (below) |
+| Mock projects | `C:\Users\Administrator\studio-hand-checks\01-â€¦` to `05-â€¦` (below) |
 | Your pre-M6 Studio data, moved aside so Studio starts clean | `%LOCALAPPDATA%\fframes-studio.pre-m6-backup-20261017`; put it back with `restore-old-studio-data.ps1` in the same folder |
 
 The installed v2 SDK in `~\.fframes\sdk\active` is kept: installing v4 moves it to the installer's `previous` slot.
 
 | Project | Made from | Used for |
 | --- | --- | --- |
-| `01-template` | the studio template, one scene `starter-video` | timeline split, trim, undo, export |
+| `01-template` | the studio template: three scenes, `intro`, `story` and `outro` | timeline split, trim, undo, export |
 | `02-scenes-and-audio` | the template with the timeline fixture: a scene repeated twice, an overlapping overlay, an audio cue | reorder, audio, overlapping scenes |
 | `03-import-me` | the template without `studio.json` | Import Rust |
 | `04-older-studio` | the template with `generated_instruction_version` 1 | refusal of an older project; its SHA-256 is in `04-older-studio.sha256.txt` |
@@ -54,13 +54,13 @@ The installed v2 SDK in `~\.fframes\sdk\active` is kept: installing v4 moves it 
 
 Open `01-template`.
 
-1. Click **Build preview**. **Expect** the first build to take a minute or two, then the preview and one clip in the timeline.
+1. Click **Build preview**. **Expect** the first build to take a minute or two, then the preview and three clips in the timeline: `intro`, `story`, `outro`.
 2. Press Space to play and Space to pause. Left and Right step a frame; Home and End seek.
-3. Seek to about the middle, click the timeline so it has focus, and press **C**. **Expect** two clips. Note how long the preview takes to update: it should update without a "compiling" state.
-4. Check the file: `Get-Content C:\Users\Administrator\studio-hand-checks\01-template\timeline.json`. **Expect** two clips with key `starter-video` and different trims.
+3. Seek to about the middle, click the timeline so it has focus, and press **C**. **Expect** the clip under the playhead to become two. Note how long the preview takes to update: it should update without a "compiling" state.
+4. Check the file: `Get-Content C:\Users\Administrator\studio-hand-checks\01-template\timeline.json`. **Expect** two clips with the key of the scene you split (for example `story`) and different trims, next to the other two scenes.
 5. Drag the right edge of the second clip to the left. **Expect** it to shrink, snapping to the playhead unless you hold Shift. Run step 4 again: `trim_end_frames` has changed.
-6. Press Ctrl+Z twice. **Expect** the trim, then the split, to be undone. Run step 4 again: after both undos the file shows one untrimmed clip. Ctrl+Shift+Z redoes.
-7. Make one split and one trim again, then click **Export…**. Pick MP4 and a destination. **Expect** a native save dialog, a size estimate, progress, and a finished file.
+6. Press Ctrl+Z twice. **Expect** the trim, then the split, to be undone. Run step 4 again: after both undos the timeline is back to `intro`, `story`, `outro` untrimmed. Ctrl+Shift+Z redoes.
+7. Make one split and one trim again, then click **Exportâ€¦**. Pick MP4 and a destination. **Expect** a native save dialog, a size estimate, progress, and a finished file.
 8. Open the exported MP4 in a player. **Expect** the same cut and length as the preview.
 9. Start another export and press **Cancel export**. **Expect** no output file left behind.
 
@@ -71,7 +71,7 @@ Open `02-scenes-and-audio`, then **Build preview**.
 
 ## 5. Agent connection (Done-means 3)
 
-Open `05-agent-playground`. The Agent tab is the first sidebar tab. Its settings button opens Settings › Agent.
+Open `05-agent-playground`. The Agent tab is the first sidebar tab. Its settings button opens Settings â€º Agent.
 
 The built-in Claude and Codex profiles start on ACP (see the finding in [platform checks](./platform-checks.md#findings)). Check all three wires:
 
