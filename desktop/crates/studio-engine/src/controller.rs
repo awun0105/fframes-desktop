@@ -393,15 +393,8 @@ impl Controller {
         TaskJournal::inspect(&history.join("tasks.jsonl"))?;
         let stored = if database.exists() {
             let readable = Store::open_read_only(database)?;
-            let version = readable.version()?;
-            if version > crate::store::SCHEMA_VERSION {
-                return Err(EngineError::NewerFormat {
-                    what: format!("{} (history database)", database.display()),
-                    found: version,
-                    supported: crate::store::SCHEMA_VERSION,
-                });
-            }
-            if version >= 1 {
+            readable.ensure_current(database)?;
+            if readable.version()? >= 1 {
                 readable.get(project)?
             } else {
                 None
@@ -409,7 +402,13 @@ impl Controller {
         } else {
             None
         };
-        Ok(lifecycle.committed.or(stored))
+        let last = lifecycle.committed.or(stored);
+        // The saved checkpoint of that record: one made by an older Studio is refused here,
+        // before any recovery, replay or comparison could act on it.
+        if let Some(last) = &last {
+            Checkpoints::check_format(history, last.state.accepted())?;
+        }
+        Ok(last)
     }
 
     /// Appends a lifecycle snapshot. Any failure (the journal refuses everything until

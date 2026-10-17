@@ -416,20 +416,13 @@ fn the_projection_is_rebuilt_from_the_journal_when_lost_or_stale() {
     drop(c);
     assert_idempotent(&run, "stale projection");
 
-    // Missing database file entirely, and a dropped projection table.
+    // Missing database file entirely: the projection is rebuilt from the journal.
     let db = run.fx.paths.database();
     fs::remove_file(&db).unwrap();
     let c = open_retrying(&run.fx.root, &run.fx.paths).unwrap();
     assert!(c.recovery_status().projection_rebuilt);
     assert_eq!(c.state().task_history().entries().len(), 1);
     assert_eq!(c.state().source(), &run.candidate);
-    drop(c);
-    rusqlite::Connection::open(&db)
-        .unwrap()
-        .execute_batch("DROP TABLE task_revisions")
-        .unwrap();
-    let c = open_retrying(&run.fx.root, &run.fx.paths).unwrap();
-    assert!(c.recovery_status().projection_rebuilt);
     assert_eq!(
         Store::open(&db)
             .unwrap()
@@ -542,14 +535,98 @@ fn a_newer_task_journal_or_database_opens_nothing_and_changes_nothing() {
     assert_eq!(snapshot(&run.fx.root), tree);
 }
 
+/// Everything under `root`, as name and bytes, so a refusal can prove it created and changed nothing.
+fn bytes_of_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    fn walk(dir: &Path, root: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, root, out);
+            } else {
+                let name = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                out.insert(name, fs::read(&path).unwrap());
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    walk(root, root, &mut out);
+    out
+}
+
+fn assert_refused_as_older(error: &EngineError, file: &str) {
+    let text = error.to_string();
+    assert!(text.contains(file), "{text}");
+    assert!(text.contains("older Studio"), "{text}");
+}
+
 #[test]
-fn an_existing_version_one_installation_migrates_with_a_backup_and_keeps_its_history() {
+fn a_task_journal_of_an_older_format_is_refused_by_the_project_and_left_as_it_is() {
+    for format in [2, 3] {
+        let (run, c, result) = run(None);
+        result.unwrap();
+        drop(c);
+        let text = fs::read_to_string(&run.tasks).unwrap();
+        let older = text.replace("\"format\":4", &format!("\"format\":{format}"));
+        fs::write(&run.tasks, older).unwrap();
+        let data = bytes_of_tree(&run.fx.paths.data);
+        let tree = snapshot(&run.fx.root);
+        let error = open_retrying(&run.fx.root, &run.fx.paths).err().unwrap();
+        assert!(
+            matches!(error, EngineError::OlderFormat { found, .. } if found == format),
+            "{error}"
+        );
+        assert_refused_as_older(&error, "tasks.jsonl");
+        assert_eq!(bytes_of_tree(&run.fx.paths.data), data, "format {format}");
+        assert_eq!(snapshot(&run.fx.root), tree, "format {format}");
+    }
+}
+
+#[test]
+fn an_accepted_checkpoint_of_an_older_inventory_format_is_refused_and_left_as_it_is() {
+    for versioned in [false, true] {
+        let fx = fixture();
+        let history = {
+            let c = open_retrying(&fx.root, &fx.paths).unwrap();
+            fx.history(&c)
+        };
+        let manifest = fs::read_dir(history.join("checkpoints"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.extension().is_some_and(|e| e == "json"))
+            .unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        if versioned {
+            object.insert("version".into(), 1.into());
+        } else {
+            object.remove("version");
+        }
+        for file in object["files"].as_array_mut().unwrap() {
+            file.as_object_mut().unwrap().remove("executable");
+        }
+        fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
+        let data = bytes_of_tree(&fx.paths.data);
+        let tree = snapshot(&fx.root);
+        let error = open_retrying(&fx.root, &fx.paths).err().unwrap();
+        let name = manifest.file_name().unwrap().to_string_lossy().into_owned();
+        let text = error.to_string();
+        assert!(text.contains(&name), "{text}");
+        assert!(text.contains("older Studio"), "{text}");
+        assert_eq!(bytes_of_tree(&fx.paths.data), data);
+        assert_eq!(snapshot(&fx.root), tree);
+    }
+}
+
+#[test]
+fn a_history_database_of_an_older_version_is_refused_and_left_byte_identical() {
     let fx = fixture();
-    let accepted = {
-        let c = open_retrying(&fx.root, &fx.paths).unwrap();
-        c.state().accepted().clone()
-    };
-    // Make the database look like it was written before task transactions existed.
+    open_retrying(&fx.root, &fx.paths).unwrap();
+    // The database as it was before task transactions existed.
     let db = fx.paths.database();
     {
         let connection = rusqlite::Connection::open(&db).unwrap();
@@ -557,25 +634,23 @@ fn an_existing_version_one_installation_migrates_with_a_backup_and_keeps_its_his
             .execute_batch("DROP TABLE task_revisions; PRAGMA user_version=1;")
             .unwrap();
     }
-    let before = fs::read_dir(&fx.paths.data).unwrap().count();
-    let c = open_retrying(&fx.root, &fx.paths).unwrap();
-    assert_eq!(c.state().accepted(), &accepted);
-    assert_eq!(c.review_policy(), studio_engine::ReviewPolicy::AutoApply);
-    let backups: Vec<_> = fs::read_dir(&fx.paths.data)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|n| n.contains("backup-"))
-        .collect();
-    assert_eq!(backups.len(), 1, "{backups:?}");
-    assert_eq!(fs::read_dir(&fx.paths.data).unwrap().count(), before + 1);
-    // The lifecycle journal keeps its version-1 records; the task journal keeps its own format.
-    let history = fx.history(&c);
-    let lifecycle = fs::read_to_string(history.join("lifecycle.jsonl")).unwrap();
-    assert!(lifecycle.lines().all(|l| l.starts_with("{\"version\":1,")));
-    assert_eq!(
-        Store::open(&db).unwrap().version().unwrap(),
-        studio_engine::store::SCHEMA_VERSION
+    let data = bytes_of_tree(&fx.paths.data);
+    let tree = snapshot(&fx.root);
+    let error = open_retrying(&fx.root, &fx.paths).err().unwrap();
+    assert!(
+        matches!(error, EngineError::OlderFormat { found: 1, .. }),
+        "{error}"
     );
+    assert_refused_as_older(&error, "studio.sqlite3");
+    assert_eq!(bytes_of_tree(&fx.paths.data), data);
+    assert_eq!(snapshot(&fx.root), tree);
+    assert!(
+        !data.keys().any(|n| n.contains("backup-")),
+        "no backup is made"
+    );
+    // The read-only diagnostic route still opens it.
+    let store = Store::open_read_only(&db).unwrap();
+    assert_eq!(store.version().unwrap(), 1);
 }
 
 // ---- real process death ----------------------------------------------------------------

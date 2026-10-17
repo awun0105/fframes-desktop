@@ -77,20 +77,15 @@ pub use windows::{Dir, fstat};
 
 /// A volume identifier plus a file identifier: `(st_dev, st_ino)` on Unix,
 /// `FILE_ID_INFORMATION` (`VolumeSerialNumber`, the 128-bit `FILE_ID_128`) on Windows.
-///
-/// Journals written before the identifier was widened name the fields `dev` and `ino`;
-/// they still decode, and on Unix compare equal to a fresh `fstat`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FileId {
-    #[serde(alias = "dev")]
     pub volume: u64,
-    #[serde(alias = "ino", with = "file_number")]
+    #[serde(with = "file_number")]
     pub file: u128,
 }
 
 impl fmt::Display for FileId {
-    /// `volume:file` in decimal, the form journalled in progress details. Records written
-    /// before the identifier was widened (`dev:ino`) read back unchanged.
+    /// `volume:file` in decimal, the form journalled in progress details.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.volume, self.file)
     }
@@ -108,8 +103,8 @@ impl std::str::FromStr for FileId {
     }
 }
 
-/// The 128-bit file number as a JSON number when it fits in 64 bits (every Unix inode,
-/// and the shape older journals carry) and as a decimal string otherwise, so no reader
+/// The 128-bit file number as a JSON number when it fits in 64 bits (every Unix inode)
+/// and as a decimal string otherwise, so no reader
 /// depends on 128-bit integer support in the JSON layer.
 mod file_number {
     use serde::{Deserialize, Deserializer, Serializer, de::Error};
@@ -501,7 +496,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn file_ids_round_trip_wide_values_and_read_the_older_dev_ino_shape() {
+    fn file_ids_round_trip_wide_values() {
         let wide = FileId {
             volume: 0x8c64_df92_64df_7e00,
             file: 0x0003_0000_0014_2a7f_0000_0000_0000_0001,
@@ -516,9 +511,11 @@ mod tests {
             serde_json::to_string(&small).unwrap(),
             r#"{"volume":2049,"file":1234}"#
         );
-        let older: FileId = serde_json::from_str(r#"{"dev":2049,"ino":1234}"#).unwrap();
-        assert_eq!(older, small);
-        // The journalled text form: older `dev:ino` details parse into the same id.
+        // The wide file number is a decimal string, which reads back too.
+        assert!(json.contains(r#""file":""#), "{json}");
+        // Only the current field names are read.
+        assert!(serde_json::from_str::<FileId>(r#"{"dev":2049,"ino":1234}"#).is_err());
+        // The journalled text form.
         assert_eq!("2049:1234".parse::<FileId>(), Ok(small));
         assert_eq!(wide.to_string().parse::<FileId>(), Ok(wide));
         assert!("2049".parse::<FileId>().is_err());

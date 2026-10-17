@@ -60,16 +60,9 @@ use studio_project::{
 
 pub use studio_project::publish::{FileId, NoClobber};
 
-/// Explicit format version of every event the task journal writes.
-///
-/// Format 3 widened [`FileId`] to a volume id plus a 128-bit file id (`volume`, `file`;
-/// format 2 wrote `dev`, `ino`). Format 4 added [`TaskRevisionRecord::undoes_paths`], the
-/// per-path form of an Undo. Lines of every older format still replay, so a journal may
-/// mix them; a build from before format 4 would read a one-path Undo as a whole one, so
-/// it refuses a journal that holds a format-4 line.
+/// Explicit format version of every event the task journal writes, and the only one it
+/// reads. A journal line of another format is refused and the file is left as it is.
 pub const TASK_FORMAT: u32 = 4;
-/// The oldest task-journal format that still replays.
-pub const OLDEST_TASK_FORMAT: u32 = 2;
 /// Most file operations one transaction may carry (the intent is a single journal line).
 pub const MAX_FILE_OPS: usize = 2048;
 const MAX_SUMMARY_CHARS: usize = 512;
@@ -111,12 +104,11 @@ pub struct FileDelta {
     pub before: Option<FileState>,
     pub after: Option<FileState>,
     /// Exact permission bits (`st_mode & 0o7777`) the original had when the plan was
-    /// made. `None` for a create, and for legacy records that only knew the executable
-    /// bit.
+    /// made. `None` for a create (not written then).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before_mode: Option<u32>,
-    /// Exact permission bits the published file carries. `None` for a delete, and for
-    /// legacy records.
+    /// Exact permission bits the published file carries. `None` for a delete (not
+    /// written then).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after_mode: Option<u32>,
 }
@@ -223,8 +215,8 @@ pub fn touched_conflicts(deltas: &[FileDelta], current: &SourceInventory) -> Vec
 }
 
 /// Undo's guard on exact permission bits: files whose content is still the edit's but
-/// whose permission bits differ from the bits the edit left (a `chmod` since). Legacy
-/// records that never knew the bits are not examined. Only touches the filesystem to
+/// whose permission bits differ from the bits the edit left (a `chmod` since). Deltas
+/// without recorded bits (a delete) are not examined. Only touches the filesystem to
 /// `lstat` the recorded paths.
 pub fn mode_conflicts(root: &Path, deltas: &[FileDelta]) -> Vec<PathConflict> {
     use studio_project::publish::Dir;
@@ -291,23 +283,21 @@ pub struct TaskRevisionRecord {
     pub published: SourceRevision,
     /// The revision this entry reverses, for Undo.
     pub undoes: Option<String>,
-    /// For an Undo: exactly the paths of `undoes` it inverted (every Undo written by
-    /// format 4 records them). `None` (records written before format 4) means every path
-    /// of `undoes`.
+    /// For an Undo: exactly the paths of `undoes` it inverted. `None` (not written) for
+    /// every other record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub undoes_paths: Option<Vec<String>>,
     pub prompt_summary: String,
     pub changes: Vec<FileDelta>,
     /// Directories this revision created (relative, shallowest first); Undo removes the
     /// ones that are empty again.
-    #[serde(default)]
     pub created_dirs: Vec<String>,
     /// SDK / build key of the validated candidate.
     pub build: Option<BuildIdentity>,
     pub validation_report_sha256: String,
     pub committed_unix: u64,
     /// Present exactly on [`TransactionKind::Preset`] records: what the preset mutation
-    /// was. Older records never carry it.
+    /// was. `None` (not written) on every other record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<crate::preset_state::PresetProvenance>,
     /// Present exactly on [`TransactionKind::Migration`] records: the raw `studio.json`
@@ -351,11 +341,9 @@ pub struct FileOp {
     /// File -> directory: a new directory of this create occupies the name of a file the
     /// revision deletes, so the stage (and its directory) is only made after every
     /// displacement.
-    #[serde(default)]
     pub defer_stage: bool,
     /// Directory -> file: the directories (deepest first) this create removes, once every
     /// delete beneath them was displaced, before it publishes.
-    #[serde(default)]
     pub vacates: Vec<VacatedDir>,
     /// Where the displaced original lives when it must not stay in the op's own
     /// directory (that directory is vacated by the revision). `None`: the op's directory.
@@ -418,7 +406,6 @@ pub struct TransactionIntent {
     pub ops: Vec<FileOp>,
     pub dirs: Vec<DirIdentity>,
     /// Directories to remove after the commit if they are empty (Undo of a creation).
-    #[serde(default)]
     pub remove_dirs: Vec<String>,
     /// The record that will be committed once the final inventory verifies.
     pub record: TaskRevisionRecord,
@@ -1166,7 +1153,7 @@ mod tests {
         let mut files = files;
         files.sort_by(|a, b| a.path.cmp(&b.path));
         SourceInventory {
-            version: 1,
+            version: 2,
             revision: SourceRevision::try_from(hash('0')).unwrap(),
             files,
         }
@@ -1306,13 +1293,11 @@ mod tests {
     }
 
     #[test]
-    fn records_without_permission_bits_read_with_defaults_and_stay_invertible() {
-        let legacy =
-            r#"{"path":"a.txt","before":{"sha256":"aa","size":1,"executable":false},"after":null}"#;
-        let delta: FileDelta = serde_json::from_str(legacy).unwrap();
+    fn deltas_without_permission_bits_stay_invertible() {
+        let delta = delta_without_modes();
         assert_eq!((delta.before_mode, delta.after_mode), (None, None));
         assert_eq!(delta.inverse().inverse(), delta);
-        // New records name both sides and swap them in the inverse.
+        // A delta that names both sides swaps them in the inverse.
         let exact = FileDelta {
             before_mode: Some(0o741),
             after_mode: Some(0o640),
@@ -1334,7 +1319,7 @@ mod tests {
     }
 
     #[test]
-    fn planned_operations_keep_wide_file_ids_and_read_format_2_ids() {
+    fn planned_operations_keep_wide_file_ids() {
         let op = FileOp {
             index: 0,
             delta: delta_without_modes(),
@@ -1365,26 +1350,15 @@ mod tests {
         };
         let json = serde_json::to_string(&op).unwrap();
         assert_eq!(serde_json::from_str::<FileOp>(&json).unwrap(), op);
-        // A format-2 operation names the identity `dev` / `ino`.
-        let older = json
-            .replace(
-                &format!(r#""volume":{},"file":"{}""#, u64::MAX, u128::MAX - 7),
-                r#""dev":2049,"ino":77"#,
-            )
-            .replace(
-                &format!(r#""volume":3,"file":"{}""#, u128::from(u64::MAX) + 1),
-                r#""dev":3,"ino":9"#,
+        // The writer always emits these, so a record without them is refused.
+        for key in ["defer_stage", "vacates"] {
+            let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+            value.as_object_mut().unwrap().remove(key);
+            assert!(
+                serde_json::from_value::<FileOp>(value).is_err(),
+                "{key} must be required"
             );
-        assert!(older.contains(r#""ino":77"#) && older.contains(r#""ino":9"#));
-        let read: FileOp = serde_json::from_str(&older).unwrap();
-        assert_eq!(
-            read.before_id,
-            Some(FileId {
-                volume: 2049,
-                file: 77
-            })
-        );
-        assert_eq!(read.vacates[0].id, FileId { volume: 3, file: 9 });
+        }
     }
 
     fn delta_without_modes() -> FileDelta {

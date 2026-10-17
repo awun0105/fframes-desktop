@@ -374,9 +374,8 @@ pub struct ProjectState {
     candidate: Option<Candidate>,
     /// The build revision ([`ScannedSource::build`]) of the last successful build.
     built: Option<SourceRevision>,
-    /// The build revision of `source`. `None` in records written before it existed;
-    /// the next reconcile fills it in.
-    #[serde(default)]
+    /// The build revision of `source`; while `None` the source revision stands in for
+    /// it, and the next reconcile fills it in.
     build_source: Option<SourceRevision>,
     /// Changes with every build-relevant source change and every queued job, never
     /// with a timing-only change.
@@ -384,20 +383,15 @@ pub struct ProjectState {
     next_operation: u64,
     job: JobState,
     kind: Option<JobKind>,
-    /// App-local: how a validated task candidate reaches the source. Legacy records
-    /// without the field read as the default (automatic Apply).
-    #[serde(default)]
+    /// App-local: how a validated task candidate reaches the source.
     review_policy: ReviewPolicy,
     /// Validated task revisions (Apply and Undo) in commit order, distinct from the saved
     /// checkpoint `accepted`. An in-memory view of the task journal (the source of
     /// truth): it is never written into lifecycle snapshots, which would otherwise grow
     /// with every accepted revision until a snapshot exceeded the journal's entry limit.
-    /// Records written by earlier builds still carry an embedded list; it is read for
-    /// compatibility and replaced by the journal's on open.
-    #[serde(default, skip_serializing)]
+    #[serde(skip)]
     task_history: TaskHistory,
     /// Counts changes of the saved checkpoint (`accepted`): the saved-history fence.
-    #[serde(default)]
     saved_generation: u64,
     /// The explicit candidate-to-published relationship that lets a staged preview of
     /// the published bytes be installed. Session-local, never persisted.
@@ -798,25 +792,26 @@ mod tests {
     }
 
     #[test]
-    fn legacy_records_without_the_new_fields_read_with_defaults() {
-        let mut json = serde_json::to_value(state()).unwrap();
-        let object = json.as_object_mut().unwrap();
-        assert!(object.remove("review_policy").is_some());
-        assert!(object.remove("saved_generation").is_some());
-        assert!(!object.contains_key("promotion"));
-        let legacy: ProjectState = serde_json::from_value(json).unwrap();
-        assert_eq!(legacy.review_policy(), ReviewPolicy::AutoApply);
-        assert!(legacy.task_history().entries().is_empty());
-        assert_eq!(legacy.accepted(), &revision('a'));
-        assert_eq!(legacy.saved_history_fence().generation, 0);
-        // And the policy round-trips under its stable name.
+    fn a_snapshot_round_trips_every_field_it_writes() {
         let mut manual = state();
         manual.set_review_policy(ReviewPolicy::ManualReview);
         let json = serde_json::to_value(&manual).unwrap();
+        // The policy is written under its stable name, and the fields the writer always
+        // emits are required.
         assert_eq!(json["review_policy"], "manual_review");
+        for key in ["review_policy", "saved_generation"] {
+            let mut without = json.clone();
+            assert!(without.as_object_mut().unwrap().remove(key).is_some());
+            assert!(
+                serde_json::from_value::<ProjectState>(without).is_err(),
+                "{key} must be required"
+            );
+        }
         let back: ProjectState = serde_json::from_value(json).unwrap();
         assert_eq!(back.review_policy(), ReviewPolicy::ManualReview);
-        // A reopen keeps the app-local policy and the task history.
+        assert_eq!(back.accepted(), &revision('a'));
+        assert!(back.task_history().entries().is_empty());
+        // A reopen keeps the app-local policy.
         assert_eq!(
             back.reopened(revision('a')).review_policy(),
             ReviewPolicy::ManualReview
@@ -824,7 +819,7 @@ mod tests {
     }
 
     #[test]
-    fn task_history_is_never_written_into_a_snapshot_but_embedded_legacy_lists_still_read() {
+    fn task_history_is_never_written_into_a_snapshot_nor_read_from_one() {
         let mut state = state();
         let applied = record(&state, "tx1", TransactionKind::Apply, None, 'a', 'b');
         state.record_task_revision(applied.clone());
@@ -833,16 +828,15 @@ mod tests {
             !json.as_object().unwrap().contains_key("task_history"),
             "snapshots must not grow with the history"
         );
-        // A record written by an earlier build carries the list inline.
-        let mut legacy = json;
-        legacy.as_object_mut().unwrap().insert(
+        // The journal is the only source of the history: a list in a snapshot is ignored.
+        let mut inline = json;
+        inline.as_object_mut().unwrap().insert(
             "task_history".into(),
             serde_json::json!({ "entries": [serde_json::to_value(&applied).unwrap()] }),
         );
-        let read: ProjectState = serde_json::from_value(legacy).unwrap();
-        assert_eq!(read.task_history().entries(), &[applied]);
+        let read: ProjectState = serde_json::from_value(inline).unwrap();
+        assert!(read.task_history().entries().is_empty());
     }
-
     #[test]
     fn a_validated_task_revision_is_not_a_saved_checkpoint() {
         let mut state = state();

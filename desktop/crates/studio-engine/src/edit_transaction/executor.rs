@@ -8,8 +8,7 @@ use studio_project::publish::{
 };
 
 /// Moving a name an editor controls (displacing an original, taking a published file
-/// down) is always one atomic no-replace rename: the link-based pair is never used for it,
-/// whatever an older intent recorded as its mechanism.
+/// down) is always one atomic no-replace rename: the link-based pair is never used for it.
 const LIVE: NoClobber = NoClobber::Renameat2;
 
 /// Internal failure of one step.
@@ -121,8 +120,7 @@ fn now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// `volume:file` (decimal) as journalled in the `StageCreated` progress detail; format-2
-/// details (`dev:ino`) decode to the same identity.
+/// `volume:file` (decimal) as journalled in the `StageCreated` progress detail.
 fn encode_id(id: FileId) -> String {
     id.to_string()
 }
@@ -537,8 +535,8 @@ impl<'a> Machine<'a> {
         let dir = self.dir_of(intent, op)?;
         self.hit(Boundary::BeforePublish(op.index))?;
         self.dir_unmoved(&dir, op)?;
-        // The source is our private stage name, so even a link-based legacy mechanism
-        // cannot lose anyone's file here.
+        // The source is our private stage name, so even the link-based mechanism (which the
+        // apply gate never selects) cannot lose anyone's file here.
         dir.rename_noreplace(op.mechanism, &op.recovery.stage, &dir, &op.name)
             .map_err(|e| match e.kind() {
                 io::ErrorKind::AlreadyExists => Fail::Conflict(format!(

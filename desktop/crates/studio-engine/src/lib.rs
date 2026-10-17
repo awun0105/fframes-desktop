@@ -93,6 +93,14 @@ pub enum EngineError {
         found: u32,
         supported: u32,
     },
+    #[error(
+        "{what} was made by an older Studio (format {found}, this Studio reads format {supported}). It is left as it is and cannot be opened"
+    )]
+    OlderFormat {
+        what: String,
+        found: u32,
+        supported: u32,
+    },
     #[error("{0}")]
     Diagnostic(String),
 }

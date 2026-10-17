@@ -15,8 +15,11 @@ pub struct Record {
     pub sdk_path: Option<PathBuf>,
 }
 
-/// Schema version of the history database. Version 2 adds the task-revision projection.
+/// Schema version of the history database, the only one this Studio reads or writes.
 pub const SCHEMA_VERSION: u32 = 2;
+
+const SCHEMA: &str = "CREATE TABLE projects (id TEXT PRIMARY KEY, location TEXT NOT NULL, record TEXT NOT NULL, opened INTEGER NOT NULL, recent INTEGER NOT NULL DEFAULT 1);
+     CREATE TABLE task_revisions (project TEXT NOT NULL, tx TEXT NOT NULL, position INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY (project, tx));";
 
 /// Owned by the background controller/serialized command queue, never the GPUI render thread.
 pub struct Store {
@@ -24,40 +27,58 @@ pub struct Store {
     read_only: bool,
 }
 impl Store {
+    /// Opens the history database, creating it when the file does not exist yet. A
+    /// database of any other version (or without a version) is refused and left as it is.
     pub fn open(path: &Path) -> Result<Self, EngineError> {
-        let existed = path.exists();
-        let mut connection = Connection::open(path)?;
+        let connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
-        let version: u32 = connection.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version > SCHEMA_VERSION {
-            return Err(EngineError::NewerFormat {
-                what: format!("{} (history database)", path.display()),
-                found: version,
-                supported: SCHEMA_VERSION,
-            });
-        }
-        if version < SCHEMA_VERSION {
-            if existed {
-                backup_database(&connection, path)?;
+        if Self::is_fresh(&connection)? {
+            // Another opener may create it first: look again once the write lock is held.
+            connection.execute_batch("BEGIN IMMEDIATE")?;
+            if Self::is_fresh(&connection)? {
+                connection
+                    .execute_batch(&format!("{SCHEMA} PRAGMA user_version={SCHEMA_VERSION};"))?;
             }
-            // Additive only: the original table and any unknown tables are untouched.
-            let tx = connection.transaction()?;
-            tx.execute_batch(&format!(
-                "CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, location TEXT NOT NULL, record TEXT NOT NULL, opened INTEGER NOT NULL, recent INTEGER NOT NULL DEFAULT 1);
-                 CREATE TABLE IF NOT EXISTS task_revisions (project TEXT NOT NULL, tx TEXT NOT NULL, position INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY (project, tx));
-                 PRAGMA user_version={SCHEMA_VERSION};"
-            ))?;
-            tx.commit()?;
+            connection.execute_batch("COMMIT")?;
         }
-        // Self-heal an additive projection table that was dropped or never created.
-        connection.execute_batch(
-            "CREATE TABLE IF NOT EXISTS task_revisions (project TEXT NOT NULL, tx TEXT NOT NULL, position INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY (project, tx));",
-        )?;
+        Self::check_format(&connection, path)?;
         connection.pragma_update(None, "synchronous", "FULL")?;
         Ok(Self {
             connection,
             read_only: false,
         })
+    }
+    /// No version and no tables: a database file SQLite just created.
+    fn is_fresh(connection: &Connection) -> Result<bool, EngineError> {
+        let version: u32 = connection.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        let tables: u32 =
+            connection.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))?;
+        Ok(version == 0 && tables == 0)
+    }
+    fn check_format(connection: &Connection, path: &Path) -> Result<(), EngineError> {
+        let version: u32 = connection.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        let what = format!("{} (history database)", path.display());
+        match version.cmp(&SCHEMA_VERSION) {
+            std::cmp::Ordering::Equal => Ok(()),
+            std::cmp::Ordering::Greater => Err(EngineError::NewerFormat {
+                what,
+                found: version,
+                supported: SCHEMA_VERSION,
+            }),
+            std::cmp::Ordering::Less => Err(EngineError::OlderFormat {
+                what,
+                found: version,
+                supported: SCHEMA_VERSION,
+            }),
+        }
+    }
+    /// Refuses the open read-only database unless it is the current version, without
+    /// writing anything. A file without tables counts as current (nothing to read).
+    pub fn ensure_current(&self, path: &Path) -> Result<(), EngineError> {
+        if Self::is_fresh(&self.connection)? {
+            return Ok(());
+        }
+        Self::check_format(&self.connection, path)
     }
     /// Opens any existing database for inspection only: no migration, no backup, no
     /// write. Works for databases written by a newer Studio.
@@ -160,136 +181,84 @@ impl Store {
     }
 }
 
-/// Consistent copy of the whole database, including any WAL state, made with SQLite's
-/// online backup API and synced before the schema is touched.
-fn backup_database(connection: &Connection, path: &Path) -> Result<PathBuf, EngineError> {
-    let backup = path.with_extension(format!("backup-{}", uuid::Uuid::new_v4()));
-    {
-        let mut target = Connection::open(&backup)?;
-        target.pragma_update(None, "synchronous", "FULL")?;
-        let copy = rusqlite::backup::Backup::new(connection, &mut target)?;
-        copy.run_to_completion(256, Duration::from_millis(5), None)?;
-    }
-    std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&backup)?
-        .sync_all()?;
-    studio_project::lifecycle::sync_directory(path.parent().unwrap())?;
-    Ok(backup)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn legacy_database(path: &Path) -> Connection {
+    fn database_with(path: &Path, version: u32) -> Connection {
         let original = Connection::open(path).unwrap();
         original
             .execute_batch(
-                "CREATE TABLE retained (value TEXT); INSERT INTO retained VALUES ('old data');",
+                "CREATE TABLE projects (id TEXT PRIMARY KEY, location TEXT NOT NULL, record TEXT NOT NULL, opened INTEGER NOT NULL, recent INTEGER NOT NULL DEFAULT 1);
+                 INSERT INTO projects VALUES ('p','/x','{}',1,1);",
             )
+            .unwrap();
+        original
+            .pragma_update(None, "user_version", version)
             .unwrap();
         original
     }
 
-    fn only_backup(dir: &Path, database: &Path) -> PathBuf {
-        let mut backups: Vec<_> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .filter(|p| p != database && p.to_string_lossy().contains("backup-"))
-            .collect();
-        assert_eq!(backups.len(), 1, "{backups:?}");
-        backups.remove(0)
-    }
-
     #[test]
-    fn migration_preserves_a_durable_backup_and_unknown_tables() {
+    fn a_missing_database_is_created_at_the_current_version() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("studio.sqlite3");
-        drop(legacy_database(&path));
         let store = Store::open(&path).unwrap();
         assert_eq!(store.version().unwrap(), SCHEMA_VERSION);
-        assert_eq!(
-            store
-                .connection
-                .query_row("SELECT value FROM retained", [], |r| r.get::<_, String>(0))
-                .unwrap(),
-            "old data"
-        );
-        let backup = Connection::open(only_backup(temp.path(), &path)).unwrap();
-        assert_eq!(
-            backup
-                .query_row("SELECT value FROM retained", [], |r| r.get::<_, String>(0))
-                .unwrap(),
-            "old data"
-        );
-        // The backup is a pre-migration copy: it has no projection table.
-        assert!(
-            backup
-                .query_row("SELECT count(*) FROM task_revisions", [], |r| r
-                    .get::<_, i64>(0))
-                .is_err()
-        );
+        assert!(store.recents().unwrap().is_empty());
+        let id = studio_project::ProjectId::try_from("project-1".to_owned()).unwrap();
+        assert!(store.task_revisions(&id).unwrap().is_empty());
         drop(store);
+        // Reopening a current database changes nothing and creates nothing.
         assert!(Store::open(&path).unwrap().recents().unwrap().is_empty());
-        // Reopening a current database neither migrates nor backs up again.
-        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 2);
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
     }
 
     #[test]
-    fn the_backup_includes_committed_wal_state() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("studio.sqlite3");
-        let original = Connection::open(&path).unwrap();
-        original
-            .query_row("PRAGMA journal_mode=WAL", [], |r| r.get::<_, String>(0))
-            .unwrap();
-        original
-            .execute_batch(
-                "CREATE TABLE retained (value TEXT); INSERT INTO retained VALUES ('in the wal');",
-            )
-            .unwrap();
-        // Rows exist only in the -wal file while this connection stays open.
-        assert!(temp.path().join("studio.sqlite3-wal").exists());
-        let store = Store::open(&path).unwrap();
-        let backup = Connection::open(only_backup(temp.path(), &path)).unwrap();
-        assert_eq!(
-            backup
-                .query_row("SELECT value FROM retained", [], |r| r.get::<_, String>(0))
-                .unwrap(),
-            "in the wal"
-        );
-        drop((store, original));
-    }
-
-    #[test]
-    fn version_one_databases_gain_the_projection_and_keep_their_records() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("studio.sqlite3");
-        let v1 = Connection::open(&path).unwrap();
-        v1.execute_batch("CREATE TABLE projects (id TEXT PRIMARY KEY, location TEXT NOT NULL, record TEXT NOT NULL, opened INTEGER NOT NULL, recent INTEGER NOT NULL DEFAULT 1); INSERT INTO projects VALUES ('p','/x','{}',1,1); PRAGMA user_version=1;").unwrap();
-        drop(v1);
-        let store = Store::open(&path).unwrap();
-        assert_eq!(store.version().unwrap(), 2);
-        assert_eq!(
-            store
-                .connection
-                .query_row("SELECT record FROM projects WHERE id='p'", [], |r| r
-                    .get::<_, String>(0))
-                .unwrap(),
-            "{}"
-        );
-        only_backup(temp.path(), &path);
+    fn a_database_of_an_older_version_is_refused_and_left_byte_identical() {
+        // Version 1 (before the task-revision projection) and a database that never had
+        // a version at all.
+        for version in [0, 1] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("studio.sqlite3");
+            drop(database_with(&path, version));
+            let before = std::fs::read(&path).unwrap();
+            let error = Store::open(&path).err().unwrap();
+            assert!(
+                matches!(
+                    error,
+                    EngineError::OlderFormat { found, supported: SCHEMA_VERSION, .. }
+                        if found == version
+                ),
+                "{error}"
+            );
+            let message = error.to_string();
+            assert!(message.contains("studio.sqlite3"), "{message}");
+            assert!(message.contains("older Studio"), "{message}");
+            assert_eq!(std::fs::read(&path).unwrap(), before, "version {version}");
+            // No backup, journal or recreated table appeared, and the data is still there.
+            assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+            let diagnostic = Store::open_read_only(&path).unwrap();
+            assert_eq!(diagnostic.version().unwrap(), version);
+            assert!(diagnostic.ensure_current(&path).is_err());
+            assert_eq!(
+                diagnostic
+                    .connection
+                    .query_row("SELECT record FROM projects WHERE id='p'", [], |r| r
+                        .get::<_, String>(0))
+                    .unwrap(),
+                "{}"
+            );
+            drop(diagnostic);
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
     }
 
     #[test]
     fn a_newer_database_is_refused_for_writing_but_readable_for_diagnostics() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("studio.sqlite3");
-        let newer = legacy_database(&path);
-        newer.pragma_update(None, "user_version", 99).unwrap();
-        drop(newer);
+        drop(database_with(&path, 99));
         let before = std::fs::read(&path).unwrap();
         let error = Store::open(&path).err().unwrap();
         assert!(

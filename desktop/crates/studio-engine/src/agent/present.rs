@@ -209,6 +209,12 @@ pub fn engine_error(error: &EngineError, retained: bool) -> StructuredError {
             "The result could not be captured",
             "The working copy was kept. Retry.",
         ),
+        // A saved checkpoint's inventory of another format: app history, not the project.
+        EngineError::Project(error) if error.field == "inventory" => (
+            "history_format",
+            "The history was made by another Studio version",
+            "It cannot be opened by this Studio and was left as it is.",
+        ),
         EngineError::Project(_) | EngineError::State(_) => (
             "source_unavailable",
             "The project source could not be read",
@@ -218,6 +224,11 @@ pub fn engine_error(error: &EngineError, retained: bool) -> StructuredError {
             "newer_format",
             "The history was written by a newer Studio",
             "Update Studio. Source and history were not changed.",
+        ),
+        EngineError::OlderFormat { .. } => (
+            "older_format",
+            "The history was made by an older Studio",
+            "It cannot be opened by this Studio and was left as it is.",
         ),
         _ => (
             "engine_error",
@@ -515,6 +526,22 @@ mod tests {
             width: 480,
             height: 270,
         }
+    }
+
+    #[test]
+    fn a_checkpoint_of_another_format_is_reported_as_history_not_as_the_project_folder() {
+        let error = EngineError::Project(studio_project::ProjectError::new(
+            "history/checkpoints/abc/manifest.json",
+            "inventory",
+            "made by an older Studio",
+            "it is left as it is",
+        ));
+        let shown = engine_error(&error, false);
+        assert_eq!(shown.code, "history_format");
+        assert!(
+            !format!("{shown:?}").contains("project folder"),
+            "{shown:?}"
+        );
     }
 
     #[test]
