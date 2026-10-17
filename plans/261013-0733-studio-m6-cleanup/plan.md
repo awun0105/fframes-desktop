@@ -37,7 +37,7 @@ Out of scope:
 | 3 | Durable data without compatibility: journal formats 2 and 3, `FileId` aliases, old-record defaults, source inventory v0 and the Timing hash identity, SQLite v1 ([inventory](./reports/compat-inventory.md#durable-data-phase-3), [report](./reports/phase-03-durable-data.md)) | 1.5-2d | 2 | Done |
 | 4 | Project migration removed: pre-M4 projects, `LegacyFramework`, optional SDK manifest fields, the migration UI ([inventory](./reports/compat-inventory.md#project-migration-and-the-old-sdk-framework-phase-4), [report](./reports/phase-04-project-migration.md)) | 2d | 3 | Done |
 | 5 | [Flaky tests and leftover limitations](./phase-05-flaky-tests-and-leftover-limitations.md), on the code phase 4 leaves; the export-cancel hang is measured first ([report](./reports/phase-05-flaky-tests.md)) | 2d | 4 | Done |
-| 6 | [Docs, roadmap and Windows hand checks](./phase-06-docs-and-platform-checks.md) | 1.5d | 5 | Pending |
+| 6 | [Docs, roadmap and Windows hand checks](./phase-06-docs-and-platform-checks.md) ([checks](./reports/platform-checks.md)) | 1.5d | 5 | In progress: docs done, Windows hand checks wait for the owner's session |
 
 The phases run in sequence in one worktree, each by one agent. Each phase passes fmt, clippy, the affected test sets and full parity, and is then pushed to `feat/studio-m6`.
 

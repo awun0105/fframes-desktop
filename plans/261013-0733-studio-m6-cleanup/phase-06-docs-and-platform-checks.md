@@ -1,7 +1,7 @@
 ---
-phase: 2
+phase: 6
 title: "Docs and platform checks"
-status: pending
+status: in-progress
 priority: P2
 effort: "1.5d"
 dependencies: [1]
