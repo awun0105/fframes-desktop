@@ -1,7 +1,7 @@
 ---
 title: "M6 Cleanup: no compatibility code, spike removal, flaky tests, docs, platform checks"
 description: "Remove the spike and every compatibility path for old code and old on-disk formats (old data is refused, never repaired), fix the intermittent tests and handed-over limitations, update the docs, and hand-check Windows; macOS is covered by CI only."
-status: in-progress
+status: completed
 priority: P2
 effort: "8-11d"
 branch: feat/studio-m6
@@ -37,7 +37,7 @@ Out of scope:
 | 3 | Durable data without compatibility: journal formats 2 and 3, `FileId` aliases, old-record defaults, source inventory v0 and the Timing hash identity, SQLite v1 ([inventory](./reports/compat-inventory.md#durable-data-phase-3), [report](./reports/phase-03-durable-data.md)) | 1.5-2d | 2 | Done |
 | 4 | Project migration removed: pre-M4 projects, `LegacyFramework`, optional SDK manifest fields, the migration UI ([inventory](./reports/compat-inventory.md#project-migration-and-the-old-sdk-framework-phase-4), [report](./reports/phase-04-project-migration.md)) | 2d | 3 | Done |
 | 5 | [Flaky tests and leftover limitations](./phase-05-flaky-tests-and-leftover-limitations.md), on the code phase 4 leaves; the export-cancel hang is measured first ([report](./reports/phase-05-flaky-tests.md)) | 2d | 4 | Done |
-| 6 | [Docs, roadmap and Windows hand checks](./phase-06-docs-and-platform-checks.md) ([checks](./reports/platform-checks.md)) | 1.5d | 5 | Windows checks complete (owner confirmation 2026-10-18); selected Windows preview dry run in progress |
+| 6 | [Docs, roadmap and Windows hand checks](./phase-06-docs-and-platform-checks.md) ([checks](./reports/platform-checks.md)) | 1.5d | 5 | Done: Windows checks complete (owner confirmation 2026-10-18); Windows preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed |
 
 The phases run in sequence in one worktree, each by one agent. Each phase passes fmt, clippy, the affected test sets and full parity, and is then pushed to `feat/studio-m6`.
 
@@ -64,7 +64,7 @@ Phase 6 runs the hand checks in the real app on Windows. That needs the user's R
 
 **Release-path decision 2026-10-18 (plan owner): Windows unsigned preview using the existing preview release workflow.** This replaces the consumer-release dry run as the remaining M6 release check. Consumer publication stays disabled; its signing, target eligibility and CI provenance gates remain in place. The Windows preview dry run prepares release files without publishing.
 
-The reorder, ACP completion, native-provider defaults and fast build-acknowledgement failures are fixed; the SDK, release app and saved template preview have been rebuilt. [Final fixes and validation](./reports/final-fixes-2026-10-18.md) record the real-worker replays and regression checks. The main checkout was fast-forwarded to the M6 base, and the fixes are now committed as `8cd1a5a`; existing user edits remain separate. `5a3722e` adds the Windows preview dry run and `8fd8425` adds the assembled-SDK pixel comparison. The owner confirmed all Windows hand checks passed on 2026-10-18 ("test all okay by my hand"); [platform checks](./reports/platform-checks.md) record that acceptance. Phase 6 stays in progress only for the selected Windows preview dry run.
+The reorder, ACP completion, native-provider defaults and fast build-acknowledgement failures are fixed; the SDK, release app and saved template preview have been rebuilt. [Final fixes and validation](./reports/final-fixes-2026-10-18.md) record the real-worker replays and regression checks. The main checkout was fast-forwarded to the M6 base, and the fixes are now committed as `8cd1a5a`; existing user edits remain separate. `5a3722e` adds the Windows preview dry run and `8fd8425` adds the assembled-SDK pixel comparison. The owner confirmed all Windows hand checks passed on 2026-10-18 ("test all okay by my hand"); [platform checks](./reports/platform-checks.md) record that acceptance. The Windows preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed on 2026-10-18, which closes phase 6 and M6.
 
 ## Success criteria
 
@@ -75,4 +75,4 @@ The reorder, ACP completion, native-provider defaults and fast build-acknowledge
 - [x] Every M5 and M5a handed-over limitation still relevant after phase 2 is fixed with a test, or recorded as an owner decision.
 - [x] `docs/desktop` and `AGENTS.md` describe the real system, and their links resolve.
 - [x] The Windows app hand checks for the roadmap Done-means items pass, owner-reported 2026-10-18 in `reports/platform-checks.md`. macOS remains not fully tested: CI only (decided 2026-10-16).
-- [ ] The Windows unsigned-preview release dry run passes and is recorded with its run link in `reports/platform-checks.md` (owner release-path decision, 2026-10-18).
+- [x] The Windows unsigned-preview release dry run passes and is recorded with its run link in `reports/platform-checks.md` (owner release-path decision, 2026-10-18).

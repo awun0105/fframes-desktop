@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Crate skeleton and service move"
-status: in-progress
+status: completed
 priority: P1
 effort: "4-5d"
 dependencies: []

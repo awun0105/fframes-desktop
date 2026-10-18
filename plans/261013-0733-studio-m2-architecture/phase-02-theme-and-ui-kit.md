@@ -157,7 +157,7 @@ Parity tests pass; the appearance gpui test passes and switching the OS appearan
   - no file in `studio-theme` or `studio-ui/src/kit` exceeds 1,000 lines;
   - the criterion's grep (`fn button|fn ui_button|fn segment_button`, substring) over `desktop/app/src` and `desktop/crates/studio-ui/src` finds nothing outside `/kit/`. The positive control `fn action_button|fn segment_item|fn tab_item` matches four files. Over all of `desktop` the only hit is `fn button_centre` in `app/tests/x11_shell.rs`, a test helper that reads telemetry coordinates, not a button builder;
   - fmt, clippy `-D warnings`, `cargo test -p fframes-studio` (parity 33/33), `cargo test -p studio-ui --lib` (132), `cargo test -p studio-theme` and the packaging tests all pass.
-- Not yet checked: the success criterion "switching the OS appearance flips the theme live on Windows" needs a hand check (the gallery on System, then flip the Windows colour mode). gpui's test window cannot change appearance, and the qualification VM's personalization was not changed.
+- Historical phase-2 limitation: the live Windows OS-appearance flip was not checked by the executor because gpui's test window cannot change appearance and the VM's personalization was left alone. The owner subsequently accepted the Windows app hand checks as a whole on 2026-10-18; [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md) record that owner-reported acceptance, rather than an independently observed OS flip.
 - Carried to phase 4:
   - the settings-page `SegmentedControl` for the preference (task 5's UI);
   - the native caption gap under a forced preference.

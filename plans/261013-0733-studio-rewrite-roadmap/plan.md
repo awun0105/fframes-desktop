@@ -1,7 +1,7 @@
 ---
 title: "fframes Studio rewrite on Zeron and Cap foundations (roadmap)"
 description: "Rebuild the desktop app on Cap's GPUI fork with Cap's components, editor layout and settings screens, Zeron-style crate layering, Cap-style timing edits and playback, and an agent panel with Zeron's internals in Cap chrome, in six mergeable milestones."
-status: in-progress
+status: completed
 priority: P1
 effort: "110-157 engineer-days (sum of milestones, after spike S4)"
 branch: feat/studio-rewrite
@@ -22,12 +22,12 @@ This roadmap indexes six milestone plans. Each milestone ends with the app build
 | # | Milestone | Blocked by | Effort | Status |
 |---|-----------|-----------|--------|--------|
 | M1 | [Foundations: spikes, Cap GPUI switch, parity tests](../261013-0733-studio-m1-foundations/plan.md) | CI branch merged | 12-17d | Complete |
-| M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 27-38d | All phases done; Windows title bar hand check passed (owner, 2026-10-18); release dry run pending; macOS CI only, see Platforms |
+| M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 27-38d | Completed (Windows title bar hand check and Windows preview dry run passed, 2026-10-18; macOS CI only, see Platforms) |
 | M3 | [Durable writes, containment and tools on Windows and macOS](../261013-0733-studio-m3-durable-writes/plan.md) | M1 phase 1; phases 3-5 also need M2 phases 1, 3, 8 | 18-27d | Completed (CI green on Linux, Windows and macOS, 2026-10-15) |
 | M4 | [Editing: timing doc, SDK release, timeline, playback, export](../261013-0733-studio-m4-editing/plan.md) | M2, M3 | 24-33d | Completed (Windows hand checks and assembled-SDK H.264 pixel parity passed, 2026-10-18) |
 | M5a | [Native agent wires: Claude stream-json, Codex app-server](../261013-0733-studio-m5a-native-wires/plan.md) | M2, M3 | 10-14d | Completed (Windows real CLI and hand checks; question-card handover closed in M5; macOS CI only, see Platforms) |
 | M5 | [Agent UX: markdown, composer, todo, diffs, history](../261013-0733-studio-m5-agent-ux/plan.md) | M2, M3, M5a | 16-24d (re-estimated from spike S4) | Done (merged into `feat/studio-rewrite` 2026-10-17; CI green on all three platforms, real-click check on Windows; macOS CI only; open items handed to M6) |
-| M6 | [Cleanup: spike names, docs, platform checks](../261013-0733-studio-m6-cleanup/plan.md) | M4, M5 | 3-4d | Windows checks complete (owner hand-check acceptance 2026-10-18); release dry run pending |
+| M6 | [Cleanup: spike names, docs, platform checks](../261013-0733-studio-m6-cleanup/plan.md) | M4, M5 | 3-4d | Completed (Windows hand checks and Windows preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed, 2026-10-18) |
 
 M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1, phase 4 after M2 phases 1 and 8, and phase 3 after M3 phases 1, 2 and 4 and M2 phase 3 (so it also waits for M2 phase 8). Writer qualification by ledger stays usable until M3 phase 4 replaces it, so there is no window in which a real agent cannot apply on Linux. One executor (confirmed 2026-10-13): run M1, M2, M3, M4, M5a, M5, M6 in that order, doing M3 phases 1, 2 and 5 between M2 phases where their dependencies allow. The overlaps described above say what may interleave, not that work runs at once.
 
@@ -35,7 +35,7 @@ M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1,
 
 | # | Phase | Status |
 |---|-------|--------|
-| 1 | [Milestone merge gates](./phase-01-milestone-merge-gates.md) | In progress: integration log populated; Windows preview dry run running |
+| 1 | [Milestone merge gates](./phase-01-milestone-merge-gates.md) | Completed: gates passed on `feat/studio-rewrite` and the Windows preview dry run passed; merge into `main` not done (owner step) |
 
 ## Confirmed contract
 
@@ -54,7 +54,7 @@ M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1,
 
 **Priority decision 2026-10-18:** focus on Windows testing first to reach production promptly. Finish the remaining Windows app checks and fix failures before the release dry run. No additional macOS or Linux validation is part of this immediate work; the recorded platform coverage still applies.
 
-**Windows acceptance 2026-10-18:** the owner confirmed all Windows hand checks passed ("test all okay by my hand"). The [M6 platform report](../261013-0733-studio-m6-cleanup/reports/platform-checks.md) records this alongside the automated validation. Windows app testing is complete; the release dry run remains pending.
+**Windows acceptance 2026-10-18:** the owner confirmed all Windows hand checks passed ("test all okay by my hand"). The [M6 platform report](../261013-0733-studio-m6-cleanup/reports/platform-checks.md) records this alongside the automated validation. Windows app testing is complete, and the Windows preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed on 2026-10-18. Every milestone is complete on `feat/studio-rewrite`; merging the branch into `main` is a separate owner step.
 
 **Release decision 2026-10-18:** the owner selected a Windows unsigned preview using the existing preview workflow. The remaining release check is its non-publishing Windows dry run; consumer publication stays disabled with its existing signing and provenance requirements.
 

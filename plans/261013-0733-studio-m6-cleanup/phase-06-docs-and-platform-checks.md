@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Docs and platform checks"
-status: in-progress
+status: completed
 priority: P2
 effort: "1.5d"
 dependencies: [1]
@@ -9,7 +9,7 @@ dependencies: [1]
 
 # Phase 6: Docs and platform checks
 
-**2026-10-18 acceptance:** the owner confirmed all Windows app hand checks passed ("test all okay by my hand"). [Platform checks](./reports/platform-checks.md) record the tested build and owner-reported results. Docs and Windows validation are complete; this phase remains in progress only for the owner release dry run in step 6.
+**2026-10-18 acceptance:** the owner confirmed all Windows app hand checks passed ("test all okay by my hand"). [Platform checks](./reports/platform-checks.md) record the tested build and owner-reported results. Docs and Windows validation are complete; the Windows preview dry run in step 6 passed on 2026-10-18 ([39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274)).
 
 **Release-path decision 2026-10-18:** the owner selected Windows unsigned preview preparation. Step 6 is now a Windows preview dry run with `preview_release=true`, `dry_run=true`, `windows_only=true`, `consumer_release=false`; consumer publication remains disabled. The signing and provenance requirements for a future consumer release are unchanged.
 
@@ -44,7 +44,7 @@ README must cover: setup, project migration, editing, agent panel, the one keyma
 3. Add the superseded note and the `AGENTS.md` lines.
 4. Windows hand checks (needs the user's RDP session; real input cannot be driven from this agent): every roadmap Done-means item; the M2 open check of the Windows title bar; real-input checks that no automated test covers since the native harness was removed (caption hit-test, title drag, Close hover colour); native file dialogs; the Ctrl+Enter chord and the review-banner layout in the real app.
 5. Write `reports/platform-checks.md`: Windows rows pass or fail with date and build; macOS row lists the latest green macOS CI run and "hand checks not run, not fully tested". If a Mac appears, run `cargo test -p studio-harness --test claude_real_cli --test codex_real_cli -- --ignored` ([checks report](../../desktop/plans/reports/native-wires-checks.md)).
-6. A release dry run with `consumer_release_enabled` is for the user to run; record it in the report as pending or done with the run link.
+6. Release dry run: replaced by the Windows preview dry run (see the release-path decision above). Done: [run 39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed on 2026-10-18 and is recorded in the report.
 
 ## Validation
 

@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Milestone merge gates"
-status: in-progress
+status: completed
 priority: P1
 effort: "0.5d per milestone"
 dependencies: []
@@ -13,7 +13,7 @@ dependencies: []
 
 Every milestone lands on `main` only after the same gate passes, so `main` always builds, tests green and runs.
 
-**Current decisions:** M6 uses the owner's Windows-local validation gate (2026-10-17), rather than requiring new Linux/macOS CI runs. The owner confirmed all Windows app hand checks passed on 2026-10-18 and selected a **Windows unsigned preview** for release preparation. The preview dry run therefore owns the remaining release check; consumer publication stays disabled, with its signing and provenance controls unchanged. See [platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md).
+**Current decisions:** M6 uses the owner's Windows-local validation gate (2026-10-17), rather than requiring new Linux/macOS CI runs. The owner confirmed all Windows app hand checks passed on 2026-10-18 and selected a **Windows unsigned preview** for release preparation. The preview dry run therefore owns the remaining release check, and it passed on 2026-10-18 ([39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274)); consumer publication stays disabled, with its signing and provenance controls unchanged. See [platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md).
 
 ## Before M1
 
@@ -41,10 +41,10 @@ Reconstructed from Git history on 2026-10-18. These are integration checkpoints 
 | M1 | 2026-10-14 | `a85cd52` | Parity recorded green on all three platforms; foundations complete |
 | M2 | 2026-10-15 | `b25c18d` | Architecture and X11 cleanup complete; later Windows caption acceptance recorded in M6 |
 | M3 | 2026-10-15 | `533c00e` | Durable writes closed with hand-check evidence and accepted Linux exception |
-| M4 | 2026-10-16 | `0834d05` | Editing integrated; export-comparison concern explicitly retained for follow-up |
+| M4 | 2026-10-16 | `0834d05` | Editing integrated; export-comparison concern explicitly retained for follow-up, closed by `8fd8425` |
 | M5a | 2026-10-16 | `deba715` | Native wires integrated; macOS coverage explicitly limited to CI |
 | M5 | 2026-10-17 | `df53e56` | Agent UX complete and integrated; remaining limitations handed to M6 |
-| M6 | 2026-10-18 | `8cd1a5a`, `5a3722e` | Windows fixes committed; preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) in progress |
+| M6 | 2026-10-18 | `8cd1a5a`, `5a3722e` | Windows fixes committed; preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed |
 
 ## Consistency sweep
 

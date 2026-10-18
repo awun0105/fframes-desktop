@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Split the studio shell"
-status: pending
+status: completed
 priority: P1
 effort: "6-9d"
 dependencies: [2, 3]
