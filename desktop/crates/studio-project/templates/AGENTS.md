@@ -1,4 +1,4 @@
-# Studio project instructions — version 1
+# Studio project instructions — version 2
 
 Rust and media are the portable source of truth. Keep assets inside media/ and
 ship their licenses. Use the bundled DM Sans font for reproducible text.
@@ -21,6 +21,13 @@ sizes or timings, and add a token rather than hard-coding a repeated value. Do
 not edit style/tokens.json by hand when a preset owns it; Studio regenerates it.
 Assets and licensing: put only assets you may redistribute in media/, keep each
 license beside its asset (OFL.txt for DM Sans), and never invent attribution.
+Timing: scene order, trims and splits made in Studio's timeline are stored in
+timeline.json, not in the code. Edit timing there, keep define_scenes listing
+each scene once, and give every scene a stable editor_instance_key: a clip
+finds its scene by that key (or the scene's name() without one), so changing
+a key orphans its clips. Scenes timeline.json omits play after its clips,
+untrimmed. An invalid timeline.json fails the CLI and export with the reason;
+fix the file, run inspect, and never delete it to make a build pass.
 Studio validation tools: after changes run frame, inspect and strip, and use
 Studio's preview and validation results to confirm tokens resolve and the
 project still builds before reporting it done.

@@ -1,7 +1,6 @@
 //! Studio preset mutations: source-fenced, durable, no-clobber Apply / Reapply / Reset and
 //! override edits, their distinct journal record, and a process death or I/O failure at
 //! every durable boundary.
-#![cfg(target_os = "linux")]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;
@@ -31,7 +30,7 @@ fn light() -> Fx {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        &compatibility.runtime_version,
     )
     .unwrap();
     Fx { temp, root, paths }
@@ -532,8 +531,6 @@ fn mutation_is_disabled_when_publication_is_not_qualified_and_nothing_is_written
     );
     assert_eq!(snapshot(&fx.root), before);
     assert!(journal(&fx, &c).transactions.is_empty());
-    // The platform whose gates were measured is the only one enabled.
-    const { assert!(studio_engine::preset_state::MUTATION_QUALIFIED) };
     c.override_apply_gate(None);
     assert!(c.preset_mutation().is_enabled());
 }

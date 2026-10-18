@@ -1,9 +1,9 @@
 ---
 phase: 6
 title: "Playback pipeline"
-status: pending
+status: completed
 priority: P1
-effort: "3-4d"
+effort: "2.5-3.5d"
 dependencies: [3]
 ---
 
@@ -12,6 +12,8 @@ dependencies: [3]
 ## Goal
 
 Replace the 16 ms tick with Cap's latest-wins wake and frame pump while keeping the existing `PlaybackClock` and its epoch fencing as the transport.
+
+Effort was 3-4d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md): the UI frame path (`PreviewFrameView`, `PumpStats`, `PlayheadSignal`, `playhead_extrapolation`) is about 350 lines and fframes already converts frames; the engine side dominates.
 
 ## Port sources
 
@@ -38,16 +40,29 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 
 ## Todo
 
-- [ ] Non-blocking frame channel, measured conversion, single-entity paint, burst test
-
-- [ ] Scout
-- [ ] Packed value with epoch and generation
-- [ ] UI pump
-- [ ] Extrapolated, clamped playhead
-- [ ] Out-of-order counter
-- [ ] Timer removed
-- [ ] Tests
+- [x] Non-blocking frame channel, measured conversion, single-entity paint, burst test
+- [x] Scout
+- [x] Epoch-fenced snapshot and wake (see notes: no packed atomic)
+- [x] UI pump
+- [x] Extrapolated, clamped playhead
+- [x] Out-of-order counter
+- [x] Timer removed
+- [x] Tests: the coordinator latest-wins test, the playback-clock stale-snapshot test (`rejects_stale_backwards_invalid_and_rate_change_snapshots`), the audio callback gate test (`callback_gates_do_not_consume_but_mute_underrun_and_stale_do`), a shorter model clamping the playhead, the out-of-order counter (counts, survives a clear), and a parity test seeking during playback.
+- [x] Manual Windows check passed, owner-reported 2026-10-18
 
 ## Success criteria
 
 `grep -rn "from_millis(16)" desktop/` is empty; parity transport tests pass; the counter reads zero after seeking during playback on this VM.
+
+## Notes
+
+- The frame pump already existed: a bounded(1) wake channel, a one-slot pending frame and the coordinator's overwritten latest-frame slot. The coordinator's latest-wins test covers it; it was not rebuilt.
+- The 16 ms loop did four jobs and each has its own trigger now: audio progress wakes the shell from the audio owner thread (never from the cpal callback); thumbnails are requested whenever the timeline's wanted set, the playing state or a thumbnail arrival changes; the playhead is forwarded where the preview position changes; a stranded acceptance is rebuilt by a 1 s timer that runs only while an acceptance is awaited.
+- While playing, one replaceable one-shot timer waits for the next frame boundary (`PlaybackClock::next_frame_in`), also in Output mode as a backstop. This VM has no audio device, so the monotonic-clock path is what runs.
+- Deviation: the plan has the engine publish a packed (epoch, generation, frame) atomic. The clock stays in the UI instead, with the existing epoch-tagged output snapshot plus the wake. Fencing is equivalent because every timing change reaches the UI through `retimed`, whose `reinstall` advances the epoch.
+- The out-of-order counter is keyed on the seek serial, is cumulative for the window (stricter than resetting on install) and is reported as `image_metrics.out_of_order`.
+- The playhead runs ahead of the shown frame by about one frame while playing (a slow macOS debug runner showed the shown frame four frames behind the position at the end of playback, so tests wait for the last frame to paint), clamped to the timing-aware duration, driven by `request_animation_frame` only while playing. Parity `wait` and `settle` do not spin on it.
+- Conversion at 1080p in a debug build measured 52 ms, above the 4 ms threshold, so `opt-level = 3` was added for studio-ui; with a chunked loop the conversion takes about 5 ms.
+- The grep criterion targets production code. The parity harness keeps a named fake-clock step of 16 ms, which is a test clock increment, not a timer.
+- There is no 100-frame foreign-thread burst test: the producer is the worker thread overwriting one mutex-guarded slot, with no channel to block on, so latest-wins is covered by the coordinator test and its late-frame metric.
+- Closed 2026-10-18: the owner confirmed the playback hand checks passed, including seeking and audible playback/mute; see [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md).

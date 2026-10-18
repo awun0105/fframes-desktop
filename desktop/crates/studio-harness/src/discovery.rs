@@ -1,0 +1,925 @@
+//! Adapter executable resolution, launch construction and readiness/auth probing.
+//!
+//! Resolution never consults the process-global `PATH` implicitly: only an absolute
+//! configured path, managed adapter directories and a caller-supplied (explicitly
+//! resolved GUI) `PATH` are searched. Launch uses an argument array, never a shell.
+
+use crate::{
+    detect::NodeEntry,
+    driver::{
+        AcpDriver, AgentFailure, AgentWire, DriverConfig, DriverLimits, DriverMode, FailureKind,
+        InitializedInfo, McpStdioSupport, OwnershipSource, Phase, start_driver,
+    },
+};
+use serde::{Deserialize, Serialize};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use studio_bootstrap::{ChildEnvironment, ProcessTreeManager};
+
+/// How one adapter is launched: an executable, its arguments and the variable names it
+/// may inherit.
+#[derive(Clone, Deserialize, Serialize)]
+pub struct AdapterConfig {
+    pub executable: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Explicit variable names to forward; values are never stored in configuration.
+    #[serde(default)]
+    pub auth_env_names: Vec<String>,
+}
+
+/// Where an adapter executable may be found besides an absolute configured path.
+#[derive(Debug, Clone, Default)]
+pub struct ExecutableSearch {
+    /// Directories owned by the app that hold installed adapters (searched first).
+    pub managed_dirs: Vec<PathBuf>,
+    /// An explicitly resolved GUI `PATH` value (for example from a login shell).
+    /// `None` means bare names resolve only inside `managed_dirs`.
+    pub gui_path: Option<OsString>,
+    /// Absolute Node.js runtime for adapters that are JavaScript (a `.js` entry or an npm
+    /// `.cmd` shim). Such an adapter starts as `node <entry>`, because the launch `PATH`
+    /// never contains `node`; a batch launcher whose entry is unknown starts itself with this
+    /// runtime's folder first on its `PATH`.
+    pub node: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ResolveError {
+    #[error("adapter executable not found; searched {}", display_paths(.searched))]
+    NotFound { searched: Vec<PathBuf> },
+    #[error(
+        "adapter executable '{0}' is a relative path; configure an absolute path or a bare name"
+    )]
+    RelativePath(String),
+    #[error("adapter executable is empty")]
+    Empty,
+    #[error("search root '{}' is relative; search roots must be absolute", .0.display())]
+    RelativeRoot(PathBuf),
+    #[error(
+        "adapter '{}' is a Node.js script, but Node.js was not found; install Node.js and press Detect agents",
+        .0.display()
+    )]
+    NodeRequired(PathBuf),
+    #[error("{1}")]
+    UnreadableLauncher(PathBuf, String),
+}
+
+fn display_paths(paths: &[PathBuf]) -> String {
+    if paths.is_empty() {
+        "no directories".to_owned()
+    } else {
+        paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+pub(crate) fn is_executable_file(path: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !meta.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        meta.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+pub(crate) fn candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
+    // Windows cannot start a file without an executable extension, and npm installs an
+    // extensionless shell script next to the `.cmd` launcher, so a bare name only matches
+    // with an extension appended.
+    #[cfg(windows)]
+    {
+        const EXTENSIONS: [&str; 4] = ["exe", "cmd", "bat", "com"];
+        let has_executable_extension = Path::new(name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e)));
+        if has_executable_extension {
+            return vec![dir.join(name)];
+        }
+        EXTENSIONS
+            .iter()
+            .map(|ext| dir.join(format!("{name}.{ext}")))
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        vec![dir.join(name)]
+    }
+}
+
+impl ExecutableSearch {
+    /// Every search root in order: managed directories, then the explicit GUI `PATH`.
+    /// Relative roots would resolve against whatever directory the adapter later runs
+    /// in, so any relative root is rejected. On Windows an empty `PATH` entry (a trailing
+    /// or doubled `;`, which is common) names no directory and is skipped; on Unix it means
+    /// the current directory and stays rejected.
+    pub fn roots(&self) -> Result<Vec<PathBuf>, ResolveError> {
+        let mut dirs: Vec<PathBuf> = self.managed_dirs.clone();
+        if let Some(gui) = &self.gui_path {
+            dirs.extend(
+                std::env::split_paths(gui)
+                    .filter(|dir| !(cfg!(windows) && dir.as_os_str().is_empty())),
+            );
+        }
+        match dirs.iter().find(|dir| !dir.is_absolute()) {
+            Some(relative) => Err(ResolveError::RelativeRoot(relative.clone())),
+            None => Ok(dirs),
+        }
+    }
+}
+
+/// Resolves the configured executable to an absolute file path.
+pub fn resolve_executable(
+    configured: &str,
+    search: &ExecutableSearch,
+) -> Result<PathBuf, ResolveError> {
+    if configured.trim().is_empty() {
+        return Err(ResolveError::Empty);
+    }
+    let dirs = search.roots()?;
+    let path = Path::new(configured);
+    if path.is_absolute() {
+        return if is_executable_file(path) {
+            Ok(path.to_owned())
+        } else {
+            Err(ResolveError::NotFound {
+                searched: vec![path.to_owned()],
+            })
+        };
+    }
+    if configured.contains('/') || configured.contains('\\') {
+        return Err(ResolveError::RelativePath(configured.to_owned()));
+    }
+    for dir in &dirs {
+        for candidate in candidates(dir, configured) {
+            if is_executable_file(&candidate) {
+                return Ok(candidate);
+            }
+        }
+    }
+    Err(ResolveError::NotFound { searched: dirs })
+}
+
+/// Everything needed to start one adapter process; no field is a shell string.
+#[derive(Clone)]
+pub struct AdapterLaunch {
+    pub executable: PathBuf,
+    pub args: Vec<String>,
+    pub env: ChildEnvironment,
+    /// Values of the configured auth variables; redacted from every output.
+    pub secrets: Vec<String>,
+    /// Names of the configured auth variables, whatever their names look like.
+    pub auth_names: Vec<String>,
+    /// Advertised authentication method to select explicitly, if the adapter needs one.
+    pub auth_method: Option<String>,
+}
+
+impl std::fmt::Debug for AdapterLaunch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The name heuristic of `export_redacted` misses neutral names such as
+        // `ACP_OTHER`; every configured auth variable is redacted explicitly.
+        let mut env = self.env.export_redacted();
+        for name in &self.auth_names {
+            if let Some(value) = env.get_mut(name) {
+                *value = crate::driver::REDACTION_MARK.to_owned();
+            }
+        }
+        f.debug_struct("AdapterLaunch")
+            .field("executable", &self.executable)
+            .field("args", &self.args)
+            .field("env", &env)
+            .field(
+                "secrets",
+                &format_args!("[{} redacted]", self.secrets.len()),
+            )
+            .field("auth_method", &self.auth_method)
+            .finish()
+    }
+}
+
+impl AdapterLaunch {
+    pub fn resolve(
+        config: &AdapterConfig,
+        search: &ExecutableSearch,
+    ) -> Result<Self, ResolveError> {
+        Self::resolve_with_env(config, search, |name| std::env::var(name).ok())
+    }
+
+    /// `lookup` supplies auth variable values; only names listed in the configuration
+    /// are read and forwarded, and their values become redaction secrets.
+    pub fn resolve_with_env(
+        config: &AdapterConfig,
+        search: &ExecutableSearch,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, ResolveError> {
+        let resolved = resolve_executable(&config.executable, search)?;
+        let mut roots = search.roots()?;
+        let node = search
+            .node
+            .clone()
+            .filter(|node| node.is_absolute() && is_executable_file(node));
+        let kind = crate::detect::node_entry(&resolved)
+            .map_err(|reason| ResolveError::UnreadableLauncher(resolved.clone(), reason))?;
+        // A JavaScript adapter, and whatever it starts with `node`, find the same runtime
+        // first on the launch PATH.
+        let mut put_node_first = |node: &Path| {
+            if let Some(dir) = node.parent() {
+                roots.retain(|root| root != dir);
+                roots.insert(0, dir.to_owned());
+            }
+        };
+        let (executable, args) = match (kind, node) {
+            (NodeEntry::Script(entry), Some(node)) => {
+                put_node_first(&node);
+                let entry = entry.to_string_lossy().into_owned();
+                (
+                    node,
+                    [entry].into_iter().chain(config.args.clone()).collect(),
+                )
+            }
+            (NodeEntry::Script(_), None) => return Err(ResolveError::NodeRequired(resolved)),
+            // A launcher whose entry is unknown calls `node` itself, if it needs it at all.
+            (NodeEntry::Shim, Some(node)) => {
+                put_node_first(&node);
+                (resolved, config.args.clone())
+            }
+            (NodeEntry::Shim | NodeEntry::Native, _) => (resolved, config.args.clone()),
+        };
+        let mut env = ChildEnvironment::default_allowlist();
+        // The ambient PATH is never inherited: an adapter that starts through
+        // `/usr/bin/env node` must find its runtime in the explicit absolute roots only.
+        env.remove("PATH");
+        env.remove("Path");
+        if !roots.is_empty() {
+            let joined = std::env::join_paths(&roots)
+                .map_err(|_| ResolveError::RelativeRoot(PathBuf::from("<invalid path entry>")))?;
+            env.set(
+                if cfg!(windows) { "Path" } else { "PATH" },
+                joined.to_string_lossy(),
+            );
+        }
+        let mut secrets = Vec::new();
+        for name in &config.auth_env_names {
+            // Never forwarded even when named: they tell a Claude-based adapter it runs
+            // nested inside another Claude Code session.
+            if is_nesting_marker(name) {
+                continue;
+            }
+            if let Some(value) = lookup(name) {
+                secrets.push(value.clone());
+                env.set(name, value);
+            }
+        }
+        Ok(Self {
+            executable,
+            args,
+            env,
+            secrets,
+            auth_names: config.auth_env_names.clone(),
+            auth_method: None,
+        })
+    }
+
+    pub fn with_auth_method(mut self, method: impl Into<String>) -> Self {
+        self.auth_method = Some(method.into());
+        self
+    }
+}
+
+/// `CLAUDECODE` and its `CLAUDECODE_*` relatives (any case: Windows variable names are
+/// case-insensitive), set by a Claude Code terminal the studio may be started from.
+fn is_nesting_marker(name: &str) -> bool {
+    name.get(..10)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("CLAUDECODE"))
+}
+
+/// Distinct adapter readiness states surfaced to the user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AdapterStatus {
+    /// No executable at the configured path or in the managed/GUI search roots.
+    MissingExecutable { searched: Vec<String> },
+    /// The adapter file exists but its runtime (interpreter, node, …) cannot run.
+    MissingRuntime { detail: String },
+    /// The adapter negotiated or violated something other than ACP v1.
+    ProtocolMismatch { detail: String },
+    /// Initialized, but authentication was not verified (no session was attempted).
+    AuthUnknown { methods: Vec<String> },
+    /// The adapter reported authentication is required.
+    AuthRequired { methods: Vec<String> },
+    /// An explicit authentication attempt was rejected.
+    AuthRejected { detail: String },
+    /// Initialized and a session was created: authentication is proven.
+    Ready { agent: String, version: String },
+    /// Any other launch/protocol failure, with its structured detail.
+    Failed { failure: AgentFailure },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscoveryReport {
+    pub status: AdapterStatus,
+    pub executable: Option<PathBuf>,
+    pub initialized: Option<InitializedInfo>,
+}
+impl DiscoveryReport {
+    /// Returns the negotiated capabilities if the adapter initialized.
+    pub fn capabilities(&self) -> Option<&crate::driver::AgentCapabilityInfo> {
+        self.initialized.as_ref().map(|i| &i.capabilities)
+    }
+
+    /// Whether session restoration (load or resume) was negotiated.
+    pub fn supports_restoration(&self) -> bool {
+        self.capabilities()
+            .is_some_and(|c| c.load_session || c.resume_session)
+    }
+
+    /// Whether image prompts were negotiated.
+    pub fn supports_images(&self) -> bool {
+        self.capabilities().is_some_and(|c| c.prompt_image)
+    }
+
+    /// Whether MCP stdio support is active.
+    pub fn supports_mcp_stdio(&self) -> bool {
+        self.capabilities().is_some_and(|c| c.mcp_stdio)
+    }
+
+    /// Summary of available capabilities and limitations for UI display.
+    pub fn capability_summary(&self) -> Option<String> {
+        let caps = self.capabilities()?;
+        let mut parts = Vec::new();
+        if caps.load_session || caps.resume_session {
+            parts.push("session restore");
+        } else {
+            parts.push("fresh sessions only");
+        }
+        if caps.prompt_image {
+            parts.push("visual context");
+        }
+        if caps.mcp_stdio {
+            parts.push("stdio MCP");
+        } else {
+            parts.push("CLI fallback");
+        }
+        Some(parts.join(", "))
+    }
+}
+
+/// What a probe may do.
+#[derive(Debug, Clone)]
+pub struct ProbeOptions {
+    /// Empty scratch directory used as the session cwd; never a project or draft.
+    pub scratch_cwd: PathBuf,
+    /// Create a session to prove authentication. Without it the best result is
+    /// [`AdapterStatus::AuthUnknown`].
+    pub verify_session: bool,
+    pub auth_method: Option<String>,
+    pub timeout: Duration,
+}
+
+impl ProbeOptions {
+    pub fn new(scratch_cwd: PathBuf) -> Self {
+        Self {
+            scratch_cwd,
+            verify_session: true,
+            auth_method: None,
+            timeout: Duration::from_secs(30),
+        }
+    }
+}
+
+fn status_from_failure(failure: AgentFailure, methods: Vec<String>) -> AdapterStatus {
+    match failure.kind {
+        FailureKind::MissingRuntime => AdapterStatus::MissingRuntime {
+            detail: failure.message,
+        },
+        FailureKind::UnsupportedVersion => AdapterStatus::ProtocolMismatch {
+            detail: failure.message,
+        },
+        FailureKind::AuthRequired => AdapterStatus::AuthRequired { methods },
+        FailureKind::AuthRejected => AdapterStatus::AuthRejected {
+            detail: failure.message,
+        },
+        FailureKind::MalformedMessage
+        | FailureKind::TruncatedMessage
+        | FailureKind::OversizedMessage
+        | FailureKind::ProtocolViolation
+            if failure.phase == Phase::Initialize =>
+        {
+            AdapterStatus::ProtocolMismatch {
+                detail: failure.message,
+            }
+        }
+        _ => AdapterStatus::Failed { failure },
+    }
+}
+
+/// Resolves and launches the adapter once in a scratch directory to report readiness.
+/// The probe process is always stopped and its group verified before returning.
+pub fn probe_adapter(
+    config: &AdapterConfig,
+    search: &ExecutableSearch,
+    options: &ProbeOptions,
+    processes: &ProcessTreeManager,
+) -> DiscoveryReport {
+    probe_adapter_on(AgentWire::Acp, config, search, options, processes)
+}
+
+/// [`probe_adapter`] for an adapter speaking `wire`. Claude Code is ready once its version
+/// passes the gate and it answers `initialize`; it proves a login only in its first turn,
+/// so a signed-out CLI surfaces as `AuthRequired` there. A wire this build cannot run is
+/// refused without launching anything.
+pub fn probe_adapter_on(
+    wire: AgentWire,
+    config: &AdapterConfig,
+    search: &ExecutableSearch,
+    options: &ProbeOptions,
+    processes: &ProcessTreeManager,
+) -> DiscoveryReport {
+    let launch = match AdapterLaunch::resolve(config, search) {
+        Ok(launch) => launch,
+        Err(error) => {
+            let searched = match error {
+                ResolveError::NotFound { searched } => {
+                    searched.iter().map(|p| p.display().to_string()).collect()
+                }
+                other => vec![other.to_string()],
+            };
+            return DiscoveryReport {
+                status: AdapterStatus::MissingExecutable { searched },
+                executable: None,
+                initialized: None,
+            };
+        }
+    };
+    let launch = match &options.auth_method {
+        Some(method) => launch.with_auth_method(method.clone()),
+        None => launch,
+    };
+    let executable = Some(launch.executable.clone());
+    let limits = DriverLimits {
+        init_timeout: options.timeout,
+        ..DriverLimits::default()
+    };
+    if wire != AgentWire::Acp {
+        let config = DriverConfig {
+            provider: config.executable.clone(),
+            task: "discovery".into(),
+            cwd: options.scratch_cwd.clone(),
+            launch,
+            limits,
+            resume_session: None,
+            ownership: OwnershipSource::Verified,
+            mode: DriverMode::InitializeOnly,
+            mcp_servers: Vec::new(),
+            mcp_stdio: McpStdioSupport::Baseline,
+        };
+        let driver = match start_driver(wire, config, processes) {
+            Ok(driver) => driver,
+            Err(failure) => {
+                return DiscoveryReport {
+                    status: status_from_failure(failure, Vec::new()),
+                    executable,
+                    initialized: None,
+                };
+            }
+        };
+        let (status, initialized) =
+            match driver.wait_ready(options.timeout + Duration::from_secs(5)) {
+                Ok(info) => (
+                    AdapterStatus::Ready {
+                        agent: info.initialized.agent_name.clone(),
+                        version: info.initialized.agent_version.clone(),
+                    },
+                    Some(info.initialized),
+                ),
+                Err(failure) => (status_from_failure(failure, Vec::new()), None),
+            };
+        drop(driver.shutdown());
+        return DiscoveryReport {
+            status,
+            executable,
+            initialized,
+        };
+    }
+    let driver = match AcpDriver::start(
+        DriverConfig {
+            provider: config.executable.clone(),
+            task: "discovery".into(),
+            cwd: options.scratch_cwd.clone(),
+            launch,
+            limits,
+            resume_session: None,
+            ownership: OwnershipSource::Verified,
+            mode: if options.verify_session {
+                DriverMode::Full
+            } else {
+                DriverMode::InitializeOnly
+            },
+            mcp_servers: Vec::new(),
+            mcp_stdio: McpStdioSupport::Baseline,
+        },
+        processes,
+    ) {
+        Ok(driver) => driver,
+        Err(failure) => {
+            return DiscoveryReport {
+                status: status_from_failure(failure, Vec::new()),
+                executable,
+                initialized: None,
+            };
+        }
+    };
+    let ready = driver.wait_ready(options.timeout + Duration::from_secs(5));
+    let initialized = driver.initialized();
+    let methods = initialized
+        .as_ref()
+        .map(|i| i.auth_methods.clone())
+        .unwrap_or_default();
+    let status = match ready {
+        Ok(info) if options.verify_session => AdapterStatus::Ready {
+            agent: info.initialized.agent_name,
+            version: info.initialized.agent_version,
+        },
+        Ok(_) => AdapterStatus::AuthUnknown { methods },
+        Err(failure) => status_from_failure(failure, methods),
+    };
+    drop(driver.shutdown());
+    DiscoveryReport {
+        status,
+        executable,
+        initialized,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    fn executable(dir: &Path, name: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        std::fs::write(&path, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[test]
+    fn empty_and_relative_paths_are_rejected_without_searching() {
+        let search = ExecutableSearch::default();
+        assert_eq!(resolve_executable(" ", &search), Err(ResolveError::Empty));
+        assert!(matches!(
+            resolve_executable("bin/adapter", &search),
+            Err(ResolveError::RelativePath(_))
+        ));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn npm_shim_adapters_start_through_the_explicit_node() {
+        let managed = tempfile::tempdir().unwrap();
+        let entry = managed.path().join("node_modules/pkg/dist/index.js");
+        std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        std::fs::write(&entry, b"//").unwrap();
+        std::fs::write(
+            managed.path().join("pkg-acp.cmd"),
+            "@ECHO off\r\nIF EXIST \"%dp0%\\node.exe\" SET \"_prog=%dp0%\\node.exe\"\r\n\
+             \"%_prog%\"  \"%dp0%\\node_modules\\pkg\\dist\\index.js\" %*\r\n",
+        )
+        .unwrap();
+        let runtime = tempfile::tempdir().unwrap();
+        let node = runtime.path().join("node.exe");
+        std::fs::write(&node, b"").unwrap();
+        let config = AdapterConfig {
+            executable: "pkg-acp".into(),
+            args: vec!["--acp".into()],
+            auth_env_names: vec![],
+        };
+        let mut search = ExecutableSearch {
+            managed_dirs: vec![managed.path().to_owned()],
+            gui_path: None,
+            node: None,
+        };
+        assert!(matches!(
+            AdapterLaunch::resolve_with_env(&config, &search, |_| None),
+            Err(ResolveError::NodeRequired(_))
+        ));
+
+        search.node = Some(node.clone());
+        let launch = AdapterLaunch::resolve_with_env(&config, &search, |_| None).unwrap();
+        assert_eq!(launch.executable, node);
+        assert_eq!(
+            launch.args,
+            vec![entry.to_string_lossy().into_owned(), "--acp".to_owned()]
+        );
+        let path = launch.env.get("Path").expect("launch Path");
+        let first = std::env::split_paths(path).next().unwrap();
+        assert_eq!(first, runtime.path(), "{path}");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_shim_without_a_known_entry_starts_itself_with_node_first_on_its_path() {
+        let managed = tempfile::tempdir().unwrap();
+        let shim = managed.path().join("pkg-acp.cmd");
+        std::fs::write(&shim, "@ECHO off\r\nnode \"%~dp0\\lib\\main\" %*\r\n").unwrap();
+        let runtime = tempfile::tempdir().unwrap();
+        let node = runtime.path().join("node.exe");
+        std::fs::write(&node, b"").unwrap();
+        let config = AdapterConfig {
+            executable: "pkg-acp".into(),
+            args: vec!["--acp".into()],
+            auth_env_names: vec![],
+        };
+        let mut search = ExecutableSearch {
+            managed_dirs: vec![managed.path().to_owned()],
+            gui_path: None,
+            node: None,
+        };
+        // Without Node the launcher still starts as it is.
+        let launch = AdapterLaunch::resolve_with_env(&config, &search, |_| None).unwrap();
+        assert_eq!(launch.executable, shim);
+        assert_eq!(launch.args, vec!["--acp".to_owned()]);
+
+        search.node = Some(node);
+        let launch = AdapterLaunch::resolve_with_env(&config, &search, |_| None).unwrap();
+        assert_eq!(launch.executable, shim);
+        assert_eq!(launch.args, vec!["--acp".to_owned()]);
+        let path = launch.env.get("Path").expect("launch Path");
+        let first = std::env::split_paths(path).next().unwrap();
+        assert_eq!(first, runtime.path());
+        assert!(
+            path.contains(&managed.path().display().to_string()),
+            "{path}"
+        );
+    }
+
+    #[test]
+    fn bare_names_never_fall_back_to_the_global_path() {
+        // `sh` exists on the global PATH but is not in the (empty) search roots.
+        assert!(matches!(
+            resolve_executable("sh", &ExecutableSearch::default()),
+            Err(ResolveError::NotFound { .. })
+        ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn managed_dirs_win_over_the_explicit_gui_path() {
+        let managed = tempfile::tempdir().unwrap();
+        let gui = tempfile::tempdir().unwrap();
+        let managed_exe = executable(managed.path(), "adapter");
+        executable(gui.path(), "adapter");
+        let search = ExecutableSearch {
+            managed_dirs: vec![managed.path().to_owned()],
+            gui_path: Some(std::env::join_paths([gui.path()]).unwrap()),
+            node: None,
+        };
+        assert_eq!(resolve_executable("adapter", &search).unwrap(), managed_exe);
+        let gui_only = ExecutableSearch {
+            managed_dirs: vec![],
+            gui_path: search.gui_path.clone(),
+            node: None,
+        };
+        assert!(
+            resolve_executable("adapter", &gui_only)
+                .unwrap()
+                .starts_with(gui.path())
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn absolute_path_must_be_an_executable_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain");
+        std::fs::write(&plain, "x").unwrap();
+        let search = ExecutableSearch::default();
+        assert!(resolve_executable(plain.to_str().unwrap(), &search).is_err());
+        let exe = executable(dir.path(), "exe");
+        assert_eq!(
+            resolve_executable(exe.to_str().unwrap(), &search).unwrap(),
+            exe
+        );
+        assert!(resolve_executable(dir.path().to_str().unwrap(), &search).is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn launch_forwards_only_named_auth_variables_and_keeps_args_as_an_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = executable(dir.path(), "adapter");
+        let config = AdapterConfig {
+            executable: exe.to_string_lossy().into(),
+            args: vec!["--flag value".into(), "$(rm -rf)".into()],
+            auth_env_names: vec!["ACP_KEY".into(), "ACP_OTHER".into()],
+        };
+        let launch = AdapterLaunch::resolve_with_env(&config, &ExecutableSearch::default(), |n| {
+            (n == "ACP_KEY").then(|| "sentinel-secret".to_owned())
+        })
+        .unwrap();
+        assert_eq!(launch.args, vec!["--flag value", "$(rm -rf)"]);
+        assert_eq!(launch.env.get("ACP_KEY"), Some("sentinel-secret"));
+        assert_eq!(launch.env.get("ACP_OTHER"), None);
+        assert_eq!(launch.secrets, vec!["sentinel-secret"]);
+        assert!(!format!("{launch:?}").contains("sentinel-secret"));
+    }
+
+    #[test]
+    fn claude_code_nesting_markers_never_reach_the_adapter() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join(if cfg!(windows) {
+            "adapter.exe"
+        } else {
+            "adapter"
+        });
+        std::fs::write(&exe, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let config = AdapterConfig {
+            executable: exe.to_string_lossy().into(),
+            args: vec![],
+            auth_env_names: vec![
+                "CLAUDECODE".into(),
+                "ClaudeCode_Entrypoint".into(),
+                "CLAUDE_CODE_KEY".into(),
+            ],
+        };
+        let launch = AdapterLaunch::resolve_with_env(&config, &ExecutableSearch::default(), |_| {
+            Some("1".to_owned())
+        })
+        .unwrap();
+        let names: Vec<String> = launch.env.iter().map(|(k, _)| k.to_owned()).collect();
+        assert!(
+            !names
+                .iter()
+                .any(|k| k.to_ascii_uppercase().starts_with("CLAUDECODE")),
+            "{names:?}"
+        );
+        // Anything else named is still forwarded.
+        assert_eq!(launch.env.get("CLAUDE_CODE_KEY"), Some("1"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn neutral_named_auth_values_are_redacted_from_debug_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = executable(dir.path(), "adapter");
+        let config = AdapterConfig {
+            executable: exe.to_string_lossy().into(),
+            args: vec![],
+            auth_env_names: vec!["ACP_OTHER".into()],
+        };
+        let launch = AdapterLaunch::resolve_with_env(&config, &ExecutableSearch::default(), |_| {
+            Some("neutral-sentinel-value".to_owned())
+        })
+        .unwrap();
+        // The variable name matches none of the sensitive-name heuristics.
+        assert_eq!(
+            launch
+                .env
+                .export_redacted()
+                .get("ACP_OTHER")
+                .map(String::as_str),
+            Some("neutral-sentinel-value")
+        );
+        assert!(!format!("{launch:?}").contains("neutral-sentinel-value"));
+        assert!(format!("{launch:?}").contains("ACP_OTHER"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn runtime_path_is_rebuilt_from_explicit_absolute_roots_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = executable(dir.path(), "adapter");
+        let config = AdapterConfig {
+            executable: exe.to_string_lossy().into(),
+            args: vec![],
+            auth_env_names: vec![],
+        };
+        // No explicit roots: no PATH at all, whatever the ambient PATH is.
+        let launch =
+            AdapterLaunch::resolve_with_env(&config, &ExecutableSearch::default(), |_| None)
+                .unwrap();
+        assert!(
+            std::env::var_os("PATH").is_some(),
+            "test needs an ambient PATH"
+        );
+        assert_eq!(launch.env.get("PATH"), None);
+        assert_eq!(launch.env.get("Path"), None);
+
+        let managed = tempfile::tempdir().unwrap();
+        let gui = tempfile::tempdir().unwrap();
+        let search = ExecutableSearch {
+            managed_dirs: vec![managed.path().to_owned()],
+            gui_path: Some(std::env::join_paths([gui.path()]).unwrap()),
+            node: None,
+        };
+        let launch = AdapterLaunch::resolve_with_env(&config, &search, |_| None).unwrap();
+        let expected = format!("{}:{}", managed.path().display(), gui.path().display());
+        assert_eq!(launch.env.get("PATH"), Some(expected.as_str()));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn relative_search_roots_are_rejected_everywhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = executable(dir.path(), "adapter");
+        let relative_managed = ExecutableSearch {
+            managed_dirs: vec![PathBuf::from("bin")],
+            gui_path: None,
+            node: None,
+        };
+        let relative_gui = ExecutableSearch {
+            managed_dirs: vec![],
+            gui_path: Some(OsString::from("/usr/bin:relative/bin")),
+            node: None,
+        };
+        for search in [relative_managed, relative_gui] {
+            assert!(matches!(
+                resolve_executable("adapter", &search),
+                Err(ResolveError::RelativeRoot(_))
+            ));
+            // Even an absolute executable is refused when a root could mislead the launch.
+            let config = AdapterConfig {
+                executable: exe.to_string_lossy().into(),
+                args: vec![],
+                auth_env_names: vec![],
+            };
+            assert!(matches!(
+                AdapterLaunch::resolve_with_env(&config, &search, |_| None),
+                Err(ResolveError::RelativeRoot(_))
+            ));
+        }
+        // Every returned candidate is absolute.
+        let search = ExecutableSearch {
+            managed_dirs: vec![dir.path().to_owned()],
+            gui_path: None,
+            node: None,
+        };
+        assert!(
+            resolve_executable("adapter", &search)
+                .unwrap()
+                .is_absolute()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_skips_extensionless_scripts_for_the_launcher() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("adapter"), b"#!/bin/sh").unwrap();
+        let launcher = dir.path().join("adapter.cmd");
+        std::fs::write(&launcher, b"@echo off").unwrap();
+        let search = ExecutableSearch {
+            managed_dirs: vec![dir.path().to_owned()],
+            gui_path: None,
+            node: None,
+        };
+        assert_eq!(resolve_executable("adapter", &search).unwrap(), launcher);
+        assert_eq!(
+            resolve_executable("adapter.cmd", &search).unwrap(),
+            launcher
+        );
+        let dotted = dir.path().join("adapter-2.5.exe");
+        std::fs::write(&dotted, b"MZ").unwrap();
+        assert_eq!(resolve_executable("adapter-2.5", &search).unwrap(), dotted);
+    }
+
+    #[test]
+    fn empty_path_entries_are_skipped_only_on_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("adapter.exe"), b"").unwrap();
+        let mut gui = std::env::join_paths([dir.path()]).unwrap();
+        gui.push(if cfg!(windows) { ";;" } else { "::" });
+        let search = ExecutableSearch {
+            managed_dirs: vec![],
+            gui_path: Some(gui),
+            node: None,
+        };
+        if cfg!(windows) {
+            assert_eq!(search.roots().unwrap(), vec![dir.path().to_owned()]);
+            assert!(resolve_executable("adapter", &search).is_ok());
+        } else {
+            // An empty Unix entry means the current directory.
+            assert!(matches!(search.roots(), Err(ResolveError::RelativeRoot(_))));
+        }
+    }
+}

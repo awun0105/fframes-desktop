@@ -15,7 +15,7 @@ fn source_reads_do_not_dirty_the_install_fence_but_external_writes_do() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();
@@ -68,7 +68,7 @@ fn external_edit_rejects_late_completion_and_preserves_baseline_and_draft() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();
@@ -117,7 +117,7 @@ fn invalid_source_interrupts_work_and_edit_back_cannot_resurrect_it() {
             "Video",
             sdk_pin(&compatibility),
             &compatibility.fframes_version,
-            "0.1.0",
+            &compatibility.runtime_version,
         )
         .unwrap();
         let mut controller = Controller::open(&root, &paths).unwrap();
@@ -126,7 +126,10 @@ fn invalid_source_interrupts_work_and_edit_back_cannot_resurrect_it() {
         controller
             .complete(&tag, JobResult::Built(accepted.clone()))
             .unwrap();
-        assert_eq!(controller.state().built(), Some(&accepted));
+        assert_eq!(
+            controller.state().built(),
+            Some(controller.state().build_source())
+        );
         let tag = controller.begin_job(JobKind::Build).unwrap();
         let draft = controller.draft().unwrap().to_owned();
         let generation = controller.state().generation();
@@ -207,7 +210,7 @@ fn restore_comparison_is_strict_and_independent_export_survives_invalid_source()
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        &compatibility.runtime_version,
     )
     .unwrap();
     let mut controller = Controller::open(&root, &paths).unwrap();

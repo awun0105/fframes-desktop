@@ -1,11 +1,10 @@
 //! The production GPUI shell as a real process on a private X server.
 //!
-//! GPUI's headless test support (`TestAppContext`) needs the `test-support` feature, which
-//! pulls git-only dependencies that are not in this workspace's lockfile, so the shell's
-//! hand-off wiring is exercised the way the M0/M2 native qualifications were: the real
-//! `fframes-studio qualify-m3` binary on an owned Xvfb, driven with xdotool, observed
-//! through its redacted telemetry file. It covers what pure tests cannot: the prompt's
-//! native input path, `StudioShell::adopt_promotion` adopting the staged preview on the UI
+//! The headless parity suite (`studio-ui/tests/parity`, GPUI's `TestAppContext`) drives the shell
+//! through its actions; this test covers what a headless window cannot, exercising the
+//! hand-off wiring: the real `fframes-studio studio` binary with its hidden observation
+//! flags on an owned Xvfb, driven with xdotool, observed through its redacted telemetry
+//! file. It covers what pure tests cannot: the prompt's native input path, `StudioShell::adopt_promotion` adopting the staged preview on the UI
 //! thread, the fresh audio epoch and the matching video/audio install, the accepted-awaiting
 //! label clearing exactly when the matching preview shows, and Undo's hand-off back.
 //!
@@ -18,7 +17,7 @@
 //! ```
 //!
 //! Requires `Xvfb` and `xdotool`. The window is 1280x800 at the origin. Every click target
-//! is the measured bounds the app reports while qualifying (the agent tabs and the Undo
+//! is the measured bounds the app reports while observed (the agent tabs and the Undo
 //! button included), so layout changes never move a click off its control.
 #![cfg(unix)]
 
@@ -32,7 +31,7 @@ use std::{
 use studio_engine::build_materialization::sdk_pin;
 use studio_sdk::{CompatibilityManifest, SdkInstaller};
 
-#[path = "support/preview_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
 #[allow(dead_code)]
 mod preview_fixture;
 
@@ -58,6 +57,62 @@ impl Drop for Owned {
     }
 }
 
+/// `ps` rows of `root`, its descendants and every process sharing a process group with
+/// them (owned children run in their own groups; a reparented group member is still
+/// found), with state and age, to name a process that outlives its owner.
+fn process_tree(root: u32) -> String {
+    let Ok(output) = Command::new("ps")
+        .args(["-eo", "pid=,ppid=,pgid=,sid=,stat=,etimes=,args="])
+        .output()
+    else {
+        return "ps could not run".to_owned();
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let rows: Vec<(u32, u32, u64, &str)> = text
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let pid = fields.next()?.parse().ok()?;
+            let ppid = fields.next()?.parse().ok()?;
+            let elapsed = fields.nth(3)?.parse().ok()?;
+            Some((pid, ppid, elapsed, line.trim()))
+        })
+        .collect();
+    let Some(&(_, _, root_elapsed, _)) = rows.iter().find(|row| row.0 == root) else {
+        return format!("the studio ({root}) is not running");
+    };
+    let mut tree = vec![root];
+    loop {
+        let known = tree.len();
+        for &(pid, ppid, _, _) in &rows {
+            if tree.contains(&ppid) && !tree.contains(&pid) {
+                tree.push(pid);
+            }
+        }
+        if tree.len() == known {
+            break;
+        }
+    }
+    // Everything started since the studio, so a process that left its tree (a group
+    // member whose parent exited) shows up as well.
+    let since: Vec<&str> = rows
+        .iter()
+        .filter(|row| {
+            !tree.contains(&row.0) && row.2 <= root_elapsed && row.0 != std::process::id()
+        })
+        .map(|row| row.3)
+        .collect();
+    format!(
+        "pid ppid pgid sid stat etimes args\n{}\nstarted since the studio, outside its tree:\n{}",
+        rows.iter()
+            .filter(|row| tree.contains(&row.0))
+            .map(|row| row.3)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        since.join("\n")
+    )
+}
+
 fn spawn(command: &mut Command) -> Owned {
     use std::os::unix::process::CommandExt;
     command.process_group(0);
@@ -79,6 +134,29 @@ fn python() -> String {
     absolute.to_string_lossy().into_owned()
 }
 
+/// Saves the scripted ACP peer as the selected adapter, the way the Setup tab does.
+fn save_scripted_peer(data: &Path, evidence: &Path) {
+    let paths = studio_engine::app_paths::AppPaths::new(data.join("fframes-studio")).unwrap();
+    studio_engine::providers::host::save_settings(
+        &paths,
+        &studio_engine::providers::host::AdapterFile {
+            provider: "scripted-peer".into(),
+            executable: python(),
+            args: vec![
+                format!(
+                    "{}/support/acp-agent.py",
+                    studio_test_support::ENGINE_TESTS_DIR
+                ),
+                evidence.to_string_lossy().into_owned(),
+            ],
+            auth_env_names: vec![],
+            auth_method: None,
+            mcp: studio_engine::providers::host::McpChoice::Unsupported,
+            wire: Default::default(),
+        },
+    )
+    .unwrap();
+}
 fn tool_available(name: &str) -> bool {
     Command::new(name)
         .arg("-help")
@@ -261,15 +339,51 @@ fn button_centre(value: &Value, name: &str) -> (u32, u32) {
 }
 
 /// Clicks a button or tab by the bounds the panel measured once they stopped changing.
+/// The agent tab is short in a 1280x800 window and its tabs scroll: a control below or
+/// above the tab's box is wheeled into view first.
 fn click_panel_button(screen: &Screen, window: &str, telemetry: &Telemetry, name: &str) {
-    let measured = telemetry.settled(name, |v| v["panel"]["buttons"][name].clone());
-    let (x, y) = button_centre(&measured["panel"], name);
-    // The panel scrolls, so a measured control can sit outside the 1280x800 window.
-    assert!(
-        x < 1280 && y < 800,
-        "the {name} button is outside the window: {measured}"
-    );
-    screen.click(window, (x, y));
+    for _ in 0..40 {
+        let measured = telemetry.settled(name, |v| {
+            let (button, agent) = (&v["panel"]["buttons"][name], &v["sections"]["agent"]);
+            if button.is_null() || agent.is_null() {
+                Value::Null
+            } else {
+                serde_json::json!([button, agent])
+            }
+        });
+        let (x, y) = button_centre(&measured["panel"], name);
+        let agent = measured["sections"]["agent"]
+            .as_array()
+            .unwrap_or_else(|| panic!("no measured agent tab: {measured}"));
+        let at = |i: usize| agent[i].as_f64().expect("finite bounds");
+        let (top, bottom) = (at(1), at(1) + at(3));
+        let wheel = if f64::from(y) > bottom - 4. {
+            "5"
+        } else if f64::from(y) < top + 4. {
+            "4"
+        } else {
+            assert!(
+                x < 1280 && y < 800,
+                "the {name} button is outside the window: {measured}"
+            );
+            screen.click(window, (x, y));
+            return;
+        };
+        let centre = (
+            (at(0) + at(2) / 2.).round() as u32,
+            ((top + bottom) / 2.).round() as u32,
+        );
+        screen.xdotool(&[
+            "mousemove",
+            "--window",
+            window,
+            &centre.0.to_string(),
+            &centre.1.to_string(),
+            "click",
+            wheel,
+        ]);
+    }
+    panic!("the {name} button never scrolled into the agent tab");
 }
 
 fn click_prompt(screen: &Screen, window: &str, telemetry: &Telemetry) {
@@ -344,22 +458,8 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     }
     // The adapter description exactly as the Setup tab saves it. Writer containment is
     // never a setting: the shell below is started with the explicit test-only injection
-    // (`--test-writer-containment`), which the panel labels as not a qualification.
-    fs::write(
-        data.join("fframes-studio/agent-adapter.json"),
-        serde_json::json!({
-            "provider": "scripted-peer",
-            "executable": python(),
-            "args": [
-                format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR")),
-                evidence.to_string_lossy()
-            ],
-            "auth_env_names": [],
-            "mcp": "unsupported"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    // (`--observe-test-writer-containment`), which the panel labels as not a qualification.
+    save_scripted_peer(&data, &evidence);
     fs::write(
         evidence.join("plan.json"),
         serde_json::json!({"turns": [{
@@ -379,11 +479,11 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     let log = fs::File::create(temp.path().join("studio.log")).unwrap();
     let _app = spawn(
         Command::new(env!("CARGO_BIN_EXE_fframes-studio"))
-            .args(["qualify-m3", "--project"])
+            .args(["studio", "--observe-project"])
             .arg(&project)
-            .arg("--telemetry")
+            .arg("--observe-telemetry")
             .arg(&telemetry.0)
-            .args(["--test-writer-containment", "x11-scripted-peer"])
+            .args(["--observe-test-writer-containment", "x11-scripted-peer"])
             .env("DISPLAY", &screen.display)
             .env("HOME", &home)
             .env("XDG_DATA_HOME", &data)
@@ -451,11 +551,14 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     // The staged preview was adopted on the UI thread and installed with matching
     // video/audio under a fresh epoch: the displayed revision is the accepted one and
     // the awaiting-preview label is gone.
+    // Waits for the newest seek to be presented: a frame request (a re-render at the
+    // canvas scale) can still be in flight when the hand-off is first reported.
     let shown = telemetry.wait("the matching preview to display", |v| {
         v["panel"]["handoff"] == "Displayed"
             && v["awaiting_preview"] == false
             && v["displayed_revision"].is_string()
             && displayed(v)["video_revision"] != base["video_revision"]
+            && v["preview"]["presented_serial"] == v["preview"]["seek_serial"]
     });
     let published = shown["displayed_revision"].as_str().unwrap().to_owned();
     assert_eq!(shown["panel"]["undo"], "available");
@@ -498,8 +601,11 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
         "{shown}"
     );
     assert!(shown["preview"]["seek_serial"].as_u64().unwrap() >= base_serial);
-    assert_eq!(
-        applied["frame_serial"], shown["preview"]["seek_serial"],
+    // `displayed` is the install record: its frame answers the seek the install carried.
+    // Frames requested after the install are presented without changing it.
+    assert_eq!(applied["frame_serial"], applied["seek_serial"], "{shown}");
+    assert!(
+        applied["seek_serial"].as_u64().unwrap() >= base_serial,
         "{shown}"
     );
 
@@ -513,6 +619,7 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
             && v["displayed_revision"].is_string()
             && v["displayed_revision"].as_str() != Some(published.as_str())
             && v["awaiting_preview"] == false
+            && v["preview"]["presented_serial"] == v["preview"]["seek_serial"]
     });
     assert!(
         !project.join("notes.txt").exists(),
@@ -543,45 +650,34 @@ fn the_native_shell_runs_a_task_adopts_the_staged_preview_and_undoes_it() {
     assert_eq!(undone["preview"]["position"], 3, "{undone}");
     assert_eq!(reverted["frame_index"], 3, "{undone}");
     assert_eq!(undone["preview"]["painted_frame"], 3, "{undone}");
+    assert_eq!(
+        reverted["frame_serial"], reverted["seek_serial"],
+        "{undone}"
+    );
+    assert!(
+        reverted["seek_serial"].as_u64() >= applied["seek_serial"].as_u64(),
+        "{undone}"
+    );
     // Only the worker of the displayed preview is still owned: no adapter, no tool worker.
     // The task's evidence workers are released when it ends; their teardown is
     // asynchronous, so wait for it instead of sampling one instant.
-    telemetry.wait("only the displayed worker to remain owned", |v| {
-        v["panel"]["owned_processes"].as_u64().unwrap_or(0) <= 1
-    });
+    let deadline = Instant::now() + WAIT;
+    while telemetry
+        .read()
+        .is_none_or(|v| v["panel"]["owned_processes"].as_u64().unwrap_or(0) > 1)
+    {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for only the displayed worker to remain owned; \
+             processes of the studio:\n{}\nlast panel: {:?}",
+            process_tree(_app.0.id()),
+            telemetry.read().map(|v| v["panel"].clone())
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
     // The scripted peer was started for the one task (Undo launches no agent).
     let starts = fs::read_to_string(evidence.join("starts")).unwrap_or_default();
     assert_eq!(starts.lines().count(), 1, "{starts:?}");
-}
-
-impl Screen {
-    /// A PNG of the whole X screen (xwd, converted by ffmpeg) into a qualification evidence
-    /// directory when configured; otherwise nothing is captured.
-    fn screenshot(&self, name: &str) {
-        let directory = std::env::var_os("M5_NATIVE_EVIDENCE")
-            .or_else(|| std::env::var_os("M4_NATIVE_EVIDENCE"))
-            .map(PathBuf::from);
-        let Some(dir) = directory else {
-            return;
-        };
-        fs::create_dir_all(&dir).unwrap();
-        let raw = dir.join(format!("{name}.xwd"));
-        let capture = Command::new("xwd")
-            .env("DISPLAY", &self.display)
-            .args(["-root", "-silent", "-out"])
-            .arg(&raw)
-            .status()
-            .expect("xwd");
-        assert!(capture.success(), "xwd -root");
-        let convert = Command::new("ffmpeg")
-            .args(["-y", "-loglevel", "error", "-i"])
-            .arg(&raw)
-            .arg(dir.join(format!("{name}.png")))
-            .status()
-            .expect("ffmpeg");
-        assert!(convert.success(), "ffmpeg xwd -> png");
-        let _ = fs::remove_file(raw);
-    }
 }
 
 fn scope_of(value: &Value) -> Option<&str> {
@@ -634,21 +730,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&runtime, fs::Permissions::from_mode(0o700)).unwrap();
     }
-    fs::write(
-        data.join("fframes-studio/agent-adapter.json"),
-        serde_json::json!({
-            "provider": "scripted-peer",
-            "executable": python(),
-            "args": [
-                format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR")),
-                evidence.to_string_lossy()
-            ],
-            "auth_env_names": [],
-            "mcp": "unsupported"
-        })
-        .to_string(),
-    )
-    .unwrap();
+    save_scripted_peer(&data, &evidence);
     // Two tasks; the second edit changes nothing the first one did not.
     fs::write(
         evidence.join("plan.json"),
@@ -666,11 +748,11 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     let log = fs::File::create(temp.path().join("studio.log")).unwrap();
     let _app = spawn(
         Command::new(env!("CARGO_BIN_EXE_fframes-studio"))
-            .args(["qualify-m3", "--project"])
+            .args(["studio", "--observe-project"])
             .arg(&project)
-            .arg("--telemetry")
+            .arg("--observe-telemetry")
             .arg(&telemetry.0)
-            .args(["--test-writer-containment", "x11-scripted-peer"])
+            .args(["--observe-test-writer-containment", "x11-scripted-peer"])
             .env("DISPLAY", &screen.display)
             .env("HOME", &home)
             .env("XDG_DATA_HOME", &data)
@@ -718,7 +800,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             .is_some_and(|s| s.starts_with("Scene "))
     });
     let scene_label = scene["panel"]["submit_scope"].as_str().unwrap().to_owned();
-    screen.screenshot("scene-selected-before-submit");
     // Validated changes wait for the user: the review shows before and after evidence.
     click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
     let policy = telemetry.settled("the review-policy button", |v| {
@@ -757,7 +838,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             .is_some_and(|a| !a.is_empty()),
         "{frozen}"
     );
-    screen.screenshot("scene-task-frozen-before-evidence");
     let review = telemetry.wait("the candidate to await review with after evidence", |v| {
         phase(v) == "Waiting for your review" && v["panel"]["after_evidence"]["state"] == "Ready"
     });
@@ -790,7 +870,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
         !project.join("notes.txt").exists(),
         "nothing is applied before review"
     );
-    screen.screenshot("scene-task-review-before-and-after");
     let review = telemetry.settled("the Apply button", |v| {
         v["panel"]["buttons"]["agent-apply"].clone()
     });
@@ -835,7 +914,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
                 .is_some_and(|s| s.starts_with("Frames ["))
     });
     let range_label = range["panel"]["submit_scope"].as_str().unwrap().to_owned();
-    screen.screenshot("range-selected-before-submit");
     click_prompt(&screen, &window, &telemetry);
     screen.xdotool(&[
         "type",
@@ -850,12 +928,19 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             && v["panel"]["before_evidence"]["state"] == "Ready"
     });
     assert_eq!(frozen["panel"]["task_scope"], range_label, "{frozen}");
-    screen.screenshot("range-task-frozen-before-evidence");
-    telemetry.wait("the AutoApply range candidate evidence", |v| {
+    // AutoApply releases the candidate evidence as soon as it accepts, often between two
+    // reads, so a released record of the same frames counts too.
+    let range_evidence = telemetry.wait("the AutoApply range candidate evidence", |v| {
+        let (before, after) = (
+            &v["panel"]["before_evidence"],
+            &v["panel"]["after_evidence"],
+        );
         scope_of(v) == Some(range_label.as_str())
-            && v["panel"]["after_evidence"]["state"] == "Ready"
+            && (after["state"] == "Ready" || after["state"] == "Released")
+            && after["revision"] != before["revision"]
+            && after["artifacts"].is_array()
+            && frames_of(after) == frames_of(before)
     });
-    let range_evidence = telemetry.read().expect("range evidence telemetry");
     let range_before = &range_evidence["panel"]["before_evidence"];
     let range_after = &range_evidence["panel"]["after_evidence"];
     assert_ne!(
@@ -881,7 +966,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             && accepted["panel"]["after_evidence"]["artifacts"].is_array(),
         "the terminal AutoApply task retains both evidence references: {accepted}"
     );
-    screen.screenshot("range-task-review-before-and-after");
     assert!(project.join("notes2.txt").is_file());
 
     // The stale-scope case needs a candidate that waits for an explicit review action.
@@ -945,7 +1029,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     let stale = telemetry.wait("the queued scope to be marked stale", |v| {
         v["panel"]["queue_stale"] == 1
     });
-    screen.screenshot("stale-queued-scope");
     assert_eq!(stale["panel"]["queue"], 1, "{stale}");
     fs::write(evidence.join("go"), "go").unwrap();
     telemetry.wait("the held task to await review", |v| {
@@ -974,7 +1057,6 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
             .is_some_and(|codes| codes.iter().any(|code| code == "stale_task_scope")),
         "{refused}"
     );
-    screen.screenshot("stale-queued-scope-refused");
     let prompts = fs::read_to_string(evidence.join("prompts.jsonl")).unwrap();
     assert_eq!(
         prompts.lines().count(),
@@ -1026,15 +1108,12 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
 /// location. It also exercises keyboard cycling, pointer-centred zoom, pan and rectangle
 /// fallback through native X11 input.
 #[test]
-#[ignore = "requires SDK_BUNDLE, Xvfb, xdotool, xwd and ffmpeg; native managed-SDK canvas interaction"]
+#[ignore = "requires SDK_BUNDLE, Xvfb and xdotool; native managed-SDK canvas interaction"]
 fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_nonsemantic() {
     let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     assert!(
-        tool_available("Xvfb")
-            && tool_available("xdotool")
-            && tool_available("xwd")
-            && tool_available("ffmpeg"),
-        "Xvfb, xdotool, xwd and ffmpeg are required"
+        tool_available("Xvfb") && tool_available("xdotool"),
+        "Xvfb and xdotool are required"
     );
     let bundle = PathBuf::from(std::env::var_os("SDK_BUNDLE").expect("SDK_BUNDLE"));
     let manifest = CompatibilityManifest::from_json_str(
@@ -1042,7 +1121,7 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     )
     .unwrap();
     let temporary = tempfile::Builder::new()
-        .prefix("fft-m5-x11")
+        .prefix("fft-canvas-x11")
         .tempdir_in("/tmp")
         .unwrap();
     let artifacts: Vec<_> = manifest
@@ -1063,17 +1142,15 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     let project = temporary.path().join("video");
     studio_project::create(
         &project,
-        "M5 native canvas selection",
+        "Native canvas selection",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        "0.1.0",
+        &manifest.runtime_version,
     )
     .unwrap();
     assert!(sdk.join("compatibility.json").is_file());
 
-    let data = std::env::var_os("M5_NATIVE_DATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| temporary.path().join("data"));
+    let data = temporary.path().join("data");
     let runtime = temporary.path().join("runtime");
     fs::create_dir_all(data.join("fframes-studio")).unwrap();
     fs::create_dir_all(&runtime).unwrap();
@@ -1087,9 +1164,9 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     let log = fs::File::create(temporary.path().join("studio.log")).unwrap();
     let _app = spawn(
         Command::new(env!("CARGO_BIN_EXE_fframes-studio"))
-            .args(["qualify-m3", "--project"])
+            .args(["studio", "--observe-project"])
             .arg(&project)
-            .arg("--telemetry")
+            .arg("--observe-telemetry")
             .arg(&telemetry.0)
             .env("DISPLAY", &screen.display)
             .env("HOME", &home)
@@ -1130,7 +1207,7 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     let title = objects
         .iter()
         .find(|object| {
-            object["identity"]["scene_instance_key"] == "starter-video"
+            object["identity"]["scene_instance_key"] == "intro"
                 && object["identity"]["component_key"] == "starter-title"
                 && object["identity"]["object_key"] == "headline"
                 && object["identity"]["repeat_key"] == "primary"
@@ -1171,7 +1248,6 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
         value["canvas"]["selection"]["identity"] == title["identity"]
     });
     assert_eq!(cycled["canvas"]["selection"]["identity"], title["identity"]);
-    screen.screenshot("m5-managed-title-selected");
 
     let before_zoom = cycled["canvas"]["image_bounds"]["width"].as_f64().unwrap();
     screen.xdotool(&[
@@ -1297,5 +1373,4 @@ fn the_native_shell_selects_the_managed_starter_title_and_keeps_rectangle_scope_
     assert_eq!(rectangle["canvas"]["metadata_status"], "Supported");
     assert!(rectangle["canvas"]["rectangle"]["width"].as_f64().unwrap() > 0.);
     assert!(rectangle["canvas"]["rectangle"]["height"].as_f64().unwrap() > 0.);
-    screen.screenshot("m5-nonsemantic-rectangle-scope");
 }

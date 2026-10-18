@@ -27,6 +27,9 @@ pub struct RenderOptions<'a, 'media> {
     pub logger: FFramesLoggerVariant,
     pub audio_encoder_options: EncoderOptions<'a>,
     pub video_encoder_options: EncoderOptions<'a>,
+    /// Encode the video at this frame rate instead of `Video::FPS` by keeping every n-th
+    /// frame. It must divide `Video::FPS` (60 → 30 or 20, not 25); animations and audio
+    /// stay on the video's own time. `None` encodes at `Video::FPS`.
     pub override_fps: Option<usize>,
     /// Directory used to store temporary files and artifacts generated for rendering and encoding.
     pub tmp_files_directory: Option<&'a PathBuf>,
@@ -55,9 +58,25 @@ pub struct RenderOptions<'a, 'media> {
     pub frame_range: Option<std::ops::Range<usize>>,
     /// Master bus of the audio mix: limiter, master gain and de-click fades.
     pub audio_mix: crate::AudioMixOptions,
+    /// Play order, trims and splits applied on top of `Video::define_scenes`.
+    /// `None` plays the scenes as the code defines them.
+    pub timing: Option<crate::TimingDoc>,
 }
 
 impl RenderOptions<'_, '_> {
+    /// How many video frames each encoded frame stands for: 1 without `override_fps`.
+    pub fn frame_stride(&self, video_fps: usize) -> FFramesRendererResult<usize> {
+        match self.override_fps {
+            None => Ok(1),
+            Some(fps) if fps > 0 && fps <= video_fps && video_fps.is_multiple_of(fps) => {
+                Ok(video_fps / fps)
+            }
+            Some(fps) => Err(super::FFramesRendererError::Custom(format!(
+                "output frame rate {fps} must divide the video's {video_fps} fps"
+            ))),
+        }
+    }
+
     /// The frames that will be rendered for a video of `duration_in_frames`, clamped to it.
     pub fn output_frame_range(&self, duration_in_frames: usize) -> std::ops::Range<usize> {
         match &self.frame_range {
@@ -82,6 +101,7 @@ impl Default for RenderOptions<'_, '_> {
             tmp_files_directory: None,
             frame_range: None,
             audio_mix: crate::AudioMixOptions::default(),
+            timing: None,
         }
     }
 }
@@ -105,11 +125,48 @@ impl<'a, 'media: 'a> FFramesRendererRuntime<'a> {
         scenes: &Scenes<'a>,
         media: Option<&'media dyn MediaProvider<'media>>,
     ) -> FFramesRendererResult<Self> {
-        let timeline = crate::resolve_timeline(
+        Self::new_with_timing(time_base, video, scenes, media, None)
+    }
+
+    /// `new` with the scenes laid out by a timing document.
+    pub fn new_with_timing<TVideo: Video>(
+        time_base: TimeBase,
+        video: &'a TVideo,
+        scenes: &Scenes<'a>,
+        media: Option<&'media dyn MediaProvider<'media>>,
+        timing: Option<&crate::TimingDoc>,
+    ) -> FFramesRendererResult<Self> {
+        let timeline = Self::resolve_timeline(time_base, video, scenes, media, timing)?;
+
+        let mut font_source = RendererFontSource {
+            fontdb: fontdb::Database::new(),
+        };
+
+        if let Some(media) = media {
+            media.populate_font_source(&mut font_source);
+        }
+
+        Ok(Self {
+            time_base,
+            timeline,
+            font_source,
+        })
+    }
+
+    /// Resolves only the timeline, for re-applying timing without reloading fonts.
+    pub fn resolve_timeline<TVideo: Video>(
+        time_base: TimeBase,
+        video: &'a TVideo,
+        scenes: &Scenes<'a>,
+        media: Option<&'media dyn MediaProvider<'media>>,
+        timing: Option<&crate::TimingDoc>,
+    ) -> FFramesRendererResult<ResolvedRenderingTimeline<'a, AudioTimelineSamples>> {
+        Ok(crate::resolve_timeline_with_timing(
             &video.duration(),
             &ScenesWithAudio::new(scenes),
             &time_base,
             &video.audio(),
+            timing,
             |name| {
                 let media = media.ok_or_else(|| {
                     crate::error::FFramesError::RequiredAudioNotFound(name.to_owned())
@@ -137,21 +194,7 @@ impl<'a, 'media: 'a> FFramesRendererRuntime<'a> {
                         crate::error::FFramesError::CanNotProcessAudioDuration(name.to_owned())
                     })
             },
-        )?;
-
-        let mut font_source = RendererFontSource {
-            fontdb: fontdb::Database::new(),
-        };
-
-        if let Some(media) = media {
-            media.populate_font_source(&mut font_source);
-        }
-
-        Ok(Self {
-            time_base,
-            timeline,
-            font_source,
-        })
+        )?)
     }
 }
 
@@ -173,6 +216,13 @@ pub fn render<
 ) -> FFramesRendererResult<()> {
     let logger = fframes_logger::make_logger(options.logger.clone());
 
+    let stride = options.frame_stride(TVideo::FPS)?;
+    if stride != 1 && !render_backend.supports_frame_stride() {
+        return Err(super::FFramesRendererError::Custom(
+            "this render backend cannot encode at another frame rate than the video's".into(),
+        ));
+    }
+
     let output = PathBuf::from(output.as_ref());
     let scenes = video.define_scenes();
 
@@ -180,7 +230,7 @@ pub fn render<
         timeline,
         time_base,
         mut font_source,
-    } = FFramesRendererRuntime::new(
+    } = FFramesRendererRuntime::new_with_timing(
         TimeBase {
             fps: TVideo::FPS,
             sample_rate: options.audio_encoder_options.sample_rate,
@@ -188,6 +238,7 @@ pub fn render<
         video,
         &scenes,
         options.media,
+        options.timing.as_ref(),
     )?;
 
     let mut image_source = HashMap::new();
@@ -214,7 +265,7 @@ pub fn render<
         )));
     }
 
-    logger.init_frames_rendering(frame_range.len())?;
+    logger.init_frames_rendering(frame_range.len().div_ceil(stride))?;
     let ctx = FFramesContext {
         time_base,
         mode: crate::FFramesMode::Renderer,
@@ -280,7 +331,7 @@ pub fn render_frame<
         timeline,
         time_base,
         mut font_source,
-    } = FFramesRendererRuntime::new(
+    } = FFramesRendererRuntime::new_with_timing(
         TimeBase {
             fps: TVideo::FPS,
             sample_rate: options.audio_encoder_options.sample_rate,
@@ -288,6 +339,7 @@ pub fn render_frame<
         video,
         &scenes,
         options.media,
+        options.timing.as_ref(),
     )?;
 
     let mut image_source = HashMap::new();

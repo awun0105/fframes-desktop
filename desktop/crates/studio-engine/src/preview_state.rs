@@ -123,6 +123,8 @@ pub struct PreparedAudioSource {
     /// Budget accounting of the PCM bytes (an opaque guard owned by the build service
     /// that releases them when this source, and so the open file, is dropped).
     accounting: std::sync::OnceLock<Box<dyn std::any::Any + Send + Sync>>,
+    /// The waveform of these bytes (`descriptor.sha256`), see [`crate::waveform`].
+    waveform: Arc<[f32]>,
 }
 impl PreparedAudioSource {
     pub fn build(&self) -> &Arc<crate::build_materialization::MaterializedBuild> {
@@ -138,7 +140,17 @@ impl PreparedAudioSource {
             descriptor,
             _lease: lease,
             accounting: std::sync::OnceLock::new(),
+            waveform: Arc::from([]),
         }
+    }
+    /// Attaches the waveform peaks computed while the file was validated.
+    pub fn with_waveform(mut self, peaks: Vec<f32>) -> Self {
+        self.waveform = peaks.into();
+        self
+    }
+    /// Peaks at [`crate::waveform::WAVEFORM_PEAKS_PER_SECOND`], empty when none were computed.
+    pub fn waveform(&self) -> &Arc<[f32]> {
+        &self.waveform
     }
     /// Ties `guard` to this source's lifetime. Only the first guard is kept; returns
     /// false (dropping `guard`, which releases whatever it accounted) when one is set.
@@ -377,10 +389,7 @@ impl PreviewState {
             };
         }
         if self.candidate.as_ref() != Some(t)
-            || t.project != *source.project()
-            || t.session != *source.session()
-            || t.base_source != *source.source()
-            || t.generation != source.generation()
+            || !source.is_current_build(t)
             || !matches!(source.job(), JobState::Succeeded(s) if s == t)
             || ready.seek_serial != self.serial
             || ready.position != self.position.min(ready.timeline.total_frames)
@@ -402,6 +411,17 @@ impl PreviewState {
         self.displayed = Some(ready.identity().clone());
         self.candidate = None;
         self.status = PreviewStatus::Displayed;
+        Ok(())
+    }
+    /// The displayed preview laid out with another timing document: the same worker and
+    /// identity with a new length. The playhead keeps its frame number where it still
+    /// exists.
+    pub fn retime(&mut self, ready: &ReadyPreview) -> Result<(), StateError> {
+        if self.displayed.as_ref() != Some(ready.identity()) {
+            return Err(StateError::StaleResult);
+        }
+        self.total_frames = ready.timeline.total_frames;
+        self.position = self.position.min(self.total_frames);
         Ok(())
     }
     /// Older displayed source is still a legitimate target while a new build runs/fails.

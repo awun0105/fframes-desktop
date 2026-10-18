@@ -19,6 +19,7 @@ on:
       - "Cargo.lock"
       - ".github/actions/desktop-linux-setup/**"
       - ".github/workflows/desktop.yml"
+      - "scripts/grammar-build-cost.sh"
   # Runs the macOS and dependency jobs on demand; the fork tests need a pull request.
   workflow_dispatch:
 
@@ -50,12 +51,11 @@ jobs:
       - name: Focused tests and lint
         run: |
           cargo fmt --manifest-path desktop/Cargo.toml --all --check
-          cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio
-          cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio --all-targets -- -D warnings
+          cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p studio-markdown -p fframes-studio
+          cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p studio-markdown -p fframes-studio --all-targets -- -D warnings
           cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
           python3 desktop/scripts/test-packaging.py
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
+          python3 desktop/scripts/test-release-gate.py
 
   # No self-hosted macOS runner exists, so the desktop tests and lint run on hosted macOS.
   desktop-macos:
@@ -95,9 +95,9 @@ jobs:
       - name: Use the pinned FFmpeg install
         run: echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg-native" >> "$GITHUB_ENV"
       - name: Test desktop workspace
-        run: cargo test --locked --no-fail-fast --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio
+        run: cargo test --locked --no-fail-fast --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p studio-markdown -p fframes-studio
       - name: Lint desktop workspace
-        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p studio-markdown -p fframes-studio --all-targets -- -D warnings
 
   # Dependencies come only from crates.io and the git sources allowed in desktop/deny.toml.
   desktop-deny:
@@ -111,3 +111,95 @@ jobs:
           manifest-path: desktop/Cargo.toml
           command: check
           command-arguments: sources advisories
+
+  # Six clean builds are only worth it when what decides their cost changed: studio-ui's manifest,
+  # the lock file, the syntax module or the script (or on demand).
+  grammar-scope:
+    name: Whether the grammar build cost needs measuring
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.scope.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" \
+            | grep -qE '^(desktop/crates/studio-ui/Cargo\.toml|desktop/Cargo\.lock|desktop/crates/studio-ui/src/agent/syntax/|scripts/grammar-build-cost\.sh)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The syntax grammars are C parsers compiled into studio-ui. Their clean build time is compared
+  # with a build without them (scripts/grammar-build-cost.sh); more than 20% more fails the job.
+  grammar-build-cost:
+    name: Syntax grammar build cost (${{ matrix.os }})
+    needs: grammar-scope
+    if: needs.grammar-scope.outputs.changed == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/desktop-linux-setup
+        if: runner.os == 'Linux'
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        if: runner.os != 'Linux'
+        with:
+          toolchain: "1.98.1"
+          # Each build starts from an empty target directory; a cache would only add uploads.
+          cache: false
+      - name: macOS native prerequisites
+        if: runner.os == 'macOS'
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install nasm || true
+          xcode_dir="$(xcode-select -p 2>/dev/null || echo '/Applications/Xcode.app/Contents/Developer')"
+          if [ -d "$xcode_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib" ]; then
+            echo "LIBCLANG_PATH=$xcode_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib" >> "$GITHUB_ENV"
+          fi
+      - name: Restore the pinned FFmpeg install
+        if: runner.os == 'macOS'
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ffmpeg-native
+          key: ffmpeg-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('desktop/scripts/build-native-ffmpeg.py') }}
+      - name: Build the pinned FFmpeg install
+        if: runner.os == 'macOS' && steps.ffmpeg.outputs.cache-hit != 'true'
+        run: python3 desktop/scripts/build-native-ffmpeg.py --source "$RUNNER_TEMP/ffmpeg-source" --out "$RUNNER_TEMP/ffmpeg-native"
+      - name: Use the pinned FFmpeg install
+        if: runner.os == 'macOS'
+        run: echo "FFMPEG_DIR=$RUNNER_TEMP/ffmpeg-native" >> "$GITHUB_ENV"
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: Windows linker and FFmpeg
+        if: runner.os == 'Windows'
+        run: |
+          # Git's link.exe would shadow the MSVC linker.
+          rm -f /usr/bin/link.exe /usr/bin/link
+          distribution=ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0
+          release=autobuild-2026-10-07-13-07
+          expected_sha256=124799f0643a75eb84a64a589f1abac8f81732587942f3f34458688036153f0d
+          curl -fL "https://github.com/BtbN/FFmpeg-Builds/releases/download/$release/$distribution.zip" -o "$RUNNER_TEMP/ffmpeg.zip"
+          echo "$expected_sha256  $RUNNER_TEMP/ffmpeg.zip" | sha256sum --check --status
+          7z x "$RUNNER_TEMP/ffmpeg.zip" -o"$RUNNER_TEMP/ffmpeg"
+          ffmpeg_dir="$(cygpath -w "$RUNNER_TEMP/ffmpeg/$distribution")"
+          echo "FFMPEG_DIR=$ffmpeg_dir" >> "$GITHUB_ENV"
+          echo "$ffmpeg_dir\bin" >> "$GITHUB_PATH"
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> "$GITHUB_ENV"
+      - name: Compare clean builds with and without the grammars
+        run: bash scripts/grammar-build-cost.sh

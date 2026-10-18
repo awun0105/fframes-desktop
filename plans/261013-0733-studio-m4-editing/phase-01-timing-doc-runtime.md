@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Timing hook and export options in fframes and the runtime"
-status: pending
+status: completed
 priority: P1
 effort: "4-5d"
 dependencies: []
@@ -34,14 +34,33 @@ Turn spike S2 into production code: an opt-in, bounded timing hook in `fframes`,
 
 ## Todo
 
-- [ ] `fframes::timing` with bounds and tests
-- [ ] Previewer and render take the doc
-- [ ] CLI builder opt-in
-- [ ] `SetTiming` capability, envelope, startup doc
-- [ ] Cache keys carry timing generation
-- [ ] Export options in worker and request
-- [ ] Agent docs
-- [ ] Examples and WASM unaffected
+- [x] `fframes::timing` with bounds and tests
+- [x] Previewer and render take the doc
+- [x] CLI builder opt-in
+- [x] `SetTiming` capability, envelope, startup doc
+- [x] Thumbnail cache key carries the timing generation (the prepared-audio key moved to phase 3)
+- [x] Export options in worker and request
+- [x] Agent docs
+- [x] Examples and WASM unaffected
+
+## Delivery notes
+
+- Timing is applied to timeline entries (`ResolvedSceneClip`, `Frame::clone_with_clip_offset`)
+  as the accepted spike report decided, not through a wrapper scene as task 1 first said.
+- Moved to phase 3: the coordinator retime lane (send `SetTiming` to the displayed
+  worker, re-prepare audio under the new generation, release the old prepared
+  artifact, publish the change). Its end-to-end test needs a materialized build, and
+  phase 3 is where edits first produce generations. Thumbnails already miss on a
+  generation change, and the pump renders only for the displayed generation.
+- Export options live in `fframes_studio_runtime::run_export` and the protocol's
+  `export` module. The template worker keeps calling its own MPEG-4 `run_export`
+  until phase 2 switches it to the runtime; the engine asks the worker for
+  `--export-capabilities-v1` before passing any non-default setting or timing doc and
+  refuses with "migrate the project" when the worker cannot answer.
+- `RenderOptions::override_fps` is now a frame stride (encode every n-th frame) on
+  backends that report `supports_frame_stride` (the CPU backend).
+- Not run here: the SDK-backed native export test (`native-export.rs`, ignored, needs
+  `SDK_BUNDLE`). It now also asserts the legacy refusal; run it with the phase 2 SDK.
 
 ## Success criteria
 

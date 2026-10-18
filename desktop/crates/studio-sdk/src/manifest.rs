@@ -6,6 +6,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+/// Where the current framework crates live inside the SDK.
+pub const FRAMEWORK_REL_PATH: &str = "framework/framework";
 
 #[derive(Debug, Error)]
 pub enum ManifestError {
@@ -70,7 +72,10 @@ pub struct HostPrerequisiteProbe {
     pub required: bool,
 }
 
+/// Unknown fields are refused: the digest projects pin is computed over exactly these
+/// fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompatibilityManifest {
     pub schema_version: u32,
     pub sdk_id: String,
@@ -81,10 +86,13 @@ pub struct CompatibilityManifest {
     pub rust_toolchain: RustToolchainInfo,
     pub fframes_version: String,
     pub cargo_fframes_version: String,
+    /// Version of `fframes-studio-runtime` and `fframes-studio-protocol`.
+    pub runtime_version: String,
     pub artifacts: Vec<SdkArtifact>,
     pub ffmpeg: FfmpegManifestInfo,
     pub host_prerequisites: Vec<HostPrerequisiteProbe>,
-    /// Absent in v1 SDK manifests. Absence means the legacy worker contract only.
+    /// The preview contracts the SDK's worker serves; empty (and not written) when it has
+    /// no preview worker, which still builds and exports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preview_contract_versions: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -151,6 +159,13 @@ impl CompatibilityManifest {
                 });
             }
         }
+
+        Version::parse(&self.runtime_version).map_err(|error| {
+            ManifestError::Validation(format!(
+                "invalid runtime_version '{}': {error}",
+                self.runtime_version
+            ))
+        })?;
 
         // Validate ffmpeg relative paths
         for path_str in [&self.ffmpeg.headers_rel_path, &self.ffmpeg.libs_rel_path] {
@@ -299,8 +314,38 @@ mod tests {
         assert!(!json.contains("preview_contract"));
         assert_eq!(
             manifest.digest(),
-            "ea63cd1fcc3487be84bf7100cc219b8498585e29a3dc8b908f3e418f8f85884a"
+            "69844c9c836606ee4ad359616e359af1d1f9bba9c03f29d323ed2d41eee53ffd"
         );
+    }
+
+    #[test]
+    fn runtime_version_is_required_and_unknown_fields_are_refused() {
+        let manifest = CompatibilityManifest::default_linux_x64();
+        let mut raw = serde_json::to_value(&manifest).unwrap();
+        raw.as_object_mut().unwrap().remove("runtime_version");
+        let error = CompatibilityManifest::from_json_str(&raw.to_string()).unwrap_err();
+        assert!(error.to_string().contains("runtime_version"), "{error}");
+
+        // An SDK that also carries the framework of earlier releases is not read.
+        let mut raw = serde_json::to_value(&manifest).unwrap();
+        raw["legacy"] = serde_json::json!({
+            "fframes_version": "1.2.0",
+            "runtime_version": "0.1.0",
+            "framework_rel_path": "framework/framework-legacy",
+            "sdk_releases": ["studio-sdk-x86_64-unknown-linux-gnu-v2"],
+        });
+        let error = CompatibilityManifest::from_json_str(&raw.to_string()).unwrap_err();
+        assert!(
+            error.to_string().contains("unknown field `legacy`"),
+            "{error}"
+        );
+
+        let mut invalid = manifest;
+        invalid.runtime_version = "one".into();
+        assert!(matches!(
+            invalid.validate(),
+            Err(ManifestError::Validation(_))
+        ));
     }
 
     #[test]

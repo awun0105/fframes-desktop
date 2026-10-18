@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Feasibility spikes"
-status: in-progress
+status: complete
 priority: P1
 effort: "6-8d"
 dependencies: []
@@ -95,17 +95,27 @@ M5a replaces ACP with native protocols for Claude Code and Codex ([Zeron report]
 - [x] S1: window and gpui test on this VM
 - [x] S1: button port and API-change list
 - [x] S1: macOS CI job green
-- [ ] S2: strict, bounded data shape and key rule
-- [ ] S2: wrapper scene, derived keys, `get_scene_info` rule
-- [ ] S2: `SetTiming` as a Hello capability
-- [ ] S2: overlap and audio rule
-- [ ] S2: template-based project and render parity
-- [ ] S3: Windows NT handle-relative prototype and five test kinds
-- [ ] S3: macOS prototype and five test kinds
-- [ ] S3: cloud placeholder decision
-- [ ] S4: closure tables and re-estimates
-- [ ] S5: native Claude and Codex wires on real CLIs
-- [ ] Five spike reports written; user told of any failure
+- [x] S2: strict, bounded data shape and key rule
+- [x] S2: wrapper scene, derived keys, `get_scene_info` rule
+- [x] S2: `SetTiming` as a Hello capability
+- [x] S2: overlap and audio rule
+- [x] S2: template-based project and render parity
+- [x] S3: Windows NT handle-relative prototype and five test kinds
+- [x] S3: macOS prototype and five test kinds
+- [x] S3: cloud placeholder decision
+- [x] S4: closure tables and re-estimates
+- [x] S5: native Claude and Codex wires on real CLIs
+- [x] Five spike reports written; user told of any failure
+
+## Results (2026-10-14)
+
+All five spikes pass; no fallback was needed.
+
+- S1: [spike-cap-gpui-api-delta](./reports/spike-cap-gpui-api-delta.md).
+- S2: [spike-timing-hook](./reports/spike-timing-hook.md); code on the throwaway branch `spike/m1-timing`. Timing lives on the resolved timeline entries rather than in wrapper scenes, which keeps `get_scene_info`'s pointer lookup working.
+- S3: [spike-publish-primitives](./reports/spike-publish-primitives.md); prototypes on `spike/m1-publish`, green on macOS and Windows CI. Cloud placeholders and SMB shares refuse mutation.
+- S4: [spike-port-closure](./reports/spike-port-closure.md); M2, M4 and M5 estimates updated, and the roadmap total is now 110-157d.
+- S5: [spike-native-wires](./reports/spike-native-wires.md) (Claude Code 2.1.296, Codex 0.162.1). Both wires work. M5a phases 2-4 must absorb the deviations listed in its Result section: neither CLI's turn-end frame means the work is done, Codex has no `turn/aborted`, only `untrusted` asks before every command, and session stop needs a containment kill.
 
 ## Success criteria
 

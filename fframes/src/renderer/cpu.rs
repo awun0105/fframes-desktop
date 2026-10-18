@@ -118,6 +118,10 @@ impl EncoderFrameRenderer for CpuEncoderFrameRenderer {
 }
 
 impl FFramesRenderBackend for CpuRenderingBackend {
+    fn supports_frame_stride(&self) -> bool {
+        true
+    }
+
     fn frame_renderer(&self) -> Option<impl FrameRenderer + '_> {
         Some(super::CpuFrameRenderer::new(self.cache_capacity))
     }
@@ -156,17 +160,20 @@ impl FFramesRenderBackend for CpuRenderingBackend {
         }
 
         // The scheduler and segments work in output frames; `frame_offset` maps them back to
-        // video frames when only a range is rendered.
+        // video frames when only a range is rendered, and `stride` when every n-th frame is
+        // encoded for a lower output frame rate.
         let frame_range = render_options.output_frame_range(ctx.duration_in_frames);
         let frame_offset = frame_range.start;
+        let stride = render_options.frame_stride(ctx.time_base.fps)?;
+        let output_fps = ctx.time_base.fps / stride;
 
         let video_size = &ctx.current_video_size;
         let scheduler = FrameScheduler::new(
-            frame_range.len(),
+            frame_range.len().div_ceil(stride),
             self.concurrency,
             render_options
                 .video_encoder_options
-                .min_segment_frames(ctx.time_base.fps),
+                .min_segment_frames(output_fps),
         );
         let writer = SegmentWriter::new(
             directory,
@@ -174,7 +181,7 @@ impl FFramesRenderBackend for CpuRenderingBackend {
             (
                 video_size.width as i32,
                 video_size.height as i32,
-                ctx.time_base.fps as i32,
+                output_fps as i32,
             ),
             render_options,
             &logger,
@@ -205,7 +212,7 @@ impl FFramesRenderBackend for CpuRenderingBackend {
                     return Err(FFramesRendererError::Aborted);
                 }
 
-                let video_frame = claim.frame + frame_offset;
+                let video_frame = claim.frame * stride + frame_offset;
                 let svg = super::render_frame_guarded(
                     video,
                     Frame::__internal_make_for_renderer(

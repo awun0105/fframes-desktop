@@ -5,9 +5,8 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 
 use fframes_studio_protocol::{PREVIEW_CONTRACT_VERSION, PreviewTimelineResponse};
 
-const DEFAULT_PIXELS_PER_SECOND: f64 = 100.0;
-const MIN_PIXELS_PER_SECOND: f64 = 0.01;
-const MAX_PIXELS_PER_SECOND: f64 = 100_000.0;
+pub const DEFAULT_PIXELS_PER_SECOND: f64 = 100.0;
+pub const MAX_PIXELS_PER_SECOND: f64 = 100_000.0;
 const MAX_VIEWPORT_WIDTH: f64 = 1_000_000.0;
 const MAX_GEOMETRY_ITEMS: usize = 100_000;
 const MAX_TICKS: usize = 2_048;
@@ -60,6 +59,16 @@ impl TimelineModel {
 
     pub fn report(&self) -> &PreviewTimelineResponse {
         &self.report
+    }
+
+    /// The row a scene is packed into: 0 unless it overlaps an earlier scene.
+    pub fn scene_lane(&self, index: usize) -> usize {
+        self.scene_lanes.get(index).copied().unwrap_or(0)
+    }
+
+    /// Seconds from the start to the end of the video.
+    pub fn duration(&self) -> f64 {
+        self.seconds(self.report.total_frames)
     }
 
     /// Seconds at a cursor frame. The cursor may be exactly at the video end.
@@ -133,10 +142,13 @@ pub struct TimelineRect {
     pub lane: usize,
 }
 
+/// One ruler mark: `major` marks carry `label`, the others subdivide them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimelineTick {
     pub x: f64,
-    pub label: String,
+    pub seconds: f64,
+    pub major: bool,
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -149,106 +161,167 @@ pub struct TimelineGeometry {
     pub width: f64,
 }
 
-#[derive(Debug, Clone)]
-pub struct TimelineViewport {
+/// Seconds of slack either side of the viewport within which a segment is still
+/// built, so a short pan never shows an empty edge (Cap's `SEGMENT_RENDER_PADDING`).
+pub const SEGMENT_RENDER_PADDING: f64 = 2.0;
+/// At most this many ruler marks are visible (Cap's `MAX_TIMELINE_MARKINGS`).
+const MAX_TIMELINE_MARKINGS: f64 = 20.0;
+/// Mark spacings in seconds. Cap's ladder starts at 0.5 s; the finer steps keep the
+/// ruler readable down to single frames.
+const TIMELINE_MARKING_RESOLUTIONS: [f64; 16] = [
+    0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 150.0, 300.0, 600.0, 1800.0,
+];
+
+/// The timeline's viewport, after Cap's `Transform`: `zoom` seconds are visible across
+/// `width` pixels and `position` is the second at the left edge. Zoom is kept between
+/// [`MAX_PIXELS_PER_SECOND`] and the whole video (Fit), the position so the viewport
+/// never passes the end. Non-finite input never changes it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimelineTransform {
     pub width: f64,
-    pub pixels_per_second: f64,
-    pub scroll_x: f64,
+    pub zoom: f64,
+    pub position: f64,
 }
 
-impl Default for TimelineViewport {
+impl Default for TimelineTransform {
     fn default() -> Self {
         Self {
             width: 0.0,
-            pixels_per_second: DEFAULT_PIXELS_PER_SECOND,
-            scroll_x: 0.0,
+            zoom: 0.0,
+            position: 0.0,
         }
     }
 }
 
-impl TimelineViewport {
+impl TimelineTransform {
+    pub fn pixels_per_second(&self) -> f64 {
+        if self.zoom > 0.0 && self.width > 0.0 {
+            self.width / self.zoom
+        } else {
+            DEFAULT_PIXELS_PER_SECOND
+        }
+    }
+
+    /// The left edge in pixels from the start of the video.
+    pub fn scroll_x(&self) -> f64 {
+        self.position * self.pixels_per_second()
+    }
+
     pub fn resize(&mut self, width: f64, model: &TimelineModel) {
         if width.is_finite() && width >= 0.0 {
             self.width = width.min(MAX_VIEWPORT_WIDTH);
         }
-        self.clamp(model);
-    }
-
-    pub fn fit(&mut self, model: &TimelineModel) {
-        let duration = model.seconds(model.report.total_frames);
-        self.pixels_per_second = if duration > 0.0 && self.width > 0.0 {
-            (self.width / duration).clamp(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND)
+        if self.zoom <= 0.0 {
+            self.fit(model);
         } else {
-            DEFAULT_PIXELS_PER_SECOND
-        };
-        self.scroll_x = 0.0;
+            self.clamp(model);
+        }
+    }
+
+    /// Shows the whole video.
+    pub fn fit(&mut self, model: &TimelineModel) {
+        self.zoom = Self::max_zoom(self.width, model);
+        self.position = 0.0;
         self.clamp(model);
     }
 
+    /// Cap's `updateZoom`: shows `zoom` seconds, keeping the second at `origin` at the
+    /// same fraction of the viewport.
+    pub fn update_zoom(&mut self, zoom: f64, origin: f64, model: &TimelineModel) {
+        if !zoom.is_finite() || !origin.is_finite() || self.zoom <= 0.0 {
+            return;
+        }
+        let zoom = zoom
+            .min(Self::max_zoom(self.width, model))
+            .max(self.min_zoom());
+        let fraction = ((origin - self.position) / self.zoom).clamp(0.0, 1.0);
+        self.zoom = zoom;
+        self.set_position(origin - zoom * fraction, model);
+    }
+
+    /// Zooms in by `factor` (`2.` doubles the pixels per second), keeping the time
+    /// under `anchor_x` (pixels from the left edge) where it is.
     pub fn zoom(&mut self, factor: f64, anchor_x: f64, model: &TimelineModel) {
         if !factor.is_finite() || factor <= 0.0 || !anchor_x.is_finite() {
             return;
         }
-        let anchor = anchor_x.clamp(0.0, self.width);
-        let seconds = (self.scroll_x + anchor) / self.pixels_per_second;
-        let next =
-            (self.pixels_per_second * factor).clamp(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND);
-        if !next.is_finite() {
-            return;
+        let origin = self.seconds_at_x(anchor_x.clamp(0.0, self.width));
+        self.update_zoom(self.zoom / factor, origin, model);
+    }
+
+    /// Cap's `setPosition`, clamped to the video.
+    pub fn set_position(&mut self, position: f64, model: &TimelineModel) {
+        if position.is_finite() {
+            self.position = position;
         }
-        self.pixels_per_second = next;
-        self.scroll_x = seconds.mul_add(next, -anchor);
         self.clamp(model);
     }
 
     pub fn scroll_by(&mut self, dx: f64, model: &TimelineModel) {
         if dx.is_finite() {
-            self.scroll_x = match self.scroll_x + dx {
-                value if value.is_finite() => value,
-                _ if dx.is_sign_positive() => f64::MAX,
-                _ => 0.0,
-            };
-            self.clamp(model);
+            let position = self.position + dx / self.pixels_per_second();
+            self.set_position(
+                if position.is_finite() {
+                    position
+                } else if dx.is_sign_positive() {
+                    f64::MAX
+                } else {
+                    0.0
+                },
+                model,
+            );
         }
+    }
+
+    pub fn seconds_at_x(&self, x: f64) -> f64 {
+        self.position + x / self.pixels_per_second()
+    }
+
+    pub fn x_at_seconds(&self, seconds: f64) -> f64 {
+        (seconds - self.position) * self.pixels_per_second()
     }
 
     pub fn frame_at_x(&self, x: f64, model: &TimelineModel) -> Option<usize> {
         if !x.is_finite() {
             return None;
         }
-        let position = self.scroll_x + x;
-        if !position.is_finite() {
+        let seconds = self.seconds_at_x(x);
+        if !seconds.is_finite() {
             return Some(if x.is_sign_positive() {
                 model.report.total_frames
             } else {
                 0
             });
         }
-        model.frame_at_seconds(position / self.pixels_per_second)
+        model.frame_at_seconds(seconds)
     }
 
     pub fn x_at_frame(&self, frame: usize, model: &TimelineModel) -> f64 {
-        model
-            .seconds(frame)
-            .mul_add(self.pixels_per_second, -self.scroll_x)
+        self.x_at_seconds(model.seconds(frame))
+    }
+
+    /// Cap's `isSegmentVisible`: whether `start..end` seconds overlaps the viewport
+    /// widened by [`SEGMENT_RENDER_PADDING`].
+    pub fn segment_visible(&self, start: f64, end: f64) -> bool {
+        end >= (self.position - SEGMENT_RENDER_PADDING).max(0.0)
+            && start <= self.position + self.zoom + SEGMENT_RENDER_PADDING
     }
 
     pub fn geometry(&self, model: &TimelineModel) -> TimelineGeometry {
-        let timeline_width = self.timeline_width(model);
-        let visible = |x: f64, width: f64| x + width >= 0.0 && x <= self.width;
+        let pixels_per_second = self.pixels_per_second();
+        let fps = model.report.fps as f64;
         let scenes = model
             .report
             .scenes
             .iter()
             .enumerate()
             .filter_map(|(index, scene)| {
-                let x = self.x_at_frame(scene.start_frame, model);
-                let width = (scene.end_frame - scene.start_frame) as f64 / model.report.fps as f64
-                    * self.pixels_per_second;
-                visible(x, width).then_some(TimelineRect {
+                let start = scene.start_frame as f64 / fps;
+                let end = scene.end_frame as f64 / fps;
+                self.segment_visible(start, end).then(|| TimelineRect {
                     index,
-                    x,
-                    width,
+                    x: self.x_at_seconds(start),
+                    width: (end - start) * pixels_per_second,
                     lane: model.scene_lanes[index],
                 })
             })
@@ -258,17 +331,12 @@ impl TimelineViewport {
             .audio_tracks
             .iter()
             .enumerate()
-            .filter_map(|(index, track)| {
-                let x = track
-                    .start_seconds
-                    .mul_add(self.pixels_per_second, -self.scroll_x);
-                let width = (track.end_seconds - track.start_seconds) * self.pixels_per_second;
-                visible(x, width).then_some(TimelineRect {
-                    index,
-                    x,
-                    width,
-                    lane: index,
-                })
+            .filter(|(_, track)| self.segment_visible(track.start_seconds, track.end_seconds))
+            .map(|(index, track)| TimelineRect {
+                index,
+                x: self.x_at_seconds(track.start_seconds),
+                width: (track.end_seconds - track.start_seconds) * pixels_per_second,
+                lane: index,
             })
             .collect();
         TimelineGeometry {
@@ -281,7 +349,7 @@ impl TimelineViewport {
                 .map(|lane| lane + 1)
                 .max()
                 .unwrap_or(1),
-            width: timeline_width,
+            width: model.seconds(model.report.total_frames) * pixels_per_second,
         }
     }
 
@@ -306,49 +374,100 @@ impl TimelineViewport {
             .collect()
     }
 
+    /// Cap's `markingResolution`: the first spacing that shows at most
+    /// [`MAX_TIMELINE_MARKINGS`] marks.
+    pub fn marking_resolution(&self) -> f64 {
+        TIMELINE_MARKING_RESOLUTIONS
+            .into_iter()
+            .find(|candidate| self.zoom / candidate <= MAX_TIMELINE_MARKINGS)
+            .unwrap_or(TIMELINE_MARKING_RESOLUTIONS[TIMELINE_MARKING_RESOLUTIONS.len() - 1])
+    }
+
+    /// Cap's `TimelineMarkings`: marks on the resolution grid across the viewport, up to
+    /// the end of the video. Whole seconds are major and labelled; below a quarter-second
+    /// spacing every fifth mark is.
     fn ticks(&self, model: &TimelineModel) -> Vec<TimelineTick> {
-        if self.width <= 0.0 || model.report.total_frames == 0 {
+        if self.width <= 0.0 || self.zoom <= 0.0 || model.report.total_frames == 0 {
             return Vec::new();
         }
-        let raw_step = 80.0 / self.pixels_per_second;
-        let power = 10_f64.powf(raw_step.max(f64::MIN_POSITIVE).log10().floor());
-        let step = [1.0, 2.0, 5.0, 10.0]
-            .into_iter()
-            .map(|multiple| multiple * power)
-            .find(|candidate| *candidate >= raw_step)
-            .unwrap_or(power * 10.0);
-        let start_seconds = (self.scroll_x / self.pixels_per_second).max(0.0);
-        let end_seconds = ((self.scroll_x + self.width) / self.pixels_per_second)
-            .min(model.seconds(model.report.total_frames));
-        let first = (start_seconds / step).ceil();
-        let count = (((end_seconds / step).floor() - first + 1.0).max(0.0) as usize).min(MAX_TICKS);
+        let resolution = self.marking_resolution();
+        let label_steps = if resolution < 0.25 {
+            5.0
+        } else {
+            (1..=4)
+                .map(f64::from)
+                .find(|steps| is_whole(steps * resolution))
+                .unwrap_or(1.0)
+        };
+        let end = (self.position + self.zoom).min(model.seconds(model.report.total_frames));
+        let first = (self.position / resolution).ceil();
+        let count = (((end / resolution).floor() - first + 1.0).max(0.0) as usize).min(MAX_TICKS);
         (0..count)
             .map(|index| {
-                let seconds = (first + index as f64) * step;
+                let step = first + index as f64;
+                let seconds = step * resolution;
+                // Marks are compared in whole steps, not seconds, so rounding never
+                // moves a label.
+                let major = step % label_steps == 0.0;
                 TimelineTick {
-                    x: seconds.mul_add(self.pixels_per_second, -self.scroll_x),
-                    label: format!("{seconds:.2}s"),
+                    x: self.x_at_seconds(seconds),
+                    seconds,
+                    major,
+                    label: major.then(|| format_ruler_time(seconds, resolution)),
                 }
             })
             .collect()
     }
 
-    fn timeline_width(&self, model: &TimelineModel) -> f64 {
-        model.seconds(model.report.total_frames) * self.pixels_per_second
+    /// The narrowest view: [`MAX_PIXELS_PER_SECOND`] across the width.
+    fn min_zoom(&self) -> f64 {
+        (self.width / MAX_PIXELS_PER_SECOND).max(f64::MIN_POSITIVE)
+    }
+
+    /// The widest view: the whole video, or the default scale when it is empty.
+    fn max_zoom(width: f64, model: &TimelineModel) -> f64 {
+        let duration = model.seconds(model.report.total_frames);
+        if duration > 0.0 {
+            duration
+        } else {
+            (width / DEFAULT_PIXELS_PER_SECOND).max(f64::MIN_POSITIVE)
+        }
     }
 
     fn clamp(&mut self, model: &TimelineModel) {
-        self.width = self.width.clamp(0.0, MAX_VIEWPORT_WIDTH);
-        self.pixels_per_second = self
-            .pixels_per_second
-            .clamp(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND);
-        let maximum = (self.timeline_width(model) - self.width).max(0.0);
-        self.scroll_x = if self.scroll_x.is_finite() {
-            self.scroll_x.clamp(0.0, maximum)
+        let max_zoom = Self::max_zoom(self.width, model);
+        if !self.zoom.is_finite() || self.zoom <= 0.0 {
+            self.zoom = max_zoom;
+        }
+        self.zoom = self.zoom.min(max_zoom).max(self.min_zoom());
+        let last = (model.seconds(model.report.total_frames) - self.zoom).max(0.0);
+        self.position = if self.position.is_finite() {
+            self.position.clamp(0.0, last)
         } else {
             0.0
         };
     }
+}
+
+/// Cap's `formatTime` (`M:SS`), with the fraction a sub-second resolution needs.
+pub fn format_ruler_time(seconds: f64, resolution: f64) -> String {
+    let seconds = seconds.max(0.0);
+    if resolution >= 1.0 || is_whole(seconds) {
+        let total = seconds.round() as u64;
+        return format!("{}:{:02}", total / 60, total % 60);
+    }
+    let decimals = if is_whole(resolution * 10.0) { 1 } else { 2 };
+    let minutes = (seconds / 60.0).floor();
+    let rest = seconds - minutes * 60.0;
+    format!(
+        "{}:{rest:0width$.decimals$}",
+        minutes as u64,
+        width = decimals + 3
+    )
+}
+
+fn is_whole(value: f64) -> bool {
+    (value - value.round()).abs() < 1e-6
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

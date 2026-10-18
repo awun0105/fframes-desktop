@@ -25,12 +25,20 @@ use std::{
     },
     time::Duration,
 };
-use studio_project::{OpenProject, checkpoint::Checkpoints, revision::FileKind};
+use studio_project::{
+    OpenProject,
+    checkpoint::Checkpoints,
+    revision::{FileKind, TIMING_FILE},
+};
 
 mod preset;
 mod promotion;
+mod review;
+mod timing;
 pub use preset::{PresetMutation, PresetOutcome};
 pub use promotion::{CompletionOutcome, Promotion, UndoPreparation};
+pub use review::{CandidateDiffSource, Rejection, RevisionDiffSource};
+pub use timing::TimingEditing;
 
 /// What replaying the task journal found and did on open, and what still blocks
 /// source mutation.
@@ -86,6 +94,8 @@ pub struct Controller {
     agent_scope: Option<AgentScope>,
     agent: AgentTaskManager,
     drafts: DraftStore,
+    /// The timing document of this session and its edit history.
+    timing: crate::timing::TimingSession,
 }
 
 /// The process scope of one agent task, keyed by the task that owns it so cleanup can
@@ -154,7 +164,7 @@ impl Controller {
             )
         })?;
         // Compatibility and identity are decided from read-only looks at the database
-        // and both journals before anything is migrated, quarantined or replayed: an
+        // and both journals before anything is quarantined or replayed: an
         // unsupported (newer or damaged) history, a foreign identity or a duplicate
         // project ID is refused with every byte of the app-local history untouched.
         let previous =
@@ -189,7 +199,12 @@ impl Controller {
                     )),
                 })?
         };
-        if recovery.touched_source {
+        // A `timeline.json` write the process did not finish is completed before the
+        // source is trusted, like an unfinished transaction.
+        let timing_recovery = crate::timing::file::recover(&project.root).map_err(|error| {
+            format!("{TIMING_FILE} could not be recovered from an interrupted save: {error}")
+        });
+        if recovery.touched_source || matches!(timing_recovery, Ok(Some(_))) {
             (project, source_degraded) = open_source(root)?;
         }
         let task_records = task_replay.committed();
@@ -206,7 +221,7 @@ impl Controller {
         }
         let mut record = if let Some(previous) = previous {
             Record {
-                state: previous.state.reopened(project.inventory.revision.clone()),
+                state: previous.state.reopened(&project.inventory),
                 location: project.root.clone(),
                 name: project.manifest.display.name.clone(),
                 ..previous
@@ -216,7 +231,7 @@ impl Controller {
             let mut state = ProjectState::opening(
                 project.manifest.project_id.clone(),
                 OpenSession::new(),
-                project.inventory.revision.clone(),
+                &project.inventory,
                 accepted,
             );
             state.finish_open(Ok(()))?;
@@ -241,7 +256,7 @@ impl Controller {
                 JobState::Queued(_) | JobState::Running(_) | JobState::CancelRequested(_)
             )
         {
-            let mut recovered = pending.state.reopened(project.inventory.revision.clone());
+            let mut recovered = pending.state.reopened(&project.inventory);
             // Pending job intents do not alter accepted; check that invariant against committed history.
             if recovered.accepted() != record.state.accepted() {
                 recovered = record.state.clone();
@@ -320,6 +335,11 @@ impl Controller {
                 "Source degraded ({err}). Safe checkpoint export is available."
             ));
         }
+        match timing_recovery {
+            Ok(Some(note)) | Err(note) => notices.push(note),
+            Ok(None) => {}
+        }
+        let timing = crate::timing::TimingSession::load(&project.root);
         let recovery_notice = (!notices.is_empty()).then(|| notices.join(" "));
         let mut controller = Self {
             project,
@@ -349,13 +369,14 @@ impl Controller {
             agent_scope: None,
             agent,
             drafts,
+            timing,
         };
         controller.heal_manifest_reference();
         Ok(controller)
     }
     /// Read-only look at everything app-local that decides whether this project can be
     /// opened: the database (version), the lifecycle journal and the task journal
-    /// (formats, interior damage). Nothing is created, migrated, quarantined or
+    /// (formats, interior damage). Nothing is created, quarantined or
     /// replayed. Returns the last known record of the project.
     fn preflight_history(
         database: &Path,
@@ -366,15 +387,8 @@ impl Controller {
         TaskJournal::inspect(&history.join("tasks.jsonl"))?;
         let stored = if database.exists() {
             let readable = Store::open_read_only(database)?;
-            let version = readable.version()?;
-            if version > crate::store::SCHEMA_VERSION {
-                return Err(EngineError::NewerFormat {
-                    what: format!("{} (history database)", database.display()),
-                    found: version,
-                    supported: crate::store::SCHEMA_VERSION,
-                });
-            }
-            if version >= 1 {
+            readable.ensure_current(database)?;
+            if readable.version()? >= 1 {
                 readable.get(project)?
             } else {
                 None
@@ -382,7 +396,13 @@ impl Controller {
         } else {
             None
         };
-        Ok(lifecycle.committed.or(stored))
+        let last = lifecycle.committed.or(stored);
+        // The saved checkpoint of that record: one made by an older Studio is refused here,
+        // before any recovery, replay or comparison could act on it.
+        if let Some(last) = &last {
+            Checkpoints::check_format(history, last.state.accepted())?;
+        }
+        Ok(last)
     }
 
     /// Appends a lifecycle snapshot. Any failure (the journal refuses everything until
@@ -411,7 +431,6 @@ impl Controller {
 
     /// Makes the next lifecycle append fail exactly like a full disk. Tests only.
     #[doc(hidden)]
-    #[cfg(unix)]
     pub fn simulate_lifecycle_full_disk(&mut self) -> std::io::Result<()> {
         self.journal.simulate_full_disk()
     }
@@ -479,7 +498,8 @@ impl Controller {
                 manifest_path.display()
             ))
         })?;
-        if self.project.manifest.sdk != crate::build_materialization::sdk_pin(&manifest) {
+        if crate::build_materialization::framework_for(&self.project.manifest, &manifest).is_none()
+        {
             return Err(EngineError::Diagnostic(
                 "SDK pin mismatch; select the project's compatible SDK".into(),
             ));
@@ -518,9 +538,7 @@ impl Controller {
                     Ok(_) => identity_error(),
                     Err(e) => match studio_project::open_for_recovery(&self.project.root) {
                         Ok(p) if p.manifest.project_id == *self.state().project() => {
-                            self.record
-                                .state
-                                .reconcile_source(p.inventory.revision.clone())?;
+                            self.record.state.reconcile_source(&p.inventory)?;
                             self.project = p;
                             e.into()
                         }
@@ -542,12 +560,16 @@ impl Controller {
             }
         };
         let previous = self.state().source().clone();
-        self.record
-            .state
-            .reconcile_source(project.inventory.revision.clone())?;
+        let generation = self.state().generation();
+        self.record.state.reconcile_source(&project.inventory)?;
         self.project = project;
+        self.observe_timing_file();
         if self.state().source() != &previous {
-            self.operations.shutdown(Duration::from_millis(300));
+            // A timing-only change keeps the generation: the running job and its
+            // processes still describe the source.
+            if self.state().generation() != generation {
+                self.operations.shutdown(Duration::from_millis(300));
+            }
             self.persist(self.record.clone())?;
         }
         Ok(())
@@ -633,7 +655,7 @@ impl Controller {
         let mut record = self.record.clone();
         record
             .state
-            .complete(tag, self.project.inventory.revision.clone(), result)?;
+            .complete(tag, &self.project.inventory, result)?;
         self.persist(record)
     }
     pub fn checkpoint(&mut self) -> Result<(), EngineError> {

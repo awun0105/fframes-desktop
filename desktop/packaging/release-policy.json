@@ -3,14 +3,11 @@
   "publication": {
     "requires_signed_release_manifest": true,
     "trusted_release_keys_configured": false,
-    "requires_qualified_artifact_digest": true,
     "requires_matching_source_commit": true,
     "immutable_released_bytes": true,
     "consumer_release_enabled": false
   },
-  "qualification": {
-    "trusted_evidence_keys": []
-  },
+  "eligible_targets": [],
   "targets": [
     {
       "triple": "aarch64-apple-darwin",

@@ -18,6 +18,13 @@ pub trait FFramesRenderBackend {
         false
     }
 
+    /// Whether `render` honours [`RenderOptions::override_fps`] by encoding every n-th
+    /// frame. `render` refuses the option for backends that answer `false`, so a video is
+    /// never silently encoded at a frame rate other than the requested one.
+    fn supports_frame_stride(&self) -> bool {
+        false
+    }
+
     /// Renders single frames (`fframes::Previewer`, the CLI's `frame`, `strip`, `onion` and
     /// `snapshot`) the way this backend renders the video, so previews match the output.
     /// `None` uses the built-in CPU renderer.

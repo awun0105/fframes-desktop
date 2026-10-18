@@ -4,6 +4,7 @@ use studio_engine::{ScopeSelection, TaskScope, TaskScopeError, TimelineSelection
 
 fn scene(id: &str, index: usize, start_frame: usize, end_frame: usize) -> PreviewSceneInfo {
     PreviewSceneInfo {
+        clip: None,
         instance_id: id.into(),
         editor_instance_key: Some(id.into()),
         index,
@@ -18,6 +19,7 @@ fn scene(id: &str, index: usize, start_frame: usize, end_frame: usize) -> Previe
 
 fn timeline() -> PreviewTimelineResponse {
     PreviewTimelineResponse {
+        timing_generation: 0,
         envelope: PreviewEnvelope {
             contract_version: PREVIEW_CONTRACT_VERSION,
             identity: PreviewIdentity {

@@ -7,7 +7,6 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
-    os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     process::Command,
     sync::Arc,
@@ -55,15 +54,15 @@ pub fn fixture() -> Fx {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        &compatibility.runtime_version,
     )
     .unwrap();
     fs::write(root.join("notes.txt"), "keep me\n").unwrap();
     fs::write(root.join("old.txt"), "to be deleted\n").unwrap();
     fs::write(root.join("run.sh"), "#!/bin/sh\necho hi\n").unwrap();
-    fs::set_permissions(root.join("run.sh"), fs::Permissions::from_mode(0o644)).unwrap();
+    set_mode(&root.join("run.sh"), 0o644);
     fs::write(root.join("private.txt"), "secret\n").unwrap();
-    fs::set_permissions(root.join("private.txt"), fs::Permissions::from_mode(0o600)).unwrap();
+    set_mode(&root.join("private.txt"), 0o600);
     let git = |args: &[&str]| {
         let status = Command::new("git")
             .args(args)
@@ -181,10 +180,91 @@ pub fn multi_file_edit(draft: &Path) {
     fs::write(draft.join("media/new/clip.txt"), "created\n").unwrap();
     fs::write(draft.join("added.txt"), "added\n").unwrap();
     fs::remove_file(draft.join("old.txt")).unwrap();
-    fs::set_permissions(draft.join("run.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+    set_mode(&draft.join("run.sh"), 0o755);
 }
 
 // ---- observing the filesystem ---------------------------------------------------------
+
+pub fn symlink_dir(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    let result = std::os::unix::fs::symlink(target, link);
+    #[cfg(windows)]
+    let result = std::os::windows::fs::symlink_dir(target, link);
+    result.unwrap_or_else(|e| {
+        panic!("creating a directory symlink failed ({e}); on Windows this needs SeCreateSymbolicLinkPrivilege (Administrator or Developer Mode)")
+    });
+}
+
+pub fn symlink_file(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    let result = std::os::unix::fs::symlink(target, link);
+    #[cfg(windows)]
+    let result = std::os::windows::fs::symlink_file(target, link);
+    result.unwrap_or_else(|e| {
+        panic!("creating a file symlink failed ({e}); on Windows this needs SeCreateSymbolicLinkPrivilege (Administrator or Developer Mode)")
+    });
+}
+
+/// A directory junction (`mklink /J`), which needs no privilege.
+#[cfg(windows)]
+pub fn junction(target: &Path, link: &Path) {
+    let status = Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(link)
+        .arg(target)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "mklink /J failed");
+}
+
+/// The modes the fixture's files read back with: on Windows a file is never executable
+/// and only read-only is kept, so `run.sh` stays `0o644` after the executable-bit edit and
+/// `private.txt` (writable) reads `0o644`.
+#[cfg(unix)]
+pub const EXEC_MODE: u32 = 0o755;
+#[cfg(windows)]
+pub const EXEC_MODE: u32 = 0o644;
+#[cfg(unix)]
+pub const PRIVATE_MODE: u32 = 0o600;
+#[cfg(windows)]
+pub const PRIVATE_MODE: u32 = 0o644;
+
+/// Sets the permission bits on Unix. Windows has one permission bit, read-only, which
+/// follows the write bits (as `studio_project::publish` creates files).
+pub fn set_mode(path: &Path, mode: u32) {
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    #[cfg(unix)]
+    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, mode);
+    #[cfg(windows)]
+    permissions.set_readonly(mode & 0o222 == 0);
+    fs::set_permissions(path, permissions).unwrap();
+}
+
+/// Permission bits as `studio_project::publish` reports them: `st_mode & 0o7777` on
+/// Unix, synthesised from the read-only attribute on Windows.
+pub fn mode_of(meta: &fs::Metadata) -> u32 {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::MetadataExt::mode(meta) & 0o7777
+    }
+    #[cfg(windows)]
+    {
+        if meta.is_dir() {
+            0o755
+        } else if meta.permissions().readonly() {
+            0o444
+        } else {
+            0o644
+        }
+    }
+}
+
+pub fn mode_at(path: &Path) -> u32 {
+    mode_of(&fs::symlink_metadata(path).unwrap())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
@@ -204,9 +284,9 @@ pub fn snapshot(root: &Path) -> BTreeMap<String, Node> {
                 .strip_prefix(root)
                 .unwrap()
                 .to_string_lossy()
-                .into_owned();
+                .replace('\\', "/");
             let meta = fs::symlink_metadata(&path).unwrap();
-            let mode = meta.mode() & 0o7777;
+            let mode = mode_of(&meta);
             if meta.is_dir() {
                 out.insert(
                     relative,
@@ -428,4 +508,12 @@ pub fn journal_commits(path: &Path) -> usize {
     fs::read_to_string(path)
         .map(|text| text.lines().filter(|l| l.contains("\"Commit\"")).count())
         .unwrap_or(0)
+}
+
+/// The identity `studio_project::publish` sees for a file (std's Windows file index is
+/// not the same value).
+pub fn file_id(path: &Path) -> studio_project::publish::FileId {
+    let dir = studio_project::publish::Dir::open_root(path.parent().unwrap()).unwrap();
+    let name = path.file_name().unwrap().to_str().unwrap();
+    dir.stat(name).unwrap().unwrap().id
 }

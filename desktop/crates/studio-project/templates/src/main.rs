@@ -11,5 +11,8 @@ fn main() -> std::process::ExitCode {
         Ok(value) => value,
         Err(error) => { eprintln!("Styles: {error}"); return std::process::ExitCode::FAILURE; }
     };
-    fframes::cli::new(&video, fframes::RenderOptions { media: Some(&media), ..Default::default() }).run()
+    // Scene order, trims and splits made in Studio's timeline.
+    fframes::cli::new(&video, fframes::RenderOptions { media: Some(&media), ..Default::default() })
+        .timing_file("timeline.json")
+        .run()
 }

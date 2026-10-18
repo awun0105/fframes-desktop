@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use crate::{ProjectPath, revision::excluded};
 
 pub const SCHEMA_VERSION: u32 = 1;
+/// Version of the generated instructions and Studio integration (worker, timing opt-in)
+/// a new project gets. A project of another version was made by another Studio and is
+/// not opened.
+pub const CURRENT_INSTRUCTION_VERSION: u32 = 2;
 pub const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 
 /// Corrective diagnostics retain a native filename and a portable field name.
@@ -47,6 +51,27 @@ impl From<ProjectId> for String {
 impl std::fmt::Display for ProjectId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+/// Refuses a `studio.json` whose `field` is not `current`, saying which Studio made it.
+fn exact_version(raw: &serde_json::Value, field: &str, current: u32) -> Result<(), ProjectError> {
+    let err =
+        |reason: String, action: &str| ProjectError::new("studio.json", field, reason, action);
+    let version = raw
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| err("missing or invalid version".into(), "Correct this field"))?;
+    match version.cmp(&u64::from(current)) {
+        std::cmp::Ordering::Equal => Ok(()),
+        std::cmp::Ordering::Greater => Err(err(
+            format!("made by a newer Studio (version {version}, this Studio reads {current})"),
+            "Update Studio",
+        )),
+        std::cmp::Ordering::Less => Err(err(
+            format!("made by an older Studio (version {version}, this Studio reads {current})"),
+            "The project is left as it is and cannot be opened",
+        )),
     }
 }
 
@@ -116,8 +141,8 @@ pub struct Manifest {
     pub preset: Option<PresetReference>,
 }
 impl Manifest {
-    /// Read-only parsing. Unsupported versions never become writable typed state.
-    /// No migrations are registered for v1; future migrations must back up originals first.
+    /// Read-only parsing. A manifest of another schema or instruction version is refused
+    /// before it becomes typed state; the file is left as it is.
     pub fn parse(bytes: &[u8]) -> Result<Self, ProjectError> {
         let err = |field: &str, reason: String, action: &str| {
             ProjectError::new("studio.json", field, reason, action)
@@ -131,27 +156,12 @@ impl Manifest {
         }
         let raw: serde_json::Value = serde_json::from_slice(bytes)
             .map_err(|e| err("", e.to_string(), "Correct the JSON"))?;
-        let version = raw
-            .get("schema_version")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| {
-                err(
-                    "schema_version",
-                    "missing or invalid version".into(),
-                    "Set schema_version",
-                )
-            })?;
-        if version != u64::from(SCHEMA_VERSION) {
-            return Err(err(
-                "schema_version",
-                format!("unsupported version {version}"),
-                if version > u64::from(SCHEMA_VERSION) {
-                    "Update Studio"
-                } else {
-                    "Use a Studio version with an explicit migration"
-                },
-            ));
-        }
+        exact_version(&raw, "schema_version", SCHEMA_VERSION)?;
+        exact_version(
+            &raw,
+            "generated_instruction_version",
+            CURRENT_INSTRUCTION_VERSION,
+        )?;
         let manifest: Self = serde_json::from_value(raw)
             .map_err(|e| err("", e.to_string(), "Correct manifest fields"))?;
         manifest.validate()?;
@@ -205,7 +215,7 @@ impl Manifest {
         let unique: std::collections::HashSet<_> = self.assets.iter().collect();
         check(unique.len() == self.assets.len(), "assets")?;
         check(
-            self.generated_instruction_version > 0,
+            self.generated_instruction_version == CURRENT_INSTRUCTION_VERSION,
             "generated_instruction_version",
         )?;
         if let Some(v) = &self.video_hints {

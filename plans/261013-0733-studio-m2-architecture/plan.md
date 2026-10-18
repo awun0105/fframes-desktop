@@ -1,9 +1,9 @@
 ---
 title: "M2 Architecture: crates, engine events, Cap kit and layout, harness removal, file splits"
 description: "Move GPUI-free services into the engine, drive the UI from typed engine events instead of timers, port Cap's theme, component kit, editor layout and settings pages, split every oversize file, and delete the bounds-probe harness, keeping every behavior."
-status: pending
+status: completed
 priority: P1
-effort: "26-35d"
+effort: "27-38d"
 branch: feat/studio-rewrite
 tags: [desktop, refactor, gpui, tech-debt]
 blockedBy: [261013-0733-studio-m1-foundations]
@@ -44,19 +44,23 @@ desktop/app        thin binary: runtime setup, window, bins studio-tools / studi
 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
-| 1 | [Crate skeleton and service move](./phase-01-crate-skeleton.md) | 4-5d | none | Pending |
-| 2 | [Cap theme and component kit](./phase-02-theme-and-ui-kit.md) | 3-4d | 1 | Pending |
-| 3 | [Engine handle and typed events](./phase-03-engine-handle-and-events.md) | 4-5d | 1 | Pending |
-| 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 5-7d | 2, 3 | Pending |
-| 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | Pending |
-| 6 | [Agent panel on a transcript row model](./phase-06-transcript-row-model.md) | 3-4d (re-estimate from spike S4) | 4, 5, 7 | Pending |
-| 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Pending |
-| 8 | [Split the remaining oversize files](./phase-08-split-oversize-files.md) | 3-4d | 1 | Pending |
+| 1 | [Crate skeleton and service move](./phase-01-crate-skeleton.md) | 4-5d | none | Done (Linux + Windows CI) |
+| 2 | [Cap theme and component kit](./phase-02-theme-and-ui-kit.md) | 3-4d | 1 | Done (Windows) except the hand check of the live OS flip; the preference control moved to phase 4 and is done there (the settings frame's Appearance page) |
+| 3 | [Engine handle and typed events](./phase-03-engine-handle-and-events.md) | 4-5d | 1 | Done (Windows) |
+| 4 | [Split the shell into Cap's editor layout](./phase-04-shell-split.md) | 6-9d | 2, 3 | Done (Windows): the views and the shell are in `studio-ui`, split into sections, with the parity suite; the keymap, Cap's layout, the Windows caption and the settings frame with its Appearance page. Adapter setup joins the frame in phase 6. Not verified: macOS, and real-input checks of the title bar on Windows (a drag, the hover colours, and section renders under real mouse moves) |
+| 5 | [Split the agent actor](./phase-05-agent-actor-split.md) | 2-3d | 3 | Done |
+| 6 | [Agent panel on a transcript row model](./phase-06-transcript-row-model.md) | 3-5d | 4, 5, 7 | Done (Windows): `studio-ui/src/agent` with transcript rows and stick-to-bottom; the panel is the sidebar's default Agent tab and adapter setup is the settings frame's Agent page |
+| 7 | [Remove the bounds-probe harness](./phase-07-remove-probe-harness.md) | 2-3d | 4 | Done (Windows preview release dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed, 2026-10-18). The full CI run 38695521718 passes on Linux and Windows, including the X11 task test: its cleanup wait failed on a stale published count of owned processes, which the agent actor now rechecks |
+| 8 | [Split the remaining oversize files](./phase-08-split-oversize-files.md) | 3-4d | 1 | Done: the size gate prints nothing |
+
+Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) re-checked phases 2, 4 and 6: the kit and theme port verbatim, but the layout and the transcript are rewrites against snapshots, so phases 4 and 6 grew.
 
 ## Success criteria
 
-- [ ] Parity tests, `cargo test` and `just clippy` pass after each phase.
-- [ ] No `.rs` file under `desktop/` exceeds 1,500 lines (merge gate 6).
-- [ ] `studio-engine`, `studio-proto` and `studio-harness` have no `gpui` dependency (`cargo tree -p <crate> -e normal | grep -c gpui` is 0).
-- [ ] UI crates hold no `Mutex<Controller>` and no agent or preview polling; the 16 ms playback tick (which reads the audio snapshot) stays until M4 phase 6; the engine may keep internal locking.
-- [ ] The bounds-probe harness, qualification scripts and their CI jobs are gone; containment, writer qualification (`qualify-writer`, until M3 phase 4) and the release gate replacement work.
+**2026-10-18 follow-up:** the owner accepted all Windows app hand checks, including the title bar, caption gestures and hover behaviour; see [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md). This closes the Windows title-bar follow-up from phase 4. The phase table above records the original implementation status; the release dry run below passed on 2026-10-18.
+
+- [x] Parity tests, `cargo test` and `just clippy` pass after each phase. Verified on the final tree (full CI run 38695521718 on Linux and Windows, plus local runs). Earlier full runs were red during phase 7 until the X11 fix.
+- [x] No `.rs` file under `desktop/` exceeds 1,500 lines (merge gate 6).
+- [x] `studio-engine`, `studio-proto` and `studio-harness` have no `gpui` dependency (`cargo tree -p <crate> -e normal | grep -c gpui` is 0).
+- [x] UI crates hold no `Mutex<Controller>` and no agent or preview polling; the 16 ms playback tick (which reads the audio snapshot) stays until M4 phase 6; the engine may keep internal locking. The panel reads the agent snapshot only when the workflow wakes the window; the tick forwards the playhead and thumbnail requests and keeps an 8 s fallback build for an accepted source that never got a preview.
+- [x] The bounds-probe harness, qualification scripts and their CI jobs are gone; containment and the release gate replacement work. The harness, scripts and jobs are gone, M3 replaced writer qualification with runtime containment, and release-gate tests pass. The owner-selected Windows unsigned-preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed on 2026-10-18; consumer publication stays disabled with its signing and provenance controls intact.

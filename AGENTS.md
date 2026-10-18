@@ -240,7 +240,10 @@ cargo test -- --nocapture
 /scripts/new-video.sh      # curl | bash bootstrap for cargo-fframes
 /e2e                       # End-to-end visual regression test
 /examples                  # Example video projects (each is a lib + bin + editor bridge)
+/desktop                   # fframes Studio: native GPUI desktop app, its own Cargo workspace
 ```
+
+fframes Studio (`/desktop`) is documented in [docs/desktop/README.md](docs/desktop/README.md).
 
 ## Creating a New Video
 
@@ -463,6 +466,28 @@ impl Video for MyVideo<'_> {
 
 Scenes must be zero-sized or borrowed from `&self`. `Overlap::{Previous, Next, PreviousAndNext}`
 lets scenes cross-fade; `ctx.get_scene_info(&scene)` gives the resolved frame range.
+
+**Timing document (`timeline.json`).** Play order, trims and splits can live outside the
+code in a `fframes::TimingDoc`, which the studio editor writes:
+
+```json
+{ "version": 1, "clips": [
+  { "key": "outro", "trim_start_frames": 0,  "trim_end_frames": 0 },
+  { "key": "intro", "trim_start_frames": 15, "trim_end_frames": 0 } ] }
+```
+
+- Clips play in array order. A clip's `key` is the scene's `editor_instance_key()`, else its
+  `name()`; repeated keys get `#2`, `#3` in code order. Give every editable scene a stable
+  `editor_instance_key` so renaming the type does not orphan its clips.
+- A split is two clips with the same key and trims that pick different parts. Scenes keep
+  their own frame numbers, so a trimmed scene renders the frames it would have rendered
+  untrimmed. A trimmed edge is a hard cut; scene audio follows its clip, `Video::audio`
+  stays on video time.
+- Keys that match no scene are skipped; scenes the document omits are appended untrimmed.
+  An invalid document (unknown field, trims not below the scene length, over 512 KiB) is
+  rejected whole with the reason: the CLI and exports stop, a previewer keeps its layout.
+- Opt in with `cli::new(..).timing_file("timeline.json")` (a missing file means code order),
+  `RenderOptions::timing` or `Previewer::set_timing`. Without it nothing changes.
 
 ### 7. Video sources, audio visualisation, subtitles
 

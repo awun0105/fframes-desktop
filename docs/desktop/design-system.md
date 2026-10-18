@@ -1,12 +1,12 @@
 # Studio design system
 
-The Studio window is built from one set of tokens and one component kit, both in `desktop/app/src`: `design_system/` holds the tokens and `ui/` the components. Screens use these and do not declare colours, sizes or fonts of their own. `app.rs` and `agent_spike.rs` (the spike UI) are the only exceptions.
+The Studio window is built from one theme and one component kit, each its own crate: `desktop/crates/studio-theme` holds the tokens and `desktop/crates/studio-ui/src/kit` the components. Screens use these and do not declare colours, sizes or fonts of their own.
 
-Studio follows the OS light or dark appearance at runtime (no manual setting). Surfaces are flat; there is no glass.
+Studio follows the `theme` setting: `System` (the default) tracks the OS light or dark appearance at runtime, `Light` and `Dark` fix it. Surfaces are flat; there is no glass.
 
 ## Tokens
 
-Read them with `design_system::tokens()` (colours in `.palette`, sizes in `.metrics`), `TextStyle` with `text_style(element, style)`, `Shadow` with `shadow(kind)`, and the motion constants. `set_appearance` switches the whole set; only `main.rs` and the gallery call it.
+A view resolves the theme once per render with `Theme::for_window(window, cx)` and passes it to the components. Editor colours are in `theme.editor`, sizes in `METRICS`, text styles through `text_style(element, TextStyle::..)`, shadows through `shadow_for(appearance, Shadow::..)`, and the motion constants are `FAST_MS` and `NORMAL_MS`. `studio_theme::init(cx, preference)` sets the preference at start-up, `set_preference` changes it and repaints every window, and each window calls `bind_window` so it repaints when the OS appearance changes.
 
 | Role | Use for |
 | --- | --- |
@@ -14,42 +14,44 @@ Read them with `design_system::tokens()` (colours in `.palette`, sizes in `.metr
 | `line`, `line_strong` | 1 px borders and dividers |
 | `text_1`, `text_2`, `text_3` | primary, secondary and placeholder or disabled text |
 | `ctl`, `ctl_hover`, `ctl_active` | control fill at rest, hovered or selected, pressed; translucent, so they work on any surface |
-| `accent`, `accent_2`, `on_accent` | primary action, toggle on, focus ring, selection; hover shade; text on accent |
-| `success`, `warning`, `danger` and their `_surface` | status text or icon colour and the soft background behind it |
-| `selection`, `thumb`, `playhead`, `tooltip_bg`, `tooltip_text` | text selection, slider and toggle thumbs, the playhead, tooltips |
+| `accent`, `accent_2`, `theme.on_accent()` | primary action, toggle on, focus ring, selection; hover shade; text on accent |
+| `theme.green_11`/`green_3`, `amber_11`/`amber_3`, `red_11`/`red_3` | status text or icon colour and the soft background behind it (`kit::tone_color` and `tone_surface` pick them by `Tone`) |
+| `theme.selection()`, `thumb`, `playhead`, `theme.tooltip_bg()`, `theme.tooltip_text()` | text selection, slider and toggle thumbs, the playhead, tooltips |
 
 Type sizes are `Caption` 10, `Small` 11, `Label` 12, `Body` 13, `BodyStrong` 13 semibold, `Title` 14 and `Heading` 16. Shadows are `Card`, `Pop`, `Preview`, `RaisedPill` and `Thumb`. Collapsible animations use `NORMAL_MS` (200 ms, ease-out).
 
 ## Components
 
-All components are gpui `RenderOnce` structs with a fluent API. Stateful parts (a menu, a text input) are owned by the caller. Run the gallery to see every state: `cargo run --manifest-path desktop/Cargo.toml -p fframes-studio --example ui_gallery`.
+All components are gpui `RenderOnce` structs with a fluent API. Each has a named constructor per surface (`editor` or `plain` for the editor, `settings`, `body`), and every colour can still be overridden at the call site. Stateful parts (a menu, a text input) are owned by the caller. Run the gallery to see every state and switch System, Light or Dark: `cargo run --manifest-path desktop/Cargo.toml -p fframes-studio --example ui_gallery`.
 
 | Component | One line |
 | --- | --- |
-| `Button` | `Button::new(id, label).variant(Editor, Primary, Destructive or Ghost).icon(..).selected(..).disabled(..).tooltip(..).probe(..).on_click(..)` |
-| `IconButton` | square icon-only button, sizes 24, 28 and 32; `label` is the accessible name and tooltip |
-| `Toggle` | `Toggle::new(id, checked).on_change(..)` |
-| `Segmented` | exclusive options in a trough; Left and Right move, disabled options are skipped |
-| `Select` and `Menu` | `Select` is the trigger and records its bounds in a `MenuState`; render `Menu` while open (Up, Down, Home, End, Enter, Escape; flips above near the window bottom). `MenuState::with_disabled(..)` shows rows in `text_3` with no hover; arrow keys skip them and click or Enter does nothing. `Menu::row_ids(..)` gives rows stable element ids |
-| `Slider` | `Slider::new(id, fraction).track(h).on_change(..)`; drag, arrows, Home and End; pure `fraction_from_x` and `snap_to_step` |
+| `EditorButton` | the editor's text button: `EditorButton::plain(theme, id).label(..)` with `.filled`, `.accent`, `.destructive`, `.pressed`, `.left_icon`, `.right_icon`, `.tooltip`, `.on_bounds`, `.on_click` |
+| `Button` | the window-body and settings button with Cap's variants (`Primary`, `Gray`, `Destructive`, ...) and sizes |
+| `IconButton` | icon-only button; `IconButton::editor(theme, id, icon.path())` at `IconButtonSize::{Small, Medium, Large}` (24, 28, 32 px); `label` is the accessible name |
+| `Toggle` | `Toggle::plain(theme, id, checked).on_change(..)` |
+| `SegmentedControl` | exclusive options; Left and Right move, disabled options are skipped; `.on_option_bounds` reports each option's bounds |
+| `Select` and `Menu` | `Select` is the trigger and reports its bounds through `on_open`; build a `MenuState::anchored(bounds, &items)` and render `Menu::editor(..)` while open (Up, Down, Home, End, Enter, Escape; flips above near the window bottom). Disabled `MenuItem`s show in `text_3` with no hover; arrow keys skip them and click or Enter does nothing. `MenuItem::id(..)` gives a row a stable element id |
+| `Slider` | `Slider::new(id, fraction, SliderTrack::default())` with `.track`, `.fill`, `.thumb`, `.on_change(step, ..)`; drag, arrows, Home and End; pure `fraction_from_x` and `snap_to_step` |
 | `TabRail` | icon tabs with tooltips |
-| `Tooltip`, `Kbd` | the dark tooltip (200 ms delay, optional key chip) and the key chip; `.tooltip(text)` on `Button` |
-| `FieldRow`, `SectionTitle` | label plus right-aligned control with an optional hint; section heading with a trailing element |
+| `SettingsFrame` | Cap's settings window: a 227 px nav column (`SettingsNavItem` rows, an optional Back row `settings-back`) beside a scrolling page of `Section`s; pages are built from `Section::settings`, `Card::settings_rows` and `SettingRow::settings` |
+| `Tooltip`, `KbdChip` | the tooltip (200 ms delay, optional key chip) and the key chip |
+| `field_row`, `section_title`, `heading`, `label`, `muted` | label plus right-aligned control; section heading; text in the theme's styles |
+| `selectable` | text that inherits the surrounding style and can be selected and copied: drag for a range, double click for a word, triple click for the whole block, Ctrl+C (Cmd+C) to copy; one selection in the app, ended by a press anywhere else or by any other key in a focused text field, never across two blocks. With nothing selected the copy key goes on to a focused text field. `.id(..)` keeps a selection on text that streams; `.over_drag_area()` makes title-bar text selectable instead of moving the window. The kit text helpers (except `section_title`, which heads clickable rows), notices, the agent panel and the status lines use it; button, tab, menu, radio-row and list-row labels stay unselectable. Over the Windows title bar, dragging or double-clicking the project name or path selects text instead of moving or maximizing the window |
 | `Badge`, `StatusDot` | small tone-coloured labels and dots (`Tone::{Neutral, Info, Success, Warning, Danger}`) |
 | `Notice` | inline message with a tone bar, optional actions, collapsible details (160 px high at most, then they scroll) and dismiss |
-| `Collapsible` | header plus content with an animated height |
+| `CollapsibleSection` | header plus content with an animated height; the caller owns `open` |
+| `Card`, `divider` | the editor's card surfaces and hairline |
+| `TextInput` | 32 px high (28 px compact), no border until focused |
 
-Icons are Lucide SVGs embedded by `assets.rs` and named by `ui::Icon`; adding one means the file in `desktop/app/assets/icons`, its entry in `assets.rs`, and the variant in `Icon` and `Icon::ALL` (a test checks the three agree).
+Icons are Lucide SVGs embedded by `desktop/app/src/assets.rs` and named by `kit::Icon`; adding one means the file in `desktop/app/assets/icons`, its entry in `assets.rs`, and the variant in `Icon` and `Icon::ALL` (a test checks the three agree).
 
 ## Screen behaviours
 
 - The overflow menu in the transport bar always lists Refresh, Save checkpoint, Restore as copy, Reveal retained draft and Reveal checkpoint. Actions that do not apply are disabled rows, and the rows keep the ids their buttons had (`refresh`, `checkpoint`, `restore`, `draft`, `reveal-checkpoint`).
-- `agent-send` is an icon button (`Icon::ArrowUp`); its tooltip and accessible name are the submit label, and the reason it is blocked stays visible as text under the composer.
-- Reasoning rows stay collapsed. While one streams, its header shows a "Thinking..." badge; the header has a fixed height so the row does not change size when the badge goes away.
+- The composer's send control is a labelled `Button` (`composer-send`) whose label is the current send action (Send, Steer, Send at boundary); while a turn runs a second outline button (`composer-send-now`) cancels and sends. When sending is not possible the reason shows as text beside the controls (`desktop/crates/studio-ui/src/agent/composer/mod.rs`).
+- Reasoning rows stay collapsed. While one streams, its header shows a "Thinking…" badge; the header has a fixed height so the row does not change size when the badge goes away.
 - The setup screen remembers which step was active when setup failed and marks it failed (earlier steps done, later ones pending). Install, build and render run as one pipeline, so a failure inside it is attributed to "Install SDK".
-| `TextInput` | the existing input restyled: 32 px high (28 px compact), no border until focused |
-
-`design_system::button()` is the old wrapper; it delegates to `ui::button::style_button` so old call sites look like the new kit until they move to `ui::Button`.
 
 ## Keyboard and focus
 
@@ -57,18 +59,20 @@ Every control is a tab stop (disabled ones are skipped), shows a 2 px `accent` f
 
 ## Telemetry ids
 
-Native tests and qualification scripts find controls by the bounds the app reports. Element ids and labels are chosen by the caller and must not change. A control that is measured passes `.probe(Some(BoundsProbe::new(..)))`, and the callback receives `[left, top, width, height]` on every prepaint. Components never invent ids that a test looks up.
+Tests find controls by the bounds the app reports, through the observation telemetry described in [architecture, production probes](architecture.md#13-production-probes). Element ids and labels are chosen by the caller and must not change. A control that is measured passes `.on_bounds(BoundsProbe::new(..).into_bounds_handler())` (`BoundsProbe` is in `desktop/crates/studio-ui/src/probe.rs`), and the callback receives `[left, top, width, height]` on every prepaint. Components never invent ids that a test looks up.
 
-While qualifying, the agent panel's `buttons` telemetry also reports `agent-tab-Chat`, `agent-tab-Project` and `agent-undo` next to `agent-policy` and `agent-apply`, so the native shell test clicks measured bounds instead of fixed window coordinates.
+While telemetry is being written, the agent panel's `buttons` telemetry reports the ids listed in `probed_button` in `desktop/crates/studio-ui/src/agent/mod.rs` (the panel's tabs, Apply, Undo, Stop, review, setup and question controls), so the X11 shell test clicks measured bounds instead of fixed window coordinates and the parity tests can check what was laid out.
 
 ## Deliberate differences from Cap
 
 - A visible focus ring and Enter or Space activation on every control; Cap's widgets mostly have neither.
 - The system UI font on every platform; no bundled font.
 - A 16 px `Heading` size for empty-state titles, and the `Notice`, `Badge` and `StatusDot` components, which Cap does not have.
-- Zoom controls stay in the timeline header, and the left column keeps a fixed 248 px width.
-- Exact Cap colours, including the contrast shortfalls recorded in `design_system/mod.rs` tests (white on `accent` 4.02 light and 3.65 dark, light `text_2` on `window` 4.49, light `text_3` on `card` 2.60).
+- Zoom controls stay in the timeline header. The layout follows Cap's editor except for the sidebar's side: the sidebar (on the left) and the player sit above a full-width timeline, and the grip above the timeline (`timeline-resize-handle`) drags the split between them. The split uses Cap's limits and is not saved between launches. The sidebar has Cap's 416 px width and holds the agent panel as its first, default tab (Agent, Project, Assets, Style); `FocusPrompt` switches to it.
+- The header is flush with the window's top edge on every system, as in Cap's editor. On Windows it is the title bar: the row around the header is the drag area and Cap's caption buttons (`caption-minimize`, `caption-maximize`, `caption-close`) sit at its right end. Cap presses them through its own Win32 calls; here they are native window control areas, so Windows itself minimizes, maximizes, restores and closes, and offers Snap Layouts over maximize on Windows 11. They live outside the cached header because a cached view does not replay control areas. Like the system's own caption buttons, and unlike every other control, they are not tab stops and have no focus ring: Alt+F4 and Alt+Space reach the same commands from the keyboard. On macOS the header leaves 82 px for the traffic lights, inset to (20, 20), and its empty middle moves the window; Linux keeps the system's title bar, as Cap's editor does. When the window is too narrow for the title, the labelled actions and the window controls, the actions show only their icons (with the label as tooltip); Close project has no icon and keeps its label. The Settings button at the end of the actions is always icon-only.
+- Settings open in the main window, not in a window of their own: the header's Settings button (`settings`) shows the settings frame in place of the editor and pauses playback, and the frame's Back row returns. Its pages are Appearance and Agent. The Agent page is the agent panel's adapter setup: the panel draws it, so its fields and telemetry stay the panel's, and the panel's settings button and `OpenAgentSetup` open it on that page. On Appearance a `SegmentedControl` (System, Light, Dark; options `theme-0` to `theme-2`) replaces Cap's preview tiles; the choice applies at once and is saved in `app-settings.json`. Cap's nav rows answer only the mouse; here they are tab stops that Enter and Space open.
+- Exact Cap colours, including the contrast shortfalls recorded in the `studio-theme` tests (white on `accent` 4.02 light and 3.65 dark, light `text_2` on `window` 4.49, light `text_3` on `card` 2.60).
 
 ## Licensing
 
-The values (colours, sizes, radii, shadows, motion) come from Cap's design as facts. The code is fframes' own and does not copy or closely paraphrase Cap's AGPL-3.0 source. Icons are Lucide (ISC); the licence is in `desktop/packaging/sdk/notices/lucide-LICENSE.txt`.
+The component kit in `studio-ui` is ported from Cap's desktop app, with the permission of Cap's owners. Icons are Lucide (ISC); the licence is in `desktop/packaging/sdk/notices/lucide-LICENSE.txt`. The four Windows caption glyphs (`caption-*-windows.svg`) come from Cap.

@@ -365,6 +365,7 @@ pub struct Runner<
     args: Option<Cli<A>>,
     player: Option<Player<'r, 'a, 'media, V>>,
     default_output: PathBuf,
+    timing_file: Option<PathBuf>,
     renderers: R,
 }
 
@@ -415,6 +416,7 @@ pub fn new<'a, 'media: 'a, V: Video + Send + Sync>(
         args: None,
         player: None,
         default_output: PathBuf::from("out.mp4"),
+        timing_file: None,
         renderers: NoRenderers,
     }
 }
@@ -435,6 +437,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args: self.args,
             player: self.player,
             default_output: self.default_output,
+            timing_file: self.timing_file,
             renderers: self.renderers,
         }
     }
@@ -448,6 +451,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args: Some(args),
             player: self.player,
             default_output: self.default_output,
+            timing_file: self.timing_file,
             renderers: self.renderers,
         }
     }
@@ -469,6 +473,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args: self.args,
             player: Some(Box::new(play)),
             default_output: self.default_output,
+            timing_file: self.timing_file,
             renderers: self.renderers,
         }
     }
@@ -476,6 +481,15 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
     /// The file `render` writes without `-o`, `out.mp4` by default.
     pub fn default_output(mut self, path: impl Into<PathBuf>) -> Self {
         self.default_output = path.into();
+        self
+    }
+
+    /// Lays the scenes out by the timing document in `path` (a `timeline.json` written by
+    /// the studio editor) for every command. A missing file plays the code order; a
+    /// malformed one stops the command with the reason. Without this call no timing file
+    /// is ever read.
+    pub fn timing_file(mut self, path: impl Into<PathBuf>) -> Self {
+        self.timing_file = Some(path.into());
         self
     }
 
@@ -489,6 +503,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args: self.args,
             player: self.player,
             default_output: self.default_output,
+            timing_file: self.timing_file,
             renderers,
         }
     }
@@ -513,6 +528,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args: self.args,
             player: self.player,
             default_output: self.default_output,
+            timing_file: self.timing_file,
             renderers: NoRenderers,
         };
         match renderer {
@@ -532,11 +548,26 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args,
             player,
             default_output,
+            timing_file,
             renderers: _,
         } = self;
         let cli = args.unwrap_or_else(Cli::<A>::parse);
 
         let json = cli.json;
+        if let Some(path) = timing_file {
+            match crate::TimingDoc::read_file(&path) {
+                Ok(timing) => options.timing = timing,
+                Err(error) => {
+                    let message = format!("{}: {error}", path.display());
+                    if json {
+                        println!("{}", serde_json::json!({ "error": message }));
+                    } else {
+                        eprintln!("error: {message}");
+                    }
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
         if let Some(scale) = cli.scale {
             options.scale_resolution = scale;
         }
@@ -1824,6 +1855,109 @@ fn waveform_image<'a, 'm: 'a, V: Video>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug)]
+    struct Fill(&'static str, &'static str);
+    impl crate::Scene for Fill {
+        fn duration(&self) -> crate::Duration<'_> {
+            crate::Duration::Frames(5)
+        }
+        fn editor_instance_key(&self) -> Option<&str> {
+            Some(self.0)
+        }
+        fn render_frame<'a>(
+            &'a self,
+            _: crate::Frame,
+            _: &crate::FFramesContext<'a, '_>,
+        ) -> crate::Svgr<'a> {
+            crate::svgr!(<rect x="0" y="0" width="4" height="4" fill={self.1} />)
+        }
+    }
+    struct TwoScenes([Fill; 2]);
+    impl Video for TwoScenes {
+        const FPS: usize = 10;
+        const WIDTH: usize = 4;
+        const HEIGHT: usize = 4;
+        fn duration(&self) -> crate::Duration<'_> {
+            crate::Duration::Auto
+        }
+        fn audio(&self) -> crate::AudioMap<'_> {
+            crate::AudioMap::none()
+        }
+        fn define_scenes(&self) -> crate::Scenes<'_> {
+            crate::Scenes::from(vec![&self.0[0] as &dyn crate::Scene, &self.0[1]])
+        }
+        fn render_frame<'a>(
+            &'a self,
+            frame: crate::Frame,
+            ctx: &crate::FFramesContext<'a, '_>,
+        ) -> crate::Svgr<'a> {
+            crate::svgr!(<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4">{ctx.render_scenes(&frame)}</svg>)
+        }
+    }
+
+    /// Renders frame 0 through the `frame` command and returns its red channel and the
+    /// exit code, so the timing file's effect is seen through the real command line.
+    fn first_frame_red(timing_file: Option<&Path>, out: &Path) -> (u8, String) {
+        let video = TwoScenes([Fill("red", "#ff0000"), Fill("blue", "#0000ff")]);
+        let args =
+            Cli::<NoArgs>::try_parse_from(["video", "frame", "0", "-o", out.to_str().unwrap()])
+                .unwrap();
+        let mut runner = new(&video, RenderOptions::default());
+        if let Some(path) = timing_file {
+            runner = runner.timing_file(path);
+        }
+        // Exercise every builder that reconstructs Runner: renderer selection must
+        // retain the timing file before dispatching the real frame command.
+        let runner = runner
+            .args(args)
+            .renderers(NoRenderers)
+            .backend(crate::cpu::CpuRenderingBackend::default())
+            .preview(|_, _, _| panic!("a frame command must not launch the player"));
+        let code = format!("{:?}", runner.run());
+        let red =
+            image::open(out.join("0.png")).map_or(0, |image| image.to_rgba8().get_pixel(0, 0)[0]);
+        (red, code)
+    }
+
+    #[test]
+    fn timing_file_is_opt_in_and_rejects_malformed_documents() {
+        struct TempDir(PathBuf);
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        impl TempDir {
+            fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+        let temp = TempDir(
+            std::env::temp_dir().join(format!("fframes-cli-timing-{}", uuid::Uuid::new_v4())),
+        );
+        std::fs::create_dir_all(temp.path()).unwrap();
+        let timing = temp.path().join("timeline.json");
+        std::fs::write(
+            &timing,
+            r#"{"version":1,"clips":[{"key":"blue","trim_start_frames":0,"trim_end_frames":0}]}"#,
+        )
+        .unwrap();
+        let success = format!("{:?}", ExitCode::SUCCESS);
+
+        let (red, code) = first_frame_red(None, &temp.path().join("code-order"));
+        assert_eq!((red, code.as_str()), (255, success.as_str()));
+        let (red, code) = first_frame_red(Some(&timing), &temp.path().join("timed"));
+        assert_eq!((red, code.as_str()), (0, success.as_str()));
+        let missing = temp.path().join("missing.json");
+        let (red, code) = first_frame_red(Some(&missing), &temp.path().join("missing"));
+        assert_eq!((red, code.as_str()), (255, success.as_str()));
+
+        std::fs::write(&timing, r#"{"version":1,"clips":[],"unknown":true}"#).unwrap();
+        let (_, code) = first_frame_red(Some(&timing), &temp.path().join("malformed"));
+        assert_ne!(code, success);
+        assert!(!temp.path().join("malformed/0.png").exists());
+    }
 
     #[test]
     fn spread_includes_both_ends() {

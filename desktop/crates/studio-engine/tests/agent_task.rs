@@ -33,7 +33,7 @@ fn fixture() -> Fixture {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        &compatibility.runtime_version,
     )
     .unwrap();
     Fixture {

@@ -1,7 +1,7 @@
 ---
 title: "M3 Durable writes, containment and agent tools on Windows and macOS"
 description: "Port no-clobber publication, the transaction executor and crash recovery to Windows and macOS, verify agent writer containment at runtime, run the agent tool broker on Windows, and open the mutation gates there."
-status: pending
+status: completed
 priority: P1
 effort: "18-27d"
 branch: feat/studio-rewrite
@@ -28,19 +28,19 @@ Crash recovery suites (`studio-engine/tests/{edit_transaction,task_recovery,revi
 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
-| 1 | [Windows publication and executor](./phase-01-windows-publish.md) | 5-7d | M1 phase 1 | Pending |
-| 2 | [macOS publication and executor](./phase-02-macos-publish.md) | 3-4d | M1 phase 1 | Pending |
-| 3 | [Open the gates, path aliases and CI coverage](./phase-03-enable-mutations-and-ci.md) | 3-5d | 1, 2, 4, M2 phase 3 | Pending |
-| 4 | [Runtime writer containment](./phase-04-runtime-writer-containment.md) | 4-6d | M2 phases 1 and 8 | Pending |
-| 5 | [Agent tool broker on Windows](./phase-05-windows-tool-broker.md) | 3-5d | M2 phase 1 | Pending |
+| 1 | [Windows publication and executor](./phase-01-windows-publish.md) | 5-7d | M1 phase 1 | Completed |
+| 2 | [macOS publication and executor](./phase-02-macos-publish.md) | 3-4d | M1 phase 1 | Completed |
+| 3 | [Open the gates, path aliases and CI coverage](./phase-03-enable-mutations-and-ci.md) | 3-5d | 1, 2, 4, M2 phase 3 | Completed |
+| 4 | [Runtime writer containment](./phase-04-runtime-writer-containment.md) | 2d (re-estimated) | M2 phases 1 and 8 | Completed |
+| 5 | [Agent tool broker on Windows](./phase-05-windows-tool-broker.md) | 3-5d | M2 phase 1 | Completed |
 
 Phases 1, 2 and 5 run beside M2. Phase 3 waits for M2 phase 3 because it edits the controller and preset code M2 restructures, and for phase 4, which itself needs M2 phases 1 and 8.
 
 ## Success criteria
 
-- [ ] The same publish, executor and recovery test lists pass on Windows, macOS and Linux CI.
-- [ ] `edit_transaction.rs` has no Linux-only stand-ins; `MUTATION_QUALIFIED` is gone; the gates open on a successful runtime probe.
-- [ ] Writer containment is verified at runtime on all three platforms, with no ledger file; `qualify-writer` and the ledger code are gone.
-- [ ] A granted tool capability round-trips through the broker on Windows CI.
-- [ ] Writes into protected trees through case, short-name or Unicode aliases are refused on Windows and macOS.
-- [ ] Linux behavior and tests are unchanged.
+- [x] The same publish, executor and recovery test lists pass on Windows, macOS and Linux CI.
+- [x] `edit_transaction.rs` has no Linux-only stand-ins; `MUTATION_QUALIFIED` is gone; the gates open on a successful runtime probe.
+- [x] Writer containment is verified at runtime on all three platforms, with no ledger file; `qualify-writer` and the ledger code are gone.
+- [x] A granted tool capability round-trips through the broker on Windows CI.
+- [x] Writes into protected trees through case, short-name or Unicode aliases are refused on Windows and macOS.
+- [x] Linux behavior and tests are unchanged, with one accepted exception (owner, 2026-10-15): the protected-tree check also refuses deltas under case variants such as `Target/` or `.Git/` on case-sensitive Linux volumes, as Git does. More suites now run on Linux too.

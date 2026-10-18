@@ -17,6 +17,9 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 CRATES = ["fframes", "fframes-media", "svgr-macro", "media-dir-macro", "webvtt-parser", "fframes-studio-protocol", "fframes-studio-runtime"]
+# This bundle's release. Projects pin it; those of earlier releases are not built by it.
+SDK_RELEASE = "v4"
+OVERLAY = "desktop/fixtures/annotated-video-overlay"
 
 
 def run(args, **kwargs):
@@ -84,6 +87,26 @@ def configure_bundled_ffmpeg(framework):
     if source.count(original) != 1:
         raise ValueError("Unexpected native FFmpeg dependency; review bundled link configuration")
     media_manifest.write_text(source.replace(original, 'features = ["static"]'))
+
+
+def write_framework(framework, workspace_toml):
+    """Make the copied CRATES in `framework` one workspace with the source's dependencies."""
+    configure_bundled_ffmpeg(framework)
+    workspace = tomllib.loads(workspace_toml)["workspace"]
+    dependencies = {k: v for k, v in workspace["dependencies"].items() if not isinstance(v, dict) or "path" not in v or v["path"] in CRATES}
+    content = '[workspace]\nresolver = "2"\nmembers = ' + toml_value(CRATES) + "\ndependencies = " + toml_value(dependencies) + "\nlints = " + toml_value(workspace["lints"]) + "\n"
+    (framework / "Cargo.toml").write_text(content)
+
+
+def crate_version(manifest):
+    return tomllib.loads(manifest.read_text())["package"]["version"]
+
+
+def worker_manifest(tree):
+    return ('[package]\nname="sdk-qualification-worker"\nversion="0.1.0"\nedition="2024"\n[workspace]\n[dependencies]\n'
+            f'fframes={{path="../framework/{tree}/fframes",features=["cli","compile-time-svgtree"]}}\n'
+            f'fframes-studio-runtime={{path="../framework/{tree}/fframes-studio-runtime"}}\n'
+            f'fframes-studio-protocol={{path="../framework/{tree}/fframes-studio-protocol"}}\nsha2="0.10"\n')
 
 
 def verify_preview_worker(binary, worker, environment):
@@ -201,14 +224,10 @@ def assemble(output, ffmpeg_root, vendor=None):
         framework.mkdir(parents=True)
         for crate in CRATES:
             shutil.copytree(ROOT / crate, framework / crate, ignore=shutil.ignore_patterns("target", ".git"))
-        configure_bundled_ffmpeg(framework)
-        workspace = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]
-        dependencies = {k: v for k, v in workspace["dependencies"].items() if not isinstance(v, dict) or "path" not in v or v["path"] in CRATES}
-        content = '[workspace]\nresolver = "2"\nmembers = ' + toml_value(CRATES) + "\ndependencies = " + toml_value(dependencies) + "\nlints = " + toml_value(workspace["lints"]) + "\n"
-        (framework / "Cargo.toml").write_text(content)
+        write_framework(framework, (ROOT / "Cargo.toml").read_text())
         worker = staging / "worker"
-        shutil.copytree(ROOT / "desktop/fixtures/annotated-video-overlay", worker, ignore=shutil.ignore_patterns("target"))
-        (worker / "Cargo.toml").write_text('[package]\nname="sdk-qualification-worker"\nversion="0.1.0"\nedition="2024"\n[workspace]\n[dependencies]\nfframes={path="../framework/framework/fframes",features=["cli","compile-time-svgtree"]}\nfframes-studio-runtime={path="../framework/framework/fframes-studio-runtime"}\nfframes-studio-protocol={path="../framework/framework/fframes-studio-protocol"}\nsha2="0.10"\n')
+        shutil.copytree(ROOT / OVERLAY, worker, ignore=shutil.ignore_patterns("target"))
+        (worker / "Cargo.toml").write_text(worker_manifest("framework"))
         vendor_dir = staging / "framework/vendor"
         if vendor:
             shutil.copytree(vendor, vendor_dir)
@@ -225,17 +244,17 @@ def assemble(output, ffmpeg_root, vendor=None):
         if os.name == "nt":
             environment["PATH"] = str(staging / "ffmpeg/bin") + os.pathsep + environment["PATH"]
         cargo = str(staging / "toolchain/bin" / ("cargo.exe" if os.name == "nt" else "cargo"))
-        for attempt in ["first", "second"]:
+        for directory, attempt in [(worker, "first"), (worker, "second")]:
             environment["CARGO_TARGET_DIR"] = str(staging / f"build-{attempt}")
-            run([cargo, "build", "--offline"], cwd=worker, env=environment)
-            run([cargo, "run", "--offline", "--", "frame", "0", "-o", "frames"], cwd=worker, env=environment)
-            png = worker / "frames/0.png"
+            run([cargo, "build", "--offline"], cwd=directory, env=environment)
+            run([cargo, "run", "--offline", "--", "frame", "0", "-o", "frames"], cwd=directory, env=environment)
+            png = directory / "frames/0.png"
             if not png.is_file() or png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
                 raise ValueError("Candidate SDK did not produce a valid frame PNG")
             binary = Path(environment["CARGO_TARGET_DIR"]) / "debug" / ("sdk-qualification-worker.exe" if os.name == "nt" else "sdk-qualification-worker")
-            verify_preview_worker(binary, worker, environment)
+            verify_preview_worker(binary, directory, environment)
         artifacts = [archive(staging / name, output, f"{name}-{target}", name) for name in ["toolchain", "ffmpeg", "framework"]]
-    manifest.update(sdk_id=f"studio-sdk-{target}-v2", target_triple=target, arch=target.split("-")[0], artifacts=artifacts,
+    manifest.update(sdk_id=f"studio-sdk-{target}-{SDK_RELEASE}", runtime_version=crate_version(ROOT / "fframes-studio-runtime/Cargo.toml"), target_triple=target, arch=target.split("-")[0], artifacts=artifacts,
                     preview_contract_versions=[1], preview_capabilities=["preview_identity_v1", "scaled_frame_v1", "inspect_v1", "prepared_audio_v1"])
     manifest["rust_toolchain"]["targets"] = [target]
     manifest["ffmpeg"]["link_mode"] = link_mode

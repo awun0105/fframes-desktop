@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Composer"
-status: pending
+status: completed
 priority: P1
 effort: "5-7d"
 dependencies: []
@@ -12,6 +12,8 @@ dependencies: []
 ## Goal
 
 Replace the prompt field with Zeron's composer: multiline input, slash commands the agent advertises, file and image attachments within confinement rules, stop, and steering while a turn runs.
+
+The 5-7d estimate holds only if the composer keeps Zeron's `ComposerInput` (compiled on the Cap fork with one GPUI API change in [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) rather than building on the kit `TextInput` as pattern 1 says; that route is 8-10d. **Decided 2026-10-14: keep `ComposerInput`** and apply Cap styling on top; pattern 1 applies only to styling.
 
 ## Port sources
 
@@ -31,23 +33,27 @@ Zeron `crates/ui/src/composer.rs` (16,330 lines): `ComposerInput`, `ComposerEven
 
 From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) and [the Cap report](../reports/research-261013-1801-cap-gpui-desktop-ui.md); see the roadmap's pattern map.
 
-1. Input: the composer is built on the kit `TextInput` (gpui `EntityInputHandler`, already in `text_input.rs`) for IME, dead keys, selection, undo and clipboard. Multiline: Enter sends and Shift+Enter inserts a newline, bound in the composer key context.
+1. Input: superseded by the 2026-10-14 decision above; the composer keeps the ported `ComposerInput` (its own `EntityInputHandler` for IME, dead keys, selection, undo and clipboard) with Cap styling. Multiline: Enter sends and Shift+Enter inserts a newline, bound in the composer key context.
 2. Steering (Zeron `acp/mod.rs`): when the agent advertises the `_session/steering` extension, send steers through it; otherwise hold the message and, at the declared boundary with no tool call open, cancel and re-prompt with it. Read the steering mode from one place, the driver's negotiated capability published in `WorkflowSnapshot`. Zeron's driver and engine descriptors disagree for Grok and Devin (`acp/mod.rs:246, 331` against `registry.rs:652, 670`); that is the bug to avoid.
 3. Stop: `session/cancel`, then the existing `shutdown_grace` and verified termination (M3 phase 4). Zeron escalates the same way.
-4. Questions: a `session/request_permission` whose options carry no `kind` is shown as a question listing the options rather than as allow or deny (Zeron `acp/normalize.rs:488-503`). Requests with kinds keep today's prompt; fframes never auto-approves, unlike Zeron.
+4. Questions: the driver's `Question` event (Claude `AskUserQuestion`, Codex `item/tool/requestUserInput`) is shown as a question listing its options rather than as allow or deny. fframes never auto-approves, unlike Zeron.
+   - **Corrected 2026-10-16 (M5a phase 1):** an ACP permission option cannot be kind-less in ACP v1 (the kind is a required enum), and the Zeron lines once cited here (`acp/normalize.rs:488-503`) only pick an auto-approve option.
+   - ACP questions would come from `elicitation/create`, which fframes does not advertise.
 5. Images: fframes already sends image blocks through `prompt_with_images`; Zeron's ACP client sends text only, so nothing is ported there.
 
 ## Todo
 
-- [ ] Composer on kit `TextInput`; steering extension or cancel-and-re-prompt; kind-less permissions as questions
+Reports: [component](./reports/phase-02-composer-ui.md), [driver and engine](./reports/phase-02-03-driver-engine.md), [security review](./reports/phase-02-03-review.md) (every high and medium finding fixed, see "Review fixes" in the driver report), [panel wiring](./reports/wiring-agent-panel.md).
 
-- [ ] Scout prompt path
-- [ ] Composer ported and split
-- [ ] Commands event in the driver and slash UI
-- [ ] Images through `prompt_with_images` with transcoding
-- [ ] Confined file attachments
-- [ ] Stop and per-adapter steering
-- [ ] Tests
+- [x] Composer on the ported `ComposerInput`; steering extension or cancel-and-re-prompt; driver `Question` events as question cards
+- [x] Scout prompt path
+- [x] Composer ported and split
+- [x] Commands event in the driver and slash UI (the last list outlives a task and is cleared when the adapter or conversation changes)
+- [x] Images through `prompt_with_images` with transcoding (every image, PNG included, is decoded and re-encoded)
+- [x] Confined file attachments: deny list on the canonical path (Windows trailing dots, streams and 8.3 names tested); outside files staged with a single-use token and sent as embedded content; inside files link into the agent's working copy; hard links refused; size caps
+- [x] Stop and per-adapter steering (a steer shows as sent only after the agent accepts it; a refused one returns to the composer)
+- [x] Question card for every question: one answer or free text per item, keyed by index, sent only when all are answered
+- [x] Tests: engine, harness and workflow tests; 11 composer parity cases through the real shell; a real-click check in the running app
 
 ## Success criteria
 

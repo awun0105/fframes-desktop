@@ -383,6 +383,28 @@ impl Encoder {
 
                 let mut video_shift: Option<i64> = None;
                 let mut file_video_end = next_video_start;
+                // Matroska leaves packet durations at 0, so a file ends one frame after
+                // its last timestamp; without this the next file would start on that
+                // timestamp and every segment boundary would lose a frame of time.
+                let frame_duration = {
+                    let rate = av_guess_frame_rate(
+                        input_format_ctx,
+                        input_video_stream,
+                        std::ptr::null_mut(),
+                    );
+                    if rate.num > 0 && rate.den > 0 {
+                        av_rescale_q(
+                            1,
+                            AVRational {
+                                num: rate.den,
+                                den: rate.num,
+                            },
+                            (*self.video_stream.st).time_base,
+                        )
+                    } else {
+                        0
+                    }
+                };
 
                 loop {
                     let res = av_read_frame(input_format_ctx, packet.get());
@@ -426,8 +448,15 @@ impl Encoder {
                             });
                             packet.get_mut().pts += shift;
                             packet.get_mut().dts += shift;
-                            file_video_end =
-                                file_video_end.max((*packet.get()).pts + (*packet.get()).duration);
+                            let duration = if (*packet.get()).duration > 0 {
+                                (*packet.get()).duration
+                            } else {
+                                frame_duration
+                            };
+                            // The muxer also needs the inferred duration, otherwise
+                            // Matroska's video DURATION tag ends at the last PTS.
+                            packet.get_mut().duration = duration;
+                            file_video_end = file_video_end.max((*packet.get()).pts + duration);
 
                             if let Some(last_mux_dts) = last_video_mux_dts.as_mut() {
                                 validate_non_monotous_dts(packet.get(), last_mux_dts, self.oc);

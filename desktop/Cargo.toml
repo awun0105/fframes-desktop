@@ -7,7 +7,11 @@ members = [
     "crates/studio-engine",
     "crates/studio-bootstrap",
     "crates/studio-sdk",
-    "crates/studio-agent-spike",
+    "crates/studio-harness",
+    "crates/studio-proto",
+    "crates/studio-theme",
+    "crates/studio-ui",
+    "crates/studio-markdown",
     "crates/studio-test-support",
 ]
 
@@ -20,7 +24,12 @@ uuid = { version = "1", features = ["v4"] }
 studio-bootstrap = { path = "crates/studio-bootstrap" }
 fframes-studio-protocol = { path = "../fframes-studio-protocol" }
 studio-sdk = { path = "crates/studio-sdk" }
-studio-agent-spike = { path = "crates/studio-agent-spike" }
+studio-harness = { path = "crates/studio-harness" }
+studio-proto = { path = "crates/studio-proto" }
+studio-theme = { path = "crates/studio-theme" }
+studio-ui = { path = "crates/studio-ui" }
+studio-markdown = { path = "crates/studio-markdown" }
+pulldown-cmark = { version = "0.12", default-features = false }
 sha2 = "0.10"
 semver = "1.0"
 ring = "0.17"
@@ -31,7 +40,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 parking_lot = "0.12"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 smallvec = "1.16"
 cpal = "=0.18.2"
 agent-client-protocol = "=2.2.0"
@@ -49,3 +58,7 @@ rev = "c32bfd3962e172b566c9d5514f4fa5cf325e9b06"
 git = "https://github.com/khanhthanhdev/zed-cap"
 rev = "c32bfd3962e172b566c9d5514f4fa5cf325e9b06"
 features = ["wayland", "x11", "font-kit", "runtime_shaders"]
+
+# The preview converts every shown frame; unoptimised it takes ~50 ms at 1080p.
+[profile.dev.package.studio-ui]
+opt-level = 3

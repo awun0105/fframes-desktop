@@ -1,29 +1,25 @@
 //! The native panel's rules against REAL workflow snapshots: the scripted ACP peer
-//! (`tests/support/acp-agent.py`), the deterministic fake preview worker and the engine's
+//! (`studio-engine/tests/support/acp-agent.py`), the deterministic fake preview worker and the engine's
 //! real controller. No window is opened here: the controls, reply correlation, paging
 //! window and shell hosting glue are pure functions of snapshots, so they are proven
 //! against what the workflow actually publishes. (The GPUI process itself is exercised by
 //! `x11_shell.rs`; neither the peer nor these tests qualify a provider.)
-//! The real workflow snapshots include successful Apply, currently qualified only on Linux.
-#![cfg(target_os = "linux")]
-use fframes_studio::{
-    agent_workflow::{log::RowLimits, *},
-    build_service::{BuildLimits, BuildService},
-    conversation_panel::{
-        controls::{self, ReplyRefusal, ReplyTracker, SubmitKind, UndoControl, derive_controls},
-        host::{self, AdapterFile, HostInbox, McpChoice},
-        qualification::OwnershipPolicy,
-        rows::{self, ListOp, ResidentLimits, RowKey},
-    },
-};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
-use studio_agent_spike::{AdapterConfig, driver::OptionValue};
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::agent::{log::RowLimits, *};
+use studio_engine::containment::OwnershipPolicy;
+use studio_engine::providers::host::{self, AdapterFile, HostInbox, McpChoice};
+use studio_engine::services::build_service::{BuildLimits, BuildService};
 use studio_engine::{AgentTaskId, Controller, ReviewPolicy, app_paths::AppPaths};
+use studio_harness::{AdapterConfig, driver::OptionValue};
+use studio_ui::agent::{
+    controls::{self, ReplyRefusal, ReplyTracker, SubmitKind, UndoControl, derive_controls},
+    transcript::rows::{self, ListOp, ResidentLimits, RowKey},
+};
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 
@@ -60,7 +56,10 @@ fn python() -> String {
 }
 
 fn agent_script() -> String {
-    format!("{}/tests/support/acp-agent.py", env!("CARGO_MANIFEST_DIR"))
+    format!(
+        "{}/support/acp-agent.py",
+        studio_test_support::ENGINE_TESTS_DIR
+    )
 }
 
 struct World {
@@ -98,11 +97,12 @@ impl World {
             auth_env_names,
             auth_method: None,
             mcp: McpChoice::Unsupported,
+            wire: studio_harness::AgentWire::Acp,
         }
     }
 
     /// Opens the workflow exactly like the shell does: the saved description, the
-    /// UI hand-off sink and the wake callback.
+    /// UI hand-off sink and a snapshot wake.
     fn open(&mut self, inbox: &Arc<HostInbox>) -> host::Opened {
         let opened = host::open_workflow(
             self.controller.clone(),
@@ -110,6 +110,7 @@ impl World {
             Some(self.build()),
             1,
             inbox.clone(),
+            host::WorkflowWake::new(|| ()),
             self.policy(),
         );
         assert!(
@@ -221,10 +222,8 @@ fn opening_through_the_host_reads_the_saved_description_and_launches_no_agent() 
     let snapshot = world.snap();
     assert_eq!(snapshot.adapter.provider.as_deref(), Some("scripted"));
     assert_eq!(snapshot.adapter.readiness, AdapterReadiness::Unchecked);
-    assert_eq!(
-        snapshot.adapter.writer_ownership.as_deref(),
-        Some("process-group-contained")
-    );
+    // Containment is only ever what a launch verified, and nothing launched yet.
+    assert_eq!(snapshot.adapter.last_launch, None);
     assert_eq!(world.processes(), 0, "opening a project starts nothing");
     assert!(
         !world.agent.join("starts").exists(),
@@ -253,6 +252,7 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
         None,
         3,
         inbox,
+        host::WorkflowWake::new(|| ()),
         OwnershipPolicy::Validated,
     );
     assert!(opened.adapter.is_none() && opened.settings_error.is_none());
@@ -260,14 +260,20 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
     let snapshot = workflow.snapshot();
     assert_eq!(snapshot.adapter.readiness, AdapterReadiness::NotConfigured);
     let controls = derive_controls(&snapshot, false, true);
-    assert!(controls.submit.blocked.unwrap().contains("Setup"));
+    assert!(
+        controls
+            .submit
+            .blocked
+            .unwrap()
+            .contains("Settings › Agent")
+    );
     assert!(!controls.check_adapter);
     assert!(!controls::guidance(&snapshot.adapter.readiness, false).usable);
     // A damaged description is reported, never silently ignored: the workflow still opens,
     // unconfigured, and the panel shows why.
     workflow.close();
     drop(workflow);
-    fs::write(host::settings_path(&paths), "{broken").unwrap();
+    fs::write(host::registry_path(&paths), "{broken").unwrap();
     let controller = Arc::new(Mutex::new(Controller::open(&root, &paths).unwrap()));
     let opened = host::open_workflow(
         controller,
@@ -275,6 +281,7 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
         None,
         4,
         Arc::new(HostInbox::default()),
+        host::WorkflowWake::new(|| ()),
         OwnershipPolicy::Validated,
     );
     assert!(opened.adapter.is_none());
@@ -283,12 +290,56 @@ fn a_missing_description_leaves_the_workflow_unconfigured_and_the_panel_says_how
             .settings_error
             .as_deref()
             .unwrap()
-            .contains("Invalid adapter JSON")
+            .contains("Invalid provider registry JSON")
     );
     assert_eq!(
         opened.result.unwrap().snapshot().adapter.readiness,
         AdapterReadiness::NotConfigured
     );
+}
+
+#[test]
+fn a_registry_of_another_version_is_reported_on_open_and_again_by_every_save() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("video");
+    create_project(&root);
+    let paths = AppPaths::new(temp.path().join("data")).unwrap();
+    let registry = host::registry_path(&paths);
+    let old = r#"{"schema_version": 1, "profiles": []}"#;
+    fs::write(&registry, old).unwrap();
+
+    let controller = Arc::new(Mutex::new(Controller::open(&root, &paths).unwrap()));
+    let opened = host::open_workflow(
+        controller,
+        paths.clone(),
+        None,
+        5,
+        Arc::new(HostInbox::default()),
+        host::WorkflowWake::new(|| ()),
+        OwnershipPolicy::Validated,
+    );
+    let reason = opened.settings_error.clone().expect("the refusal is shown");
+    assert!(reason.contains("older Studio"), "{reason}");
+    assert!(reason.contains("provider-registry.json"), "{reason}");
+    opened.result.unwrap().close();
+
+    // The Save of the Setup page writes through these; each is refused with the file named, so
+    // the panel keeps the banner (it clears it only when a save succeeds).
+    let file = AdapterFile {
+        provider: "scripted".into(),
+        executable: "/bin/true".into(),
+        args: vec![],
+        auth_env_names: vec![],
+        auth_method: None,
+        mcp: McpChoice::Baseline,
+        wire: studio_harness::AgentWire::Acp,
+    };
+    let saved = host::save_settings(&paths, &file).unwrap_err();
+    assert!(saved.contains("older Studio"), "{saved}");
+    assert!(saved.contains("provider-registry.json"), "{saved}");
+    assert!(host::save_profile_settings(&paths, "claude", &file).is_err());
+    assert!(host::clear_settings(&paths).is_err());
+    assert_eq!(fs::read_to_string(&registry).unwrap(), old);
 }
 
 #[test]
@@ -298,12 +349,12 @@ fn saving_a_description_reconfigures_an_idle_workflow_and_is_refused_while_a_tas
         provider: "other".into(),
         ..world.adapter(vec!["SOME_TOKEN_NAME".into()])
     };
-    let (settings, _) = changed.resolve(&world.paths, &world.policy());
+    let settings = changed.resolve(&world.policy());
     world.wf().set_adapter(Some(settings)).unwrap();
     world.wait("the new adapter", |s| {
         s.adapter.provider.as_deref() == Some("other")
     });
-    let (original, _) = world.adapter(vec![]).resolve(&world.paths, &world.policy());
+    let original = world.adapter(vec![]).resolve(&world.policy());
     world.wf().set_adapter(Some(original)).unwrap();
     world.wait("the original adapter", |s| {
         s.adapter.provider.as_deref() == Some("scripted")
@@ -315,7 +366,7 @@ fn saving_a_description_reconfigures_an_idle_workflow_and_is_refused_while_a_tas
     assert!(matches!(
         world
             .wf()
-            .set_adapter(Some(changed.resolve(&world.paths, &world.policy()).0)),
+            .set_adapter(Some(changed.resolve(&world.policy()))),
         Err(WorkflowError::Busy(_))
     ));
     world.wf().stop().unwrap();
@@ -350,7 +401,7 @@ fn the_controls_follow_a_real_task_from_start_to_acceptance() {
     assert!(
         lines
             .iter()
-            .any(|(k, v)| *k == "Working copy" && v.ends_with("agent/draft")),
+            .any(|(k, v)| *k == "Working copy" && std::path::Path::new(v).ends_with("agent/draft")),
         "{lines:?}"
     );
     // A follow-up queues behind the running task.
@@ -557,35 +608,27 @@ fn a_real_permission_card_is_answered_once_and_closed_cards_refuse_clicks() {
 
 #[test]
 fn the_production_policy_never_lets_a_saved_adapter_claim_containment() {
-    use fframes_studio::conversation_panel::qualification::Containment;
     let (mut world, inbox) = World::new();
     world.workflow.take().unwrap().close();
-    // The same saved description, opened under the production policy: no ledger is
-    // installed, so the writer stays unqualified however the file is written.
+    // The same saved description, opened under the production policy: whatever the file
+    // says, containment is only what a launch verifies.
     let opened = host::open_workflow(
         world.controller.clone(),
         world.paths.clone(),
         Some(world.build()),
         9,
         inbox.clone(),
+        host::WorkflowWake::new(|| ()),
         OwnershipPolicy::Validated,
     );
-    let resolution = opened.resolution.clone().expect("an adapter is saved");
-    assert!(matches!(
-        resolution.containment,
-        Containment::Unknown { .. }
-    ));
-    assert_eq!(resolution.ownership, WriterOwnership::Unknown);
+    assert!(opened.adapter.is_some(), "an adapter is saved");
     let workflow = opened.result.unwrap();
-    let snapshot = workflow.snapshot();
-    assert_eq!(
-        snapshot.adapter.writer_ownership.as_deref(),
-        Some(WriterOwnership::Unknown.label())
-    );
+    assert_eq!(workflow.snapshot().adapter.last_launch, None);
     assert!(
-        resolution
+        opened
+            .policy
             .summary()
-            .contains("Candidates from this adapter stay blocked")
+            .contains("verified every time the adapter starts")
     );
     workflow.close();
 }
@@ -623,10 +666,10 @@ fn a_long_real_conversation_pages_back_inside_the_resident_limits() {
             args: vec![agent_script(), agent.to_string_lossy().into_owned()],
             auth_env_names: vec![],
         },
-        writer_ownership: qualified(),
-        ownership_probe: None,
-        mcp: studio_agent_spike::McpStdioSupport::Unsupported,
+        ownership: studio_harness::OwnershipSource::Injected(qualified()),
+        mcp: studio_harness::McpStdioSupport::Unsupported,
         auth_method: None,
+        wire: studio_harness::AgentWire::Acp,
     });
     config.limits.shutdown_grace = Duration::from_secs(1);
     let workflow = AgentWorkflow::open(config, controller).unwrap();
@@ -769,7 +812,7 @@ fn controls_derive_switch_choice_and_block_new_submissions() {
     world.wf().initiate_switch("codex").unwrap();
     let s = world.wait("switch pending", |s| s.switch_pending.is_some());
 
-    let controls = fframes_studio::conversation_panel::controls::derive_controls(&s, false, true);
+    let controls = studio_ui::agent::controls::derive_controls(&s, false, true);
     assert!(
         controls.switch_choice.is_some(),
         "switch_choice control must be derived when switch_pending is present"
@@ -811,7 +854,7 @@ fn controls_derive_session_restore_and_retained_queue() {
         s.switch_pending.is_some() && s.retained_queue.len() == 2
     });
 
-    let controls = fframes_studio::conversation_panel::controls::derive_controls(&s, false, true);
+    let controls = studio_ui::agent::controls::derive_controls(&s, false, true);
     assert!(
         controls.retained_queue.is_some(),
         "retained_queue control must be derived"

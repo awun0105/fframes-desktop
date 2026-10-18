@@ -122,12 +122,16 @@ mod styles;
 mod svgr;
 mod text;
 mod time_spec;
+mod timing;
 mod video;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod renderer;
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::*;
+
+/// The version of this crate, for workers that report which fframes they were built with.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Methods that we are not pub use ::* should be declared here:
 pub mod animation;
@@ -162,6 +166,11 @@ pub use svgr::*;
 pub use svgr_macro::*;
 pub use text::*;
 pub use time_spec::*;
+pub use timing::{
+    MAX_TIMING_CLIPS, MAX_TIMING_DOC_BYTES, MAX_TIMING_KEY_BYTES, MAX_TIMING_SECONDS,
+    TIMING_DOC_VERSION, TimingClip, TimingDoc, TimingError, TimingReport, clip_editor_key,
+    scene_timing_keys,
+};
 pub use transform::*;
 pub use video::*;
 pub use video_data::*;

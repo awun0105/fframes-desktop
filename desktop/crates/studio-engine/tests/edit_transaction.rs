@@ -1,20 +1,17 @@
 //! Apply / Undo behaviour: durable task revisions, policy, fences and the interleavings
 //! an uncooperative editor can produce around each publication step. Crash-boundary
 //! coverage lives in `task_recovery.rs`.
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos", windows))]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;
 
-use std::{
-    fs,
-    os::unix::fs::{MetadataExt, PermissionsExt},
-    sync::Arc,
-};
+use std::{fs, sync::Arc};
 use studio_engine::{
     Boundary, CompletionOutcome, Controller, EngineError, PromotionError, ReviewPolicy, TaskState,
     TransactionKind, UndoStatus,
     candidate_validation::{CapturedCandidate, ValidationReport},
+    edit_transaction::PlanError,
 };
 use tx_fixture::*;
 
@@ -70,19 +67,13 @@ fn apply_publishes_a_multi_file_set_as_a_validated_task_revision() {
         "created\n"
     );
     assert!(!f.root.join("old.txt").exists());
-    assert_eq!(
-        fs::metadata(f.root.join("run.sh")).unwrap().mode() & 0o7777,
-        0o755
-    );
-    assert_eq!(
-        fs::metadata(f.root.join("notes.txt")).unwrap().mode() & 0o7777,
-        0o644
-    );
+    assert_eq!(mode_at(&f.root.join("run.sh")), EXEC_MODE);
+    assert_eq!(mode_at(&f.root.join("notes.txt")), 0o644);
     assert!(internal_files(&f.root).is_empty());
     let after = snapshot(&f.root);
     assert_eq!(outside_task(&before, &after, TOUCHED), Vec::<String>::new());
     // The private file kept its 0600 mode and the Git metadata is byte-identical.
-    assert_eq!(after["private.txt"].mode, 0o600);
+    assert_eq!(after["private.txt"].mode, PRIVATE_MODE);
     assert_eq!(
         differences(
             &before
@@ -128,25 +119,25 @@ fn apply_publishes_a_multi_file_set_as_a_validated_task_revision() {
     );
     let mut changed: Vec<_> = record.changed_paths().collect();
     changed.sort_unstable();
-    assert_eq!(
-        changed,
-        [
-            "added.txt",
-            "media/new/clip.txt",
-            "notes.txt",
-            "old.txt",
-            "run.sh"
-        ]
-    );
+    // Windows has no executable bit, so the mode-only change to run.sh is no change there.
+    let mut expected = vec!["added.txt", "media/new/clip.txt", "notes.txt", "old.txt"];
+    if cfg!(unix) {
+        expected.push("run.sh");
+    }
+    assert_eq!(changed, expected);
     let delta = |p: &str| record.changes.iter().find(|d| d.path == p).unwrap();
     assert!(delta("added.txt").before.is_none() && delta("added.txt").after.is_some());
     assert!(delta("old.txt").after.is_none() && delta("old.txt").before.is_some());
-    let mode = delta("run.sh");
-    assert_eq!(
-        mode.before.as_ref().unwrap().sha256,
-        mode.after.as_ref().unwrap().sha256
-    );
-    assert!(!mode.before.as_ref().unwrap().executable && mode.after.as_ref().unwrap().executable);
+    if cfg!(unix) {
+        let mode = delta("run.sh");
+        assert_eq!(
+            mode.before.as_ref().unwrap().sha256,
+            mode.after.as_ref().unwrap().sha256
+        );
+        assert!(
+            !mode.before.as_ref().unwrap().executable && mode.after.as_ref().unwrap().executable
+        );
+    }
 
     // The task finished accepted, the draft is marked accepted, and the install
     // authorization names the published candidate, not the task base.
@@ -341,7 +332,7 @@ fn undo_reverses_only_its_own_files_and_keeps_unrelated_external_edits() {
         fs::write(d.join("notes.txt"), "agent notes\n").unwrap();
         fs::write(d.join("added.txt"), "added\n").unwrap();
         fs::remove_file(d.join("old.txt")).unwrap();
-        fs::set_permissions(d.join("run.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+        set_mode(&d.join("run.sh"), 0o755);
     });
     // The user edits an unrelated file and creates a new one afterwards.
     fs::write(f.root.join("private.txt"), "my later edit\n").unwrap();
@@ -369,19 +360,13 @@ fn undo_reverses_only_its_own_files_and_keeps_unrelated_external_edits() {
         "to be deleted\n"
     );
     assert!(!f.root.join("added.txt").exists());
-    assert_eq!(
-        fs::metadata(f.root.join("run.sh")).unwrap().mode() & 0o7777,
-        0o644
-    );
+    assert_eq!(mode_at(&f.root.join("run.sh")), 0o644);
     // Unrelated external changes survive, with their permissions.
     assert_eq!(
         fs::read_to_string(f.root.join("private.txt")).unwrap(),
         "my later edit\n"
     );
-    assert_eq!(
-        fs::metadata(f.root.join("private.txt")).unwrap().mode() & 0o7777,
-        0o600
-    );
+    assert_eq!(mode_at(&f.root.join("private.txt")), PRIVATE_MODE);
     assert_eq!(
         fs::read_to_string(f.root.join("scratch.txt")).unwrap(),
         "scratch\n"
@@ -714,8 +699,7 @@ fn directory_swaps_and_links_halt_without_following() {
         |b| matches!(b, Boundary::BeforeDisplace(_)),
         move || {
             fs::rename(root.join("sub"), root.join("sub-moved")).unwrap();
-            std::os::unix::fs::symlink(root.parent().unwrap().join("outside"), root.join("sub"))
-                .unwrap();
+            symlink_dir(&root.parent().unwrap().join("outside"), &root.join("sub"));
         },
     );
     c.set_transaction_hooks(hooks.hooks());
@@ -738,7 +722,9 @@ fn directory_swaps_and_links_halt_without_following() {
 
 #[test]
 fn links_and_special_files_at_a_destination_are_refused_at_planning() {
-    for variant in ["symlink", "fifo", "directory"] {
+    // Windows has no FIFO; its other link kind, a junction, takes that place.
+    let special = if cfg!(windows) { "junction" } else { "fifo" };
+    for variant in ["symlink", special, "directory"] {
         let f = fixture();
         let mut c = Controller::open(&f.root, &f.paths).unwrap();
         let (_, captured, report) = validated(&f, &mut c, "edit", |d| {
@@ -748,8 +734,20 @@ fn links_and_special_files_at_a_destination_are_refused_at_planning() {
         // Between validation and publication the destination becomes something else.
         match variant {
             "symlink" => {
-                std::os::unix::fs::symlink("/etc/passwd", f.root.join("added.txt")).unwrap()
+                // A live link to a file outside the project.
+                fs::write(
+                    f.temp.path().join("outside.txt"),
+                    "outside
+",
+                )
+                .unwrap();
+                symlink_file(
+                    &f.temp.path().join("outside.txt"),
+                    &f.root.join("added.txt"),
+                )
             }
+            #[cfg(windows)]
+            "junction" => junction(f.temp.path(), &f.root.join("added.txt")),
             "fifo" => {
                 let made = std::process::Command::new("mkfifo")
                     .arg(f.root.join("added.txt"))
@@ -1081,7 +1079,7 @@ fn a_filesystem_with_only_the_link_pair_blocks_apply_and_undo_without_touching_f
         panic!("the link pair must not open the gate");
     };
     assert!(
-        reason.contains("renameat2") && reason.contains("editor"),
+        reason.contains("atomic no-replace rename") && reason.contains("editor"),
         "{reason}"
     );
     let (_, captured, report) = validated(&f, &mut c, "via links", multi_file_edit);
@@ -1128,4 +1126,65 @@ fn a_filesystem_with_only_the_link_pair_blocks_apply_and_undo_without_touching_f
     ));
     assert_eq!(snapshot(&f.root), after_apply);
     assert!(internal_files(&f.root).is_empty());
+}
+
+/// The 8.3 name Windows generated for `path`, if the volume generates them.
+#[cfg(windows)]
+fn short_name(path: &std::path::Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let long: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut short = vec![0u16; 1024];
+    // SAFETY: NUL-terminated input and a buffer of the given length.
+    let len = unsafe { GetShortPathNameW(long.as_ptr(), short.as_mut_ptr(), 1024) } as usize;
+    assert!(len > 0 && len < short.len(), "GetShortPathNameW failed");
+    let short = String::from_utf16(&short[..len]).unwrap();
+    let name = short.rsplit('\\').next().unwrap().to_owned();
+    (Some(name.as_str()) != path.file_name().and_then(|n| n.to_str())).then_some(name)
+}
+
+/// A candidate path that a case-insensitive or normalising filesystem resolves into
+/// `.git`, `target` or a Studio cache is refused before anything is probed or written.
+#[test]
+fn aliases_of_protected_trees_are_refused_at_planning() {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut aliases = vec![
+        ".Git/hooks/pre-commit".to_owned(),
+        "TARGET/x.txt".to_owned(),
+        ".fframe\u{17F}/cache/x.txt".to_owned(),
+    ];
+    // Windows: the short name of `.git` in a fixture like the one each case uses.
+    #[cfg(windows)]
+    match short_name(&fixture().root.join(".git")) {
+        Some(short) => aliases.push(format!("{short}/hooks/pre-commit")),
+        None => eprintln!("8.3 name generation is off on this volume; no short-name case"),
+    }
+    for alias in aliases {
+        let f = fixture();
+        let mut c = Controller::open(&f.root, &f.paths).unwrap();
+        let (_, captured, report) = validated(&f, &mut c, "write into a protected tree", |d| {
+            let path = d.join(&alias);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "#!/bin/sh\necho owned\n").unwrap();
+        });
+        let before = snapshot(&f.root);
+        let error = c.complete_validated_task(&captured, &report).unwrap_err();
+        let PromotionError::Plan(PlanError::Conflict { reason, .. }) = promotion(&error) else {
+            panic!("{alias}: {error}");
+        };
+        assert!(
+            reason.contains("protected") || reason.contains("alias"),
+            "{alias}: {reason}"
+        );
+        assert_eq!(snapshot(&f.root), before, "{alias}");
+        assert!(internal_files(&f.root).is_empty(), "{alias}");
+        // An unplannable delta ends the task as a conflict; the candidate and its draft
+        // are preserved for review or export, as for any other planning conflict.
+        assert_eq!(
+            c.agent_task().unwrap().state(),
+            TaskState::Conflict,
+            "{alias}"
+        );
+        assert!(c.state().task_history().entries().is_empty(), "{alias}");
+    }
 }

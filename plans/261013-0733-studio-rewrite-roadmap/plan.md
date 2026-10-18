@@ -1,9 +1,9 @@
 ---
 title: "fframes Studio rewrite on Zeron and Cap foundations (roadmap)"
 description: "Rebuild the desktop app on Cap's GPUI fork with Cap's components, editor layout and settings screens, Zeron-style crate layering, Cap-style timing edits and playback, and an agent panel with Zeron's internals in Cap chrome, in six mergeable milestones."
-status: pending
+status: completed
 priority: P1
-effort: "110-156 engineer-days (sum of milestones)"
+effort: "110-157 engineer-days (sum of milestones, after spike S4)"
 branch: feat/studio-rewrite
 tags: [desktop, refactor, gpui, feature, critical]
 blockedBy: [261013-1010-faster-desktop-ci]
@@ -21,13 +21,13 @@ This roadmap indexes six milestone plans. Each milestone ends with the app build
 
 | # | Milestone | Blocked by | Effort | Status |
 |---|-----------|-----------|--------|--------|
-| M1 | [Foundations: spikes, Cap GPUI switch, parity tests](../261013-0733-studio-m1-foundations/plan.md) | CI branch merged | 12-17d | Pending |
-| M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 26-35d | Pending |
-| M3 | [Durable writes, containment and tools on Windows and macOS](../261013-0733-studio-m3-durable-writes/plan.md) | M1 phase 1; phases 3-5 also need M2 phases 1, 3, 8 | 18-27d | Pending |
-| M4 | [Editing: timing doc, SDK release, timeline, playback, export](../261013-0733-studio-m4-editing/plan.md) | M2, M3 | 24-34d | Pending |
-| M5a | [Native agent wires: Claude stream-json, Codex app-server](../261013-0733-studio-m5a-native-wires/plan.md) | M2, M3 | 10-14d | Pending |
-| M5 | [Agent UX: markdown, composer, todo, diffs, history](../261013-0733-studio-m5-agent-ux/plan.md) | M2, M3, M5a | 17-25d (re-estimate after spike S4) | Pending |
-| M6 | [Cleanup: spike names, docs, platform checks](../261013-0733-studio-m6-cleanup/plan.md) | M4, M5 | 3-4d | Pending |
+| M1 | [Foundations: spikes, Cap GPUI switch, parity tests](../261013-0733-studio-m1-foundations/plan.md) | CI branch merged | 12-17d | Complete |
+| M2 | [Architecture: crates, engine events, Cap kit and layout, harness removal, splits](../261013-0733-studio-m2-architecture/plan.md) | M1 | 27-38d | Completed (Windows title bar hand check and Windows preview dry run passed, 2026-10-18; macOS CI only, see Platforms) |
+| M3 | [Durable writes, containment and tools on Windows and macOS](../261013-0733-studio-m3-durable-writes/plan.md) | M1 phase 1; phases 3-5 also need M2 phases 1, 3, 8 | 18-27d | Completed (CI green on Linux, Windows and macOS, 2026-10-15) |
+| M4 | [Editing: timing doc, SDK release, timeline, playback, export](../261013-0733-studio-m4-editing/plan.md) | M2, M3 | 24-33d | Completed (Windows hand checks and assembled-SDK H.264 pixel parity passed, 2026-10-18) |
+| M5a | [Native agent wires: Claude stream-json, Codex app-server](../261013-0733-studio-m5a-native-wires/plan.md) | M2, M3 | 10-14d | Completed (Windows real CLI and hand checks; question-card handover closed in M5; macOS CI only, see Platforms) |
+| M5 | [Agent UX: markdown, composer, todo, diffs, history](../261013-0733-studio-m5-agent-ux/plan.md) | M2, M3, M5a | 16-24d (re-estimated from spike S4) | Done (merged into `feat/studio-rewrite` 2026-10-17; CI green on all three platforms, real-click check on Windows; macOS CI only; open items handed to M6) |
+| M6 | [Cleanup: spike names, docs, platform checks](../261013-0733-studio-m6-cleanup/plan.md) | M4, M5 | 3-4d | Completed (Windows hand checks and Windows preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed, 2026-10-18) |
 
 M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1, phase 4 after M2 phases 1 and 8, and phase 3 after M3 phases 1, 2 and 4 and M2 phase 3 (so it also waits for M2 phase 8). Writer qualification by ledger stays usable until M3 phase 4 replaces it, so there is no window in which a real agent cannot apply on Linux. One executor (confirmed 2026-10-13): run M1, M2, M3, M4, M5a, M5, M6 in that order, doing M3 phases 1, 2 and 5 between M2 phases where their dependencies allow. The overlaps described above say what may interleave, not that work runs at once.
 
@@ -35,7 +35,7 @@ M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1,
 
 | # | Phase | Status |
 |---|-------|--------|
-| 1 | [Milestone merge gates](./phase-01-milestone-merge-gates.md) | Pending |
+| 1 | [Milestone merge gates](./phase-01-milestone-merge-gates.md) | Completed: gates passed on `feat/studio-rewrite` and the Windows preview dry run passed; merge into `main` not done (owner step) |
 
 ## Confirmed contract
 
@@ -44,17 +44,23 @@ M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1,
 - **Look and UI:** Cap first. Cap's theme model (`src/theme.rs`) with Cap's System, Light or Dark setting (`ThemePreference`, default System) with the tokens from [the Cap spec](../reports/xia-261011-0016-cap-design-system-spec.md), Cap's component library (`src/ui/`), Cap's editor window layout, panels and sidebar, Cap's settings pages for setup and providers, and Cap's Windows caption. No glass, frost or material tokens.
 - **Timing:** `timeline.json` in the project holds clip order, trims and splits; code defines scene content. It has its own timing revision, outside the build key, so edits never trigger a Rust rebuild. Preview, render and export read it; export binds to the pair (source revision, timing revision).
 - **SDK:** the timing hook and the extended export contract ship in a new bundled SDK (the vendored crate set the app ships; no crates.io publish); existing projects get a durable, undoable migration and keep building on the old vendored versions until migrated.
-- **Agent wires:** native drivers for Claude Code (stream-json control protocol) and Codex (`app-server` JSON-RPC), ported from Zeron's harness; ACP for every other agent; all behind one driver trait, and all started in the task's draft directory like ACP today. No driver answers a permission or approval request on the user's behalf; every request becomes a row the user answers. What a CLI runs without asking is its own policy: Claude Code in default mode runs read-only tools without a request, and Codex with `on-request` asks only for actions outside its sandbox. Writes are always contained, captured from the draft and validated before apply.
+- **Agent wires:** native drivers for Claude Code (stream-json control protocol) and Codex (`app-server` JSON-RPC), ported from Zeron's harness; ACP for every other agent; all behind one driver trait, and all started in the task's draft directory like ACP today. No driver answers a permission or approval request on the user's behalf; every request becomes a row the user answers. What a CLI runs without asking is its own policy: Claude Code in default mode runs read-only tools without a request, and Codex runs with `untrusted` approvals in the `workspace-write` sandbox, so it asks before most commands (spike S5: `on-request` asked for nothing). Writes are always contained, captured from the draft and validated before apply.
 - **Agent panel:** a tab in the editor sidebar next to Presets and Scenes; chrome (frame, tabs, controls, menus, inputs) from Cap's kit; Zeron supplies the internals: streaming markdown with code highlighting, todo panel, composer (slash commands, attachments, steer/stop), diff review where rejecting files forms a new candidate that must pass validation before apply, per-file revert after apply (also validated), and multi-session history.
 - **Safety kept:** writer containment is verified at runtime by the engine (Unix process groups, Windows Job Objects), not by a qualification ledger. The agent tool broker runs on Windows over named pipes.
 - **Tests:** `#[gpui::test]` replaces the bounds-probe harness. Parity tests land in M1 and stay green; the harness is deleted in M2.
-- **Platforms:** Windows and macOS ship and are checked by hand; Linux compiles and passes CI.
+- **Platforms:** Windows ships and is checked by hand. macOS ships **not fully tested**: no Mac is available (decided by the user, 2026-10-16), so macOS is covered only by CI (tests, fake agent CLIs, clippy), and no hand check, real-CLI check or on-screen check runs there. Every Done-means item below that says "on Windows and macOS" is met on macOS by CI alone, and a milestone records its macOS hand checks as not run rather than open. Linux compiles and passes CI.
 
 ## Done means
 
+**Priority decision 2026-10-18:** focus on Windows testing first to reach production promptly. Finish the remaining Windows app checks and fix failures before the release dry run. No additional macOS or Linux validation is part of this immediate work; the recorded platform coverage still applies.
+
+**Windows acceptance 2026-10-18:** the owner confirmed all Windows hand checks passed ("test all okay by my hand"). The [M6 platform report](../261013-0733-studio-m6-cleanup/reports/platform-checks.md) records this alongside the automated validation. Windows app testing is complete, and the Windows preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed on 2026-10-18. Every milestone is complete on `feat/studio-rewrite`; merging the branch into `main` is a separate owner step.
+
+**Release decision 2026-10-18:** the owner selected a Windows unsigned preview using the existing preview workflow. The remaining release check is its non-publishing Windows dry run; consumer publication stays disabled with its existing signing and provenance requirements.
+
 - `desktop/` builds on Cap's GPUI fork and draws with Cap's components; `just clippy` and `cargo test` pass; no `.rs` file under `desktop/` exceeds 1,500 lines.
 - Trim, split or reorder a scene in a project made from the studio template: preview updates without a Rust rebuild, `timeline.json` is written, Ctrl+Z restores it, and an export matches the preview.
-- An agent turn renders markdown, a todo list and a diff with per-file accept (validated) and revert, on Windows and macOS, with project tools available on both, over native wires for Claude Code and Codex and ACP for other agents (Codex is checked on Windows where it is installed and signed in).
+- An agent turn renders markdown, a todo list and a diff with per-file accept (validated) and revert, on Windows and macOS, with project tools available on both, over native wires for Claude Code and Codex and ACP for other agents (Codex is checked on Windows where it is installed and signed in; macOS by CI only, see Platforms).
 - Durable writes, crash recovery and writer containment run on Windows and macOS, proven by tests in CI.
 - No bounds-probe, telemetry or qualification harness code remains; the release workflow gates on an explicit eligibility list, package verification and a tag-to-CI-run check instead; no `*_spike` names remain.
 - `docs/desktop/architecture.md` describes the real crate layout.
@@ -82,7 +88,7 @@ Sources: [Zeron agent control](../reports/research-261013-1749-zeron-agent-contr
 | Drags measured in prepaint with a full-window drag layer | Cap editor drag layer (`editor_clips.rs`, `editor_panels.rs`) | M4 p5 |
 | Windows launch suspended in a kill-on-close job (exists today), graceful cancel before job termination, `CLAUDECODE*` stripped, adapter files limited to `.exe/.cmd/.bat/.com` | Zeron `process/windows/mod.rs:127-152`, `lib.rs:601-605`, `process/owned.rs:6-17`, `executable.rs:405-468` | M3 p4 |
 | Steering through `_session/steering` when advertised, else cancel and re-prompt with no tool open; one source for the steering mode | Zeron `acp/mod.rs`; `registry.rs` inconsistency | M5 p2 |
-| Permission requests whose options carry no kind shown as questions | Zeron `acp/normalize.rs:488-503` | M5 p2 |
+| Agent questions (Claude `AskUserQuestion`, Codex `item/tool/requestUserInput`) shown as questions and never answered for the user. Not on ACP: ACP v1 permission options always carry a kind, and the Zeron lines once cited here (`acp/normalize.rs:488-503`) only pick an auto-approve option (corrected 2026-10-16) | Zeron `claude/`, `codex/` normalisers | M5a p2, p3; M5 p2 |
 | Updates replayed during `session/load` dropped when rows come from the stored log | Zeron `acp/mod.rs` session setup | M5 p5 |
 | Native Claude Code (stream-json) and Codex (`app-server`) drivers behind one trait, with user-answered approvals | Zeron `crates/harness/src/{lib,claude,codex}` | M5a |
 
@@ -153,7 +159,7 @@ Questions resolved from repository evidence; the open ones are recorded as assum
 |---|----------|-----------|--------|-----------|
 | 1 | How does a new SDK reach projects: crates.io or the app bundle? | Bundled. Projects build offline against `framework/vendor` from the shipped SDK. The earlier "publish to crates.io" step was wrong and is replaced; enforcement accepts the legacy and the new pin set so unmigrated projects still build. | `build_materialization.rs` crates-io `replace-with = "studio-vendor"`; `desktop/scripts/assemble-phase-zero-sdk.py` (`cargo vendor`) | Roadmap contract; M4 p2 |
 | 2 | Which GitHub organisation holds the zui and gpui-base mirrors? | **Assumption:** the owner of `origin` (`khanhthanhdev`). Confirm before creating the mirrors in M1 spike S1. | `git remote -v` | M1 p1 (S1) |
-| 3 | Who runs the macOS manual checks? | **Assumption:** the user on their own Mac; this VM is Windows and CPU-only. macOS CI covers the automated part. Confirm when M1 S1 needs the first manual run. | memory note on the VM; `desktop-release.yml` macOS job | M1 p1; M6 p2 |
+| 3 | Who runs the macOS manual checks? | Nobody: no Mac is available (decided by the user, 2026-10-16). macOS is marked not fully tested and is covered by CI only; see Platforms. | memory note on the VM; `desktop-release.yml` macOS job | M1 p1; M6 p2 |
 | 4 | Do M4 and M5 run in parallel or in sequence? | Parallel, as planned; they own disjoint `studio-ui` modules and coordinate only on `studio-proto`. With a single executor, run M4 first because it carries the SDK migration. | Roadmap milestone table | Roadmap |
 
 No contradictions with confirmed user decisions. `ak plan validate` re-run after these edits.
@@ -186,7 +192,7 @@ The two research reports were mapped onto the phases (see [Cap and Zeron referen
 | # | Question | Answer | Applied to |
 |---|----------|--------|-----------|
 | 1 | ACP turn-end risk for Claude and Codex? | Native wires for Claude Code and Codex in a new milestone M5a after M3 (run after M4 with one executor); ACP stays for other agents. Spike S5 now proves both native protocols on real CLIs. | Contract; M1 S5; M5a; M5 |
-| 2 | Approvals on native wires? | Always asked of the user (Claude `--permission-prompt-tool stdio`, Codex `on-request`); never auto-approved. | Contract; M5a |
+| 2 | Approvals on native wires? | Always asked of the user (Claude `--permission-prompt-tool stdio`, Codex `untrusted` with `workspace-write`, changed from `on-request` after spike S5); never auto-approved. | Contract; M5a |
 | 3 | Where does the agent panel live? | A tab in the editor sidebar next to Presets and Scenes. | Contract; M2 p4, p6 |
 | 4 | Theme choice? | Cap's System, Light or Dark setting, default System. | Contract; M2 p2 |
 | 5 | Mirror owner? | The `khanhthanhdev` account (session 1 assumption confirmed). | M1 S1, p2 |

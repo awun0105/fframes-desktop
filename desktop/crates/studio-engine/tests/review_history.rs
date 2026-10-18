@@ -3,7 +3,6 @@
 //! history on recovery (H8), the non-mutating compatibility preflight (M2), the saved
 //! history fence (M3), session-bound Undo (M4) and a committed outcome that survives a
 //! bookkeeping failure (M5).
-#![cfg(target_os = "linux")]
 
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;
@@ -200,19 +199,38 @@ fn crashed_mid_apply() -> Crashed {
     }
 }
 
+/// `cp -a`: a copy that keeps modes and timestamps on Unix. Windows has no `cp`; a plain
+/// recursive copy keeps everything the snapshot compares there.
+fn copy_tree(from: &Path, to: &Path) {
+    if cfg!(unix) {
+        let status = Command::new("cp")
+            .arg("-a")
+            .arg(from)
+            .arg(to)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    fs::create_dir(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
 #[test]
 fn a_duplicate_project_id_is_refused_before_anything_is_replayed_or_written() {
     let crashed = crashed_mid_apply();
     let f = &crashed.f;
     // The project folder is copied (same project ID) while the Apply is unfinished.
     let copy = f.temp.path().join("copy");
-    let status = Command::new("cp")
-        .arg("-a")
-        .arg(&f.root)
-        .arg(&copy)
-        .status()
-        .unwrap();
-    assert!(status.success());
+    copy_tree(&f.root, &copy);
     let copied_tree = snapshot(&copy);
     assert_eq!(copied_tree, crashed.tree);
     let history = tree_bytes(&f.paths.data);
@@ -428,14 +446,14 @@ fn an_unsupported_task_journal_changes_no_history_file_even_with_an_old_database
     fs::write(&lifecycle, &torn).unwrap();
     // ... and a task journal written by a newer Studio.
     let mut future = fs::read(&tasks).unwrap();
-    future.extend_from_slice(b"{\"format\":3,\"sequence\":99}\n");
+    future.extend_from_slice(b"{\"format\":5,\"sequence\":99}\n");
     fs::write(&tasks, &future).unwrap();
 
     let tree = snapshot(&f.root);
     let everything = tree_bytes(&f.paths.data);
     let error = Controller::open(&f.root, &f.paths).err().unwrap();
     assert!(
-        matches!(error, EngineError::NewerFormat { found: 3, .. }),
+        matches!(error, EngineError::NewerFormat { found: 5, .. }),
         "{error}"
     );
     // No migration (so no backup), no quarantine file, no new byte anywhere.

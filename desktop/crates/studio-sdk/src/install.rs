@@ -332,7 +332,9 @@ impl SdkInstaller {
 
     /// Reuse an already installed SDK only when its immutable receipt exactly matches
     /// the requested compatibility manifest and the installed toolchain still probes.
-    /// This path deliberately does not inspect or require the original archives.
+    /// This path deliberately does not inspect or require the original archives. An
+    /// installed SDK whose manifest this Studio cannot read (one from an older release) is
+    /// not reusable: the install then moves it aside as the previous SDK, unchanged.
     pub fn reusable_active_for_app(
         &self,
         manifest: &CompatibilityManifest,
@@ -345,8 +347,10 @@ impl SdkInstaller {
         let active = self.active_sdk_dir();
         let installed_manifest_path = active.join("compatibility.json");
         let installed_manifest = match fs::read_to_string(&installed_manifest_path) {
-            Ok(json) => CompatibilityManifest::from_json_str(&json)
-                .map_err(|error| InstallError::Other(format!("installed SDK manifest: {error}")))?,
+            Ok(json) => match CompatibilityManifest::from_json_str(&json) {
+                Ok(installed) => installed,
+                Err(_) => return Ok(None),
+            },
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
@@ -1081,6 +1085,29 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn an_installed_sdk_from_an_older_release_is_not_reused_and_is_left_as_it_is() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installer = SdkInstaller::new(tmp.path().join("sdk_home"));
+        let mut manifest = CompatibilityManifest::default_linux_x64();
+        manifest.target_triple = current_target_triple().into();
+        // An older release wrote no `runtime_version`.
+        let mut older = serde_json::to_value(&manifest).unwrap();
+        older.as_object_mut().unwrap().remove("runtime_version");
+        let bytes = serde_json::to_vec_pretty(&older).unwrap();
+        let installed = installer.active_sdk_dir().join("compatibility.json");
+        fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        fs::write(&installed, &bytes).unwrap();
+
+        assert_eq!(
+            installer
+                .reusable_active_for_app(&manifest, env!("CARGO_PKG_VERSION"), None)
+                .unwrap(),
+            None
+        );
+        assert_eq!(fs::read(&installed).unwrap(), bytes);
     }
 
     #[test]

@@ -1,5 +1,5 @@
-use fframes_studio::project_view::ProjectPresentation;
 use std::fs;
+use studio_engine::project_presentation::ProjectPresentation;
 use studio_engine::{
     Controller, JobKind, JobResult, app_paths::AppPaths, build_materialization::sdk_pin,
 };
@@ -16,7 +16,7 @@ fn complete_foundation_flow_retains_source_assets_draft_and_checkpoint() {
         "Video",
         sdk_pin(&compatibility),
         &compatibility.fframes_version,
-        "0.1.0",
+        &compatibility.runtime_version,
     )
     .unwrap();
     let asset = temp.path().join("asset.dat");

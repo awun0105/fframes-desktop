@@ -7,6 +7,11 @@ use std::{
     sync::OnceLock,
 };
 
+/// The engine's integration-test directory (`desktop/crates/studio-engine/tests`). It holds the
+/// fixtures every studio crate's tests share: the scripted ACP agent, the fake preview worker
+/// and the fake compiler under `support/`.
+pub const ENGINE_TESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../studio-engine/tests");
+
 /// The Python interpreter for test fixtures, resolved once per test binary.
 ///
 /// Candidates, in order: the `PYTHON` environment variable; the interpreter under

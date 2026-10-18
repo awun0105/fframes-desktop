@@ -2,6 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CompatibilityManifest",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "schema_version",
     "sdk_id",
@@ -12,6 +13,7 @@
     "rust_toolchain",
     "fframes_version",
     "cargo_fframes_version",
+    "runtime_version",
     "artifacts",
     "ffmpeg",
     "host_prerequisites"
@@ -82,6 +84,15 @@
         "libs_rel_path": { "type": "string" },
         "bin_rel_path": { "type": ["string", "null"] }
       }
+    },
+    "runtime_version": { "type": "string" },
+    "preview_contract_versions": {
+      "type": "array",
+      "items": { "type": "integer", "const": 1 }
+    },
+    "preview_capabilities": {
+      "type": "array",
+      "items": { "type": "string" }
     },
     "host_prerequisites": {
       "type": "array",

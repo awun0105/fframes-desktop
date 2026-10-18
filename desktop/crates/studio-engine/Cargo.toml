@@ -19,6 +19,28 @@ toml = "0.8"
 rusqlite = { version = "0.38", features = ["bundled", "backup"] }
 notify = "8"
 sha2 = { workspace = true }
+parking_lot = { workspace = true }
+image = { workspace = true }
+cpal = { workspace = true }
+studio-harness = { workspace = true }
+studio-proto = { workspace = true }
+async-channel = "2"
+fframes-media = { path = "../../../fframes-media" }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
 
 [dev-dependencies]
-parking_lot = { workspace = true }
+studio-test-support = { path = "../studio-test-support" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }

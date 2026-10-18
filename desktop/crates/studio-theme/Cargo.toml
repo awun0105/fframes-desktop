@@ -1,0 +1,17 @@
+[package]
+name = "studio-theme"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Theme model and design tokens for fframes studio"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+smallvec = { workspace = true }
+studio-proto = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

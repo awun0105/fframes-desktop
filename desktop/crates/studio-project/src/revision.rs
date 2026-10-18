@@ -51,35 +51,38 @@ pub enum FileKind {
     Style = 4,
     Configuration = 5,
     Other = 6,
+    /// The timing document (`timeline.json`): play order and trims, which the studio
+    /// edits without rebuilding.
+    Timing = 7,
 }
+/// The project's timing document, at the project root.
+pub const TIMING_FILE: &str = "timeline.json";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceFile {
     pub path: ProjectPath,
     pub kind: FileKind,
     pub size: u64,
     pub sha256: String,
-    #[serde(default)]
     pub executable: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceInventory {
-    /// Hash format. Zero is reserved for the two historical, unversioned formats.
-    #[serde(default)]
+    /// Hash format; only [`CURRENT_INVENTORY_VERSION`] is read.
     pub version: u32,
     pub files: Vec<SourceFile>,
     pub revision: SourceRevision,
 }
-const CURRENT_INVENTORY_VERSION: u32 = 1;
-const HASH_PREFIX: &[u8] = b"studio-source-v1\0";
+/// Version 2 hashes the timing document as its own kind.
+pub const CURRENT_INVENTORY_VERSION: u32 = 2;
+const HASH_PREFIX: &[u8] = b"studio-source-v2\0";
+const BUILD_HASH_PREFIX: &[u8] = b"studio-build-v1\0";
 pub(crate) fn excluded(path: &str) -> bool {
-    [".git", "target", ".fframes/context", ".fframes/cache"]
-        .iter()
-        .any(|p| {
-            path == *p
-                || path
-                    .strip_prefix(p)
-                    .is_some_and(|tail| tail.starts_with('/'))
-        })
+    crate::paths::PROTECTED_TREES.iter().any(|p| {
+        path == *p
+            || path
+                .strip_prefix(p)
+                .is_some_and(|tail| tail.starts_with('/'))
+    })
 }
 fn kind(path: &str) -> FileKind {
     let name = path.rsplit('/').next().unwrap_or(path);
@@ -95,6 +98,8 @@ fn kind(path: &str) -> FileKind {
         FileKind::Rust
     } else if path == "studio.json" || path.starts_with(".cargo/") {
         FileKind::Configuration
+    } else if path == TIMING_FILE {
+        FileKind::Timing
     } else {
         FileKind::Other
     }
@@ -115,7 +120,7 @@ impl SourceInventory {
         for file in &self.files {
             if previous.is_some_and(|p: &ProjectPath| p >= &file.path)
                 || excluded(file.path.as_str())
-                || kind(file.path.as_str()) != file.kind
+                || !kind_matches(file)
             {
                 return Err(io_error(
                     Path::new(file.path.as_str()),
@@ -129,23 +134,8 @@ impl SourceInventory {
                 .map_err(|e: String| io_error(Path::new(file.path.as_str()), e))?;
             previous = Some(&file.path);
         }
-        let valid = match self.version {
-            CURRENT_INVENTORY_VERSION => {
-                inventory_revision(&self.files, HASH_PREFIX, true) == self.revision
-            }
-            0 => {
-                inventory_revision(&self.files, HASH_PREFIX, true) == self.revision
-                    || (self.files.iter().all(|file| !file.executable)
-                        && inventory_revision(&self.files, HASH_PREFIX, false) == self.revision)
-            }
-            _ => {
-                return Err(io_error(
-                    Path::new("checkpoint"),
-                    format!("unsupported inventory version {}", self.version),
-                ));
-            }
-        };
-        if !valid {
+        self.check_version(Path::new("checkpoint"))?;
+        if inventory_revision(&self.files, HASH_PREFIX) != self.revision {
             return Err(io_error(
                 Path::new("checkpoint"),
                 "inventory revision integrity failure",
@@ -153,13 +143,31 @@ impl SourceInventory {
         }
         Ok(())
     }
-    /// Tests scanned source against current and historical revision formats.
-    /// The oldest format is accepted only when every scanned file is non-executable,
-    /// because that format did not protect executable metadata.
-    pub fn matches_revision(&self, historical: &SourceRevision) -> bool {
-        inventory_revision(&self.files, HASH_PREFIX, true) == *historical
-            || (self.files.iter().all(|file| !file.executable)
-                && inventory_revision(&self.files, HASH_PREFIX, false) == *historical)
+    /// Refuses an inventory of any format but the current one, naming `file`. An older
+    /// one was made by an older Studio and is never read, repaired or rewritten.
+    pub fn check_version(&self, file: &Path) -> Result<(), ProjectError> {
+        check_inventory_version(self.version, file)
+    }
+    /// Whether the scanned source has exactly the recorded revision.
+    pub fn matches_revision(&self, recorded: &SourceRevision) -> bool {
+        inventory_revision(&self.files, HASH_PREFIX) == *recorded
+    }
+    /// What a build depends on: the revision of every file except the timing document,
+    /// which the preview and export apply at run time. A timing-only change keeps it.
+    pub fn build_revision(&self) -> SourceRevision {
+        let files: Vec<SourceFile> = self
+            .files
+            .iter()
+            .filter(|file| file.path.as_str() != TIMING_FILE)
+            .cloned()
+            .collect();
+        inventory_revision(&files, BUILD_HASH_PREFIX)
+    }
+    /// The timing document's entry, when the project has one.
+    pub fn timing_file(&self) -> Option<&SourceFile> {
+        self.files
+            .iter()
+            .find(|file| file.path.as_str() == TIMING_FILE)
     }
     /// Includes all ordinary files except the four exact root-relative exclusions.
     /// Unknown durable files are included to avoid silently dropping imported source.
@@ -209,7 +217,7 @@ impl SourceInventory {
                 executable,
             });
         }
-        let revision = inventory_revision(&files, HASH_PREFIX, true);
+        let revision = inventory_revision(&files, HASH_PREFIX);
         Ok(Self {
             version: CURRENT_INVENTORY_VERSION,
             files,
@@ -217,11 +225,32 @@ impl SourceInventory {
         })
     }
 }
-fn inventory_revision(
-    files: &[SourceFile],
-    prefix: &[u8],
-    include_executable: bool,
-) -> SourceRevision {
+/// Refuses an inventory `version` other than the current one, naming `file`.
+pub(crate) fn check_inventory_version(version: u32, file: &Path) -> Result<(), ProjectError> {
+    match version.cmp(&CURRENT_INVENTORY_VERSION) {
+        std::cmp::Ordering::Equal => Ok(()),
+        std::cmp::Ordering::Less => Err(ProjectError::new(
+            file,
+            "inventory",
+            format!(
+                "made by an older Studio (inventory format {version}, this Studio reads format {CURRENT_INVENTORY_VERSION})"
+            ),
+            "it is left as it is and cannot be opened by this Studio",
+        )),
+        std::cmp::Ordering::Greater => Err(ProjectError::new(
+            file,
+            "inventory",
+            format!(
+                "made by a newer Studio (inventory format {version}, this Studio reads format {CURRENT_INVENTORY_VERSION})"
+            ),
+            "update Studio; it was left as it is",
+        )),
+    }
+}
+fn kind_matches(file: &SourceFile) -> bool {
+    kind(file.path.as_str()) == file.kind
+}
+fn inventory_revision(files: &[SourceFile], prefix: &[u8]) -> SourceRevision {
     let mut revision = Sha256::new();
     revision.update(prefix);
     for file in files {
@@ -233,9 +262,7 @@ fn inventory_revision(
         revision.update(file.path.as_str().as_bytes());
         revision.update([file.kind as u8]);
         revision.update(file.size.to_le_bytes());
-        if include_executable {
-            revision.update([u8::from(file.executable)]);
-        }
+        revision.update([u8::from(file.executable)]);
         revision.update(digest);
     }
     SourceRevision(format!("{:x}", revision.finalize()))

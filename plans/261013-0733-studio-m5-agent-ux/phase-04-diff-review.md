@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Diff review"
-status: pending
+status: completed
 priority: P1
 effort: "4-6d"
 dependencies: [1]
@@ -33,12 +33,16 @@ Zeron `crates/ui/src/changes.rs` (6,581 lines): unified and split viewer, `list(
 
 ## Todo
 
-- [ ] Scout
-- [ ] Per-file deltas
-- [ ] Reject forms a validated candidate
-- [ ] Per-path revert with journal format bump
-- [ ] Viewer ported and split
-- [ ] Tests on three platforms
+- [x] Scout
+- [x] Per-file deltas ([engine report](./reports/phase-04-engine.md), [review](./reports/phase-04-engine-review.md))
+- [x] Reject forms a validated candidate
+- [x] Per-path revert with journal format bump
+- [x] Viewer ported and split ([viewer](./reports/phase-04-viewer.md)), opened over the preview from the sidebar ([wiring](./reports/phase-04-wiring.md))
+- [x] Tests on three platforms: the engine tests and the wiring passed Windows, macOS and Linux CI
+
+The viewer was opened from the banner and the candidate applied in the running app with the fake agent ([panel wiring](./reports/wiring-agent-panel.md), screenshots 09 and 10). A mode-only change shows "No changes".
+
+The "Review changes" entry is also in the pinned Apply banner (`agent-review-banner`), so it stays reachable at the default window size while the candidate card has scrolled out of view; the card keeps its own button and the parity case uses the banner at the default size ([wiring](./reports/phase-04-wiring.md)).
 
 ## Success criteria
 

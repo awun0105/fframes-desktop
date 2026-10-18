@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       full:
-        description: "Also run the integration tests, SDK, packaging, presentation and M2 stress"
+        description: "Also run the integration tests, SDK, packaging, audio parity and the X11 shell tests"
         type: boolean
         default: false
 
@@ -42,6 +42,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: "1.98.1"
@@ -59,23 +61,12 @@ jobs:
           for package in libclang-dev libssl-dev libasound2-dev; do
             dpkg -s "$package" >/dev/null 2>&1 || missing="$missing $package"
           done
-          # The presentation test drives the app on a virtual display, as an isolated account
-          # without network (root for unshare and setpriv).
+          # The X11 shell tests drive the app on a virtual display.
           command -v Xvfb >/dev/null || missing="$missing xvfb"
           command -v xdotool >/dev/null || missing="$missing xdotool"
-          command -v ip >/dev/null || missing="$missing iproute2"
-          { command -v unshare && command -v setpriv; } >/dev/null || missing="$missing util-linux"
-          python3 -c "import PIL" 2>/dev/null || missing="$missing python3-pil"
           if [ -n "$missing" ]; then
             echo "::error::Missing native prerequisites. As root, run: apt-get install -y$missing"; exit 1
           fi
-          if ! sudo -n /usr/bin/python3 -c "" 2>/dev/null; then
-            echo "::error::The runner user needs passwordless sudo for the isolated-account presentation test (see docs/desktop/self-hosted-runners.md)"; exit 1
-          fi
-          # Only the advisory audio stress uses these.
-          for tool in pulseaudio pactl; do
-            command -v "$tool" >/dev/null || echo "::warning::$tool is missing; the advisory M2 audio stress will fail (apt-get install -y pulseaudio pulseaudio-utils)"
-          done
           llvm_lib="$(find /usr/lib -name "libclang.so" 2>/dev/null | head -n1)"
           if [ -n "$llvm_lib" ]; then
             echo "LIBCLANG_PATH=$(dirname "$llvm_lib")" >> "$GITHUB_ENV"
@@ -100,16 +91,15 @@ jobs:
       - name: Check formatting
         run: cargo fmt --manifest-path desktop/Cargo.toml --all --check
       - name: Test desktop workspace
-        run: cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio
+        run: cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p studio-markdown -p fframes-studio
       - name: Lint desktop workspace
-        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p studio-markdown -p fframes-studio --all-targets -- -D warnings
       - name: Test studio protocol and runtime
         run: cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
-      - name: Packaging tests and qualification ledgers
+      - name: Packaging and release gate tests
         run: |
           python3 desktop/scripts/test-packaging.py
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
+          python3 desktop/scripts/test-release-gate.py
       - name: Build and render annotated worker
         if: inputs.full
         run: |
@@ -124,47 +114,35 @@ jobs:
         run: python3 desktop/scripts/assemble-phase-zero-sdk.py --out "$RUNNER_TEMP/studio-sdk"
       - name: Install SDK and launch managed worker
         if: inputs.full
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test managed_worker -- --ignored
+        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test managed_worker -- --ignored
       - name: Portable project and SDK relocation with real worker
         if: inputs.full
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test portable_managed_worker -- --ignored
+        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test portable_managed_worker -- --ignored
       - name: Revision-safe preview and compiled timeline integration
         if: inputs.full
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test preview_coordination --test timeline_controls -- --ignored
+        run: |
+          SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test preview_coordination -- --ignored
+          SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test timeline_controls -- --ignored
       - name: Real SDK CPU pixels and audio mix parity
         if: inputs.full
         run: |
           fixture="$(mktemp -d /tmp/studio-m2-XXXXXX)"
           echo "STUDIO_M2_TMP=$fixture" >> "$GITHUB_ENV"
-          echo "STUDIO_M2_FIXTURE=$fixture/video" >> "$GITHUB_ENV"
-          echo "STUDIO_M2_HOME=$RUNNER_TEMP/m2-home" >> "$GITHUB_ENV"
           export AUDIO_PREVIEW_FIXTURE_ROOT="$fixture/video"
           export AUDIO_PREVIEW_SDK_HOME="$RUNNER_TEMP/m2-home/.fframes/sdk"
           SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" AUDIO_PREVIEW_EVIDENCE="$RUNNER_TEMP/m2-parity.json" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
-      - name: Linux M2 native virtual-output stress and cleanup
-        id: m2-stress
+      - name: X11 shell with native input
         if: inputs.full
-        # Advisory until it has passed on a runner with a stable virtual audio device.
-        continue-on-error: true
         run: |
-          cargo build --locked --manifest-path desktop/Cargo.toml -p fframes-studio --bin fframes-studio
-          FFRAMES_SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" python3 desktop/scripts/qualify-m2-playback.py --application "$CARGO_TARGET_DIR/debug/fframes-studio" --project "$STUDIO_M2_FIXTURE" --sdk-home "$STUDIO_M2_HOME" --out "$RUNNER_TEMP/m2-native" --virtual-audio --inject-build-failures
-      # continue-on-error reports the step as passed; say so where the checks are read.
-      - name: Report an advisory M2 stress failure
-        if: steps.m2-stress.outcome == 'failure'
-        run: |
-          echo "::warning title=M2 stress failed (advisory)::The M2 native stress failed; the job stays green. See the step log and m2-native/raw-measurements.json in the studio-test-x86_64-unknown-linux-gnu artifact."
-          echo "> **M2 stress failed (advisory).** The job stays green; the evidence is in the \`studio-test-x86_64-unknown-linux-gnu\` artifact under \`m2-native/\`." >> "$GITHUB_STEP_SUMMARY"
+          # The tests give the app its own HOME; keep the toolchain the job installed.
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          # SDK_ACTIVE is the SDK the audio parity step installed.
+          SDK_ACTIVE="$RUNNER_TEMP/m2-home/.fframes/sdk/active" SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test x11_shell -- --ignored --test-threads=1
       # Test builds are named studio-test-*: the release workflow collects only
       # fframes-studio-* packages, which come from hosted runners.
       - name: Package native app and SDK test build
         if: inputs.full
         run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
-      - name: Isolated-account offline native presentation, input and source click
-        if: inputs.full
-        # Root sets up the account and network namespaces; the app runs as `nobody`. The
-        # evidence it leaves is owned by `nobody` and removed with sudo below.
-        run: sudo -E /usr/bin/python3 desktop/scripts/qualify-linux-native.py --application "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu/bin/fframes-studio" --bundle "$RUNNER_TEMP/studio-sdk" --out "$RUNNER_TEMP/linux-native-evidence" --isolated-user
       - name: Retain test build and evidence
         id: test-build
         if: always() && inputs.full
@@ -174,14 +152,7 @@ jobs:
           path: |
             ${{ runner.temp }}/studio-test-x86_64-unknown-linux-gnu.zip
             ${{ runner.temp }}/worker-frame/*.png
-            ${{ runner.temp }}/linux-native-evidence/presentation.json
-            ${{ runner.temp }}/linux-native-evidence/environment.json
-            ${{ runner.temp }}/linux-native-evidence/native-window.png
-            ${{ runner.temp }}/linux-native-evidence/application.log
             ${{ runner.temp }}/m2-parity.json
-            ${{ runner.temp }}/m2-native/*.json
-            ${{ runner.temp }}/m2-native/*.png
-            ${{ runner.temp }}/m2-native/*.log
           if-no-files-found: warn
           retention-days: 14
       - name: Show how to download the test build
@@ -198,12 +169,10 @@ jobs:
             echo "gh run download $GITHUB_RUN_ID -R $GITHUB_REPOSITORY -n studio-test-x86_64-unknown-linux-gnu -D studio-test"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove the M2 fixture and the isolated-account evidence
+      - name: Remove the audio parity fixture
         if: always()
         run: |
           if [ -n "${STUDIO_M2_TMP:-}" ]; then rm -rf "$STUDIO_M2_TMP"; fi
-          # Owned by `nobody`, so the runner could not clean its temp folder otherwise.
-          sudo -n rm -rf "$RUNNER_TEMP/linux-native-evidence"
 
   windows:
     name: Desktop validation (self-hosted Windows)
@@ -217,6 +186,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # The runner service does not inherit the interactive profile: it has no ~/.cargo/bin,
       # FFMPEG_DIR, LIBCLANG_PATH or `python` (spawned by test fixtures) on its environment.
       # setup-rust-toolchain is deliberately not used here: on this shared machine it reinstalled
@@ -274,18 +245,16 @@ jobs:
       - name: Check formatting
         run: cargo fmt --manifest-path desktop/Cargo.toml --all --check
       - name: Test desktop workspace
-        run: cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio
+        run: cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p studio-markdown -p fframes-studio
       - name: Lint desktop workspace
-        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p studio-markdown -p fframes-studio --all-targets -- -D warnings
       - name: Test studio protocol and runtime
         run: cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
-      - name: Packaging tests and qualification ledgers
+      - name: Packaging and release gate tests
         run: |
           python desktop/scripts/test-packaging.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
+          python desktop/scripts/test-release-gate.py
       - name: Build and render annotated worker
         if: inputs.full
         run: |
@@ -306,10 +275,12 @@ jobs:
         run: |
           $env:SDK_BUNDLE = "$env:RUNNER_TEMP\studio-sdk"
           foreach ($test in @("managed_worker", "portable_managed_worker")) {
-            cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test $test -- --ignored
+            cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test $test -- --ignored
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test preview_coordination --test timeline_controls -- --ignored
+          cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test preview_coordination -- --ignored
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test timeline_controls -- --ignored
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:AUDIO_PREVIEW_EVIDENCE = "$env:RUNNER_TEMP\m2-parity.json"
           cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
@@ -321,7 +292,7 @@ jobs:
           $out = "$env:RUNNER_TEMP\studio-test-x86_64-pc-windows-msvc"
           Remove-Item -LiteralPath $out, "$out.zip" -Recurse -Force -ErrorAction SilentlyContinue
           python desktop/scripts/package-phase-zero.py --out $out --sdk-bundle "$env:RUNNER_TEMP\studio-sdk"
-      - name: Retain test build and M2 evidence
+      - name: Retain test build and audio parity evidence
         id: test-build
         if: always() && env.TEST_BUILD == 'true'
         uses: actions/upload-artifact@v4

@@ -1,16 +1,6 @@
 //! Guarded handoff of a validated, published candidate to playback: adoption of the
 //! staged preview under the engine's promotion authorization, re-priming at the latest
 //! seek, matching video/audio identity, and a failed handoff keeping the old preview.
-//! These publication and promotion integration cases run only on Linux, where Apply is
-//! enabled after the no-clobber source publication primitives are qualified.
-#![cfg(target_os = "linux")]
-use fframes_studio::{
-    build_service::{BuildLimits, BuildService},
-    candidate_runner::{CandidateRunConfig, RunScopes, run_candidate_validation},
-    preview_coordinator::{AdoptError, BuildSpec, PreviewCoordinator, SeekIntent},
-    studio_shell::{PresentationVerdict, install_fence, presentation_verdict},
-    teardown::Teardown,
-};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -19,6 +9,15 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{ProcessTreeManager, SpawnOptions, WriterOwnership};
+use studio_engine::engine::fence::{PresentationVerdict, install_fence, presentation_verdict};
+use studio_engine::services::build_service::{BuildLimits, BuildService};
+use studio_engine::services::candidate_runner::{
+    CandidateRunConfig, RunScopes, run_candidate_validation,
+};
+use studio_engine::services::preview_coordinator::{
+    AdoptError, BuildSpec, PreviewCoordinator, SeekIntent,
+};
+use studio_engine::services::teardown::Teardown;
 use studio_engine::{
     AgentTaskContext, CaptureTicket, CompletionOutcome, Controller, JobKind, JobResult,
     PreviewState, QuiescenceEvidence, TaskState, TurnCompletion, WriterObservation,
@@ -27,7 +26,7 @@ use studio_engine::{
 };
 use studio_project::checkpoint::Checkpoints;
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 
@@ -219,7 +218,7 @@ fn promote(
     marker: &str,
 ) -> (
     CapturedCandidate,
-    fframes_studio::candidate_runner::CandidateRun,
+    studio_engine::services::candidate_runner::CandidateRun,
     studio_engine::Promotion,
     RunScopes,
 ) {
@@ -368,7 +367,7 @@ fn a_failed_handoff_keeps_the_old_preview_playing_and_the_committed_source() {
 
 /// Intent exactly equal to what a staged preview was prepared at.
 fn staged_intent(
-    staged: &fframes_studio::preview_coordinator::StagedPreview,
+    staged: &studio_engine::services::preview_coordinator::StagedPreview,
     identity: &fframes_studio_protocol::PreviewIdentity,
 ) -> SeekIntent {
     let ready = staged.ready();
@@ -601,8 +600,15 @@ fn an_undo_is_validated_through_the_candidate_pipeline_and_hands_off_like_an_app
 fn held_child(
     scope: &ProcessTreeManager,
 ) -> std::sync::Arc<parking_lot::Mutex<studio_bootstrap::TrackedChild>> {
-    let mut options = SpawnOptions::new("sleep");
-    options.arg("60");
+    let options = if cfg!(windows) {
+        let mut options = SpawnOptions::new("powershell");
+        options.args(["-NoProfile", "-Command", "Start-Sleep 60"]);
+        options
+    } else {
+        let mut options = SpawnOptions::new("sleep");
+        options.arg("60");
+        options
+    };
     scope.spawn(options).unwrap()
 }
 
@@ -709,12 +715,29 @@ fn share(w: World) -> (Arc<parking_lot::Mutex<Controller>>, impl Drop) {
     (Arc::new(parking_lot::Mutex::new(controller)), _temp)
 }
 
+/// The watcher's hint may arrive after the first scan (FSEvents on macOS delivers it
+/// late, even for writes made before the controller opened): reconcile until it is quiet.
+fn settle_watcher(controller: &parking_lot::Mutex<Controller>) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let mut c = controller.lock();
+        c.reconcile().unwrap();
+        if !c.changed_hint() {
+            break;
+        }
+        drop(c);
+        assert!(Instant::now() < deadline, "the change hint never settled");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 #[test]
 fn the_install_fence_excludes_every_controller_mutation_until_the_install_completes() {
     let mut w = world();
     let (coordinator, mut state) = display_base(&mut w);
     let ready = adopted_ready(&mut w, &coordinator, &mut state, "fenced install");
     let (controller, _keep) = share(w);
+    settle_watcher(&controller);
     // A fence is only offered while the controller is free...
     let fence = install_fence(&controller).expect("a free controller offers the fence");
     assert!(
@@ -758,18 +781,7 @@ fn a_source_that_moved_before_the_fence_never_installs_the_prepared_preview() {
     // The source advances after preparation finished and before the commit.
     let root = controller.lock().project.root.clone();
     fs::write(root.join("src/lib.rs"), "// moved on\n").unwrap();
-    // The watcher's hint may arrive after the first scan: reconcile until it is quiet.
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let mut c = controller.lock();
-        c.reconcile().unwrap();
-        if !c.changed_hint() {
-            break;
-        }
-        drop(c);
-        assert!(Instant::now() < deadline, "the change hint never settled");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    settle_watcher(&controller);
     let fence = install_fence(&controller).expect("free controller");
     // Validated against the guard's current state, not a copy taken earlier: refused.
     assert!(state.can_install(&ready, fence.state()).is_err());

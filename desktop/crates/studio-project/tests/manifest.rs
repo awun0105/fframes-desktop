@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use studio_project::{Manifest, ProjectPath};
 fn valid() -> Value {
-    json!({"schema_version":1,"project_id":"project-123","display":{"name":"A video","description":null},"sdk":{"release":"sdk-1.0.0","compatibility_sha256":"a".repeat(64)},"entry":{"manifest":"Cargo.toml","package":"my-video","worker_target":"studio_worker"},"assets":["media/photo.png"],"generated_instruction_version":1,"video_hints":{"width":1920,"height":1080,"fps":30},"preset":null})
+    json!({"schema_version":1,"project_id":"project-123","display":{"name":"A video","description":null},"sdk":{"release":"sdk-1.0.0","compatibility_sha256":"a".repeat(64)},"entry":{"manifest":"Cargo.toml","package":"my-video","worker_target":"studio_worker"},"assets":["media/photo.png"],"generated_instruction_version":2,"video_hints":{"width":1920,"height":1080,"fps":30},"preset":null})
 }
 fn parse(v: Value) -> Result<Manifest, studio_project::ProjectError> {
     Manifest::parse(&serde_json::to_vec(&v).unwrap())
@@ -24,9 +24,23 @@ fn round_trip_and_version_gate_are_read_only() {
         let error = Manifest::parse(&std::fs::read(&path).unwrap()).unwrap_err();
         assert_eq!(error.field, "schema_version");
         if version > 1 {
+            assert!(error.reason.contains("newer Studio"), "{error}");
             assert_eq!(error.action, "Update Studio");
+        } else {
+            assert!(error.reason.contains("older Studio"), "{error}");
         }
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+}
+#[test]
+fn a_project_of_other_instructions_is_refused_with_the_studio_that_made_it() {
+    for (version, made_by) in [(1, "older Studio"), (3, "newer Studio")] {
+        let mut v = valid();
+        v["generated_instruction_version"] = json!(version);
+        let error = parse(v).unwrap_err();
+        assert_eq!(error.file, std::path::Path::new("studio.json"));
+        assert_eq!(error.field, "generated_instruction_version");
+        assert!(error.reason.contains(made_by), "{error}");
     }
 }
 #[test]

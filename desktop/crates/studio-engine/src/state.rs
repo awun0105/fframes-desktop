@@ -1,7 +1,32 @@
-use crate::edit_transaction::{TaskRevisionRecord, TransactionKind};
+use crate::edit_transaction::{FileDelta, TaskRevisionRecord, TransactionKind};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use studio_project::{ProjectId, SourceRevision};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use studio_project::{ProjectId, SourceInventory, SourceRevision};
+
+/// What one scan of the project says: the revision of every file, and the revision a
+/// build depends on (everything but the timing document).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScannedSource {
+    pub source: SourceRevision,
+    pub build: SourceRevision,
+}
+impl From<&SourceInventory> for ScannedSource {
+    fn from(inventory: &SourceInventory) -> Self {
+        Self {
+            source: inventory.revision.clone(),
+            build: inventory.build_revision(),
+        }
+    }
+}
+/// A revision without a separate build identity: every change is a build change.
+impl From<SourceRevision> for ScannedSource {
+    fn from(source: SourceRevision) -> Self {
+        Self {
+            build: source.clone(),
+            source,
+        }
+    }
+}
 
 /// Fresh random token on every open, including reopening the same project.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -97,6 +122,14 @@ impl ReviewPolicy {
     pub const SCOPE_NOTICE: &'static str = "This review setting is stored on this computer for this project. It does not travel with the project folder; a copy or restored project starts with automatic Apply.";
 }
 
+/// The paths of one revision that effective Undos have reversed.
+#[derive(Default)]
+struct Reversal<'a> {
+    /// A whole Undo covered every path.
+    whole: bool,
+    paths: BTreeSet<&'a str>,
+}
+
 /// A validated task revision list with Undo bookkeeping.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskHistory {
@@ -129,30 +162,120 @@ impl TaskHistory {
     pub(crate) fn push(&mut self, record: TaskRevisionRecord) {
         self.entries.push(record);
     }
-    /// Ids whose effect is currently reversed: targeted by an Undo that is itself not
-    /// reversed (undoing an Undo puts the original edit back in effect).
-    fn reversed(&self) -> HashSet<&str> {
+    /// What every effective Undo has reversed so far, per revision id. An Undo that was
+    /// itself undone no longer counts (undoing an Undo puts the original edit back in
+    /// effect).
+    fn reversals(&self) -> HashMap<&str, Reversal<'_>> {
         let mut targeted: HashSet<&str> = HashSet::new();
+        let mut reversals: HashMap<&str, Reversal<'_>> = HashMap::new();
         for entry in self.entries.iter().rev() {
             if entry.kind == TransactionKind::Undo
                 && !targeted.contains(entry.id.as_str())
                 && let Some(target) = entry.undoes.as_deref()
             {
                 targeted.insert(target);
+                let reversal = reversals.entry(target).or_default();
+                match &entry.undoes_paths {
+                    Some(paths) => reversal.paths.extend(paths.iter().map(String::as_str)),
+                    None => reversal.whole = true,
+                }
             }
         }
-        targeted
+        reversals
+    }
+
+    /// Whether every path of `entry` is reversed (by a whole Undo, or path by path).
+    fn fully_reversed(entry: &TaskRevisionRecord, reversals: &HashMap<&str, Reversal<'_>>) -> bool {
+        reversals.get(entry.id.as_str()).is_some_and(|reversal| {
+            reversal.whole
+                || (!entry.changes.is_empty()
+                    && entry
+                        .changes
+                        .iter()
+                        .all(|c| reversal.paths.contains(c.path.as_str())))
+        })
+    }
+
+    /// The paths of `id` that an effective Undo has reversed, in change order.
+    pub fn reverted_paths(&self, id: &str) -> Vec<String> {
+        let reversals = self.reversals();
+        self.get(id)
+            .map(|entry| Self::reverted_in(entry, &reversals))
+            .unwrap_or_default()
+    }
+
+    /// [`Self::reverted_paths`] of every revision that has any, computed in one pass.
+    pub fn all_reverted_paths(&self) -> HashMap<String, Vec<String>> {
+        let reversals = self.reversals();
+        self.entries
+            .iter()
+            .filter_map(|entry| {
+                let paths = Self::reverted_in(entry, &reversals);
+                (!paths.is_empty()).then(|| (entry.id.clone(), paths))
+            })
+            .collect()
+    }
+
+    fn reverted_in(
+        entry: &TaskRevisionRecord,
+        reversals: &HashMap<&str, Reversal<'_>>,
+    ) -> Vec<String> {
+        let Some(reversal) = reversals.get(entry.id.as_str()) else {
+            return Vec::new();
+        };
+        entry
+            .changes
+            .iter()
+            .filter(|c| reversal.whole || reversal.paths.contains(c.path.as_str()))
+            .map(|c| c.path.clone())
+            .collect()
+    }
+
+    /// The changes of `entry` that are still in effect: what a whole Undo of it inverts.
+    pub fn undoable_changes(&self, entry: &TaskRevisionRecord) -> Vec<FileDelta> {
+        let reversals = self.reversals();
+        match reversals.get(entry.id.as_str()) {
+            None => entry.changes.clone(),
+            Some(reversal) if reversal.whole => Vec::new(),
+            Some(reversal) => entry
+                .changes
+                .iter()
+                .filter(|c| !reversal.paths.contains(c.path.as_str()))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// The accepted agent edit `path` can still be reverted from: it must be an Apply that
+    /// changed `path` and whose change to it is still in effect.
+    pub fn revert_target(&self, id: &str, path: &str) -> Result<&TaskRevisionRecord, String> {
+        let entry = self
+            .get(id)
+            .ok_or_else(|| format!("revision {id} is not in this project's task history"))?;
+        if entry.kind != TransactionKind::Apply {
+            return Err("only an accepted agent edit can be reverted file by file".into());
+        }
+        if !entry.changes.iter().any(|c| c.path == path) {
+            return Err(format!(
+                "\"{}\" did not change {path}",
+                entry.prompt_summary
+            ));
+        }
+        if self.reverted_paths(id).iter().any(|p| p == path) {
+            return Err(format!("{path} was already reverted"));
+        }
+        Ok(entry)
     }
     /// The entry Undo would reverse: the requested one, or the newest agent edit that
     /// is still in effect.
     pub fn undo_target(&self, requested: Option<&str>) -> Result<&TaskRevisionRecord, String> {
-        let reversed = self.reversed();
+        let reversals = self.reversals();
         match requested {
             Some(id) => {
                 let entry = self.get(id).ok_or_else(|| {
                     format!("revision {id} is not in this project's task history")
                 })?;
-                if reversed.contains(entry.id.as_str()) {
+                if Self::fully_reversed(entry, &reversals) {
                     Err(format!("\"{}\" was already undone", entry.prompt_summary))
                 } else {
                     Ok(entry)
@@ -165,7 +288,9 @@ impl TaskHistory {
                 self.entries
                     .iter()
                     .rev()
-                    .find(|e| e.kind == TransactionKind::Apply && !reversed.contains(e.id.as_str()))
+                    .find(|e| {
+                        e.kind == TransactionKind::Apply && !Self::fully_reversed(e, &reversals)
+                    })
                     .ok_or_else(|| "Every accepted agent edit has already been undone".into())
             }
         }
@@ -247,25 +372,26 @@ pub struct ProjectState {
     source: SourceRevision,
     accepted: SourceRevision,
     candidate: Option<Candidate>,
+    /// The build revision ([`ScannedSource::build`]) of the last successful build.
     built: Option<SourceRevision>,
+    /// The build revision of `source`; while `None` the source revision stands in for
+    /// it, and the next reconcile fills it in.
+    build_source: Option<SourceRevision>,
+    /// Changes with every build-relevant source change and every queued job, never
+    /// with a timing-only change.
     generation: u64,
     next_operation: u64,
     job: JobState,
     kind: Option<JobKind>,
-    /// App-local: how a validated task candidate reaches the source. Legacy records
-    /// without the field read as the default (automatic Apply).
-    #[serde(default)]
+    /// App-local: how a validated task candidate reaches the source.
     review_policy: ReviewPolicy,
     /// Validated task revisions (Apply and Undo) in commit order, distinct from the saved
     /// checkpoint `accepted`. An in-memory view of the task journal (the source of
     /// truth): it is never written into lifecycle snapshots, which would otherwise grow
     /// with every accepted revision until a snapshot exceeded the journal's entry limit.
-    /// Records written by earlier builds still carry an embedded list; it is read for
-    /// compatibility and replaced by the journal's on open.
-    #[serde(default, skip_serializing)]
+    #[serde(skip)]
     task_history: TaskHistory,
     /// Counts changes of the saved checkpoint (`accepted`): the saved-history fence.
-    #[serde(default)]
     saved_generation: u64,
     /// The explicit candidate-to-published relationship that lets a staged preview of
     /// the published bytes be installed. Session-local, never persisted.
@@ -276,17 +402,19 @@ impl ProjectState {
     pub fn opening(
         project: ProjectId,
         session: OpenSession,
-        source: SourceRevision,
+        source: impl Into<ScannedSource>,
         accepted: SourceRevision,
     ) -> Self {
+        let source = source.into();
         Self {
             project,
             session,
             open: OpenState::Opening,
-            source,
+            source: source.source,
             accepted,
             candidate: None,
             built: None,
+            build_source: Some(source.build),
             generation: 0,
             next_operation: 0,
             job: JobState::Idle,
@@ -372,8 +500,22 @@ impl ProjectState {
     pub fn candidate(&self) -> Option<&Candidate> {
         self.candidate.as_ref()
     }
+    /// The build revision of the last successful build; compare it with
+    /// [`Self::build_source`].
     pub fn built(&self) -> Option<&SourceRevision> {
         self.built.as_ref()
+    }
+    /// The build revision of the current source.
+    pub fn build_source(&self) -> &SourceRevision {
+        self.build_source.as_ref().unwrap_or(&self.source)
+    }
+    /// Whether a build or preview queued under `tag` still describes the current
+    /// source. The generation moves with every build-relevant change, so a timing-only
+    /// change keeps it current even though the full source revision moved.
+    pub fn is_current_build(&self, tag: &OperationTag) -> bool {
+        tag.project == self.project
+            && tag.session == self.session
+            && tag.generation == self.generation
     }
     pub fn job(&self) -> &JobState {
         &self.job
@@ -388,7 +530,7 @@ impl ProjectState {
         self.generation
     }
     /// Recovery refreshes the session and actual source; old operation tags remain historical only.
-    pub fn reopened(&self, source: SourceRevision) -> Self {
+    pub fn reopened(&self, source: impl Into<ScannedSource>) -> Self {
         let mut state = Self::opening(
             self.project.clone(),
             OpenSession::new(),
@@ -419,14 +561,26 @@ impl ProjectState {
     }
     /// Actual filesystem identity must be freshly reconciled before every completion.
     /// Edits retain accepted bytes, invalidate derived identities, and interrupt obsolete work.
-    pub fn reconcile_source(&mut self, current: SourceRevision) -> Result<(), StateError> {
+    ///
+    /// A change of the timing document alone moves `source` but keeps the generation,
+    /// the build and the running job: nothing built from the source is obsolete.
+    pub fn reconcile_source(
+        &mut self,
+        current: impl Into<ScannedSource>,
+    ) -> Result<(), StateError> {
         if self.open != OpenState::Ready {
             return Err(StateError::InvalidTransition);
         }
-        if current != self.source {
+        let current = current.into();
+        let build_changed = match &self.build_source {
+            Some(build) => *build != current.build,
+            None => current.source != self.source,
+        };
+        if build_changed {
             self.invalidate_source()?;
-            self.source = current;
         }
+        self.source = current.source;
+        self.build_source = Some(current.build);
         Ok(())
     }
     /// A failed scan invalidates old work even if the source later returns to the same bytes.
@@ -452,11 +606,11 @@ impl ProjectState {
             _ => None,
         }
     }
+    /// A build only needs the build revision it started from; every other job (a
+    /// checkpoint captures every file) needs the exact source.
     fn matches_current_source(&self, tag: &OperationTag) -> bool {
-        tag.project == self.project
-            && tag.session == self.session
-            && tag.base_source == self.source
-            && tag.generation == self.generation
+        self.is_current_build(tag)
+            && (tag.base_source == self.source || self.kind == Some(JobKind::Build))
     }
     pub fn queue(&mut self, kind: JobKind) -> Result<OperationTag, StateError> {
         if self.open != OpenState::Ready || self.active_tag().is_some() {
@@ -519,7 +673,7 @@ impl ProjectState {
     pub fn complete(
         &mut self,
         tag: &OperationTag,
-        current: SourceRevision,
+        current: impl Into<ScannedSource>,
         result: JobResult,
     ) -> Result<(), StateError> {
         self.reconcile_source(current)?;
@@ -531,7 +685,7 @@ impl ProjectState {
         match (self.kind, result) {
             (_, JobResult::Failed(e)) => self.job = JobState::Failed(tag.clone(), e),
             (Some(JobKind::Build), JobResult::Built(revision)) if revision == tag.base_source => {
-                self.built = Some(revision);
+                self.built = Some(self.build_source().clone());
                 self.job = JobState::Succeeded(tag.clone());
             }
             (Some(JobKind::Checkpoint), JobResult::Checkpointed(revision))
@@ -549,7 +703,7 @@ impl ProjectState {
     pub fn propose(
         &mut self,
         tag: &OperationTag,
-        current: SourceRevision,
+        current: impl Into<ScannedSource>,
         revision: SourceRevision,
     ) -> Result<(), StateError> {
         self.reconcile_source(current)?;
@@ -615,6 +769,7 @@ mod tests {
             candidate: revision(published),
             published: revision(published),
             undoes: undoes.map(str::to_owned),
+            undoes_paths: None,
             prompt_summary: format!("edit {id}"),
             changes: vec![FileDelta {
                 path: "a.txt".into(),
@@ -636,25 +791,26 @@ mod tests {
     }
 
     #[test]
-    fn legacy_records_without_the_new_fields_read_with_defaults() {
-        let mut json = serde_json::to_value(state()).unwrap();
-        let object = json.as_object_mut().unwrap();
-        assert!(object.remove("review_policy").is_some());
-        assert!(object.remove("saved_generation").is_some());
-        assert!(!object.contains_key("promotion"));
-        let legacy: ProjectState = serde_json::from_value(json).unwrap();
-        assert_eq!(legacy.review_policy(), ReviewPolicy::AutoApply);
-        assert!(legacy.task_history().entries().is_empty());
-        assert_eq!(legacy.accepted(), &revision('a'));
-        assert_eq!(legacy.saved_history_fence().generation, 0);
-        // And the policy round-trips under its stable name.
+    fn a_snapshot_round_trips_every_field_it_writes() {
         let mut manual = state();
         manual.set_review_policy(ReviewPolicy::ManualReview);
         let json = serde_json::to_value(&manual).unwrap();
+        // The policy is written under its stable name, and the fields the writer always
+        // emits are required.
         assert_eq!(json["review_policy"], "manual_review");
+        for key in ["review_policy", "saved_generation"] {
+            let mut without = json.clone();
+            assert!(without.as_object_mut().unwrap().remove(key).is_some());
+            assert!(
+                serde_json::from_value::<ProjectState>(without).is_err(),
+                "{key} must be required"
+            );
+        }
         let back: ProjectState = serde_json::from_value(json).unwrap();
         assert_eq!(back.review_policy(), ReviewPolicy::ManualReview);
-        // A reopen keeps the app-local policy and the task history.
+        assert_eq!(back.accepted(), &revision('a'));
+        assert!(back.task_history().entries().is_empty());
+        // A reopen keeps the app-local policy.
         assert_eq!(
             back.reopened(revision('a')).review_policy(),
             ReviewPolicy::ManualReview
@@ -662,7 +818,7 @@ mod tests {
     }
 
     #[test]
-    fn task_history_is_never_written_into_a_snapshot_but_embedded_legacy_lists_still_read() {
+    fn task_history_is_never_written_into_a_snapshot_nor_read_from_one() {
         let mut state = state();
         let applied = record(&state, "tx1", TransactionKind::Apply, None, 'a', 'b');
         state.record_task_revision(applied.clone());
@@ -671,16 +827,15 @@ mod tests {
             !json.as_object().unwrap().contains_key("task_history"),
             "snapshots must not grow with the history"
         );
-        // A record written by an earlier build carries the list inline.
-        let mut legacy = json;
-        legacy.as_object_mut().unwrap().insert(
+        // The journal is the only source of the history: a list in a snapshot is ignored.
+        let mut inline = json;
+        inline.as_object_mut().unwrap().insert(
             "task_history".into(),
             serde_json::json!({ "entries": [serde_json::to_value(&applied).unwrap()] }),
         );
-        let read: ProjectState = serde_json::from_value(legacy).unwrap();
-        assert_eq!(read.task_history().entries(), &[applied]);
+        let read: ProjectState = serde_json::from_value(inline).unwrap();
+        assert!(read.task_history().entries().is_empty());
     }
-
     #[test]
     fn a_validated_task_revision_is_not_a_saved_checkpoint() {
         let mut state = state();
@@ -777,5 +932,92 @@ mod tests {
         assert!(!authorization.is_current(&other));
         state.reconcile_source(revision('c')).unwrap();
         assert!(!authorization.is_current(&state));
+    }
+
+    fn scanned(source: char, build: char) -> ScannedSource {
+        ScannedSource {
+            source: revision(source),
+            build: revision(build),
+        }
+    }
+
+    #[test]
+    fn timing_only_change_keeps_the_build_job_and_generation() {
+        let mut state = ProjectState::opening(
+            ProjectId::try_from("project-1".to_owned()).unwrap(),
+            OpenSession::new(),
+            scanned('a', '1'),
+            revision('a'),
+        );
+        state.finish_open(Ok(())).unwrap();
+        let tag = state.queue(JobKind::Build).unwrap();
+        state.start(&tag).unwrap();
+        let generation = state.generation();
+
+        // The timing document changes while the build runs.
+        state.reconcile_source(scanned('b', '1')).unwrap();
+        assert_eq!(state.source(), &revision('b'));
+        assert_eq!(state.generation(), generation);
+        assert_eq!(state.active_tag(), Some(&tag));
+        assert!(state.is_current_build(&tag));
+        state
+            .complete(
+                &tag,
+                scanned('c', '1'),
+                JobResult::Built(tag.base_source.clone()),
+            )
+            .unwrap();
+        assert_eq!(state.built(), Some(&revision('1')));
+        assert_eq!(state.built(), Some(state.build_source()));
+
+        // A code change invalidates the build.
+        state.reconcile_source(scanned('d', '2')).unwrap();
+        assert_ne!(state.generation(), generation);
+        assert_eq!(state.built(), None);
+        assert!(!state.is_current_build(&tag));
+    }
+
+    #[test]
+    fn timing_change_still_stales_a_running_checkpoint() {
+        let mut state = ProjectState::opening(
+            ProjectId::try_from("project-1".to_owned()).unwrap(),
+            OpenSession::new(),
+            scanned('a', '1'),
+            revision('a'),
+        );
+        state.finish_open(Ok(())).unwrap();
+        let tag = state.queue(JobKind::Checkpoint).unwrap();
+        state.start(&tag).unwrap();
+        // A checkpoint captures every file, the timing document included.
+        assert_eq!(
+            state.complete(
+                &tag,
+                scanned('b', '1'),
+                JobResult::Checkpointed(revision('a'))
+            ),
+            Err(StateError::StaleResult)
+        );
+        assert_eq!(state.accepted(), &revision('a'));
+    }
+
+    #[test]
+    fn records_without_a_build_revision_fill_it_in_on_reconcile() {
+        let mut state = state();
+        state.build_source = None;
+        let generation = state.generation();
+        state.reconcile_source(scanned('a', '1')).unwrap();
+        assert_eq!(
+            state.generation(),
+            generation,
+            "same source, nothing invalidated"
+        );
+        assert_eq!(state.build_source(), &revision('1'));
+        state.build_source = None;
+        state.reconcile_source(scanned('b', '1')).unwrap();
+        assert_ne!(
+            state.generation(),
+            generation,
+            "unknown build revision: invalidate"
+        );
     }
 }

@@ -60,6 +60,7 @@ pub struct UndoPreparation {
     saved: SavedHistoryFence,
     remove_dirs: Vec<String>,
     reverses: Vec<crate::FileDelta>,
+    undoes_paths: Option<Vec<String>>,
 }
 
 impl UndoPreparation {
@@ -69,6 +70,11 @@ impl UndoPreparation {
     }
     pub fn summary(&self) -> &str {
         &self.summary
+    }
+    /// The paths this Undo inverts (all still-effective paths of the target for a whole
+    /// Undo, one path for a per-file revert).
+    pub fn paths(&self) -> Option<&[String]> {
+        self.undoes_paths.as_deref()
     }
     /// The candidate to validate (`run_candidate_validation` / `validate_candidate`).
     pub fn captured(&self) -> &CapturedCandidate {
@@ -126,7 +132,8 @@ impl Controller {
     }
 
     /// Whether this platform and the project's filesystem proved atomic no-replace
-    /// publication (`renameat2`). Auto-Apply must stay disabled unless this is `Ready`.
+    /// publication (`renameat2`, `renameatx_np`, `FileRenameInformationEx`). Auto-Apply
+    /// must stay disabled unless this is `Ready`.
     pub fn apply_gate(&mut self) -> &ApplyGate {
         if self.apply_gate.is_none() {
             self.apply_gate = Some(match self.mechanism_override {
@@ -311,6 +318,7 @@ impl Controller {
             prior_history: expected_history.clone(),
             prior_checkpoint: context.prior_checkpoint.clone(),
             undoes: None,
+            undoes_paths: None,
             prompt_summary: prompt_summary(&context.brief),
             build: report.build().cloned(),
             validation_report_sha256: String::new(),
@@ -419,23 +427,66 @@ impl Controller {
     /// merged result. Unrelated edits are preserved. The candidate must then pass the
     /// Stage 2 validation before [`Controller::undo_task`] publishes it.
     pub fn prepare_undo(&mut self, target: Option<&str>) -> Result<UndoPreparation, EngineError> {
-        self.ensure_mutable()?;
-        if let ApplyGate::Blocked(reason) = self.apply_gate().clone() {
-            return Err(PromotionError::GateBlocked(reason).into());
-        }
-        self.reconcile()?;
+        self.ensure_undoable()?;
+        let history = self.record.state.task_history();
+        let entry = history
+            .undo_target(target)
+            .map_err(PromotionError::UndoUnavailable)?
+            .clone();
+        // A revision some of whose files were reverted one by one inverts only the rest.
+        let changes = history.undoable_changes(&entry);
+        self.form_undo(entry, changes, None)
+    }
+
+    /// Forms the Undo candidate for one file of an accepted agent edit: the same
+    /// guarded, validated path as [`Controller::prepare_undo`], inverting only the
+    /// delta of `path`. It refuses with the reason when `path` no longer holds what the
+    /// edit left (an outside change since), and publishes through
+    /// [`Controller::undo_task`] like any Undo.
+    pub fn prepare_revert_path(
+        &mut self,
+        target: &str,
+        path: &str,
+    ) -> Result<UndoPreparation, EngineError> {
+        self.ensure_undoable()?;
         let entry = self
             .record
             .state
             .task_history()
-            .undo_target(target)
+            .revert_target(target, path)
             .map_err(PromotionError::UndoUnavailable)?
             .clone();
+        let changes = entry
+            .changes
+            .iter()
+            .filter(|change| change.path == path)
+            .cloned()
+            .collect();
+        self.form_undo(entry, changes, Some(vec![path.to_owned()]))
+    }
+
+    /// What every Undo shares: a mutable, unblocked project whose source is current.
+    fn ensure_undoable(&mut self) -> Result<(), EngineError> {
+        self.ensure_mutable()?;
+        if let ApplyGate::Blocked(reason) = self.apply_gate().clone() {
+            return Err(PromotionError::GateBlocked(reason).into());
+        }
+        self.reconcile()
+    }
+
+    /// Captures the inverse of `changes` (the still-effective part of `entry`) applied
+    /// to the current source.
+    fn form_undo(
+        &mut self,
+        entry: TaskRevisionRecord,
+        changes: Vec<crate::FileDelta>,
+        undoes_paths: Option<Vec<String>>,
+    ) -> Result<UndoPreparation, EngineError> {
         let current = self.project.inventory.clone();
-        let mut conflicts = touched_conflicts(&entry.changes, &current);
+        let mut conflicts = touched_conflicts(&changes, &current);
         // Content can match while the permission bits do not: the exact inverse is only
         // guarded where the file still has the bits the edit left.
-        for found in mode_conflicts(&self.project.root, &entry.changes) {
+        for found in mode_conflicts(&self.project.root, &changes) {
             if !conflicts.iter().any(|c| c.path == found.path) {
                 conflicts.push(found);
             }
@@ -455,7 +506,7 @@ impl Controller {
             // Dependency order: deletions first, then the directories they emptied, then
             // the writes. A file may become a directory (or the reverse) in one edit, so
             // a path can only be written after whatever occupied it is gone.
-            let inverse = invert(&entry.changes);
+            let inverse = invert(&changes);
             for change in inverse.iter().filter(|c| c.after.is_none()) {
                 let target = draft.join(&change.path);
                 match fs::remove_file(&target) {
@@ -501,18 +552,29 @@ impl Controller {
             )
             .into());
         }
+        // Every Undo records the paths it actually inverted, so which earlier partial
+        // Undos are still effective stays derivable after any later Undo of an Undo.
+        let covered: Vec<String> = changes.iter().map(|c| c.path.clone()).collect();
         Ok(UndoPreparation {
-            summary: format!("Undo: {}", entry.prompt_summary),
+            summary: match &undoes_paths {
+                Some(paths) => format!("Revert {}: {}", paths.join(", "), entry.prompt_summary),
+                None => format!("Undo: {}", entry.prompt_summary),
+            },
             target: entry.id,
+            undoes_paths: Some(covered),
             captured,
             expected_history: self.record.state.task_history().head_id(),
             saved: self.record.state.saved_history_fence(),
             remove_dirs: entry.created_dirs,
-            reverses: entry.changes,
+            reverses: changes,
         })
     }
 
-    fn write_object(&self, target: &std::path::Path, state: &FileState) -> Result<(), EngineError> {
+    pub(super) fn write_object(
+        &self,
+        target: &std::path::Path,
+        state: &FileState,
+    ) -> Result<(), EngineError> {
         fs::create_dir_all(target.parent().expect("draft paths have parents"))?;
         match fs::remove_file(target) {
             Ok(()) => (),
@@ -588,6 +650,7 @@ impl Controller {
             prior_history: preparation.expected_history.clone(),
             prior_checkpoint: self.record.state.accepted().clone(),
             undoes: Some(preparation.target.clone()),
+            undoes_paths: preparation.undoes_paths.clone(),
             prompt_summary: preparation.summary.clone(),
             build: report.build().cloned(),
             validation_report_sha256: String::new(),

@@ -20,6 +20,9 @@ pub struct PreviewWorkerConfig {
     pub sdk_version: String,
     pub cache_directory: PathBuf,
     pub preparation_deadline: Duration,
+    /// Timing applied before the first request, with its generation. Without it the
+    /// worker plays the code order until the first `SetTiming`.
+    pub initial_timing: Option<(u64, fframes::TimingDoc)>,
 }
 impl PreviewWorkerConfig {
     pub fn new(
@@ -33,7 +36,31 @@ impl PreviewWorkerConfig {
             sdk_version: sdk_version.into(),
             cache_directory: std::env::temp_dir().join("fframes-preview-audio"),
             preparation_deadline: Duration::from_secs(120),
+            initial_timing: None,
         }
+    }
+
+    /// Reads the startup timing passed as `--timing-file <path> --timing-generation <n>`.
+    /// A missing file or flag leaves the code order. A malformed document is reported on
+    /// stderr and also leaves the code order: preview keeps working, and the client sees
+    /// the reason when it sends the document again with `SetTiming`.
+    pub fn with_timing_args(mut self, args: &[String]) -> Self {
+        let value = |flag: &str| {
+            args.iter()
+                .position(|arg| arg == flag)
+                .and_then(|index| args.get(index + 1))
+        };
+        let Some(path) = value("--timing-file") else {
+            return self;
+        };
+        let generation = value("--timing-generation")
+            .and_then(|generation| generation.parse().ok())
+            .unwrap_or(0);
+        match fframes::TimingDoc::read_file(std::path::Path::new(path)) {
+            Ok(doc) => self.initial_timing = doc.map(|doc| (generation, doc)),
+            Err(error) => eprintln!("startup timing ignored: {error}"),
+        }
+        self
     }
 }
 struct Artifact {
@@ -272,9 +299,31 @@ fn preview_scene_infos(
                 end_frame: scene.end_frame,
                 start_seconds: scene.start_seconds,
                 end_seconds: scene.end_seconds,
+                clip: Some(PreviewClipTiming {
+                    timing_key: scene.timing_key,
+                    clip_index: scene.clip_index,
+                    trim_start_frames: scene.trim_start_frames,
+                    trim_end_frames: scene.trim_end_frames,
+                    scene_index: Some(scene.scene_index),
+                    scene_frames: Some(scene.scene_frames),
+                }),
             }
         })
         .collect()
+}
+
+/// Parses and applies a timing document; on any error the previous timing stays.
+fn apply_timing<'a, 'media: 'a, V: Video>(
+    previewer: &mut Previewer<'a, 'media, V>,
+    timing_json: Option<&str>,
+) -> Result<fframes::TimingReport, String> {
+    let doc = timing_json
+        .map(fframes::TimingDoc::from_json)
+        .transpose()
+        .map_err(|e| e.to_string())?;
+    previewer
+        .set_timing(doc.as_ref())
+        .map_err(|e| e.to_string())
 }
 
 pub fn serve_preview_worker<V: Video>(
@@ -285,6 +334,13 @@ pub fn serve_preview_worker<V: Video>(
 ) -> Result<(), WorkerError> {
     fs::create_dir_all(&config.cache_directory)?;
     let mut previewer = Previewer::new(video, options)?;
+    let mut timing_generation = 0;
+    if let Some((generation, doc)) = &config.initial_timing {
+        match previewer.set_timing(Some(doc)) {
+            Ok(_) => timing_generation = *generation,
+            Err(error) => eprintln!("startup timing ignored: {error}"),
+        }
+    }
     let mut renderer = CpuFrameRenderer::default();
     let mut artifacts = Artifacts {
         entries: VecDeque::new(),
@@ -423,6 +479,7 @@ pub fn serve_preview_worker<V: Video>(
                             },
                         })
                         .collect(),
+                    timing_generation,
                 };
                 transport.write_control_message(&PreviewResponse::Timeline(response))?
             }
@@ -665,6 +722,36 @@ pub fn serve_preview_worker<V: Video>(
                     released,
                 }))?
             }
+            PreviewRequest::SetTiming(req) => {
+                if let Err(e) = req.envelope.validate(&config.identity) {
+                    transport.write_control_message(&error(
+                        Some(req.envelope),
+                        "INVALID_ENVELOPE",
+                        e,
+                    ))?;
+                    continue;
+                }
+                // Prepared audio describes the previous layout; clients prepare it again.
+                match apply_timing(&mut previewer, req.timing_json.as_deref()) {
+                    Ok(report) => {
+                        timing_generation = req.timing_generation;
+                        transport.write_control_message(&PreviewResponse::TimingApplied(
+                            TimingAppliedResponse {
+                                envelope: req.envelope,
+                                timing_generation,
+                                total_frames: previewer.timeline().duration_in_frames,
+                                orphan_clips: report.orphan_clips,
+                                appended_scenes: report.appended_scenes,
+                            },
+                        ))?
+                    }
+                    Err(e) => transport.write_control_message(&error(
+                        Some(req.envelope),
+                        "INVALID_TIMING",
+                        e,
+                    ))?,
+                }
+            }
             PreviewRequest::Shutdown(env) => {
                 if let Err(e) = env.validate(&config.identity) {
                     transport.write_control_message(&error(Some(env), "INVALID_ENVELOPE", e))?;
@@ -769,6 +856,12 @@ mod editor_metadata_tests {
             end_frame: (index + 1) * 10,
             start_seconds: index as f32,
             end_seconds: (index + 1) as f32,
+            timing_key: format!("video::scene_{index}"),
+            clip_index: 0,
+            trim_start_frames: 0,
+            trim_end_frames: 0,
+            scene_index: index,
+            scene_frames: 10,
         };
         let preview = identity();
         let scenes = preview_scene_infos(vec![scene(0), scene(1)], &preview);
@@ -798,6 +891,7 @@ fn request_identity(request: &PreviewRequest) -> (u64, Option<&PreviewEnvelope>)
         PreviewRequest::PrepareAudio(r) => &r.envelope,
         PreviewRequest::ReadAudio(r) => &r.envelope,
         PreviewRequest::CancelAudio(r) | PreviewRequest::ReleaseAudio(r) => &r.envelope,
+        PreviewRequest::SetTiming(r) => &r.envelope,
     };
     (envelope.request_id, Some(envelope))
 }

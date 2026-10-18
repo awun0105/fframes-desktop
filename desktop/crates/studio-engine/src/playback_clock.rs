@@ -189,6 +189,24 @@ impl PlaybackClock {
         self.position
     }
 
+    /// Seconds from `now` until the cursor next changes on its own, or none while paused.
+    /// On the host clock this is the next frame boundary; with output timestamps or while a
+    /// stream is primed it is one frame, a backstop for a stalled device or a lost wake.
+    pub fn next_frame_in(&self, now: f64) -> Option<f64> {
+        if !self.playing || !now.is_finite() {
+            return None;
+        }
+        let frame = 1.0 / self.fps as f64;
+        let until = match self.source {
+            Source::Fallback => {
+                let elapsed = (now - self.fallback_anchor).max(0.0);
+                ((seconds_to_frames(elapsed, self.fps) + 1) as f64 / self.fps as f64) - elapsed
+            }
+            Source::Waiting | Source::Output => frame,
+        };
+        Some(until.clamp(0.001, frame))
+    }
+
     /// Freeze while a stream is being primed, without changing play/pause intent.
     pub fn wait_for_output(&mut self) -> Result<(), PlaybackClockError> {
         self.advance_epoch()?;

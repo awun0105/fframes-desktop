@@ -3,13 +3,7 @@
 //! override / reapply / reset, source conflicts, a failed preview and old-preview retention.
 //! No window is opened; the panel's model and the shell's handoff rules are pure functions
 //! of the reports and snapshots proven here (the GPUI process is exercised by `x11_shell`).
-#![cfg(target_os = "linux")]
 
-use fframes_studio::{
-    build_service::{BuildLimits, BuildService},
-    preset_panel::{Catalog, Outcome, PresetCommand, PresetReport, PresetView, Refusal, execute},
-    preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent},
-};
 use parking_lot::Mutex;
 use std::{
     fs,
@@ -18,13 +12,18 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::ProcessTreeManager;
+use studio_engine::presets::{
+    Catalog, Outcome, PresetCommand, PresetReport, PresetView, Refusal, execute,
+};
+use studio_engine::services::build_service::{BuildLimits, BuildService};
+use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
 use studio_engine::{
     ApplyGate, Boundary, Controller, JobKind, JobResult, PresetMutation, PreviewState,
     app_paths::AppPaths,
 };
 use studio_project::SourceRevision;
 
-#[path = "support/build_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/build_fixture.rs"]
 mod fixture;
 use fixture::*;
 
@@ -535,7 +534,7 @@ fn a_failed_preview_after_a_committed_revision_keeps_the_previous_playable_previ
 fn panel_colors_never_come_from_preset_data() {
     // The preset panel is Studio chrome: no `rgb(...)` in it is computed from a snapshot,
     // token, override, CSS entry or catalog entry, and it never reads runtime token values.
-    let source = include_str!("../src/preset_panel.rs");
+    let source = include_str!("../../crates/studio-ui/src/preset_panel.rs");
     let production = source.split("#[cfg(test)]").next().unwrap();
     for (n, line) in production.lines().enumerate() {
         let Some(at) = line.find("rgb(") else {

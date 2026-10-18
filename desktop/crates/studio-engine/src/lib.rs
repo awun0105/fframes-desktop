@@ -1,22 +1,34 @@
 //! Per-open-project state, isolated SDK builds, durable checkpoints and recovery.
+pub mod agent;
 pub mod agent_task;
+pub mod agent_tools;
 pub mod app_paths;
+pub mod app_settings;
 pub mod build_materialization;
 pub mod candidate_validation;
 pub mod canvas_selection;
+pub mod containment;
 pub mod controller;
 pub mod diagnostics;
 pub mod edit_transaction;
-#[path = "export-source.rs"]
+pub mod engine;
+pub mod export_options;
 pub mod export_source;
 pub mod journal;
 pub mod playback_clock;
 pub mod preset_state;
+pub mod presets;
 pub mod preview_state;
+pub mod project_presentation;
+pub mod providers;
+pub mod sdk_setup;
+pub mod services;
 pub mod state;
 pub mod store;
 pub mod task_scope;
 pub mod timeline;
+pub mod timing;
+pub mod waveform;
 pub use agent_task::{
     AgentTask, AgentTaskContext, AgentTaskId, AgentTaskManager, CandidateRevision, CaptureTicket,
     DraftSnapshot, DraftState, DraftStore, FinishedTask, MAX_AUTOMATIC_REPAIRS, PreparedDraft,
@@ -26,8 +38,9 @@ pub use agent_task::{
 };
 pub use canvas_selection::*;
 pub use controller::{
-    CompletionOutcome, Controller, DraftPreparationChoice, PresetMutation, PresetOutcome,
-    Promotion, RecoveryStatus, UndoPreparation,
+    CandidateDiffSource, CompletionOutcome, Controller, DraftPreparationChoice, PresetMutation,
+    PresetOutcome, Promotion, RecoveryStatus, Rejection, RevisionDiffSource, TimingEditing,
+    UndoPreparation,
 };
 pub use edit_transaction::{
     ApplyGate, Boundary, ConflictReport, Fault, FileDelta, FileState, NoHooks, PlanError,
@@ -75,6 +88,14 @@ pub enum EngineError {
         "{what} was written by a newer Studio (format {found}, this version supports {supported}); update Studio. Source and history were not changed"
     )]
     NewerFormat {
+        what: String,
+        found: u32,
+        supported: u32,
+    },
+    #[error(
+        "{what} was made by an older Studio (format {found}, this Studio reads format {supported}). It is left as it is and cannot be opened"
+    )]
+    OlderFormat {
         what: String,
         found: u32,
         supported: u32,

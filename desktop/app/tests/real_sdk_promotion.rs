@@ -13,12 +13,6 @@
 //! Skipped runs are not qualification.
 #![cfg(unix)]
 
-use fframes_studio::{
-    build_service::{BuildLimits, BuildService},
-    candidate_runner::{CandidateRun, CandidateRunConfig, RunScopes, run_candidate_validation},
-    preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent},
-    worker_project::CargoCompiler,
-};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -28,6 +22,12 @@ use std::{
     time::{Duration, Instant},
 };
 use studio_bootstrap::{ProcessTreeManager, WriterOwnership};
+use studio_engine::services::build_service::{BuildLimits, BuildService};
+use studio_engine::services::candidate_runner::{
+    CandidateRun, CandidateRunConfig, RunScopes, run_candidate_validation,
+};
+use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
+use studio_engine::services::worker_project::CargoCompiler;
 use studio_engine::{
     AgentTaskContext, CompletionOutcome, Controller, JobKind, JobResult, PreviewState,
     QuiescenceEvidence, ReadyPreview, TaskState, TurnCompletion, WriterObservation,
@@ -37,7 +37,7 @@ use studio_engine::{
 use studio_project::checkpoint::Checkpoints;
 use studio_sdk::CompatibilityManifest;
 
-#[path = "support/preview_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
 mod preview_fixture;
 
 fn sdk(temp: &tempfile::TempDir) -> (PathBuf, CompatibilityManifest) {

@@ -26,7 +26,15 @@ on:
         type: boolean
         default: false
       consumer_release:
-        description: "Publish only targets proven eligible by the M7 ledger"
+        description: "Publish the release policy's eligible targets (needs a green full self-hosted run and a green Desktop CI run on main at the tag commit)"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Publish nothing; prepare preview release files, or run the consumer release gate and package verification"
+        type: boolean
+        default: false
+      windows_only:
+        description: "Build only Windows for an unsigned preview (consumer releases keep the full matrix)"
         type: boolean
         default: false
       sign_artifacts:
@@ -49,19 +57,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-          - runner: macos-15
-            target: aarch64-apple-darwin
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.windows_only == true && inputs.consumer_release != true && '[{"runner":"windows-2025","target":"x86_64-pc-windows-msvc"}]' || '[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu"},{"runner":"windows-2025","target":"x86_64-pc-windows-msvc"},{"runner":"macos-15","target":"aarch64-apple-darwin"}]') }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       id-token: write
       attestations: write
-    timeout-minutes: 90
+    timeout-minutes: 150
     defaults:
       run:
         shell: bash
@@ -71,6 +73,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Check the release tag matches the app version
         if: github.event_name == 'push' || inputs.preview_release == true || inputs.consumer_release == true
         env:
@@ -180,12 +184,11 @@ jobs:
       - name: Focused tests and lint
         run: |
           cargo fmt --manifest-path desktop/Cargo.toml --all --check
-          cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio
-          cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-agent-spike -p fframes-studio --all-targets -- -D warnings
+          cargo test --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p fframes-studio
+          cargo clippy --locked --manifest-path desktop/Cargo.toml -p studio-project -p studio-engine -p studio-bootstrap -p studio-sdk -p studio-harness -p studio-proto -p studio-theme -p studio-ui -p fframes-studio --all-targets -- -D warnings
           cargo test --locked -p fframes-studio-protocol -p fframes-studio-runtime
           python3 desktop/scripts/test-packaging.py
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m0-results.json
-          python3 desktop/scripts/validate-qualification.py desktop/qualification/m2-results.json
+          python3 desktop/scripts/test-release-gate.py
       - name: Build and render annotated worker
         run: |
           cargo build --release --manifest-path desktop/fixtures/annotated-video-overlay/Cargo.toml
@@ -196,7 +199,7 @@ jobs:
       - name: Assemble and verify native offline SDK
         run: python3 desktop/scripts/assemble-phase-zero-sdk.py --out "$RUNNER_TEMP/studio-sdk"
       - name: Install SDK and launch managed worker
-        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test managed_worker -- --ignored
+        run: SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test managed_worker -- --ignored
       - name: Package native app and SDK artifact
         run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/fframes-studio-${{ matrix.target }}" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
       - name: Sign and notarize macOS app package
@@ -287,7 +290,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Unsigned, unqualified builds for early users. The consumer release below stays gated by M7.
+  # Unsigned builds for early users. The consumer release below is gated by release-gate.py.
   publish-preview:
     name: Publish Unsigned Preview
     needs: [matrix]
@@ -341,7 +344,16 @@ jobs:
           ls -lh dist
       - name: Generate manifests, install script, checksums and notes
         run: python3 desktop/scripts/prepare-github-release.py --tag "$RELEASE_TAG" --dist dist --repository "$GITHUB_REPOSITORY"
+      - name: Retain prepared preview files for dry-run review
+        if: inputs.dry_run == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-preview-dry-run
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish GitHub release
+        if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
@@ -356,6 +368,9 @@ jobs:
               --title "fframes Studio $RELEASE_TAG (unsigned preview)" \
               --notes-file dist/release-notes.md "${extra_args[@]}"
           echo "Published: $(gh release view "$RELEASE_TAG" --json url -q .url)"
+      - name: Preview dry run summary
+        if: inputs.dry_run == true
+        run: echo "Preview dry run prepared $RELEASE_TAG from $SOURCE_COMMIT; nothing was published."
 
   publish:
     name: Publish Release
@@ -392,25 +407,23 @@ jobs:
           RUN_ID: ${{ inputs.run_id }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          publication = json.loads(Path("desktop/packaging/release-policy.json").read_text())["publication"]
-          if not publication["consumer_release_enabled"] or not publication["trusted_release_keys_configured"]:
-              raise SystemExit("Consumer release is disabled until trusted signing keys and qualification are configured.")
-          PY
-          eligible_targets_json="$(python3 desktop/scripts/test-qualification-m7.py --eligible-targets --verify-worktree)"
-          eligible_targets="$(printf '%s' "$eligible_targets_json" | python3 -c 'import json, sys; print(" ".join(json.load(sys.stdin)))')"
-          if [ -z "$eligible_targets" ]; then
-            echo "No target is eligible for consumer publication." >&2
-            exit 1
-          fi
+          set -o pipefail
           tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
-          ledger_commit="$(python3 -c 'import json; print(json.load(open("desktop/qualification/m7-results.json"))["source"]["commit"])')"
-          if [ "$tag_commit" != "$ledger_commit" ]; then
-            echo "Release tag commit does not match the qualified M7 source commit." >&2
-            exit 1
-          fi
+          # The successful runs of a workflow at the tag commit, as `gh run view --json` objects.
+          runs() {
+            gh run list -R "$REPOSITORY" --workflow "$1" --commit "$tag_commit" --status success --limit 50 \
+                --json databaseId -q '.[].databaseId' |
+              while read -r id; do
+                gh run view "$id" -R "$REPOSITORY" --json workflowName,headSha,headBranch,conclusion,jobs
+              done | jq -s .
+          }
+          runs desktop-self-hosted.yml > "$RUNNER_TEMP/self-hosted-runs.json"
+          runs desktop.yml > "$RUNNER_TEMP/desktop-runs.json"
+          eligible_targets="$(python3 desktop/scripts/release-gate.py \
+            --policy desktop/packaging/release-policy.json \
+            --tag-commit "$tag_commit" \
+            --self-hosted-runs "$RUNNER_TEMP/self-hosted-runs.json" \
+            --desktop-runs "$RUNNER_TEMP/desktop-runs.json")"
           if [ -n "$RUN_ID" ]; then
             run_commit="$(gh run view "$RUN_ID" -R "$REPOSITORY" --json headSha -q .headSha)"
             if [ "$run_commit" != "$tag_commit" ]; then
@@ -450,7 +463,7 @@ jobs:
               exit 1
             fi
             cp "$candidate" "dist/$expected"
-            python3 desktop/scripts/test-qualification-m7.py --verify-package "$target" "dist/$expected"
+            python3 desktop/scripts/verify-package.py --policy desktop/packaging/release-policy.json "$target" "dist/$expected"
           done
           ls -lh dist/
 
@@ -471,7 +484,7 @@ jobs:
               "x86_64-unknown-linux-gnu": "Linux x64",
           }
           packages = sorted(Path("dist").glob("fframes-studio-*.zip"))
-          lines = [f"# fframes Studio {os.environ['RELEASE_TAG']}", "", "Native desktop video development studio for fframes.", "", "## Qualified downloads", ""]
+          lines = [f"# fframes Studio {os.environ['RELEASE_TAG']}", "", "Native desktop video development studio for fframes.", "", "## Downloads", ""]
           for package in packages:
               target = package.name.removeprefix("fframes-studio-").removesuffix(".zip")
               lines.append(f"- {labels[target]}: `{package.name}`")
@@ -481,6 +494,7 @@ jobs:
           cat release-notes.md
 
       - name: Publish GitHub Release
+        if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
@@ -505,3 +519,8 @@ jobs:
               "${extra_args[@]}"
           fi
           echo "Release successfully published: $(gh release view "$RELEASE_TAG" --json url -q .url)"
+
+      - name: Dry run summary
+        if: inputs.dry_run == true
+        run: |
+          echo "Dry run: $RELEASE_TAG would publish $ELIGIBLE_TARGETS; nothing was published."

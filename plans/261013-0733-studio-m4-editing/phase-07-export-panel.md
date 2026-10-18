@@ -1,9 +1,9 @@
 ---
 phase: 7
 title: "Export panel"
-status: pending
+status: completed
 priority: P2
-effort: "3-5d"
+effort: "3-4d"
 dependencies: [2, 3]
 ---
 
@@ -12,6 +12,8 @@ dependencies: [2, 3]
 ## Goal
 
 A Cap-style export panel with container, codec, scale and fps presets, a size estimate, progress and cancel, using the export options added in phase 1 and bundled in phase 2.
+
+Effort was 3-5d before [spike S4](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md): only the settings fields, `ExportPhase` and the progress overlay port; preview pane, share and upload flows are dropped.
 
 ## Port sources
 
@@ -28,13 +30,28 @@ Cap `editor_export.rs` (3,120 lines): `ExportPhase` (`is_busy`, `shows_progress`
 
 ## Todo
 
-- [ ] Scout export service
-- [ ] Presets
-- [ ] Estimate
-- [ ] Progress, cancel, persistence
-- [ ] Unmigrated state
-- [ ] Tests
+- [x] Scout export service
+- [x] Presets
+- [x] Estimate
+- [x] Progress, cancel, persistence
+- [x] Unmigrated state
+- [x] Tests
 
 ## Success criteria
 
 An export from the panel on this VM matches preview frames by the M4 comparison rule (pre-encode pixel equality, decoded output within the `odiff` threshold); cancel stops the encoder within a second; parity export test green.
+
+## Implementation notes
+
+Deviations and open items:
+
+- The worker is probed when the panel opens and when the accepted revision changes, not in the background once per displayed build (a cache hit for an unchanged project).
+- `StartExport` is a new action; `ExportVideo` now opens the panel. The header action id `export-mp4` became `export`.
+- The destination extension is forced to the container's (`.mp4` / `.webm`).
+- The saved choice persists in app settings and is validated against the worker's reported formats before use.
+- Unmigrated projects get only the default MPEG-4 export, with a migrate notice.
+- Closed 2026-10-18: assembled-SDK H.264 export passes pre-encode pixel identity and decoded `odiff -t 0.4` at three times, with a failing negative control; see [M4 completion](./plan.md#success-criteria).
+- This SDK's FFmpeg reports mpeg4, libx264, libx265, libvpx-vp9, libopus and aac; `every_reported_format_exports_at_the_requested_size_and_rate` exports each reported format. Presets follow the worker's reported formats.
+- Closed 2026-10-18: the owner confirmed the Windows app hand checks passed, including the export panel and cancellation; see [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md).
+- Tests: gpui parity tests cover the fake worker answering as a legacy SDK (support unmigrated; the migration-available route is covered by the second test), an unmigrated project ignoring a saved non-default choice and still starting, cancel, failure with its reason and a running export. The `Ready` path (worker formats, estimate) has unit tests in `studio-engine/src/export_options.rs` and `studio-ui/src/export/` only.
+- With no project or no SDK the panel does not open and an export cannot start (`the_export_panel_does_not_open_without_a_project`, `the_export_panel_does_not_open_without_an_sdk`).

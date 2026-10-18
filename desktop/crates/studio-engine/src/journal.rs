@@ -134,6 +134,17 @@ fn scan_lifecycle(
     ))
 }
 
+/// A handle every write to which fails, for the simulated full disk.
+#[cfg(target_os = "linux")]
+fn failing_writer(_journal: &std::path::Path) -> std::io::Result<File> {
+    OpenOptions::new().write(true).open("/dev/full")
+}
+
+#[cfg(not(target_os = "linux"))]
+fn failing_writer(journal: &std::path::Path) -> std::io::Result<File> {
+    OpenOptions::new().read(true).open(journal)
+}
+
 impl Journal {
     pub fn open(path: PathBuf) -> Result<(Self, Replay), EngineError> {
         let file = OpenOptions::new()
@@ -171,12 +182,13 @@ impl Journal {
     pub fn is_failed(&self) -> bool {
         self.failed
     }
-    /// Redirects further appends to `/dev/full`, so the next write fails exactly like a
-    /// full disk (`ENOSPC`). For tests of the failure handling only.
+    /// Makes the next append fail like a full disk. For tests of the failure handling
+    /// only. Linux redirects appends to `/dev/full` (`ENOSPC`); elsewhere there is no such
+    /// device, so appends go to a read-only handle of the journal itself and fail
+    /// (`EBADF`, `ERROR_ACCESS_DENIED`), leaving the file unchanged either way.
     #[doc(hidden)]
-    #[cfg(unix)]
     pub fn simulate_full_disk(&mut self) -> std::io::Result<()> {
-        self.file = OpenOptions::new().write(true).open("/dev/full")?;
+        self.file = failing_writer(&self.path)?;
         Ok(())
     }
     pub fn intent(&mut self, record: &Record) -> Result<String, EngineError> {
@@ -227,12 +239,11 @@ impl Journal {
     }
 }
 
-// ---- task journal (format 2) --------------------------------------------------------------
+// ---- task journal ----------------------------------------------------------------------
 //
 // `tasks.jsonl` records file-set transactions. Every line carries an explicit `format`
-// (`TASK_FORMAT`); the lifecycle journal above keeps its own version-1 records
-// untouched, so previously written history stays readable. A line from a newer
-// format is refused without truncating or rewriting anything.
+// and only `TASK_FORMAT` is read: a line of an older or a newer format is refused before
+// any repair or quarantine runs, without truncating or rewriting anything.
 
 const TASK_MAX_ENTRY_BYTES: usize = 4 * 1024 * 1024;
 
@@ -282,25 +293,19 @@ impl TaskReplay {
     /// Committed *task* revisions in commit order: the source of the history projection.
     /// Studio preset mutations are committed transactions too, but never task history.
     pub fn committed(&self) -> Vec<TaskRevisionRecord> {
-        self.transactions
-            .iter()
-            .filter_map(|t| match &t.status {
-                TxStatus::Committed(record) if record.kind != TransactionKind::Preset => {
-                    Some((**record).clone())
-                }
-                _ => None,
-            })
-            .collect()
+        self.committed_where(|kind| matches!(kind, TransactionKind::Apply | TransactionKind::Undo))
     }
 
     /// Committed Studio preset mutations in commit order.
     pub fn committed_presets(&self) -> Vec<TaskRevisionRecord> {
+        self.committed_where(|kind| kind == TransactionKind::Preset)
+    }
+
+    fn committed_where(&self, kind: impl Fn(TransactionKind) -> bool) -> Vec<TaskRevisionRecord> {
         self.transactions
             .iter()
             .filter_map(|t| match &t.status {
-                TxStatus::Committed(record) if record.kind == TransactionKind::Preset => {
-                    Some((**record).clone())
-                }
+                TxStatus::Committed(record) if kind(record.kind) => Some((**record).clone()),
                 _ => None,
             })
             .collect()
@@ -387,6 +392,31 @@ pub struct TaskJournal {
     failed: bool,
 }
 
+fn check_task_format(path: &std::path::Path, found: u32) -> Result<(), EngineError> {
+    let what = || format!("{} (task journal)", path.display());
+    match found.cmp(&TASK_FORMAT) {
+        std::cmp::Ordering::Greater => Err(EngineError::NewerFormat {
+            what: what(),
+            found,
+            supported: TASK_FORMAT,
+        }),
+        std::cmp::Ordering::Less => Err(EngineError::OlderFormat {
+            what: what(),
+            found,
+            supported: TASK_FORMAT,
+        }),
+        std::cmp::Ordering::Equal => Ok(()),
+    }
+}
+
+/// The `format` a line written by `TaskJournal` starts with (`{"format":N,`), read even
+/// when the rest of the line is torn.
+fn leading_format(line: &[u8]) -> Option<u32> {
+    let digits = line.strip_prefix(b"{\"format\":")?;
+    let end = digits.iter().position(|b| !b.is_ascii_digit())?;
+    std::str::from_utf8(&digits[..end]).ok()?.parse().ok()
+}
+
 fn scan_task_journal(
     path: &std::path::Path,
     file: &File,
@@ -412,7 +442,14 @@ fn scan_task_journal(
             )));
         }
         if line.last() != Some(&b'\n') {
-            // An incomplete last append was never durable: its event did not happen.
+            // An incomplete last append was never durable: its event did not happen. A torn
+            // first line is still judged by the format it starts with, so a journal of
+            // another format is never quarantined or truncated.
+            if sequence == 0
+                && let Some(found) = leading_format(&line)
+            {
+                check_task_format(path, found)?;
+            }
             if repair {
                 let quarantine = path.with_extension(format!("tail-{}", uuid::Uuid::new_v4()));
                 studio_project::lifecycle::atomic_write(&quarantine, &line)?;
@@ -430,16 +467,7 @@ fn scan_task_journal(
             ))
         };
         let header: EntryHeader = serde_json::from_slice(&line).map_err(|e| corrupt(&e))?;
-        if header.format > TASK_FORMAT {
-            return Err(EngineError::NewerFormat {
-                what: format!("{} (task journal)", path.display()),
-                found: header.format,
-                supported: TASK_FORMAT,
-            });
-        }
-        if header.format != TASK_FORMAT {
-            return Err(corrupt(&format!("unsupported format {}", header.format)));
-        }
+        check_task_format(path, header.format)?;
         let entry: TaskEntry = serde_json::from_slice(&line).map_err(|e| corrupt(&e))?;
         if entry.sequence != sequence + 1 {
             return Err(corrupt(&"non-monotonic sequence"));
@@ -592,6 +620,7 @@ mod tests {
                 candidate: revision('b'),
                 published: revision('b'),
                 undoes: None,
+                undoes_paths: None,
                 prompt_summary: "edit".into(),
                 changes: vec![],
                 created_dirs: vec![],
@@ -601,6 +630,142 @@ mod tests {
                 preset: None,
             },
         }
+    }
+
+    /// Writes a journal in `format` the way that build wrote it: an intent and a stage
+    /// progress line for a pending transaction, then (optionally) a torn last line.
+    fn write_journal_of_format(path: &std::path::Path, format: u32, torn_tail: bool) -> Vec<u8> {
+        use crate::edit_transaction::Step;
+        let mut intent = sample_intent("t1");
+        intent.format = format;
+        let stage = Progress {
+            op: Some(0),
+            step: Step::StageCreated,
+            detail: None,
+        };
+        let mut bytes = Vec::new();
+        for (sequence, event) in [
+            TaskEvent::Intent(Box::new(intent)),
+            TaskEvent::Progress(stage),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            bytes.extend(
+                serde_json::to_vec(&TaskEntry {
+                    format,
+                    sequence: sequence as u64 + 1,
+                    transaction: "t1".into(),
+                    at: 1,
+                    event,
+                })
+                .unwrap(),
+            );
+            bytes.push(b'\n');
+        }
+        if torn_tail {
+            bytes.extend_from_slice(format!("{{\"format\":{format},\"sequ").as_bytes());
+        }
+        fs::write(path, &bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn a_task_journal_of_an_older_format_is_refused_and_left_as_it_is() {
+        for format in [2, 3] {
+            for torn_tail in [false, true] {
+                let tmp = tempfile::tempdir().unwrap();
+                let path = tmp.path().join("tasks.jsonl");
+                let bytes = write_journal_of_format(&path, format, torn_tail);
+                for error in [
+                    TaskJournal::open(path.clone()).err().unwrap(),
+                    TaskJournal::inspect(&path).err().unwrap(),
+                ] {
+                    assert!(
+                        matches!(
+                            error,
+                            EngineError::OlderFormat { found, supported, .. }
+                                if found == format && supported == TASK_FORMAT
+                        ),
+                        "{error}"
+                    );
+                    let message = error.to_string();
+                    assert!(message.contains("tasks.jsonl"), "{message}");
+                    assert!(message.contains("older Studio"), "{message}");
+                }
+                // No repair ran: not truncated, no quarantined tail, nothing next to it.
+                assert_eq!(fs::read(&path).unwrap(), bytes, "format {format}");
+                assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 1);
+            }
+            // A journal whose only line is torn is judged by the format it starts with.
+            let tmp = tempfile::tempdir().unwrap();
+            let path = tmp.path().join("tasks.jsonl");
+            let bytes = format!("{{\"format\":{format},\"sequ").into_bytes();
+            fs::write(&path, &bytes).unwrap();
+            for error in [
+                TaskJournal::open(path.clone()).err().unwrap(),
+                TaskJournal::inspect(&path).err().unwrap(),
+            ] {
+                assert!(
+                    matches!(error, EngineError::OlderFormat { found, .. } if found == format),
+                    "{error}"
+                );
+            }
+            assert_eq!(fs::read(&path).unwrap(), bytes, "format {format}");
+            assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 1);
+        }
+    }
+
+    #[test]
+    fn a_record_with_every_optional_field_empty_round_trips() {
+        let intent = sample_intent("rt");
+        let json = serde_json::to_string(&intent).unwrap();
+        for key in [
+            "undoes_paths",
+            "preset",
+            "before_mode",
+            "after_mode",
+            "slot_dir",
+        ] {
+            assert!(!json.contains(key), "{key} must be skipped: {json}");
+        }
+        assert_eq!(
+            serde_json::from_str::<TransactionIntent>(&json).unwrap(),
+            intent
+        );
+        // Fields the writer always emits are required.
+        for key in ["created_dirs", "remove_dirs"] {
+            let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+            value.as_object_mut().unwrap().remove(key);
+            value["record"].as_object_mut().unwrap().remove(key);
+            assert!(
+                serde_json::from_value::<TransactionIntent>(value).is_err(),
+                "{key} must be required"
+            );
+        }
+    }
+
+    #[test]
+    fn a_format_4_record_round_trips_its_reverted_paths() {
+        let mut record = sample_intent("rt").record;
+        record.undoes = Some("earlier".into());
+        record.undoes_paths = Some(vec!["a.txt".into(), "dir/b.txt".into()]);
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(
+            json.contains(r#""undoes_paths":["a.txt","dir/b.txt"]"#),
+            "{json}"
+        );
+        assert_eq!(
+            serde_json::from_str::<crate::TaskRevisionRecord>(&json).unwrap(),
+            record
+        );
+        // A whole-revision record writes no such field.
+        record.undoes_paths = None;
+        assert!(
+            !serde_json::to_string(&record)
+                .unwrap()
+                .contains("undoes_paths")
+        );
     }
 
     #[test]
@@ -645,7 +810,7 @@ mod tests {
         drop(journal);
         let intact = fs::read(&path).unwrap();
         let mut torn = intact.clone();
-        torn.extend_from_slice(b"{\"format\":2,\"sequ");
+        torn.extend_from_slice(b"{\"format\":4,\"sequ");
         fs::write(&path, &torn).unwrap();
         // Read-only inspection ignores the tail and touches nothing.
         let replay = TaskJournal::inspect(&path).unwrap();
@@ -654,7 +819,7 @@ mod tests {
         let (_, replay) = TaskJournal::open(path.clone()).unwrap();
         assert!(replay.quarantined_tail.unwrap().is_file());
         assert_eq!(fs::read(&path).unwrap(), intact);
-        let mut damaged = b"{\"format\":2,garbage}\n".to_vec();
+        let mut damaged = b"{\"format\":4,garbage}\n".to_vec();
         damaged.extend_from_slice(&intact);
         fs::write(&path, &damaged).unwrap();
         assert!(TaskJournal::open(path.clone()).is_err());
@@ -665,17 +830,18 @@ mod tests {
     fn a_newer_task_journal_is_refused_without_being_changed() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("tasks.jsonl");
-        let newer = b"{\"format\":3,\"sequence\":1,\"future\":true}\n";
+        let newer = format!(
+            "{{\"format\":{},\"sequence\":1,\"future\":true}}\n",
+            TASK_FORMAT + 1
+        );
+        let newer = newer.as_bytes();
         fs::write(&path, newer).unwrap();
         let error = TaskJournal::open(path.clone()).err().unwrap();
         assert!(
             matches!(
                 error,
-                EngineError::NewerFormat {
-                    found: 3,
-                    supported: TASK_FORMAT,
-                    ..
-                }
+                EngineError::NewerFormat { found, supported, .. }
+                    if found == TASK_FORMAT + 1 && supported == TASK_FORMAT
             ),
             "{error}"
         );
@@ -727,12 +893,11 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), newer);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn disk_full_writer_refuses_further_appends_until_reopen() {
         let tmp = tempfile::tempdir().unwrap();
         let (mut journal, _) = Journal::open(tmp.path().join("journal")).unwrap();
-        journal.file = OpenOptions::new().write(true).open("/dev/full").unwrap();
+        journal.simulate_full_disk().unwrap();
         assert!(journal.commit("test").is_err());
         assert!(
             journal

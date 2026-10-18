@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use fframes_studio::{frame_image, thumbnail_cache};
 use fframes_studio_protocol::PreviewIdentity;
 use gpui::RenderImage;
+use studio_engine::services::thumbnail_cache;
+use studio_ui::frame_image;
 use thumbnail_cache::{MAX_THUMBNAIL_BYTES, MAX_THUMBNAIL_ENTRIES, ThumbnailCache, ThumbnailKey};
 
-#[path = "support/preview_fixture.rs"]
+#[path = "../../crates/studio-engine/tests/support/preview_fixture.rs"]
 mod preview_fixture;
 
 fn identity(revision: &str, generation: u64) -> PreviewIdentity {
@@ -18,12 +19,13 @@ fn identity(revision: &str, generation: u64) -> PreviewIdentity {
 }
 
 fn key(frame: usize) -> ThumbnailKey {
-    ThumbnailKey::new(identity("revision", 1), 0.25, frame)
+    ThumbnailKey::new(identity("revision", 1), 0, 0.25, frame)
 }
 
 fn image(frame: usize) -> Arc<RenderImage> {
-    let (header, pixels) =
-        frame_image::generate_reference_frame("revision", 1, 1, frame, 4, 4, false);
+    let (header, pixels) = studio_engine::services::worker_client::generate_reference_frame(
+        "revision", 1, 1, frame, 4, 4, false,
+    );
     frame_image::create_render_image(&header, &pixels).expect("synthetic image")
 }
 
@@ -72,6 +74,20 @@ fn oversized_input_is_returned_without_flushing_cache() {
 }
 
 #[test]
+fn a_reorder_makes_the_same_index_miss_the_cache() {
+    let mut cache = ThumbnailCache::default();
+    let before = ThumbnailKey::new(identity("revision", 1), 3, 0.25, 4);
+    cache.insert(before.clone(), image(4), 8);
+    assert!(cache.get(&before).is_some());
+
+    // Same revision, worker and frame index after a timing change: the index now shows
+    // another scene frame, so it is requested again instead of served stale.
+    let after = ThumbnailKey::new(identity("revision", 1), 4, 0.25, 4);
+    assert!(cache.get(&after).is_none());
+    assert!(!cache.contains(&after));
+}
+
+#[test]
 fn replacement_retires_old_image_and_accounts_new_size() {
     let mut cache = ThumbnailCache::default();
     let old = image(0);
@@ -88,18 +104,20 @@ fn replacement_retires_old_image_and_accounts_new_size() {
 }
 
 #[test]
-fn key_separates_revision_generation_scale_frame_and_media_inventory() {
-    let base = ThumbnailKey::new(identity("r1", 1), 0.25, 4);
-    let revision = ThumbnailKey::new(identity("r2", 1), 0.25, 4);
-    let generation = ThumbnailKey::new(identity("r1", 2), 0.25, 4);
-    let scale = ThumbnailKey::new(identity("r1", 1), 0.5, 4);
-    let frame = ThumbnailKey::new(identity("r1", 1), 0.25, 5);
+fn key_separates_revision_generation_scale_frame_timing_and_media_inventory() {
+    let base = ThumbnailKey::new(identity("r1", 1), 0, 0.25, 4);
+    let revision = ThumbnailKey::new(identity("r2", 1), 0, 0.25, 4);
+    let generation = ThumbnailKey::new(identity("r1", 2), 0, 0.25, 4);
+    let scale = ThumbnailKey::new(identity("r1", 1), 0, 0.5, 4);
+    let frame = ThumbnailKey::new(identity("r1", 1), 0, 0.25, 5);
+    // A reorder, trim or split re-lays the timeline: the same index is another frame.
+    let timing = ThumbnailKey::new(identity("r1", 1), 1, 0.25, 4);
     let mut media = base.clone();
     media.media_hash = "different-media".into();
 
     assert_eq!(base.backend, "cpu");
     assert_eq!(base.media_hash, "r1");
-    for distinct in [&revision, &generation, &scale, &frame, &media] {
+    for distinct in [&revision, &generation, &scale, &frame, &timing, &media] {
         assert_ne!(&base, distinct);
     }
 }
@@ -129,15 +147,15 @@ fn clear_returns_every_image_and_resets_current_accounting() {
 #[test]
 #[ignore = "requires compatible SDK_ACTIVE or SDK_BUNDLE; exercises real compiled timeline and thumbnail destinations"]
 fn real_compiled_tracks_and_thumbnail_seek_destinations() {
-    use fframes_studio::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
     use std::{
         fs,
         path::PathBuf,
         time::{Duration, Instant},
     };
+    use studio_engine::services::preview_coordinator::{BuildSpec, PreviewCoordinator, SeekIntent};
     use studio_engine::{
         Controller, JobKind, JobResult, PreviewState, TimelineModel, TimelineSelection,
-        TimelineViewport, app_paths::AppPaths,
+        TimelineTransform, app_paths::AppPaths,
     };
     let temp = tempfile::tempdir().unwrap();
     let sdk = if let Some(bundle) = std::env::var_os("SDK_BUNDLE") {
@@ -186,7 +204,7 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
         tag,
         compiler: controller.operation_processes(),
         worker: controller.processes.sub_manager(),
-        service: fframes_studio::worker_project::shared_build_service(),
+        service: studio_engine::services::worker_project::shared_build_service(),
     });
     let deadline = Instant::now() + Duration::from_secs(180);
     let ready = loop {
@@ -224,6 +242,16 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     );
     // Core's 44.1kHz timeline rounds 0.125s to sample 5513, not video frame 4.
     assert_eq!(model.report().audio_tracks[0].start_seconds, 5513. / 44100.);
+    // The mix's waveform comes with the validated PCM: ten peaks a second, sound after
+    // the track starts.
+    let peaks = ready.audio_source.as_ref().unwrap().waveform();
+    assert_eq!(peaks.len(), (model.duration() * 10.).ceil() as usize);
+    assert!(
+        peaks[2..]
+            .iter()
+            .any(|db| *db > studio_engine::waveform::WAVEFORM_MIN_DB),
+        "{peaks:?}"
+    );
     let overlap = model.report().scenes[1].start_frame;
     assert_eq!(model.scene_hits(overlap), vec![0, 1]);
     let mut selection = TimelineSelection::default();
@@ -239,7 +267,7 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     );
     assert!(coordinator.commit(ready.identity().clone(), ready.seek_serial));
     state.install(&ready, controller.state()).unwrap();
-    let mut viewport = TimelineViewport::default();
+    let mut viewport = TimelineTransform::default();
     viewport.resize(600., &model);
     viewport.fit(&model);
     let samples = viewport.thumbnail_frames(&model);
@@ -247,7 +275,14 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     coordinator.thumbnails(
         samples
             .iter()
-            .map(|frame| ThumbnailKey::new(ready.identity().clone(), scale, *frame))
+            .map(|frame| {
+                ThumbnailKey::new(
+                    ready.identity().clone(),
+                    ready.timeline.timing_generation,
+                    scale,
+                    *frame,
+                )
+            })
             .collect(),
     );
     let mut cache = ThumbnailCache::default();
@@ -300,7 +335,7 @@ fn real_compiled_tracks_and_thumbnail_seek_destinations() {
     drop(ready);
     // Completed builds stay cached by the shared service until the project closes (the
     // product close path releases them); do the same before checking for leaks.
-    fframes_studio::worker_project::shared_build_service().close_project(&String::from(
+    studio_engine::services::worker_project::shared_build_service().close_project(&String::from(
         controller.project.manifest.project_id.clone(),
     ));
     fn no_leased_trees(path: &std::path::Path) {

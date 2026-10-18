@@ -1,7 +1,7 @@
 ---
 title: "M5a Native agent wires: Claude stream-json and Codex app-server"
 description: "Put the agent driver behind one trait, keep ACP for other agents, and add native drivers for Claude Code (stream-json control protocol) and Codex (app-server JSON-RPC), ported from Zeron's harness, with every approval routed to the user."
-status: pending
+status: completed
 priority: P1
 effort: "10-14d"
 branch: feat/studio-rewrite
@@ -17,7 +17,7 @@ created: 2026-10-13
 
 Part of [the studio rewrite roadmap](../261013-0733-studio-rewrite-roadmap/plan.md). Zeron runs Claude Code and Codex over their native protocols, not ACP, because their ACP adapters hold turns open for background work and report false "still running" and "done" states ([Zeron report](../reports/research-261013-1749-zeron-agent-control.md), headline). fframes captures an agent's changes when a turn ends, so the turn end must be reliable. This milestone adds those two native drivers; ACP stays for every other agent (`acp_v1` tests unchanged).
 
-Unlike Zeron, fframes never answers a request on the user's behalf: Claude's `can_use_tool` requests and Codex's approval requests become permission rows the user answers (parity item 9). What each CLI runs without asking is its own policy (Claude runs read-only tools in default mode; Codex `on-request` asks only outside its sandbox). Both drivers start in the task's draft directory, like ACP (`actor.rs:1764` `cwd: active.ctx.draft`), so writer containment (M3 phase 4) and candidate validation apply as today.
+Unlike Zeron, fframes never answers a request on the user's behalf: Claude's `can_use_tool` requests and Codex's approval requests become permission rows the user answers (parity item 9). What each CLI runs without asking is its own policy (Claude runs read-only tools in default mode; Codex runs with `untrusted` approvals in the `workspace-write` sandbox and asks before most commands, because S5 showed `on-request` asked for nothing). Both drivers start in the task's draft directory, like ACP (`actor.rs:1764` `cwd: active.ctx.draft`), so writer containment (M3 phase 4) and candidate validation apply as today.
 
 Order with one executor: after M4, before M5. M1 spike S5 proves both protocols on real CLIs first.
 
@@ -37,15 +37,21 @@ Not taken: Zeron's always-allow answers, `approvalPolicy: "never"` with `danger-
 
 | # | Phase | Effort | Depends on | Status |
 |---|-------|--------|-----------|--------|
-| 1 | [Driver trait and wire selection](./phase-01-driver-trait.md) | 2-3d | none | Pending |
-| 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Pending |
-| 3 | [Codex app-server driver](./phase-03-codex-app-server.md) | 3-4d | 1 | Pending |
-| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | Pending |
+| 1 | [Driver trait and wire selection](./phase-01-driver-trait.md) | 2-3d | none | Completed |
+| 2 | [Claude Code stream-json driver](./phase-02-claude-stream-json.md) | 3-4d | 1 | Completed; multi-question answering was handed to and completed in [M5 phase 2](../261013-0733-studio-m5-agent-ux/phase-02-composer.md). |
+| 3 | [Codex app-server driver](./phase-03-codex-app-server.md) | 3-4d | 1 | Completed |
+| 4 | [Fake CLIs, cross-driver tests and platform checks](./phase-04-fakes-and-checks.md) | 2-3d | 2, 3 | Completed within accepted platform scope: CI green on all three platforms; Windows real CLIs and owner hand checks pass. macOS remains not fully tested: CI only, no real-CLI checks. |
 
 ## Success criteria
 
-- [ ] The agent actor talks only to the driver trait; ACP, Claude and Codex implement it; `acp_v1` tests pass unchanged.
-- [ ] With Claude Code on this VM: a turn streams text, asks permission before an edit (deny blocks it, allow lets it through), steers, stops without killing the process, resumes, and ends only when the `result` frame arrives; the candidate is captured after writer quiescence.
-- [ ] The same with Codex on the user's machine (or wherever Codex is installed and signed in).
-- [ ] No driver answers a request on the user's behalf; a test proves an unanswered permission request blocks the tool; both native drivers run in the draft directory.
-- [ ] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs.
+**M6 follow-up, 2026-10-18:** Windows native-wire checks and the owner's app hand checks pass; new Claude/Codex profiles now select the native protocols. M5 phase 2 implemented answers for every item of a question card, closing the phase 2 handover below (see [composer completion](../261013-0733-studio-m5-agent-ux/phase-02-composer.md)). The phase table records the original integration concerns; macOS remains CI-only under the owner's decision, rather than an outstanding Windows check. Current evidence is in [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md).
+
+- [x] The agent actor talks only to the driver trait; ACP, Claude and Codex implement it. The `acp_v1` tests pass with their test code unchanged; the ACP peer's `permission` mode now writes only on allow.
+- [x] With Claude Code on this VM: a turn streams text, asks permission before an edit (deny blocks it, allow lets it through), steers, stops without killing the process, resumes, and ends only when the `result` frame arrives; the candidate is captured after writer quiescence ([checks report](../../desktop/plans/reports/native-wires-checks.md)).
+  - Against the real CLI: text, deny and allow, stop, steer, resume, a two-question `AskUserQuestion` answered in full, and a background command. For the background command, the driver reports the work before the first `result`, Claude ends the work in a turn of its own, and the agent is idle only after the command's write.
+  - The engine's capture on that sequence (deferred until idle, nothing captured on Stop) is tested with the fake CLI, which replays the same frames.
+- [x] The same with Codex on this VM, where it is installed and signed in: decline and accept, stop, steer, resume, and an interrupted command ended by session stop, all against the real CLI.
+  - With the fake CLI only: a command that completes after its turn, and `requestUserInput` questions.
+- macOS is **not fully tested**. CI covers it with the fake CLIs, but the real-CLI checks were not run there because no Mac is available (decided by the user, 2026-10-16; [roadmap, Platforms](../261013-0733-studio-rewrite-roadmap/plan.md#confirmed-contract)).
+- [x] No driver answers a request on the user's behalf. M5 phase 2 also fixed the engine's multi-question card: every item requires an answer before submission. `cross_driver.rs` proves for all three wires that an unanswered permission request blocks the tool, and both native drivers run in the draft directory.
+- [x] Parity agent tests and the new driver tests pass on Windows, macOS and Linux CI with the fake CLIs: `6225af8`, [self-hosted Linux and Windows](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905684378) and [macOS 15](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/38905719933), 2026-10-16. The first Linux attempt hit the known intermittent export-cancel hang in the parity `services::` tests after every agent test had passed; the re-run passed.

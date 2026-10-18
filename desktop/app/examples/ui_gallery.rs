@@ -1,5 +1,6 @@
-//! Every Studio UI component in every state, in one window, with a Light or
-//! Dark switch. Used for screenshots and for comparing with the design spec.
+//! Every Studio UI component in every state, in one window, with a System,
+//! Light or Dark switch. Used for screenshots and for comparing with the
+//! design spec.
 //!
 //! Run: `cargo run --manifest-path desktop/Cargo.toml -p fframes-studio --example ui_gallery`
 //!
@@ -7,18 +8,22 @@
 //! a control to see its hover state and press Tab to move the focus ring through
 //! them. A row at the end paints the focus ring statically.
 
-use fframes_studio::design_system::{self, Appearance, TextStyle, text_style, tokens};
-use fframes_studio::text_input::{self, TextInput};
-use fframes_studio::ui::{
-    Badge, Button, ButtonVariant, Collapsible, FieldRow, Icon, IconButton, IconButtonSize, Kbd,
-    Menu, MenuState, Notice, SectionTitle, SegmentOption, Segmented, Select, Slider, StatusDot,
-    TabItem, TabRail, Toggle, Tone, card, field_value,
-};
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    ParentElement, Render, StatefulInteractiveElement, Styled, Window, WindowBounds, WindowOptions,
-    div, px, size,
+    ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, Window, WindowBounds,
+    WindowOptions, div, px, size,
 };
+use studio_theme::{AppTheme, METRICS, Theme};
+use studio_ui::kit::{
+    Badge, Button, ButtonSize, ButtonVariant, Card, CollapsibleSection, EditorButton, Icon,
+    IconButton, IconButtonSize, KbdChip, Menu, MenuItem, MenuState, Notice, Section, SegmentOption,
+    SegmentedControl, Select, SettingRow, SettingsFrame, SettingsNavItem, Slider, SliderTrack,
+    StatusDot, TabRail, TabRailItem, TextInput, TextInputState, Toggle, Tone, bind_text_input_keys,
+    field_row, focus_ring, heading, label, muted, section_title,
+};
+
+const RESOLUTIONS: [&str; 4] = ["1080p", "1440p", "2160p", "Custom"];
+const THEMES: [AppTheme; 3] = [AppTheme::System, AppTheme::Light, AppTheme::Dark];
 
 struct Gallery {
     toggle_on: bool,
@@ -27,25 +32,25 @@ struct Gallery {
     fraction: f32,
     zoom: f32,
     collapsible_open: bool,
-    menu: MenuState,
-    menu_open: bool,
+    resolution: usize,
+    menu: Option<MenuState>,
     menu_focus: FocusHandle,
     notice_visible: bool,
-    input: Entity<TextInput>,
-    compact_input: Entity<TextInput>,
+    input: Entity<TextInputState>,
+    compact_input: Entity<TextInputState>,
 }
 
 impl Gallery {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        studio_theme::bind_window(window, cx);
         let input = cx.new(|cx| {
-            let mut input = TextInput::new(cx);
-            input.placeholder = "Placeholder text".into();
+            let mut input = TextInputState::single_line(window, cx);
+            input.set_placeholder("Placeholder text");
             input
         });
         let compact_input = cx.new(|cx| {
-            let mut input = TextInput::new(cx);
-            input.placeholder = "Compact input".into();
-            input.compact = true;
+            let mut input = TextInputState::single_line(window, cx);
+            input.set_placeholder("Compact input");
             input.set_text("Typed value", cx);
             input
         });
@@ -56,26 +61,29 @@ impl Gallery {
             fraction: 0.4,
             zoom: 0.6,
             collapsible_open: true,
-            menu: MenuState::new(
-                ["1080p", "1440p", "2160p", "Custom"]
-                    .map(Into::into)
-                    .to_vec(),
-                Some(0),
-            ),
-            menu_open: false,
+            resolution: 0,
+            menu: None,
             menu_focus: cx.focus_handle(),
             notice_visible: true,
             input,
             compact_input,
         }
     }
+
+    fn menu_items(&self) -> Vec<MenuItem> {
+        RESOLUTIONS
+            .iter()
+            .enumerate()
+            .map(|(index, name)| MenuItem::new(*name, index == self.resolution))
+            .collect()
+    }
 }
 
 /// A closure for gallery controls that updates the gallery.
-fn update<A: 'static>(
+fn update<A: ?Sized + 'static>(
     this: &Entity<Gallery>,
-    change: impl Fn(&mut Gallery, A, &mut Window, &mut Context<Gallery>) + 'static,
-) -> impl Fn(A, &mut Window, &mut App) + 'static {
+    change: impl Fn(&mut Gallery, &A, &mut Window, &mut Context<Gallery>) + 'static,
+) -> impl Fn(&A, &mut Window, &mut App) + 'static {
     let this = this.clone();
     move |value, window, cx| {
         this.update(cx, |gallery, cx| {
@@ -99,219 +107,355 @@ fn update0(
     }
 }
 
-fn row(title: &str, children: impl IntoIterator<Item = gpui::AnyElement>) -> gpui::Div {
-    let tokens = tokens();
+fn row(
+    theme: &Theme,
+    title: &str,
+    children: impl IntoIterator<Item = gpui::AnyElement>,
+) -> gpui::Div {
     div()
         .flex()
         .flex_col()
-        .gap(px(tokens.metrics.space_2))
-        .child(SectionTitle::new(title.to_string()))
+        .gap(px(METRICS.space_2))
+        .child(section_title(theme, title.to_string()))
         .child(
             div()
                 .flex()
                 .flex_wrap()
                 .items_center()
-                .gap(px(tokens.metrics.space_3))
+                .gap(px(METRICS.space_3))
                 .children(children),
         )
 }
 
-fn caption(text: &str) -> gpui::AnyElement {
-    text_style(div(), TextStyle::Small)
-        .text_color(tokens().palette.text_3)
-        .child(text.to_string())
-        .into_any_element()
+fn caption(theme: &Theme, text: &str) -> gpui::AnyElement {
+    muted(theme, text.to_string()).into_any_element()
+}
+
+fn icon_button(theme: &Theme, id: &'static str, glyph: Icon, name: &str) -> IconButton {
+    IconButton::editor(theme, id, glyph.path())
+        .label(name.to_string())
+        .tooltip(theme, name.to_string())
 }
 
 impl Render for Gallery {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::for_window(window, cx);
+        let colors = theme.editor;
         let this = cx.entity();
-        let palette = tokens().palette;
-        let metrics = tokens().metrics;
-        let appearance = design_system::appearance();
+        let preference = studio_theme::current_preference(cx);
 
-        let appearance_switch = Segmented::new(
+        let theme_switch = SegmentedControl::editor(
+            &theme,
             "appearance",
-            vec![SegmentOption::new("Light"), SegmentOption::new("Dark")],
-            usize::from(appearance == Appearance::Dark),
+            THEMES
+                .iter()
+                .map(|choice| {
+                    let name = match choice {
+                        AppTheme::System => "System",
+                        AppTheme::Light => "Light",
+                        AppTheme::Dark => "Dark",
+                    };
+                    SegmentOption::new(name, *choice == preference)
+                })
+                .collect(),
         )
-        .on_select(update(&this, |_, index, _, _| {
-            design_system::set_appearance(if index == 0 {
-                Appearance::Light
-            } else {
-                Appearance::Dark
-            });
-        }));
+        .on_select(|index, _, cx| {
+            if let Some(choice) = THEMES.get(*index) {
+                studio_theme::set_preference(*choice, cx);
+            }
+        });
 
         let buttons = row(
-            "Button",
+            &theme,
+            "EditorButton and Button",
             [
-                Button::new("rest", "Rest").into_any_element(),
-                Button::new("selected", "Selected")
-                    .selected(true)
+                EditorButton::plain(&theme, "rest")
+                    .label("Rest")
                     .into_any_element(),
-                Button::new("disabled", "Disabled")
+                EditorButton::plain(&theme, "pressed")
+                    .label("Pressed")
+                    .pressed(true)
+                    .into_any_element(),
+                EditorButton::plain(&theme, "disabled")
+                    .label("Disabled")
                     .disabled(true)
                     .into_any_element(),
-                Button::new("primary", "Primary")
-                    .variant(ButtonVariant::Primary)
+                EditorButton::plain(&theme, "filled")
+                    .label("Filled")
+                    .filled(&theme)
                     .into_any_element(),
-                Button::new("primary-off", "Primary disabled")
-                    .variant(ButtonVariant::Primary)
+                EditorButton::plain(&theme, "accent")
+                    .label("Accent")
+                    .accent(&theme)
+                    .into_any_element(),
+                EditorButton::plain(&theme, "accent-off")
+                    .label("Accent disabled")
+                    .accent(&theme)
                     .disabled(true)
                     .into_any_element(),
-                Button::new("destructive", "Destructive")
-                    .variant(ButtonVariant::Destructive)
+                EditorButton::plain(&theme, "destructive")
+                    .label("Destructive")
+                    .destructive(&theme)
                     .into_any_element(),
-                Button::new("ghost", "Ghost")
-                    .variant(ButtonVariant::Ghost)
+                EditorButton::plain(&theme, "icons")
+                    .label("Build")
+                    .left_icon(Icon::Hammer.path())
+                    .right_icon(Icon::ChevronDown.path())
+                    .tooltip(&theme, "Build the preview")
                     .into_any_element(),
-                Button::new("icons", "Build")
-                    .icon(Icon::Hammer)
-                    .trailing_icon(Icon::ChevronDown)
-                    .tooltip("Build the preview")
+                Button::plain(
+                    &theme,
+                    "body-primary",
+                    ButtonVariant::Primary,
+                    ButtonSize::Sm,
+                )
+                .label("Body primary")
+                .into_any_element(),
+                Button::plain(&theme, "body-gray", ButtonVariant::Gray, ButtonSize::Sm)
+                    .label("Body gray")
                     .into_any_element(),
-                caption("hover for the hover state, press Tab for focus"),
+                caption(&theme, "hover for the hover state, press Tab for focus"),
             ],
         );
 
         let icon_buttons = row(
+            &theme,
             "IconButton",
             [
-                IconButton::new("ib-small", Icon::Play)
-                    .size(IconButtonSize::Small)
-                    .label("Small")
+                icon_button(&theme, "ib-small", Icon::Play, "Small")
+                    .editor_size(IconButtonSize::Small)
                     .into_any_element(),
-                IconButton::new("ib-medium", Icon::Pause)
-                    .label("Medium")
+                icon_button(&theme, "ib-medium", Icon::Pause, "Medium")
+                    .editor_size(IconButtonSize::Medium)
                     .into_any_element(),
-                IconButton::new("ib-large", Icon::Play)
-                    .size(IconButtonSize::Large)
-                    .round(true)
-                    .variant(ButtonVariant::Primary)
-                    .label("Large, round")
+                icon_button(&theme, "ib-large", Icon::Play, "Large, round, accent")
+                    .editor_size(IconButtonSize::Large)
+                    .accent(&theme)
+                    .rounded(px(999.))
                     .into_any_element(),
-                IconButton::new("ib-selected", Icon::Eye)
-                    .selected(true)
-                    .label("Selected")
+                icon_button(&theme, "ib-filled", Icon::Eye, "Filled")
+                    .ctl_fill(&theme)
                     .into_any_element(),
-                IconButton::new("ib-disabled", Icon::Settings)
+                icon_button(&theme, "ib-active", Icon::Layers, "Active")
+                    .active(true)
+                    .into_any_element(),
+                icon_button(&theme, "ib-destructive", Icon::Trash, "Destructive")
+                    .destructive(&theme)
+                    .into_any_element(),
+                icon_button(&theme, "ib-disabled", Icon::Settings, "Disabled")
                     .disabled(true)
-                    .label("Disabled")
                     .into_any_element(),
             ],
         );
 
         let toggles = row(
+            &theme,
             "Toggle",
             [
-                Toggle::new("toggle", self.toggle_on)
+                Toggle::plain(&theme, "toggle", self.toggle_on)
                     .label("Live toggle")
-                    .on_change(update(&this, |gallery, value, _, _| {
-                        gallery.toggle_on = value
-                    }))
+                    .on_change({
+                        let set = update(&this, |gallery, value: &bool, _, _| {
+                            gallery.toggle_on = *value
+                        });
+                        move |value, window, cx| set(&value, window, cx)
+                    })
                     .into_any_element(),
-                Toggle::new("toggle-off", false).into_any_element(),
-                Toggle::new("toggle-disabled", true)
-                    .disabled(true)
+                Toggle::plain(&theme, "toggle-off", false).into_any_element(),
+                Toggle::plain(&theme, "toggle-disabled", true)
+                    .disabled(&theme, true)
                     .into_any_element(),
             ],
         );
 
+        let segment = self.segment;
         let segmented = row(
-            "Segmented",
+            &theme,
+            "SegmentedControl",
             [
-                Segmented::new(
+                SegmentedControl::editor(
+                    &theme,
                     "segmented",
-                    vec![
-                        SegmentOption::new("Fit"),
-                        SegmentOption::new("50%"),
-                        SegmentOption::new("100%").disabled(true),
-                        SegmentOption::new("200%"),
-                    ],
-                    self.segment,
+                    ["Fit", "50%", "100%", "200%"]
+                        .iter()
+                        .enumerate()
+                        .map(|(index, name)| {
+                            SegmentOption::new(*name, index == segment).disabled(index == 2)
+                        })
+                        .collect(),
                 )
-                .on_select(update(&this, |gallery, index, _, _| {
-                    gallery.segment = index
+                .on_select(update(&this, |gallery, index: &usize, _, _| {
+                    gallery.segment = *index
                 }))
                 .into_any_element(),
-                caption("Left and Right move; the disabled option is skipped"),
+                caption(
+                    &theme,
+                    "Left and Right move; the disabled option is skipped",
+                ),
             ],
         );
 
         let select = row(
+            &theme,
             "Select and Menu",
             [
                 div()
                     .w(px(200.))
                     .child(
-                        Select::new(
-                            "select",
-                            self.menu.items()[self.menu.selected().unwrap_or(0)].clone(),
-                        )
-                        .menu(&self.menu)
-                        .on_open(update0(&this, |gallery, window, cx| {
-                            gallery.menu_open = true;
-                            gallery.menu_focus.focus(window, cx);
-                        }))
-                        .into_any_element(),
+                        Select::plain(&theme, "select", RESOLUTIONS[self.resolution])
+                            .stretch_label()
+                            .on_open(update(
+                                &this,
+                                |gallery, bounds: &Bounds<Pixels>, window, cx| {
+                                    gallery.menu =
+                                        Some(MenuState::anchored(*bounds, &gallery.menu_items()));
+                                    gallery.menu_focus.focus(window, cx);
+                                },
+                            )),
                     )
                     .into_any_element(),
-                caption("Up, Down, Home, End, Enter, Escape"),
+                caption(&theme, "Up, Down, Home, End, Enter, Escape"),
             ],
         );
 
         let slider = row(
+            &theme,
             "Slider",
             [
                 div()
                     .w(px(220.))
                     .child(
-                        Slider::new("slider", self.fraction)
-                            .on_change(update(&this, |gallery, value, _, _| {
-                                gallery.fraction = value
-                            })),
+                        Slider::new("slider", self.fraction, SliderTrack::default())
+                            .flex()
+                            .track(px(4.), colors.ctl_active.into())
+                            .fill(colors.accent.into())
+                            .thumb(px(14.), colors.thumb.into(), None)
+                            .thumb_shadow()
+                            .label("Fraction")
+                            .on_change(
+                                0.,
+                                update(&this, |gallery, value: &f32, _, _| {
+                                    gallery.fraction = *value
+                                }),
+                            ),
                     )
                     .into_any_element(),
                 div()
                     .w(px(72.))
+                    .px(px(7.))
                     .child(
-                        Slider::new("zoom", self.zoom)
-                            .track(design_system_zoom_track())
-                            .on_change(update(&this, |gallery, value, _, _| gallery.zoom = value)),
+                        Slider::new("zoom", self.zoom, SliderTrack::default())
+                            .flex()
+                            .track(px(3.), colors.ctl_active.into())
+                            .fill(colors.accent.into())
+                            .thumb(px(14.), colors.thumb.into(), None)
+                            .thumb_shadow()
+                            .label("Zoom")
+                            .on_change(
+                                0.,
+                                update(&this, |gallery, value: &f32, _, _| gallery.zoom = *value),
+                            ),
                     )
                     .into_any_element(),
                 div()
                     .w(px(120.))
-                    .child(Slider::new("slider-off", 0.5).disabled(true))
+                    .child(
+                        Slider::new("slider-off", 0.5, SliderTrack::default())
+                            .flex()
+                            .track(px(4.), colors.ctl_active.into())
+                            .fill(colors.accent.into())
+                            .thumb(px(14.), colors.thumb.into(), None)
+                            .disabled(true),
+                    )
                     .into_any_element(),
             ],
         );
 
+        let tab = self.tab;
         let tabs = row(
+            &theme,
             "TabRail",
             [div()
                 .w(px(240.))
                 .child(
-                    TabRail::new(
+                    TabRail::editor(
+                        &theme,
                         "tabs",
-                        vec![
-                            TabItem::new(Icon::Folder, "Project"),
-                            TabItem::new(Icon::Image, "Assets"),
-                            TabItem::new(Icon::Palette, "Style"),
-                        ],
-                        self.tab,
+                        colors.card.into(),
+                        [
+                            (Icon::Folder, "Project"),
+                            (Icon::Image, "Assets"),
+                            (Icon::Palette, "Style"),
+                        ]
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (glyph, name))| {
+                            TabRailItem::new(glyph.path(), *name, index == tab, false)
+                        })
+                        .collect(),
                     )
-                    .on_select(update(&this, |gallery, index, _, _| gallery.tab = index)),
+                    .on_select(update(&this, |gallery, index: &usize, _, _| {
+                        gallery.tab = *index
+                    })),
+                )
+                .into_any_element()],
+        );
+
+        let settings = row(
+            &theme,
+            "SettingsFrame",
+            [div()
+                .w(px(560.))
+                .h(px(180.))
+                .child(
+                    SettingsFrame::settings(
+                        &theme,
+                        "settings-frame",
+                        [(Icon::Palette, "Appearance"), (Icon::Package, "Setup")]
+                            .iter()
+                            .enumerate()
+                            .map(|(index, (glyph, name))| {
+                                SettingsNavItem::new(*name, *name, *glyph, index == tab)
+                            })
+                            .collect(),
+                    )
+                    .on_select(update(&this, |gallery, index: &usize, _, _| {
+                        gallery.tab = *index
+                    }))
+                    .on_back(|_, _| {})
+                    .children([Section::settings(
+                        &theme,
+                        "Appearance",
+                        Some("A section of setting rows."),
+                        None,
+                        vec![
+                            Card::settings_rows(
+                                &theme,
+                                vec![
+                                    SettingRow::settings(
+                                        &theme,
+                                        "Theme",
+                                        None,
+                                        Toggle::settings(&theme, "settings-row-toggle", true)
+                                            .into_any_element(),
+                                    )
+                                    .into_any_element(),
+                                ],
+                            )
+                            .into_any_element(),
+                        ],
+                    )
+                    .into_any_element()]),
                 )
                 .into_any_element()],
         );
 
         let chips = row(
-            "Kbd, Badge, StatusDot",
+            &theme,
+            "KbdChip, Badge, StatusDot",
             [
-                Kbd::new("Space").into_any_element(),
-                Kbd::new("Ctrl K").into_any_element(),
+                KbdChip::row(&theme, "Space").into_any_element(),
+                KbdChip::row(&theme, "Ctrl K").into_any_element(),
                 Badge::new("Draft").into_any_element(),
                 Badge::new("Ready").tone(Tone::Success).into_any_element(),
                 Badge::new("Stale").tone(Tone::Warning).into_any_element(),
@@ -328,36 +472,52 @@ impl Render for Gallery {
             .w(px(360.))
             .flex()
             .flex_col()
-            .child(SectionTitle::new("Field rows").trailing(Badge::new("3")))
-            .child(FieldRow::new("Width", field_value("1920 px")))
             .child(
-                FieldRow::new("Hardware", Toggle::new("field-toggle", true))
-                    .hint("Uses the GPU encoder when available"),
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(section_title(&theme, "Field rows"))
+                    .child(Badge::new("3")),
             )
-            .child(FieldRow::new(
+            .child(field_row(&theme, "Width", label(&theme, "1920 px")))
+            .child(field_row(
+                &theme,
+                "Hardware",
+                Toggle::plain(&theme, "field-toggle", true),
+            ))
+            .child(muted(&theme, "Uses the GPU encoder when available"))
+            .child(field_row(
+                &theme,
                 "Quality",
-                Slider::new("field-slider", 0.7).on_change(|_, _, _| {}),
+                div().w(px(160.)).child(
+                    Slider::new("field-slider", 0.7, SliderTrack::default())
+                        .flex()
+                        .track(px(4.), colors.ctl_active.into())
+                        .fill(colors.accent.into())
+                        .thumb(px(14.), colors.thumb.into(), None),
+                ),
             ));
 
         let collapsible = div().w(px(360.)).child(
-            Collapsible::new("collapsible", self.collapsible_open)
-                .header(text_style(div(), TextStyle::Label).child("Advanced"))
+            CollapsibleSection::new("collapsible", self.collapsible_open)
+                .header(section_title(&theme, "Advanced"))
                 .content(
                     div()
-                        .pt(px(metrics.space_2))
-                        .child(muted_text("Content that slides in over 200 ms.")),
+                        .pt(px(METRICS.space_2))
+                        .child(muted(&theme, "Content that slides in over 200 ms.")),
                 )
-                .on_toggle(update(&this, |gallery, open, _, _| {
-                    gallery.collapsible_open = open
+                .on_toggle(update(&this, |gallery, open: &bool, _, _| {
+                    gallery.collapsible_open = *open
                 })),
         );
 
         let notices = div()
             .flex()
             .flex_col()
-            .gap(px(metrics.space_2))
+            .gap(px(METRICS.space_2))
             .w(px(480.))
-            .child(SectionTitle::new("Notice"))
+            .child(section_title(&theme, "Notice"))
             .child(
                 Notice::new("n-info", Tone::Info, "Preview is building")
                     .body("This takes a few seconds."),
@@ -367,7 +527,9 @@ impl Render for Gallery {
                 Notice::new("n-warning", Tone::Warning, "Preview is out of date")
                     .body("The source changed after the last build.")
                     .action(
-                        Button::new("n-build", "Build preview").variant(ButtonVariant::Primary),
+                        EditorButton::plain(&theme, "n-build")
+                            .label("Build preview")
+                            .accent(&theme),
                     ),
             )
             .children(self.notice_visible.then(|| {
@@ -376,7 +538,7 @@ impl Render for Gallery {
                     .details(
                         "error[E0425]: cannot find value `x` in this scope\n  --> src/lib.rs:12:5",
                     )
-                    .action(Button::new("n-retry", "Retry"))
+                    .action(EditorButton::plain(&theme, "n-retry").label("Retry"))
                     .on_dismiss(update0(&this, |gallery, _, _| {
                         gallery.notice_visible = false
                     }))
@@ -386,43 +548,44 @@ impl Render for Gallery {
             .w(px(360.))
             .flex()
             .flex_col()
-            .gap(px(metrics.space_2))
-            .child(SectionTitle::new("TextInput"))
-            .child(self.input.clone())
-            .child(self.compact_input.clone());
+            .gap(px(METRICS.space_2))
+            .child(section_title(&theme, "TextInput"))
+            .child(TextInput::plain(&theme, "gallery-input", &self.input))
+            .child(TextInput::plain(
+                &theme,
+                "gallery-compact-input",
+                &self.compact_input,
+            ));
 
-        let focus_ring = row(
+        let focus_sample = row(
+            &theme,
             "Focus ring (static sample)",
             [div()
-                .rounded(px(metrics.radius_control))
-                .shadow(fframes_studio::ui::interact::focus_ring())
-                .child(Button::new("ring", "Focused"))
+                .rounded(px(METRICS.radius_control))
+                .shadow(focus_ring(&theme))
+                .child(EditorButton::plain(&theme, "ring").label("Focused"))
                 .into_any_element()],
         );
 
         let content = div()
             .flex()
             .flex_col()
-            .gap(px(metrics.space_6))
-            .p(px(metrics.space_6))
+            .gap(px(METRICS.space_6))
+            .p(px(METRICS.space_6))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(
-                        text_style(div(), TextStyle::Heading)
-                            .text_color(palette.text_1)
-                            .child("fframes Studio UI gallery"),
-                    )
-                    .child(appearance_switch),
+                    .child(heading(&theme, "fframes Studio UI gallery"))
+                    .child(theme_switch),
             )
             .child(
-                card()
-                    .p(px(metrics.space_4))
+                Card::editor(&theme)
+                    .p(px(METRICS.space_4))
                     .flex()
                     .flex_col()
-                    .gap(px(metrics.space_4))
+                    .gap(px(METRICS.space_4))
                     .child(buttons)
                     .child(icon_buttons)
                     .child(toggles)
@@ -430,69 +593,61 @@ impl Render for Gallery {
                     .child(select)
                     .child(slider)
                     .child(tabs)
+                    .child(settings)
                     .child(chips)
-                    .child(focus_ring),
+                    .child(focus_sample),
             )
             .child(
-                card()
-                    .p(px(metrics.space_4))
+                Card::editor(&theme)
+                    .p(px(METRICS.space_4))
                     .flex()
                     .flex_wrap()
-                    .gap(px(metrics.space_6))
+                    .gap(px(METRICS.space_6))
                     .child(fields)
                     .child(collapsible)
                     .child(inputs)
                     .child(notices),
             );
 
-        let menu = self.menu_open.then(|| {
-            Menu::new("menu", &self.menu, &self.menu_focus)
-                .on_highlight(update(&this, |gallery, index, _, _| {
-                    gallery.menu.set_highlighted(index)
+        let menu = self.menu.as_ref().map(|state| {
+            Menu::editor(&theme, "menu", self.menu_items(), state)
+                .focus(&self.menu_focus)
+                .on_highlight(update(&this, |gallery, index: &usize, _, _| {
+                    if let Some(menu) = gallery.menu.as_mut() {
+                        menu.set_highlighted(*index)
+                    }
                 }))
-                .on_select(update(&this, |gallery, index, _, _| {
-                    gallery.menu.set_selected(Some(index));
-                    gallery.menu_open = false;
+                .on_select(update(&this, |gallery, index: &usize, _, _| {
+                    gallery.resolution = *index;
+                    gallery.menu = None;
                 }))
-                .on_dismiss(update0(&this, |gallery, _, _| gallery.menu_open = false))
+                .on_dismiss(update0(&this, |gallery, _, _| gallery.menu = None))
         });
 
         div()
             .id("gallery")
             .size_full()
             .overflow_y_scroll()
-            .bg(palette.window)
-            .text_color(palette.text_1)
+            .bg(colors.window)
+            .text_color(colors.text_1)
             .child(content)
             .children(menu)
     }
-}
-
-fn design_system_zoom_track() -> f32 {
-    fframes_studio::ui::slider::ZOOM_TRACK_H
-}
-
-fn muted_text(text: &str) -> gpui::Div {
-    text_style(div(), TextStyle::Body)
-        .text_color(tokens().palette.text_2)
-        .child(text.to_string())
 }
 
 fn main() {
     gpui_platform::application()
         .with_assets(fframes_studio::assets::Assets)
         .run(|cx: &mut App| {
-            text_input::bind_keys(cx);
-            design_system::set_appearance(design_system::appearance_from_window(
-                cx.window_appearance(),
-            ));
+            bind_text_input_keys(cx);
+            studio_theme::init(cx, AppTheme::System);
             let bounds = Bounds::centered(None, size(px(1120.), px(900.)), cx);
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()
                 },
-                |_, cx| cx.new(Gallery::new),
+                |window, cx| cx.new(|cx| Gallery::new(window, cx)),
             )
             .expect("failed to open the gallery window");
             cx.on_window_closed(|cx, _| cx.quit()).detach();

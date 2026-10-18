@@ -245,6 +245,16 @@ pub struct SceneReport {
     pub end_frame: usize,
     pub start_seconds: f32,
     pub end_seconds: f32,
+    /// The scene's key in timing documents.
+    pub timing_key: String,
+    /// Occurrence of the scene among the clips (0 unless split).
+    pub clip_index: usize,
+    pub trim_start_frames: usize,
+    pub trim_end_frames: usize,
+    /// Position of the scene in `Video::define_scenes`.
+    pub scene_index: usize,
+    /// The scene's own length, before trims and without overlaps.
+    pub scene_frames: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -312,7 +322,7 @@ impl<'a, 'media: 'a, TVideo: Video> Previewer<'a, 'media, TVideo> {
         options: &RenderOptions<'a, 'media>,
     ) -> FFramesRendererResult<Self> {
         let scenes = video.define_scenes();
-        let mut runtime = FFramesRendererRuntime::new(
+        let mut runtime = FFramesRendererRuntime::new_with_timing(
             TimeBase {
                 fps: TVideo::FPS,
                 sample_rate: options.audio_encoder_options.sample_rate,
@@ -320,6 +330,7 @@ impl<'a, 'media: 'a, TVideo: Video> Previewer<'a, 'media, TVideo> {
             video,
             &scenes,
             options.media,
+            options.timing.as_ref(),
         )?;
 
         if options.load_system_fonts {
@@ -351,9 +362,44 @@ impl<'a, 'media: 'a, TVideo: Video> Previewer<'a, 'media, TVideo> {
         })
     }
 
+    /// Lays the scenes out by `timing` (`None`: the code order) without reloading fonts,
+    /// images or caches. A rejected document leaves the current timeline in place.
+    pub fn set_timing(
+        &mut self,
+        timing: Option<&crate::TimingDoc>,
+    ) -> FFramesRendererResult<crate::TimingReport> {
+        let scenes = self.video.define_scenes();
+        let timeline = FFramesRendererRuntime::resolve_timeline(
+            self.runtime.time_base,
+            self.video,
+            &scenes,
+            self.options.media,
+            timing,
+        )?;
+        self.timeline_index = TimelineIndex::new(
+            TVideo::FPS,
+            timeline.duration_in_frames,
+            timeline.scenes.as_ref(),
+        );
+        let report = timeline
+            .scenes
+            .as_ref()
+            .map(|scenes| scenes.timing_report.clone())
+            .unwrap_or_default();
+        self.runtime.timeline = timeline;
+        // `options()` feeds audio mixing and the player, so it carries the applied timing.
+        self.options.timing = timing.cloned();
+        Ok(report)
+    }
+
     /// Scenes and duration for resolving time specs like `Intro@1.5s`.
     pub fn timeline(&self) -> &TimelineIndex {
         &self.timeline_index
+    }
+
+    /// Frame rate and audio sample rate of the resolved timeline.
+    pub fn runtime_time_base(&self) -> crate::TimeBase {
+        self.runtime.time_base
     }
 
     pub fn resolved_timeline(&self) -> &ResolvedRenderingTimeline<'a, AudioTimelineSamples> {
@@ -386,6 +432,12 @@ impl<'a, 'media: 'a, TVideo: Video> Previewer<'a, 'media, TVideo> {
                     end_frame: scene.frames.end,
                     start_seconds: index.frame_to_seconds(scene.frames.start),
                     end_seconds: index.frame_to_seconds(scene.frames.end),
+                    timing_key: scene.timing_key.clone(),
+                    clip_index: scene.clip_index,
+                    trim_start_frames: scene.trim_start,
+                    trim_end_frames: scene.trim_end,
+                    scene_index: scene.scene_index,
+                    scene_frames: scene.scene_frames,
                 })
                 .collect(),
             audio: self

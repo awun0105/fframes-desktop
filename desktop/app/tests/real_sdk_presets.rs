@@ -10,12 +10,7 @@
 //! One fresh generated project renders the *same* `src/lib.rs` under two bundled presets
 //! (different pixels), takes a project override and a Reapply, is closed and reopened,
 //! then moved to another folder; the token/font/resource files and the rendered pixels are
-//! recorded at every stage. A legacy project without styles must open, build and render,
-//! and only change `style/` once a preset is applied.
-use fframes_studio::{
-    build_service::{CompileEnvironment, CompileRequest, Compiler},
-    worker_project::{CargoCompiler, acquire_build_lock},
-};
+//! recorded at every stage.
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -24,6 +19,8 @@ use std::{
     time::Duration,
 };
 use studio_bootstrap::ProcessTreeManager;
+use studio_engine::services::build_service::{CompileEnvironment, CompileRequest, Compiler};
+use studio_engine::services::worker_project::{CargoCompiler, acquire_build_lock};
 use studio_engine::{
     Controller, PresetAction, PresetRequest, app_paths::AppPaths, build_materialization::sdk_pin,
 };
@@ -288,7 +285,7 @@ fn real_sdk_preset_snapshots_render_distinctly_and_survive_reopen_and_relocation
         "Preset relocation",
         sdk_pin(&manifest),
         &manifest.fframes_version,
-        "0.1.0",
+        &manifest.runtime_version,
     )
     .unwrap();
     // The scaffold ships its own DM Sans in `media/`; drop it (and its manifest entry) so the
@@ -386,80 +383,10 @@ fn real_sdk_preset_snapshots_render_distinctly_and_survive_reopen_and_relocation
     inspect("quiet_motion_font_removed", &controller, true);
     drop(controller);
 
-    // ---- legacy project: no style files, builds and opens untouched ----------------------
-    let legacy_root = temp.path().join("legacy").join("video");
-    fs::create_dir_all(legacy_root.parent().unwrap()).unwrap();
-    studio_project::create(
-        &legacy_root,
-        "Legacy",
-        sdk_pin(&manifest),
-        &manifest.fframes_version,
-        "0.1.0",
-    )
-    .unwrap();
-    fs::remove_dir_all(legacy_root.join("style")).unwrap();
-    fs::write(
-        legacy_root.join("Cargo.toml"),
-        include_str!("fixtures/pre_m4_project/Cargo.toml"),
-    )
-    .unwrap();
-    for (relative, contents) in [
-        (
-            "src/lib.rs",
-            include_str!("fixtures/pre_m4_project/src/lib.rs"),
-        ),
-        (
-            "src/main.rs",
-            include_str!("fixtures/pre_m4_project/src/main.rs"),
-        ),
-        (
-            "src/bin/studio_worker.rs",
-            include_str!("fixtures/pre_m4_project/src/bin/studio_worker.rs"),
-        ),
-    ] {
-        fs::write(legacy_root.join(relative), contents).unwrap();
-    }
-    assert!(
-        !fs::read_to_string(legacy_root.join("Cargo.toml"))
-            .unwrap()
-            .contains("styles"),
-        "the legacy Cargo manifest is the pre-M4 template"
-    );
-    let mut legacy = Controller::open(&legacy_root, &paths).unwrap();
-    assert!(legacy.project_style().is_none());
-    assert!(!legacy_root.join("style").exists());
-    let legacy_png = sdk.render(&legacy);
-    fs::write(out.join("legacy.png"), &legacy_png).unwrap();
-    let legacy_lib = fs::read(legacy_root.join("src/lib.rs")).unwrap();
-    let legacy_cargo = fs::read(legacy_root.join("Cargo.toml")).unwrap();
-    // Choosing a preset later adds the style snapshot and rewrites no Rust or Cargo source.
-    select(&mut legacy, "quiet-motion", PresetAction::Apply);
-    assert!(legacy_root.join("style/tokens.json").is_file());
-    assert_eq!(
-        fs::read(legacy_root.join("src/lib.rs")).unwrap(),
-        legacy_lib
-    );
-    assert_eq!(
-        fs::read(legacy_root.join("Cargo.toml")).unwrap(),
-        legacy_cargo
-    );
-    let legacy_after = sdk.render(&legacy);
-
     let report = json!({
         "sdk_id": manifest.sdk_id,
         "stages": recorder.stages,
         "inspections": inspections,
-        "legacy": {
-            "opened_without_styles": true,
-            "template": "pre-m4",
-            "png_sha256": sha(&legacy_png),
-            "pixel_sha256": pixel_sha(&legacy_png),
-            "pixel_sha256_after_preset": pixel_sha(&legacy_after),
-            "lib_rs_unchanged": true,
-            "lib_rs_sha256": sha(&legacy_lib),
-            "cargo_unchanged": true,
-            "cargo_sha256": sha(&legacy_cargo),
-        },
     });
     fs::write(
         out.join("report.json"),

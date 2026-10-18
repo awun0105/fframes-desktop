@@ -1,7 +1,7 @@
 //! `studio-mcp`: stdio MCP server forwarding the six project tools to the app's local
-//! tool broker. All behavior lives in `fframes_studio::agent_tools::mcp::run_stdio`.
-use fframes_studio::agent_tools::{client::CAPABILITY_ENV, mcp::run_stdio};
+//! tool broker. All behavior lives in `studio_engine::agent_tools::mcp::run_stdio`.
 use std::process::ExitCode;
+use studio_engine::agent_tools::{client::CAPABILITY_ENV, mcp::run_stdio};
 
 fn main() -> ExitCode {
     let code = run_stdio(

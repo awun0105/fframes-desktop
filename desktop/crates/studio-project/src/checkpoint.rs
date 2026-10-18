@@ -66,6 +66,16 @@ impl Checkpoints {
         self.load(&inventory.revision)?;
         Ok(inventory.revision)
     }
+    /// Read-only: refuses the manifest of `revision` under `root` when it was made by an
+    /// older (or a newer) Studio. Creates nothing, and a missing manifest is not judged.
+    pub fn check_format(root: &Path, revision: &SourceRevision) -> Result<(), ProjectError> {
+        let path = Self { root: root.into() }.manifest_path(revision);
+        match fs::metadata(&path) {
+            Ok(_) => read_manifest(&path).map(drop),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(io_error(&path, e)),
+        }
+    }
     pub fn manifest_path(&self, revision: &SourceRevision) -> PathBuf {
         self.root
             .join("checkpoints")
@@ -73,9 +83,9 @@ impl Checkpoints {
     }
     pub fn load(&self, revision: &SourceRevision) -> Result<SourceInventory, ProjectError> {
         let path = self.manifest_path(revision);
+        let bytes = read_manifest(&path)?;
         let inventory: SourceInventory =
-            serde_json::from_slice(&fs::read(&path).map_err(|e| io_error(&path, e))?)
-                .map_err(|e| io_error(&path, e))?;
+            serde_json::from_slice(&bytes).map_err(|e| io_error(&path, e))?;
         if &inventory.revision != revision {
             return Err(io_error(&path, "checkpoint identity mismatch"));
         }
@@ -190,6 +200,20 @@ impl Checkpoints {
         }
         Ok(path)
     }
+}
+
+/// Reads a checkpoint manifest. Its format is judged before anything else: a manifest of
+/// another format is refused as it is, whatever else about it would or would not parse.
+fn read_manifest(path: &Path) -> Result<Vec<u8>, ProjectError> {
+    #[derive(serde::Deserialize)]
+    struct Format {
+        #[serde(default)]
+        version: u32,
+    }
+    let bytes = fs::read(path).map_err(|e| io_error(path, e))?;
+    let format: Format = serde_json::from_slice(&bytes).map_err(|e| io_error(path, e))?;
+    crate::revision::check_inventory_version(format.version, path)?;
+    Ok(bytes)
 }
 
 fn stream(input: &mut impl Read, output: &mut impl Write) -> std::io::Result<String> {

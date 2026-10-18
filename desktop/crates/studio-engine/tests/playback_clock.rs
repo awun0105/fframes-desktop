@@ -141,3 +141,20 @@ fn revision_reservation_prevents_seek_from_reusing_staged_audio_epoch() {
     assert_eq!(candidate.position(), 0);
     assert!(!candidate.playing());
 }
+
+#[test]
+fn the_next_frame_boundary_follows_the_host_clock_and_stops_when_paused() {
+    let mut clock = PlaybackClock::install(30, 300, 0, 10.0).unwrap();
+    assert_eq!(clock.next_frame_in(10.0), None);
+    clock.toggle(10.0).unwrap();
+    // Priming a stream: one frame as a backstop.
+    assert!((clock.next_frame_in(10.0).unwrap() - 1.0 / 30.0).abs() < 1e-9);
+    clock.fallback(10.0).unwrap();
+    // Part way through frame 1 the wait is what is left of it.
+    let part_way = 10.0 + 1.0 / 30.0 + 0.01;
+    let wait = clock.next_frame_in(part_way).unwrap();
+    assert!((wait - (1.0 / 30.0 - 0.01)).abs() < 1e-9, "{wait}");
+    assert_eq!(clock.tick(part_way + wait + 1e-9), 2);
+    clock.pause(11.0).unwrap();
+    assert_eq!(clock.next_frame_in(11.0), None);
+}

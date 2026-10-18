@@ -1,0 +1,9 @@
+[package]
+name = "studio-markdown"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Block-level markdown model with append-incremental reparse for the studio transcript"
+
+[dependencies]
+pulldown-cmark = { workspace = true }
