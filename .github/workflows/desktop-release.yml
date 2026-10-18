@@ -30,7 +30,11 @@ on:
         type: boolean
         default: false
       dry_run:
-        description: "Publish nothing; with consumer_release, run the release gate and verify the packages"
+        description: "Publish nothing; prepare preview release files, or run the consumer release gate and package verification"
+        type: boolean
+        default: false
+      windows_only:
+        description: "Build only Windows for an unsigned preview (consumer releases keep the full matrix)"
         type: boolean
         default: false
       sign_artifacts:
@@ -53,13 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-          - runner: macos-15
-            target: aarch64-apple-darwin
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.windows_only == true && inputs.consumer_release != true && '[{"runner":"windows-2025","target":"x86_64-pc-windows-msvc"}]' || '[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu"},{"runner":"windows-2025","target":"x86_64-pc-windows-msvc"},{"runner":"macos-15","target":"aarch64-apple-darwin"}]') }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -298,7 +296,7 @@ jobs:
     needs: [matrix]
     if: >-
       always() && !cancelled() &&
-      (github.event_name == 'push' || (inputs.preview_release == true && inputs.consumer_release != true && inputs.dry_run != true)) &&
+      (github.event_name == 'push' || (inputs.preview_release == true && inputs.consumer_release != true)) &&
       (needs.matrix.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.run_id != ''))
     runs-on: ubuntu-latest
     permissions:
@@ -346,7 +344,16 @@ jobs:
           ls -lh dist
       - name: Generate manifests, install script, checksums and notes
         run: python3 desktop/scripts/prepare-github-release.py --tag "$RELEASE_TAG" --dist dist --repository "$GITHUB_REPOSITORY"
+      - name: Retain prepared preview files for dry-run review
+        if: inputs.dry_run == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-preview-dry-run
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish GitHub release
+        if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
@@ -361,6 +368,9 @@ jobs:
               --title "fframes Studio $RELEASE_TAG (unsigned preview)" \
               --notes-file dist/release-notes.md "${extra_args[@]}"
           echo "Published: $(gh release view "$RELEASE_TAG" --json url -q .url)"
+      - name: Preview dry run summary
+        if: inputs.dry_run == true
+        run: echo "Preview dry run prepared $RELEASE_TAG from $SOURCE_COMMIT; nothing was published."
 
   publish:
     name: Publish Release

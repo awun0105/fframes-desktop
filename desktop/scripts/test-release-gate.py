@@ -251,8 +251,24 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("validate-qualification", workflow)
         publish = consumer.split("- name: Publish GitHub Release", 1)[1]
         self.assertIn("inputs.dry_run != true", publish.split("run:", 1)[0])
-        preview = workflow.split("\n  publish-preview:\n", 1)[1].split("steps:", 1)[0]
-        self.assertIn("inputs.dry_run != true", preview)
+        preview = workflow.split("\n  publish-preview:\n", 1)[1].split("\n  publish:\n", 1)[0]
+        self.assertNotIn("inputs.dry_run", preview.split("steps:", 1)[0])
+        preview_publish = preview.split("- name: Publish GitHub release", 1)[1]
+        self.assertIn("inputs.dry_run != true", preview_publish.split("run:", 1)[0])
+        self.assertIn("studio-preview-dry-run", preview)
+        self.assertIn("Preview dry run summary", preview)
+
+    def test_windows_preview_matrix_does_not_reduce_consumer_or_tag_builds(self):
+        workflow = (SCRIPTS.parents[1] / ".github/workflows/desktop-release.yml").read_text()
+        matrix = workflow.split("include: ${{ fromJSON(", 1)[1].split(") }}", 1)[0]
+        predicate, alternatives = matrix.split(" && '[", 1)
+        self.assertIn("github.event_name == 'workflow_dispatch'", predicate)
+        self.assertIn("inputs.windows_only == true", predicate)
+        self.assertIn("inputs.consumer_release != true", predicate)
+        windows, full = ("'[" + alternatives).split(" || ")
+        self.assertEqual(json.loads(windows.strip("'")), [{"runner": "windows-2025", "target": WINDOWS}])
+        self.assertEqual({row["target"] for row in json.loads(full.strip("'"))},
+                         {LINUX, WINDOWS, "aarch64-apple-darwin"})
 
 
 if __name__ == "__main__":
