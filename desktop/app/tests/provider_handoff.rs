@@ -179,6 +179,7 @@ fn two_retained_queued_briefs_without_automatic_execution_and_explicit_transfer(
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
         codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
+        codex.adapter.wire = studio_harness::AgentWire::Acp; // This fixture speaks ACP.
     }
     fs::create_dir_all(&w.paths.data).unwrap();
     fs::write(
@@ -516,6 +517,7 @@ fn continue_draft_preserves_outgoing_draft_edits_for_incoming_provider() {
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
         codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
+        codex.adapter.wire = studio_harness::AgentWire::Acp; // This fixture speaks ACP.
     }
     fs::create_dir_all(&w.paths.data).unwrap();
     fs::write(
@@ -604,6 +606,7 @@ fn world_switched_to_codex_after_a_task() -> (World, AgentTaskId) {
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
         codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
+        codex.adapter.wire = studio_harness::AgentWire::Acp; // This fixture speaks ACP.
     }
     fs::create_dir_all(&w.paths.data).unwrap();
     fs::write(
@@ -755,6 +758,7 @@ fn restart_from_accepted_discards_uncommitted_draft_edits() {
     if let Some(codex) = registry.profiles.iter_mut().find(|p| p.id == "codex") {
         codex.adapter.executable = studio_test_support::python().to_string_lossy().into_owned();
         codex.adapter.args = vec![agent_script(), w.agent.to_string_lossy().into_owned()];
+        codex.adapter.wire = studio_harness::AgentWire::Acp; // This fixture speaks ACP.
     }
     fs::create_dir_all(&w.paths.data).unwrap();
     fs::write(

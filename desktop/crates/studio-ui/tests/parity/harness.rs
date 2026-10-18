@@ -240,19 +240,38 @@ impl Studio {
     }
 
     /// Starts a preview build. The shell ignores a command while another one is in flight,
-    /// so this dispatches only when the shell is idle and checks that the build was taken
-    /// (the shell is busy right after). An accepted build is never sent again: a second one
-    /// would cancel and restart it.
+    /// so this dispatches only when the shell is idle. The command can finish before
+    /// telemetry is read: its build/preparation state, compiler start, or installed
+    /// transport epoch also acknowledge it. A second dispatch would cancel that build.
     pub fn build_preview(&mut self) {
         let _watchdog = Watchdog::arm("a preview build to start");
         let deadline = Instant::now() + WAIT;
         loop {
             self.cx.executor().advance_clock(CLOCK_STEP);
             self.cx.run_until_parked();
-            if self.telemetry()["busy"] == false {
+            let before = self.telemetry();
+            if before["busy"] == false {
+                let started = self
+                    .compiler
+                    .started
+                    .load(std::sync::atomic::Ordering::SeqCst);
                 self.dispatch(studio_ui::actions::BuildPreview);
                 let after = self.telemetry();
-                assert!(after["busy"] == true, "the build was not taken: {after:#}");
+                assert!(
+                    after["busy"] == true
+                        || matches!(
+                            after["preview"]["status"].as_str(),
+                            Some("building" | "preparing" | "ready")
+                        )
+                        || self
+                            .compiler
+                            .started
+                            .load(std::sync::atomic::Ordering::SeqCst)
+                            > started
+                        || after["preview"]["transport_epoch"]
+                            != before["preview"]["transport_epoch"],
+                    "the build was not taken: {after:#}"
+                );
                 return;
             }
             assert!(Instant::now() < deadline, "the shell never became idle");

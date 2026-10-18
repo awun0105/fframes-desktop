@@ -35,6 +35,37 @@ fn default_registry_contains_four_profiles_and_starts_unselected() {
     assert!(ids.contains(&BUILTIN_PI_ID));
     assert!(ids.contains(&BUILTIN_ANTIGRAVITY_ID));
 
+    for (id, wire, executable) in [
+        (
+            BUILTIN_CLAUDE_ID,
+            studio_harness::AgentWire::ClaudeStreamJson,
+            "claude",
+        ),
+        (
+            BUILTIN_CODEX_ID,
+            studio_harness::AgentWire::CodexAppServer,
+            "codex",
+        ),
+        (BUILTIN_PI_ID, studio_harness::AgentWire::Acp, "pi-acp"),
+        (
+            BUILTIN_ANTIGRAVITY_ID,
+            studio_harness::AgentWire::Acp,
+            "antigravity-acp",
+        ),
+    ] {
+        let profile = registry
+            .profiles
+            .iter()
+            .find(|profile| profile.id == id)
+            .unwrap();
+        assert_eq!(profile.adapter.wire, wire);
+        assert_eq!(profile.adapter.executable, executable);
+        assert_eq!(
+            profile.adapter_identity(),
+            studio_engine::providers::provider_profiles::AdapterIdentity::Name(executable.into())
+        );
+    }
+
     for profile in &registry.profiles {
         assert!(profile.builtin, "all default profiles must be builtin");
         assert!(
@@ -298,7 +329,7 @@ fn save_settings_updates_registry_without_clobbering_builtin_defaults() {
         .iter()
         .find(|p| p.id == BUILTIN_CLAUDE_ID)
         .unwrap();
-    assert_eq!(claude.adapter.executable, "claude-agent-acp");
+    assert_eq!(claude.adapter.executable, "claude");
 
     // The custom profile was added and selected
     let selected = loaded_reg.selected_profile().unwrap();
@@ -426,7 +457,7 @@ fn registry_round_trips_and_derives_detection_specs() {
     let specs = registry.detection_specs();
     let claude = specs.iter().find(|s| s.id == BUILTIN_CLAUDE_ID).unwrap();
     assert_eq!(claude.cli_executable, "claude");
-    assert_eq!(claude.adapter_executable, "claude-agent-acp");
+    assert_eq!(claude.adapter_executable, "claude");
     let native = specs
         .iter()
         .find(|s| s.id == BUILTIN_ANTIGRAVITY_ID)
@@ -708,6 +739,7 @@ fn builtins_are_detected_by_their_own_adapter_name_whatever_launch_is_saved() {
     use studio_engine::providers::provider_profiles::{AdapterIdentity, builtin_adapter};
     let mut registry = ProviderRegistry::default();
     for profile in &mut registry.profiles {
+        profile.adapter.wire = studio_harness::AgentWire::Acp;
         profile.adapter.executable = "/usr/bin/node".into();
         profile.adapter.args = vec!["/x/index.js".into()];
     }
@@ -742,4 +774,22 @@ fn a_missing_install_tool_is_named() {
     assert!(scan(true, false).tools().is_none());
     assert!(scan(true, true).tools().is_some());
     assert!(scan(true, true).missing_tools().is_empty());
+}
+
+#[test]
+fn native_defaults_detect_the_cli_without_node_or_an_acp_adapter() {
+    use studio_engine::providers::provider_profiles::scan_agents;
+    let (temp, paths) = setup_paths();
+    let bin = temp.path().join("bin");
+    let claude = fake_executable(&bin, "claude");
+    let codex = fake_executable(&bin, "codex");
+    let registry = ProviderRegistry::default();
+    let scan = scan_agents(&registry, &only_path(&bin), &paths.data.join("adapters"));
+    for (id, executable) in [(BUILTIN_CLAUDE_ID, claude), (BUILTIN_CODEX_ID, codex)] {
+        let found = scan.found.iter().find(|found| found.id == id).unwrap();
+        assert_eq!(found.adapter.as_ref(), Some(&executable));
+        assert!(scan.is_ready(id));
+    }
+    assert!(scan.node.is_none());
+    assert!(scan.installed.is_empty());
 }

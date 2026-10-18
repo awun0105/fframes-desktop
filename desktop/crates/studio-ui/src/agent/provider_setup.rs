@@ -844,7 +844,8 @@ impl ConversationPanel {
                     .or(found.cli.as_ref())
                     .map_or_else(String::new, |path| format!(" · {}", path.display())),
             };
-            let installable = adapter_install::package_for(&profile.id).is_some();
+            let installable = profile.adapter.wire == studio_harness::AgentWire::Acp
+                && adapter_install::package_for(&profile.id).is_some();
             let action = provider_profiles::row_action(
                 state,
                 installable,

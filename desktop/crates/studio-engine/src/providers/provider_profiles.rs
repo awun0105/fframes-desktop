@@ -25,7 +25,7 @@ pub const BUILTIN_CODEX_ID: &str = "codex";
 pub const BUILTIN_PI_ID: &str = "pi";
 pub const BUILTIN_ANTIGRAVITY_ID: &str = "antigravity";
 
-/// Identifiers of the four first-party ACP adapter profiles.
+/// Identifiers of the four first-party provider profiles.
 pub const BUILTIN_IDS: [&str; 4] = [
     BUILTIN_CLAUDE_ID,
     BUILTIN_CODEX_ID,
@@ -174,8 +174,7 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
         ProviderProfile {
             id: BUILTIN_CLAUDE_ID.into(),
             label: "Claude".into(),
-            description: "Anthropic Claude via ACP adapter (@agentclientprotocol/claude-agent-acp)"
-                .into(),
+            description: "Claude Code via its native stream-json protocol".into(),
             adapter: AdapterFile {
                 provider: "Claude".into(),
                 executable: String::new(),
@@ -183,7 +182,7 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
                 auth_env_names: vec!["ANTHROPIC_API_KEY".into()],
                 auth_method: None,
                 mcp: McpChoice::Baseline,
-                wire: AgentWire::Acp,
+                wire: AgentWire::ClaudeStreamJson,
             },
             cli_executable: String::new(),
             builtin: true,
@@ -192,7 +191,7 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
         ProviderProfile {
             id: BUILTIN_CODEX_ID.into(),
             label: "Codex".into(),
-            description: "Codex App Server via ACP adapter (@agentclientprotocol/codex-acp)".into(),
+            description: "Codex via its native app-server protocol".into(),
             adapter: AdapterFile {
                 provider: "Codex".into(),
                 executable: String::new(),
@@ -200,7 +199,7 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
                 auth_env_names: vec!["OPENAI_API_KEY".into(), "CODEX_API_KEY".into()],
                 auth_method: None,
                 mcp: McpChoice::Baseline,
-                wire: AgentWire::Acp,
+                wire: AgentWire::CodexAppServer,
             },
             cli_executable: String::new(),
             builtin: true,
@@ -242,7 +241,11 @@ pub fn default_builtin_profiles() -> Vec<ProviderProfile> {
         },
     ];
     for profile in &mut profiles {
-        profile.adapter.executable = builtin_adapter(&profile.id).unwrap_or_default().into();
+        profile.adapter.executable = match profile.adapter.wire {
+            AgentWire::Acp => builtin_adapter(&profile.id).unwrap_or_default(),
+            _ => builtin_cli(&profile.id),
+        }
+        .into();
         profile.cli_executable = builtin_cli(&profile.id).into();
     }
     profiles
@@ -514,6 +517,9 @@ impl ProviderProfile {
     /// adapter name, never by the launch saved for it; a custom adapter by the file name of
     /// its executable, or by its entry when it starts as `node <entry>`.
     pub fn adapter_identity(&self) -> AdapterIdentity {
+        if is_builtin_id(&self.id) && self.adapter.wire != AgentWire::Acp {
+            return AdapterIdentity::Name(builtin_cli(&self.id).to_owned());
+        }
         if let Some(name) = builtin_adapter(&self.id) {
             return AdapterIdentity::Name(name.to_owned());
         }
@@ -633,6 +639,9 @@ pub fn scan_agents(
         .iter()
         .flat_map(|node| {
             registry.profiles.iter().filter_map(move |profile| {
+                if profile.adapter.wire != AgentWire::Acp {
+                    return None;
+                }
                 let package = package_for(&profile.id)?;
                 let adapter = find_installed(adapters_dir, &package, node)?;
                 Some((profile.id.clone(), adapter))

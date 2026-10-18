@@ -5,6 +5,10 @@ use crate::{
     TimeBase, scenes::*,
 };
 
+#[cfg(test)]
+#[path = "video_timing_tests.rs"]
+mod timing_tests;
+
 /// The base fframes video trait. It represents how to render a video for a struct which becomes an
 /// input of the video.
 pub trait Video: Sync + Sized {
@@ -147,6 +151,7 @@ impl<'a> ResolvedScenesTimeline<'a> {
 
         let clips_count = clips.len();
         let mut final_duration: usize = 0;
+        let mut timeline_end: usize = 0;
         let mut resolved_scenes = Vec::with_capacity(clips_count);
 
         for (index, clip) in clips.into_iter().enumerate() {
@@ -162,7 +167,11 @@ impl<'a> ResolvedScenesTimeline<'a> {
             } else {
                 0
             };
-            let overlap_next = if clip.trim_end == 0 { overlap_next } else { 0 };
+            let overlap_next = if clip.trim_end == 0 && index + 1 < clips_count {
+                overlap_next
+            } else {
+                0
+            };
             // An overlap reaching before the first frame (a reordered first scene) is clamped.
             let start_frame = final_duration.saturating_sub(overlap_prev);
             let end_frame = final_duration
@@ -172,6 +181,7 @@ impl<'a> ResolvedScenesTimeline<'a> {
                 .ok_or(crate::error::FFramesError::InvalidTiming(
                     crate::TimingError::TooLong(final_duration.saturating_add(duration)),
                 ))?;
+            timeline_end = timeline_end.max(end_frame);
             resolved_scenes.push(ResolvedSceneClip {
                 range: start_frame..end_frame,
                 info: SceneInfo {
@@ -191,13 +201,13 @@ impl<'a> ResolvedScenesTimeline<'a> {
                 scene_index: clip.scene_index,
             });
 
-            // the scene duration is reuded by any overlap but we should be careful with the scenes
-            // that have the overlap larger than the scene duration itself
+            // Advance the next clip's placement, independently of the furthest scene end.
+            // A long outgoing overlap may extend beyond all of the following clips.
             final_duration = (final_duration + duration).saturating_sub(overlap_next);
         }
 
         Ok(ResolvedScenesTimeline {
-            total_scenes_duration: final_duration,
+            total_scenes_duration: timeline_end,
             timeline: resolved_scenes,
             timing_report,
         })

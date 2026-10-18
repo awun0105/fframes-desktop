@@ -41,6 +41,14 @@ with socket.create_connection(("127.0.0.1", int(arg("--frame-port")))) as bulk:
     response = dict(type="ScaledFrame", envelope=copy.deepcopy(envelope), header=header, record=record,
                     frame_index=request["frame_index"], seek_serial=request["seek_serial"], scale=request["scale"], render_duration_micros=10)
     case = arg("--case")
+    if case in {"error_envelope", "error_timeout"}:
+        if case == "error_envelope":
+            envelope = dict(envelope, request_id=envelope["request_id"] + 1)
+        else:
+            time.sleep(1)
+        send(dict(type="Error", envelope=envelope, code="INVALID_FRAME_REQUEST", message="refused"))
+        time.sleep(60)
+        sys.exit(0)
     if case == "envelope":
         response["envelope"]["identity"]["open_session"] = "old-session"
     elif case == "destination":

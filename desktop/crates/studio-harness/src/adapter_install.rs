@@ -19,6 +19,8 @@ use std::{
 };
 use studio_bootstrap::{ChildEnvironment, ProcessTreeManager, SpawnOptions, TrackedChild};
 
+mod claude_patch;
+
 /// An npm package that provides an ACP adapter, pinned to an exact version together with its
 /// whole dependency tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +103,12 @@ fn package_dir(adapters: &Path, package: &AdapterPackage) -> PathBuf {
 }
 
 fn final_dir(adapters: &Path, package: &AdapterPackage) -> PathBuf {
-    package_dir(adapters, package).join(package.version)
+    let version = if claude_patch::applies(package) {
+        format!("{}-{}", package.version, claude_patch::REVISION)
+    } else {
+        package.version.to_owned()
+    };
+    package_dir(adapters, package).join(version)
 }
 
 /// The entry file a package's `bin` names, from its installed `package.json`.
@@ -147,6 +154,9 @@ pub fn find_installed(
     }
     let lockfile = std::fs::read_to_string(root.join("package-lock.json")).ok()?;
     if !same_lockfile(&lockfile, package.lockfile) {
+        return None;
+    }
+    if !claude_patch::installed(&root, package) {
         return None;
     }
     let entry = resolve_entry(&root, package).ok()?;
@@ -527,6 +537,7 @@ fn run_install(
         }));
     }
     resolve_entry(staging, package)?;
+    claude_patch::apply(staging, package)?;
     std::fs::write(
         staging.join(MARKER),
         format!("{}@{}\n", package.name, package.version),

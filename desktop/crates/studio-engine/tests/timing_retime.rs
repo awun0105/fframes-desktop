@@ -16,6 +16,31 @@ use studio_engine::{
 };
 use studio_sdk::{CompatibilityManifest, SdkInstaller};
 
+fn sdk(temp: &tempfile::TempDir) -> (PathBuf, CompatibilityManifest) {
+    let sdk = if let Some(bundle) = std::env::var_os("SDK_BUNDLE") {
+        let bundle = PathBuf::from(bundle);
+        let manifest = CompatibilityManifest::from_json_str(
+            &fs::read_to_string(bundle.join("compatibility.json")).unwrap(),
+        )
+        .unwrap();
+        let artifacts: Vec<_> = manifest
+            .artifacts
+            .iter()
+            .map(|a| (a.clone(), bundle.join(a.url.trim_start_matches("file://"))))
+            .collect();
+        SdkInstaller::new(temp.path().join("sdk"))
+            .install_from_local_artifacts(&manifest, &artifacts)
+            .unwrap()
+    } else {
+        PathBuf::from(std::env::var_os("SDK_ACTIVE").expect("SDK_BUNDLE or SDK_ACTIVE"))
+    };
+    let manifest = CompatibilityManifest::from_json_str(
+        &fs::read_to_string(sdk.join("compatibility.json")).unwrap(),
+    )
+    .unwrap();
+    (sdk, manifest)
+}
+
 fn spec(
     c: &mut Controller,
     sdk: &std::path::Path,
@@ -80,22 +105,10 @@ fn timing(c: &mut Controller) -> PreviewTiming {
 }
 
 #[test]
-#[ignore = "requires a timeline-ready SDK_BUNDLE; explicitly run for real worker qualification"]
+#[ignore = "requires a timeline-ready SDK_BUNDLE or SDK_ACTIVE; real worker qualification"]
 fn real_worker_plays_timeline_edits_without_a_rebuild() {
-    let bundle = PathBuf::from(std::env::var_os("SDK_BUNDLE").expect("SDK_BUNDLE"));
-    let m = CompatibilityManifest::from_json_str(
-        &fs::read_to_string(bundle.join("compatibility.json")).unwrap(),
-    )
-    .unwrap();
     let temp = tempfile::tempdir().unwrap();
-    let artifacts: Vec<_> = m
-        .artifacts
-        .iter()
-        .map(|a| (a.clone(), bundle.join(a.url.trim_start_matches("file://"))))
-        .collect();
-    let sdk = SdkInstaller::new(temp.path().join("sdk"))
-        .install_from_local_artifacts(&m, &artifacts)
-        .unwrap();
+    let (sdk, m) = sdk(&temp);
     let root = temp.path().join("video");
     studio_project::create(
         &root,
@@ -174,26 +187,28 @@ fn real_worker_plays_timeline_edits_without_a_rebuild() {
         generation: edited.generation + 100,
     });
     assert!(wait_retimed(&p).is_err());
-    let serial = state.seek(1, state.scale()).unwrap();
+    // Seek before sending another document or rebuilding: rejection must leave the
+    // existing connection, frame pump and displayed layout usable.
+    let scale = 1. / 49.;
+    let serial = state.seek(1, scale).unwrap();
     p.seek(SeekIntent {
         identity: retimed.identity().clone(),
         serial,
         position: 1,
-        scale: state.scale(),
+        scale,
     });
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
-        let e = p.events();
-        if let Some((_, error)) = e.error {
-            panic!("frame after a rejected document: {error}");
-        }
-        if let Some(frame) = e.frame
+        let events = p.events();
+        assert!(events.error.is_none(), "{:?}", events.error);
+        if let Some(frame) = events.frame
             && state.accepts_frame(&frame)
         {
             assert_eq!(frame.response.frame_index, 1);
+            assert_eq!(frame.response.scale, scale);
             break;
         }
-        assert!(Instant::now() < deadline, "frame after a rejected document");
+        assert!(Instant::now() < deadline, "frame after rejected timing");
         std::thread::sleep(Duration::from_millis(10));
     }
     p.set_timing(edited.clone());
@@ -206,4 +221,93 @@ fn real_worker_plays_timeline_edits_without_a_rebuild() {
     assert_eq!(rebuilt.timeline.timing_generation, edited.generation);
     assert_eq!(keys(&rebuilt), ["outro", "intro", "story"]);
     p.close();
+}
+
+#[test]
+#[ignore = "requires SDK_BUNDLE or SDK_ACTIVE; real frames and thumbnails of the hand-check layout"]
+fn real_worker_builds_split_template_at_fractional_scales() {
+    use studio_engine::services::thumbnail_cache::ThumbnailKey;
+
+    let temp = tempfile::tempdir().unwrap();
+    let (sdk, manifest) = sdk(&temp);
+    let root = temp.path().join("video");
+    studio_project::create(
+        &root,
+        "Split template",
+        sdk_pin(&manifest),
+        &manifest.fframes_version,
+        &manifest.runtime_version,
+    )
+    .unwrap();
+    // The six-clip layout from the hand-check session, including the 29-frame story.
+    fs::write(
+        root.join("timeline.json"),
+        r#"{"version":1,"clips":[
+        {"key":"intro","trim_start_frames":65,"trim_end_frames":0},
+        {"key":"intro","trim_start_frames":0,"trim_end_frames":25},
+        {"key":"intro","trim_start_frames":76,"trim_end_frames":0},
+        {"key":"story","trim_start_frames":0,"trim_end_frames":91},
+        {"key":"story","trim_start_frames":29,"trim_end_frames":0},
+        {"key":"outro","trim_start_frames":0,"trim_end_frames":0}
+    ]}"#,
+    )
+    .unwrap();
+    let paths = AppPaths::new(temp.path().join("history")).unwrap();
+    let mut controller = Controller::open(&root, &paths).unwrap();
+    let preview = PreviewCoordinator::new(controller.processes.sub_manager());
+    preview.set_timing(timing(&mut controller));
+    let build = spec(&mut controller, &sdk, &manifest, &paths);
+    let mut state = PreviewState::default();
+    state.begin(build.tag.clone());
+    preview.build(build);
+    let ready = wait_ready(&preview, &mut controller);
+    assert_eq!(ready.timeline.scenes.len(), 6);
+    assert_eq!(ready.timeline.total_frames, 314);
+    assert!(preview.commit(ready.identity().clone(), ready.seek_serial));
+    state.install(&ready, controller.state()).unwrap();
+
+    for (index, scene) in ready.timeline.scenes.iter().enumerate() {
+        let scale = [19. / 1920., 1. / 49., 0.37, 0.58][index % 4];
+        let position = scene.start_frame;
+        let serial = state.seek(position, scale).unwrap();
+        preview.seek(SeekIntent {
+            identity: ready.identity().clone(),
+            serial,
+            position,
+            scale,
+        });
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let events = preview.events();
+            assert!(events.error.is_none(), "{:?}", events.error);
+            if let Some(frame) = events.frame
+                && state.accepts_frame(&frame)
+            {
+                assert_eq!(frame.response.frame_index, position);
+                assert_eq!(frame.response.scale, scale);
+                break;
+            }
+            assert!(Instant::now() < deadline, "frame for clip {index}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let key = ThumbnailKey::new(
+            ready.identity().clone(),
+            ready.timeline.timing_generation,
+            1. / 49.,
+            position,
+        );
+        preview.thumbnails(vec![key.clone()]);
+        loop {
+            let events = preview.events();
+            assert!(events.error.is_none(), "{:?}", events.error);
+            if let Some((actual, frame)) = events.thumbnail {
+                assert_eq!(actual, key);
+                assert_eq!(frame.response.frame_index, position);
+                break;
+            }
+            assert!(Instant::now() < deadline, "thumbnail for clip {index}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    preview.close();
 }

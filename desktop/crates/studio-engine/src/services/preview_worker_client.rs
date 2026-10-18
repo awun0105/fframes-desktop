@@ -16,6 +16,35 @@ fn invalid(message: impl Into<String>) -> WorkerClientError {
     WorkerClientError::Other(message.into())
 }
 
+fn scaled_dimensions(width: usize, height: usize, scale: f64) -> (u32, u32) {
+    let scaled = |n: usize| {
+        if scale == 1. {
+            n as u32
+        } else {
+            ((n as f64 * scale / 2.).round() as u32 * 2).max(2)
+        }
+    };
+    (scaled(width), scaled(height))
+}
+
+fn frame_geometry_matches(
+    timeline: &PreviewTimelineResponse,
+    scale: f64,
+    dimensions: (u32, u32),
+) -> bool {
+    if scaled_dimensions(timeline.width, timeline.height, scale) == dimensions {
+        return true;
+    }
+    // A tiny scale change can cross the renderer's even-pixel rounding boundary.
+    // Accept only exact sizes produced by the same bounded JSON rounding allowance.
+    (scale.to_bits().saturating_sub(4)..=scale.to_bits() + 4).any(|bits| {
+        let candidate = f64::from_bits(bits);
+        candidate > 0.
+            && candidate <= 1.
+            && scaled_dimensions(timeline.width, timeline.height, candidate) == dimensions
+    })
+}
+
 /// The negotiation failed because the worker is not a compatible preview worker
 /// (version, capability, backend or limits): an SDK/environment problem, not an edit.
 pub const INCOMPATIBLE_BRIDGE: &str = "Incompatible preview SDK/worker bridge; source unchanged. Select an SDK with preview support and an explicit preview entry.";
@@ -164,14 +193,7 @@ impl PreviewWorkerClient {
         let mut refused = false;
         let dimensions = match (request, &self.timeline) {
             (PreviewRequest::ScaledFrame(req), Some(t)) => {
-                let scaled = |n: usize| {
-                    if req.scale == 1. {
-                        n as u32
-                    } else {
-                        ((n as f64 * req.scale / 2.).round() as u32 * 2).max(2)
-                    }
-                };
-                Some((scaled(t.width), scaled(t.height)))
+                Some(scaled_dimensions(t.width, t.height, req.scale))
             }
             _ => None,
         };
@@ -220,8 +242,13 @@ impl PreviewWorkerClient {
                     r.header.validate()?;
                     if r.frame_index != req.frame_index
                         || r.seek_serial != req.seek_serial
-                        || r.scale != req.scale
-                        || dimensions != Some((r.header.width, r.header.height))
+                        || !r.scale.is_finite()
+                        || r.scale <= 0.
+                        || r.scale > 1.
+                        || r.scale.to_bits().abs_diff(req.scale.to_bits()) > 4
+                        || self.timeline.as_ref().is_none_or(|timeline| {
+                            !frame_geometry_matches(timeline, req.scale, (r.header.width, r.header.height))
+                        })
                         || r.header.source_revision != e.identity.source_revision
                         || r.header.worker_generation != e.identity.worker_generation
                         || r.header.request_id != e.request_id
@@ -234,9 +261,11 @@ impl PreviewWorkerClient {
                         || r.record.offset != 0
                         || r.record.payload_len != r.header.payload_len
                     {
-                        return Err(invalid(
-                            "Frame geometry/seek/scale mismatch before payload allocation",
-                        ));
+                        return Err(invalid(format!(
+                            "Frame geometry/seek/scale mismatch before payload allocation: expected dimensions {dimensions:?}, frame {}, seek {}, scale {}; received {}x{}, frame {}, seek {}, scale {}",
+                            req.frame_index, req.seek_serial, req.scale,
+                            r.header.width, r.header.height, r.frame_index, r.seek_serial, r.scale,
+                        )));
                     }
                 }
                 (PreviewRequest::ReadAudio(req), PreviewResponse::AudioRead(r))
@@ -252,6 +281,14 @@ impl PreviewWorkerClient {
                 | (PreviewRequest::SetTiming(_), PreviewResponse::TimingApplied(_))
                 | (PreviewRequest::Shutdown(_), PreviewResponse::Ack(_)) => (),
                 _ => return Err(invalid("Unexpected typed preview destination")),
+            }
+            if let (PreviewRequest::ScaledFrame(req), PreviewResponse::ScaledFrame(frame)) =
+                (request, &mut response)
+            {
+                // Default JSON parsers can shift an f64 by a few ULPs across the
+                // request/response round trip. Geometry was checked exactly above;
+                // retain the requested scale for the playback identity checks too.
+                frame.scale = req.scale;
             }
             let record = match &response {
                 PreviewResponse::ScaledFrame(r) => Some(&r.record),
@@ -655,7 +692,14 @@ mod tests {
             audio_sample_format: "f32le_stereo_interleaved".into(),
         });
         let mut framed = Vec::new();
+        let mut bulk = Vec::new();
         for response in std::iter::once(hello).chain(responses) {
+            if let PreviewResponse::ScaledFrame(frame) = &response {
+                let record = serde_json::to_vec(&frame.record).unwrap();
+                bulk.extend((record.len() as u32).to_be_bytes());
+                bulk.extend(record);
+                bulk.extend(vec![0; frame.record.payload_len]);
+            }
             let bytes = serde_json::to_vec(&response).unwrap();
             framed.extend((bytes.len() as u32).to_be_bytes());
             framed.extend(bytes);
@@ -664,7 +708,7 @@ mod tests {
         transport.attach_pipes(
             std::io::sink(),
             std::io::Cursor::new(framed),
-            std::io::empty(),
+            std::io::Cursor::new(bulk),
         );
         let mut worker = PreviewWorkerClient::new(transport, timing_identity());
         worker.negotiate().unwrap();
@@ -693,6 +737,120 @@ mod tests {
             audio_tracks: vec![],
             timing_generation,
         })
+    }
+
+    fn scaled_frame(request_id: u64, scale: f64) -> PreviewResponse {
+        let even = |size: f64| ((size * scale / 2.).round() as u32 * 2).max(2);
+        let header =
+            FrameHeader::new_straight_rgba("rev", 7, request_id, 0, even(32.), even(18.)).unwrap();
+        PreviewResponse::ScaledFrame(ScaledFrameResponse {
+            envelope: timing_envelope(request_id),
+            frame_index: 0,
+            seek_serial: 9,
+            scale,
+            record: BinaryRecordHeader {
+                kind: BinaryRecordKind::FrameRgba8,
+                identity: timing_identity(),
+                request_id,
+                offset: 0,
+                payload_len: header.payload_len,
+            },
+            header,
+            render_duration_micros: 1,
+            editor_metadata: None,
+        })
+    }
+
+    #[test]
+    fn fractional_frame_scales_survive_json_round_trips() {
+        for scale in (2..4096).map(|n| 1. / n as f64) {
+            // Both the request and the response travel through JSON, including workers
+            // built with serde_json's default floating-point parser.
+            let worker_scale: f64 =
+                serde_json::from_str(&serde_json::to_string(&scale).unwrap()).unwrap();
+            let mut worker =
+                scripted_worker(true, vec![laid_out(2, 0), scaled_frame(3, worker_scale)]);
+            worker.timeline().unwrap();
+            let frame = worker.frame(0, 9, scale).unwrap();
+            assert_eq!(frame.response.scale, scale);
+            assert!(!worker.transport.is_crashed());
+        }
+    }
+
+    #[test]
+    fn viewport_scales_accept_dimensions_from_json_rounding() {
+        let PreviewResponse::Timeline(mut timeline) = laid_out(2, 0) else {
+            unreachable!()
+        };
+        timeline.width = 1920;
+        timeline.height = 1080;
+        for scale in (1..1280)
+            .map(|n| n as f64 / 1920.)
+            .chain((1..720).map(|n| n as f64 / 1080.))
+        {
+            let decoded: f64 =
+                serde_json::from_str(&serde_json::to_string(&scale).unwrap()).unwrap();
+            let geometry = |scale: f64| {
+                [1920., 1080.].map(|size| ((size * scale / 2.).round() as u32 * 2).max(2))
+            };
+            let [width, height] = geometry(decoded);
+            assert!(
+                frame_geometry_matches(&timeline, scale, (width, height)),
+                "scale {scale}, decoded {decoded}"
+            );
+        }
+        // This viewport used to be refused: JSON turns the expected 20x10 into 18x10.
+        let scale = 19. / 1920.;
+        let decoded = serde_json::from_str(&serde_json::to_string(&scale).unwrap()).unwrap();
+        let mut frame = scaled_frame(3, decoded);
+        if let PreviewResponse::ScaledFrame(frame) = &mut frame {
+            frame.header = FrameHeader::new_straight_rgba("rev", 7, 3, 0, 18, 10).unwrap();
+            frame.record.payload_len = frame.header.payload_len;
+        }
+        let mut worker = scripted_worker(true, vec![PreviewResponse::Timeline(timeline), frame]);
+        worker.timeline().unwrap();
+        assert_eq!(worker.frame(0, 9, scale).unwrap().response.scale, scale);
+    }
+
+    #[test]
+    fn frame_scale_tolerance_does_not_accept_other_scales_or_geometry() {
+        for scale in [f64::from_bits(0.5_f64.to_bits() + 5), 0.500000001, 0.25] {
+            let mut worker = scripted_worker(true, vec![laid_out(2, 0), scaled_frame(3, scale)]);
+            worker.timeline().unwrap();
+            assert!(worker.frame(0, 9, 0.5).is_err());
+            assert!(worker.transport.is_crashed());
+        }
+        // A near-identical scale still cannot excuse an incorrect pixel size.
+        let mut frame = scaled_frame(3, 0.5);
+        if let PreviewResponse::ScaledFrame(frame) = &mut frame {
+            frame.header = FrameHeader::new_straight_rgba("rev", 7, 3, 0, 16, 6).unwrap();
+            frame.record.payload_len = frame.header.payload_len;
+        }
+        let mut worker = scripted_worker(true, vec![laid_out(2, 0), frame]);
+        worker.timeline().unwrap();
+        assert!(worker.frame(0, 9, 0.5).is_err());
+        assert!(worker.transport.is_crashed());
+    }
+
+    #[test]
+    fn rejected_timing_keeps_the_connection_and_previous_layout_for_frames() {
+        let mut worker = scripted_worker(
+            true,
+            vec![
+                laid_out(2, 4),
+                PreviewResponse::Error(PreviewError {
+                    envelope: Some(timing_envelope(3)),
+                    code: "INVALID_TIMING".into(),
+                    message: "trim exceeds scene length".into(),
+                }),
+                scaled_frame(4, 0.5),
+            ],
+        );
+        worker.timeline().unwrap();
+        assert!(worker.set_timing(Some("{}".into()), 5).is_err());
+        assert!(!worker.transport.is_crashed());
+        assert_eq!(worker.timeline.as_ref().unwrap().timing_generation, 4);
+        worker.frame(0, 9, 0.5).unwrap();
     }
 
     #[test]
