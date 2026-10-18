@@ -11,11 +11,11 @@ serde_json = "1.0"
 # Metal on macOS, Vulkan everywhere else
 [target.'cfg(target_os = "macos")'.dependencies]
 fframes_skia_renderer = { workspace = true, features = ["metal"] }
-fframes_native_player = { workspace = true, features = ["metal"] }
+fframes_native_player = { workspace = true, features = ["metal", "audio"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 fframes_skia_renderer = { workspace = true, features = ["vulkan"] }
-fframes_native_player.workspace = true
+fframes_native_player = { workspace = true, features = ["vulkan", "audio"] }
 
 [target.'cfg(not(windows))'.dependencies]
 fframes = { workspace = true, features = ["h264", "libav-agree-gpl"] }

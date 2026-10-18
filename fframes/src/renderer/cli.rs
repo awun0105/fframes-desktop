@@ -16,7 +16,10 @@
 //! from `args.app`, then `cli::new(&video, options).args(args).run()`.
 use super::{
     CpuFrameRenderer, FFramesRenderBackend, FrameRenderer, FrameReport, Previewer, RgbaFrame,
-    fframes_logger::FFramesLoggerVariant, sheet, snapshot,
+    continuity::{PopDetector, PopKind},
+    element_labels::{self, LabelledElement},
+    fframes_logger::FFramesLoggerVariant,
+    sheet, snapshot,
 };
 use crate::diagnostics::Severity;
 use crate::{AudioMixer, AudioTimelineSamples, AudioTimelineUnit, RenderOptions, Video};
@@ -60,6 +63,22 @@ pub struct Cli<A: Args = NoArgs> {
     /// Output resolution factor, e.g. 0.5 for half resolution.
     #[arg(long, global = true)]
     pub scale: Option<f64>,
+
+    /// Render with this backend instead of the video's own. The Skia ones need
+    /// `Runner::renderers`.
+    #[arg(long, global = true, value_enum)]
+    pub renderer: Option<Renderer>,
+}
+
+/// The backends `--renderer` picks from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Renderer {
+    /// The built-in CPU backend (tiny-skia).
+    Cpu,
+    /// Skia on the CPU.
+    SkiaCpu,
+    /// Skia on the GPU: Metal on macOS, Vulkan elsewhere.
+    Gpu,
 }
 
 impl<A: Args> Cli<A> {
@@ -140,11 +159,21 @@ pub struct FrameArgs {
     /// Also write the converted SVG next to every PNG.
     #[arg(long)]
     pub svg: bool,
+    /// Only this rectangle, `x,y,width,height` in the video's pixels, e.g. `1100,520,240,120`.
+    #[arg(long, value_parser = parse_region)]
+    pub crop: Option<Region>,
+    /// Render this many times larger. Defaults to enough to show a `--crop` about 960 pixels
+    /// wide (at most 8).
+    #[arg(long)]
+    pub zoom: Option<f64>,
+    /// Outline every element that has an `id` and label it with its id (listed in --json).
+    #[arg(long)]
+    pub ids: bool,
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct StripArgs {
-    /// Range to sample.
+    /// Range to sample, or comma separated times to show side by side, e.g. `1s,Intro@end,50%`.
     #[arg(default_value = "all")]
     pub range: String,
     /// Number of frames.
@@ -157,6 +186,10 @@ pub struct StripArgs {
     pub width: u32,
     #[arg(short, long, default_value = "strip.png")]
     pub output: PathBuf,
+    /// Show only this rectangle of every frame, `x,y,width,height` in the video's pixels,
+    /// rendered sharply at `--width`.
+    #[arg(long, value_parser = parse_region)]
+    pub crop: Option<Region>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -200,6 +233,65 @@ pub struct InspectArgs {
     /// Exit with code 2 when a finding of this severity is found.
     #[arg(long, value_enum, default_value = "error")]
     pub fail_on: FailOn,
+    /// Also render every frame of the range small and report pops (warnings): parts of the
+    /// picture that change in a single frame between still frames, like an element that
+    /// appears, vanishes or jumps in front of another one instead of moving there.
+    #[arg(long)]
+    pub pops: bool,
+}
+
+/// A rectangle in the video's pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Region {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+fn parse_region(value: &str) -> Result<Region, String> {
+    let parts = value
+        .split(',')
+        .map(|part| part.trim().parse::<f64>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| format!("`{value}` is not `x,y,width,height`"))?;
+    match parts[..] {
+        [x, y, width, height] if width > 0. && height > 0. => Ok(Region {
+            x,
+            y,
+            width,
+            height,
+        }),
+        _ => Err(format!(
+            "`{value}`: expected `x,y,width,height` with a positive width and height"
+        )),
+    }
+}
+
+/// Larger frames do not fit into the GPU surfaces of the Skia backend.
+const MAX_RENDER_SIDE: f64 = 16_384.;
+
+/// Fails when the whole frame at `scale` would exceed [`MAX_RENDER_SIDE`].
+fn check_render_size<V: Video>(scale: f64) -> CliResult<()> {
+    let (width, height) = (V::WIDTH as f64 * scale, V::HEIGHT as f64 * scale);
+    if width > MAX_RENDER_SIDE || height > MAX_RENDER_SIDE {
+        return Err(format!(
+            "the whole frame would be rendered at {width:.0}x{height:.0}, more than \
+             {MAX_RENDER_SIDE} pixels per side; use a smaller --zoom or a wider --crop"
+        ));
+    }
+    Ok(())
+}
+
+/// The pixels of `region` (video pixels) in a frame rendered at any scale.
+fn crop_frame<V: Video>(frame: &RgbaFrame, region: Region) -> RgbaFrame {
+    let scale = f64::from(frame.width) / V::WIDTH as f64;
+    frame.crop(
+        (region.x * scale).round().max(0.) as u32,
+        (region.y * scale).round().max(0.) as u32,
+        (region.width * scale).round().max(1.) as u32,
+        (region.height * scale).round().max(1.) as u32,
+    )
 }
 
 #[derive(Debug, Clone, Args)]
@@ -258,13 +350,57 @@ type Player<'r, 'a, 'media, V> = Box<
 >;
 
 /// The command line of one video, created with `cli::new`.
-pub struct Runner<'r, 'a, 'media, V, B = crate::cpu::CpuRenderingBackend, A: Args = NoArgs> {
+pub struct Runner<
+    'r,
+    'a,
+    'media,
+    V,
+    B = crate::cpu::CpuRenderingBackend,
+    A: Args = NoArgs,
+    R = NoRenderers,
+> {
     video: &'a V,
     options: RenderOptions<'a, 'media>,
     backend: B,
     args: Option<Cli<A>>,
     player: Option<Player<'r, 'a, 'media, V>>,
     default_output: PathBuf,
+    renderers: R,
+}
+
+/// The backends behind `--renderer skia-cpu|gpu`, see `Runner::renderers`.
+pub trait Renderers {
+    /// What renders without `--renderer`, `None` for the runner's backend.
+    fn default_renderer(&self) -> Option<Renderer> {
+        None
+    }
+
+    /// Runs the command with the backend `renderer` asks for.
+    fn run<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Args>(
+        self,
+        renderer: Renderer,
+        runner: Runner<'r, 'a, 'media, V, B, A>,
+    ) -> ExitCode;
+}
+
+/// Only `--renderer cpu`: the binary has no Skia.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoRenderers;
+
+impl Renderers for NoRenderers {
+    fn run<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Args>(
+        self,
+        renderer: Renderer,
+        runner: Runner<'r, 'a, 'media, V, B, A>,
+    ) -> ExitCode {
+        let name = renderer
+            .to_possible_value()
+            .map(|v| v.get_name().to_owned());
+        runner.fail(format!(
+            "--renderer {} needs `.renderers(fframes_skia_renderer::cli::SkiaRenderers::default())`",
+            name.unwrap_or_default()
+        ))
+    }
 }
 
 /// The command line for `video`: render, frame, strip, inspect, audio, ... Call `.run()`.
@@ -279,18 +415,19 @@ pub fn new<'a, 'media: 'a, V: Video + Send + Sync>(
         args: None,
         player: None,
         default_output: PathBuf::from("out.mp4"),
+        renderers: NoRenderers,
     }
 }
 
-impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Args>
-    Runner<'r, 'a, 'media, V, B, A>
+impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Args, R: Renderers>
+    Runner<'r, 'a, 'media, V, B, A, R>
 {
     /// Renders with another backend, e.g. `SkiaFFramesRenderer`. Frame previews use the
     /// backend's own renderer, so they look like the rendered video.
     pub fn backend<B2: FFramesRenderBackend>(
         self,
         backend: B2,
-    ) -> Runner<'r, 'a, 'media, V, B2, A> {
+    ) -> Runner<'r, 'a, 'media, V, B2, A, R> {
         Runner {
             video: self.video,
             options: self.options,
@@ -298,11 +435,12 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args: self.args,
             player: self.player,
             default_output: self.default_output,
+            renderers: self.renderers,
         }
     }
 
     /// Uses already parsed arguments with application flags (see `cli::parse`).
-    pub fn args<A2: Args>(self, args: Cli<A2>) -> Runner<'r, 'a, 'media, V, B, A2> {
+    pub fn args<A2: Args>(self, args: Cli<A2>) -> Runner<'r, 'a, 'media, V, B, A2, R> {
         Runner {
             video: self.video,
             options: self.options,
@@ -310,6 +448,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args: Some(args),
             player: self.player,
             default_output: self.default_output,
+            renderers: self.renderers,
         }
     }
 
@@ -322,7 +461,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             &super::PreviewRequest,
         ) -> Result<(), String>
         + 'r2,
-    ) -> Runner<'r2, 'a, 'media, V, B, A> {
+    ) -> Runner<'r2, 'a, 'media, V, B, A, R> {
         Runner {
             video: self.video,
             options: self.options,
@@ -330,6 +469,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args: self.args,
             player: Some(Box::new(play)),
             default_output: self.default_output,
+            renderers: self.renderers,
         }
     }
 
@@ -339,8 +479,52 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
         self
     }
 
+    /// Backends for `--renderer skia-cpu|gpu`, usually
+    /// `fframes_skia_renderer::cli::SkiaRenderers`. Without them only `--renderer cpu` works.
+    pub fn renderers<R2: Renderers>(self, renderers: R2) -> Runner<'r, 'a, 'media, V, B, A, R2> {
+        Runner {
+            video: self.video,
+            options: self.options,
+            backend: self.backend,
+            args: self.args,
+            player: self.player,
+            default_output: self.default_output,
+            renderers,
+        }
+    }
+
+    /// Reports an error like a failed command does and returns its exit code.
+    pub fn fail(self, message: impl std::fmt::Display) -> ExitCode {
+        fail(self.args.is_some_and(|args| args.json), message)
+    }
+
     /// Parses the command line (unless `args` was given) and runs the command.
-    pub fn run(self) -> ExitCode {
+    pub fn run(mut self) -> ExitCode {
+        let renderer = self
+            .args
+            .get_or_insert_with(Cli::<A>::parse)
+            .renderer
+            .take()
+            .or(self.renderers.default_renderer());
+        let runner = Runner {
+            video: self.video,
+            options: self.options,
+            backend: self.backend,
+            args: self.args,
+            player: self.player,
+            default_output: self.default_output,
+            renderers: NoRenderers,
+        };
+        match renderer {
+            None => runner.execute(),
+            Some(Renderer::Cpu) => runner
+                .backend(crate::cpu::CpuRenderingBackend::default())
+                .execute(),
+            Some(renderer) => self.renderers.run(renderer, runner),
+        }
+    }
+
+    fn execute(self) -> ExitCode {
         let Runner {
             video,
             mut options,
@@ -348,6 +532,7 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             args,
             player,
             default_output,
+            renderers: _,
         } = self;
         let cli = args.unwrap_or_else(Cli::<A>::parse);
 
@@ -391,7 +576,9 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
                         }
                         Command::Svg(args) => svg(json, &mut previewer, args),
                         Command::Timeline => timeline(json, &previewer),
-                        Command::Inspect(args) => inspect(json, &mut previewer, args),
+                        Command::Inspect(args) => {
+                            inspect(json, &mut previewer, frame_renderer, args)
+                        }
                         Command::Snapshot(args) => {
                             snapshots(json, &mut previewer, frame_renderer, args)
                         }
@@ -424,18 +611,17 @@ impl<'r, 'a, 'media: 'a, V: Video + Send + Sync, B: FFramesRenderBackend, A: Arg
             }
         };
 
-        match result {
-            Ok(code) => code,
-            Err(message) => {
-                if json {
-                    println!("{}", serde_json::json!({ "error": message }));
-                } else {
-                    eprintln!("error: {message}");
-                }
-                ExitCode::FAILURE
-            }
-        }
+        result.unwrap_or_else(|message| fail(json, message))
     }
+}
+
+fn fail(json: bool, message: impl std::fmt::Display) -> ExitCode {
+    if json {
+        println!("{}", serde_json::json!({ "error": message.to_string() }));
+    } else {
+        eprintln!("error: {message}");
+    }
+    ExitCode::FAILURE
 }
 
 fn print<T: Serialize>(json: bool, value: &T, text: impl FnOnce() -> String) {
@@ -616,8 +802,36 @@ struct FrameResult {
     spec: String,
     path: PathBuf,
     svg: Option<PathBuf>,
+    /// Elements with an `id` in the frame (or the crop), with `--ids`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    elements: Option<Vec<LabelledElement>>,
     #[serde(flatten)]
     report: FrameReport,
+}
+
+/// How many labelled elements the text output lists; --json has all of them.
+const LISTED_ELEMENTS: usize = 40;
+
+fn elements_text(elements: &[LabelledElement]) -> String {
+    let mut text = String::new();
+    for element in elements.iter().take(LISTED_ELEMENTS) {
+        let _ = writeln!(
+            text,
+            "  #{} {} {:.0},{:.0} {:.0}x{:.0}",
+            element.id, element.kind, element.x, element.y, element.width, element.height
+        );
+    }
+    if elements.len() > LISTED_ELEMENTS {
+        let _ = writeln!(
+            text,
+            "  ... {} more, see --json",
+            elements.len() - LISTED_ELEMENTS
+        );
+    }
+    if elements.is_empty() {
+        text.push_str("  no elements with an `id`\n");
+    }
+    text
 }
 
 fn frame<'a, 'm: 'a, V: Video>(
@@ -627,9 +841,46 @@ fn frame<'a, 'm: 'a, V: Video>(
     args: FrameArgs,
 ) -> CliResult {
     std::fs::create_dir_all(&args.output).map_err(err)?;
+    let zoom = args.zoom.unwrap_or_else(|| {
+        args.crop
+            .map_or(1., |crop| (960. / crop.width).clamp(1., 8.))
+    });
+    if !(zoom > 0. && zoom.is_finite()) {
+        return Err(format!("--zoom {zoom} must be a positive number"));
+    }
+    let scale = previewer.options().scale_resolution * zoom;
+    check_render_size::<V>(scale)?;
+    previewer.set_scale(scale);
+
     let mut results = Vec::new();
     for (spec, frame) in resolve_frames(previewer, &args.at)? {
-        let (pixels, report) = previewer.render_inspected(frame, renderer).map_err(err)?;
+        let (mut pixels, report) = previewer.render_inspected(frame, renderer).map_err(err)?;
+        let elements = if args.ids {
+            let tree = previewer.svg_tree(frame).map_err(err)?;
+            let mut elements = element_labels::labelled_elements(&tree);
+            if let Some(crop) = args.crop {
+                elements.retain(|e| {
+                    f64::from(e.x) < crop.x + crop.width
+                        && f64::from(e.x + e.width) > crop.x
+                        && f64::from(e.y) < crop.y + crop.height
+                        && f64::from(e.y + e.height) > crop.y
+                });
+            }
+            pixels = element_labels::draw_labels(
+                &pixels,
+                &tree,
+                &elements,
+                previewer.font_db(),
+                previewer.options().default_font,
+            )
+            .map_err(err)?;
+            Some(elements)
+        } else {
+            None
+        };
+        if let Some(crop) = args.crop {
+            pixels = crop_frame::<V>(&pixels, crop);
+        }
         let name = snapshot::snapshot_name(&spec);
         let path = args.output.join(format!("{name}.png"));
         pixels.save_png(&path).map_err(err)?;
@@ -644,6 +895,7 @@ fn frame<'a, 'm: 'a, V: Video>(
             spec,
             path,
             svg,
+            elements,
             report,
         });
     }
@@ -662,6 +914,9 @@ fn frame<'a, 'm: 'a, V: Video>(
                     r.path.display(),
                     diagnostics_text(&r.report, "  ")
                 );
+                if let Some(elements) = &r.elements {
+                    text.push_str(&elements_text(elements));
+                }
                 text
             })
             .trim_end()
@@ -681,11 +936,15 @@ fn render_cells<'a, 'm: 'a, V: Video>(
     previewer: &mut Previewer<'a, 'm, V>,
     renderer: &mut dyn FrameRenderer,
     frames: &[usize],
+    crop: Option<Region>,
 ) -> CliResult<(Vec<sheet::SheetCell>, Vec<FrameReport>)> {
     let mut cells = Vec::new();
     let mut reports = Vec::new();
     for &frame in frames {
-        let (pixels, report) = previewer.render_inspected(frame, renderer).map_err(err)?;
+        let (mut pixels, report) = previewer.render_inspected(frame, renderer).map_err(err)?;
+        if let Some(crop) = crop {
+            pixels = crop_frame::<V>(&pixels, crop);
+        }
         cells.push(sheet::SheetCell {
             frame: pixels,
             label: format!(
@@ -731,13 +990,24 @@ fn strip<'a, 'm: 'a, V: Video>(
     renderer: &mut dyn FrameRenderer,
     args: StripArgs,
 ) -> CliResult {
-    let range = previewer
-        .timeline()
-        .resolve_range(&args.range)
-        .map_err(err)?;
-    let frames = spread(range, args.count);
-    previewer.set_scale(f64::from(args.width) / V::WIDTH as f64);
-    let (cells, diagnostics) = render_cells(previewer, renderer, &frames)?;
+    let frames = if args.range.contains(',') {
+        let specs: Vec<String> = args.range.split(',').map(str::to_owned).collect();
+        resolve_frames(previewer, &specs)?
+            .into_iter()
+            .map(|(_, frame)| frame)
+            .collect()
+    } else {
+        let range = previewer
+            .timeline()
+            .resolve_range(&args.range)
+            .map_err(err)?;
+        spread(range, args.count)
+    };
+    let visible_width = args.crop.map_or(V::WIDTH as f64, |crop| crop.width);
+    let scale = f64::from(args.width) / visible_width;
+    check_render_size::<V>(scale)?;
+    previewer.set_scale(scale);
+    let (cells, diagnostics) = render_cells(previewer, renderer, &frames, args.crop)?;
     let image = sheet::contact_sheet(
         &cells,
         args.columns,
@@ -772,7 +1042,7 @@ fn onion<'a, 'm: 'a, V: Video>(
     if scale.is_none() {
         previewer.set_scale(0.5);
     }
-    let (cells, diagnostics) = render_cells(previewer, renderer, &frames)?;
+    let (cells, diagnostics) = render_cells(previewer, renderer, &frames, None)?;
     let pixels: Vec<RgbaFrame> = cells.into_iter().map(|c| c.frame).collect();
     let image = sheet::onion_skin(&pixels).map_err(err)?;
     ensure_parent(&args.output)?;
@@ -860,6 +1130,10 @@ fn timeline<'a, 'm: 'a, V: Video>(json: bool, previewer: &Previewer<'a, 'm, V>) 
             if mix.duck.is_some() {
                 extra.push("ducked".into());
             }
+            let processing = track_processing(mix.rate, &mix.effects);
+            if let Some(processing) = processing.strip_prefix(", ") {
+                extra.push(processing.to_owned());
+            }
             let _ = writeln!(
                 text,
                 "audio {:<28} {:>8.3}s..{:.3}s {}",
@@ -893,12 +1167,137 @@ struct Finding {
 #[derive(Serialize)]
 struct InspectResult {
     checked_frames: usize,
+    /// Frames rendered and compared with `--pops`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pop_scanned_frames: Option<usize>,
     findings: Vec<Finding>,
+}
+
+/// Width in pixels of the frames `inspect --pops` compares.
+const POP_SCAN_WIDTH: f64 = 480.;
+
+/// Renders every frame of `range` small and reports pops, see [`super::continuity`].
+fn scan_pops<'a, 'm: 'a, V: Video>(
+    json: bool,
+    previewer: &mut Previewer<'a, 'm, V>,
+    renderer: &mut dyn FrameRenderer,
+    range: std::ops::Range<usize>,
+) -> CliResult<Vec<Finding>> {
+    previewer.set_scale((POP_SCAN_WIDTH / V::WIDTH as f64).min(1.));
+    let (width, height) = previewer.size();
+    let mut detector = PopDetector::new(width, height);
+    let progress = !json && std::io::stderr().is_terminal();
+    let total = range.len();
+    for (i, frame) in range.clone().enumerate() {
+        let pixels = previewer.render(frame, renderer).map_err(err)?;
+        if (pixels.width, pixels.height) != (width, height) {
+            return Err(format!(
+                "the renderer returned a {}x{} frame instead of {width}x{height}",
+                pixels.width, pixels.height
+            ));
+        }
+        detector.push(pixels);
+        if progress && i % 30 == 0 {
+            eprint!("\rscanning for pops: frame {i}/{total}");
+        }
+    }
+    if progress {
+        eprint!("\r{}\r", " ".repeat(48));
+    }
+
+    // The same region popping again and again is one finding (a counter, a blinking light),
+    // so that a single pop elsewhere stands out.
+    let mut groups: Vec<(crate::renderer::continuity::Pop, Vec<usize>)> = Vec::new();
+    for pop in detector.finish() {
+        let overlapping = groups.iter_mut().find(|(group, _)| {
+            group.kind == pop.kind
+                && pop.x < group.x + group.width
+                && group.x < pop.x + pop.width
+                && pop.y < group.y + group.height
+                && group.y < pop.y + pop.height
+        });
+        if let Some((group, frames)) = overlapping {
+            let (right, bottom) = (
+                (group.x + group.width).max(pop.x + pop.width),
+                (group.y + group.height).max(pop.y + pop.height),
+            );
+            group.x = group.x.min(pop.x);
+            group.y = group.y.min(pop.y);
+            group.width = right - group.x;
+            group.height = bottom - group.y;
+            group.strength = group.strength.max(pop.strength);
+            frames.push(pop.frame);
+        } else {
+            let frame = pop.frame;
+            groups.push((pop, vec![frame]));
+        }
+    }
+
+    let to_video = V::WIDTH as f32 / width as f32;
+    let timeline = previewer.timeline();
+    Ok(groups
+        .into_iter()
+        .map(|(pop, frames)| {
+            let frames: Vec<usize> = frames.into_iter().map(|f| range.start + f).collect();
+            let (first, last) = (frames[0], frames[frames.len() - 1]);
+            let margin = 16.;
+            let x = (pop.x as f32 * to_video - margin).max(0.);
+            let y = (pop.y as f32 * to_video - margin).max(0.);
+            let w = pop.width as f32 * to_video + 2. * margin;
+            let h = pop.height as f32 * to_video + 2. * margin;
+            let (what, compare) = match pop.kind {
+                PopKind::Step => (
+                    "changes in one frame between still frames: something appears, vanishes \
+                     or jumps in front of something else",
+                    format!("{},{first}", first.saturating_sub(1)),
+                ),
+                PopKind::Flash => (
+                    "differs in a single frame from the frames before and after it",
+                    format!("{},{first},{}", first.saturating_sub(1), first + 1),
+                ),
+            };
+            let (first_seconds, last_seconds) = (
+                timeline.frame_to_seconds(first),
+                timeline.frame_to_seconds(last),
+            );
+            let repeats = if frames.len() > 1 {
+                format!(
+                    " ({} times until {last_seconds:.2}s, like a counter or a blinking element)",
+                    frames.len()
+                )
+            } else {
+                String::new()
+            };
+            let mut scenes: Vec<String> = Vec::new();
+            for &frame in &frames {
+                for scene in timeline.scenes_at(frame) {
+                    if !scenes.contains(&scene.name) {
+                        scenes.push(scene.name.clone());
+                    }
+                }
+            }
+            Finding {
+                severity: Severity::Warning,
+                key: format!("pop:{first}:{}:{}", pop.x, pop.y),
+                message: format!(
+                    "pop at {x:.0},{y:.0} {w:.0}x{h:.0}{repeats}: the picture {what}; compare \
+                     `frame {compare} --crop {x:.0},{y:.0},{w:.0},{h:.0}`"
+                ),
+                first_frame: first,
+                last_frame: last,
+                first_seconds,
+                last_seconds,
+                frames: frames.len(),
+                scenes,
+            }
+        })
+        .collect())
 }
 
 fn inspect<'a, 'm: 'a, V: Video>(
     json: bool,
     previewer: &mut Previewer<'a, 'm, V>,
+    renderer: &mut dyn FrameRenderer,
     args: InspectArgs,
 ) -> CliResult {
     let timeline = previewer.timeline().clone();
@@ -958,6 +1357,12 @@ fn inspect<'a, 'm: 'a, V: Video>(
             }
         }
     }
+    let pop_scanned_frames = if args.pops {
+        findings.extend(scan_pops(json, previewer, renderer, range.clone())?);
+        Some(range.len())
+    } else {
+        None
+    };
     findings.sort_by(|a, b| {
         b.severity
             .cmp(&a.severity)
@@ -972,10 +1377,15 @@ fn inspect<'a, 'm: 'a, V: Video>(
 
     let result = InspectResult {
         checked_frames: frames.len(),
+        pop_scanned_frames,
         findings,
     };
     print(json, &result, || {
-        let mut text = format!("checked {} frames: ", result.checked_frames);
+        let mut text = format!("checked {} frames", result.checked_frames);
+        if let Some(scanned) = result.pop_scanned_frames {
+            let _ = write!(text, ", compared {scanned} frames for pops");
+        }
+        text.push_str(": ");
         if result.findings.is_empty() {
             text.push_str("no problems found");
         } else {
@@ -1049,6 +1459,28 @@ fn snapshots<'a, 'm: 'a, V: Video>(
     } else {
         ExitCode::SUCCESS
     })
+}
+
+/// One time of `audio at`.
+#[derive(Serialize)]
+struct AudioAt {
+    spec: String,
+    frame: usize,
+    seconds: f64,
+    tracks: Vec<crate::ActiveTrack>,
+}
+
+/// `, rate 0.50, highpass 80 Hz Q 0.71, ...` for a track that has them.
+fn track_processing(rate: f32, effects: &[crate::Effect]) -> String {
+    let mut text = String::new();
+    #[expect(clippy::float_cmp, reason = "1.0 is the exact default")]
+    if rate != 1. {
+        let _ = write!(text, ", rate {rate:.2}");
+    }
+    for effect in effects {
+        let _ = write!(text, ", {effect}");
+    }
+    text
 }
 
 fn mixer_for<'a, 'm: 'a, V: Video>(
@@ -1194,43 +1626,34 @@ fn audio<'a, 'm: 'a, V: Video>(
             let mut results = Vec::new();
             for (spec, frame) in resolve_frames(previewer, &at)? {
                 let sample = (frame as f64 / V::FPS as f64 * sample_rate as f64).round() as usize;
-                results.push(serde_json::json!({
-                    "spec": spec,
-                    "frame": frame,
-                    "seconds": frame as f64 / V::FPS as f64,
-                    "tracks": mixer.active_tracks_at(sample),
-                }));
+                results.push(AudioAt {
+                    spec,
+                    frame,
+                    seconds: frame as f64 / V::FPS as f64,
+                    tracks: mixer.active_tracks_at(sample),
+                });
             }
             print(json, &results, || {
                 results
                     .iter()
                     .map(|r| {
-                        let mut text = format!(
-                            "{} ({:.3}s):",
-                            r["spec"].as_str().unwrap_or(""),
-                            r["seconds"].as_f64().unwrap_or(0.)
-                        );
-                        let tracks = r["tracks"].as_array().cloned().unwrap_or_default();
-                        if tracks.is_empty() {
+                        let mut text = format!("{} ({:.3}s):", r.spec, r.seconds);
+                        if r.tracks.is_empty() {
                             text.push_str(" silence");
                         }
-                        for t in tracks {
+                        for t in &r.tracks {
                             let _ = write!(
                                 text,
-                                "\n  {} at {:.3}s of the file, {:.1} dB{}{}",
-                                t["file"].as_str().unwrap_or(""),
-                                t["file_seconds"].as_f64().unwrap_or(0.),
-                                t["gain_db"].as_f64().unwrap_or(f64::NEG_INFINITY),
-                                if t["voice"].as_bool() == Some(true) {
-                                    ", voice"
-                                } else {
-                                    ""
-                                },
-                                match t["ducked_db"].as_f64() {
-                                    Some(d) if d < -0.05 => format!(", ducked {d:.1} dB"),
-                                    _ => String::new(),
-                                }
+                                "\n  {} at {:.3}s of the file, {:.1} dB",
+                                t.file, t.file_seconds, t.gain_db
                             );
+                            if t.voice {
+                                text.push_str(", voice");
+                            }
+                            if t.ducked_db < -0.05 {
+                                let _ = write!(text, ", ducked {:.1} dB", t.ducked_db);
+                            }
+                            text.push_str(&track_processing(t.rate, &t.effects));
                         }
                         text
                     })
@@ -1439,5 +1862,59 @@ mod tests {
             cli.command,
             Some(Command::Audio(AudioCommand::Analyze { .. }))
         ));
+
+        let cli = Cli::<NoArgs>::try_parse_from([
+            "video",
+            "frame",
+            "1s,2s",
+            "--crop",
+            "100,50.5,240,120",
+            "--zoom",
+            "3",
+            "--ids",
+        ])
+        .unwrap();
+        let Some(Command::Frame(args)) = cli.command else {
+            panic!("frame expected");
+        };
+        assert_eq!(args.at, ["1s", "2s"]);
+        assert_eq!(
+            args.crop,
+            Some(Region {
+                x: 100.,
+                y: 50.5,
+                width: 240.,
+                height: 120.
+            })
+        );
+        assert_eq!(args.zoom, Some(3.));
+        assert!(args.ids);
+
+        let cli = Cli::<NoArgs>::try_parse_from([
+            "video",
+            "strip",
+            "1s,Intro@end,50%",
+            "--crop",
+            "0,0,960,540",
+        ])
+        .unwrap();
+        assert!(
+            matches!(cli.command, Some(Command::Strip(StripArgs { ref range, crop: Some(_), .. })) if range == "1s,Intro@end,50%")
+        );
+
+        let cli = Cli::<NoArgs>::try_parse_from(["video", "inspect", "Intro", "--pops"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Inspect(InspectArgs { pops: true, .. }))
+        ));
+    }
+
+    #[test]
+    fn parses_regions() {
+        assert!(parse_region("1,2,3,4").is_ok());
+        assert!(parse_region("1, 2, 3.5, 4").is_ok());
+        assert!(parse_region("1,2,3").is_err());
+        assert!(parse_region("1,2,0,4").is_err());
+        assert!(parse_region("a,2,3,4").is_err());
     }
 }

@@ -168,7 +168,8 @@ family, size and weight in the `<text>` attributes. `text-anchor="middle"` cente
 
 - `include_media_dir!(pub struct MyMedia, "media")` embeds a folder; the path is relative to
   the Cargo workspace root, which in a generated project is the project folder. Call
-  `MyMedia::prepare()` in `main.rs`. Fonts register by family name, audio decodes to mono.
+  `MyMedia::prepare()` in `main.rs`. Fonts register by family name, audio decodes to mono;
+  `include_media_dir!(pub struct MyMedia, "media", stereo)` keeps stereo files stereo.
 - Large or stereo files: `let dir = MediaDirectory::read_folder("assets")?; let media = dir.process_media_source()?;`
   and combine providers with `CombinedMediaProvider::from([&static_media as &dyn MediaProvider, &media])`.
 - Video frames: `frame.get_synced_video_frame(ctx, "clip.mp4", &SyncVideoFrameInput { start_from, looping, editor_fallback_image })`
@@ -289,8 +290,9 @@ fframes::cli::new(&video, options)
 - Zero width/height rects and zero radius circles are invalid SVG and are skipped (inspect
   reports them): animate from `0.5`, not `0`.
 - A panic in `render_frame` stops the render; the error names frame, second and scene.
-- `font-weight` must be numeric (`600`) or `normal`/`bold`. Unknown families fall back
-  silently in the renderer, `inspect` reports "No match for ... font-family".
+- `font-weight` is a number from 1 to 1000 (`600`, `{weight}`) or `normal`/`bold`; a number
+  outside that range is ignored. Unknown families fall back silently in the renderer,
+  `inspect` reports "No match for ... font-family".
 - `Color::TRANSPARENT` backgrounds need an alpha capable encoder and pixel format.
 - Heavy filters (`feGaussianBlur`, `feDropShadow`) on animated subtrees are slow on the CPU
   backend: keep them static or use Skia.

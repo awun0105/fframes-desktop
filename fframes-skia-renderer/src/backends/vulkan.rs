@@ -1,14 +1,14 @@
 use super::SkiaBackend;
 use crate::skia_backend::{SkiaFFramesRenderer, SkiaPipelineConfig};
+pub use ash;
 use ash::vk::{self, Handle};
 use ash::{Entry, Instance};
 use fframes::{FFramesRendererError, FFramesRendererResult};
-use skia_safe::ColorType;
 use skia_safe::gpu::ganesh::context_options::{Enable, ShaderCacheStrategy};
-use skia_safe::gpu::ganesh::vk::backend_render_targets;
 use skia_safe::gpu::{self, DirectContext};
+use skia_safe::{AlphaType, ColorType, ImageInfo};
 use skia_safe::{Surface, gpu::SurfaceOrigin};
-use std::ffi::{CString, c_void};
+use std::ffi::{CStr, CString, c_void};
 use std::os::raw::c_char;
 
 #[allow(dead_code)]
@@ -42,12 +42,13 @@ struct ForeignDevice {
 }
 
 /// A Skia GPU context and the queue it submits to.
-pub(crate) struct VulkanContext {
-    pub(crate) gpu: DirectContext,
-    pub(crate) queue_lock: super::QueueLock,
-    pub(crate) queue: vk::Queue,
-    #[cfg_attr(not(feature = "vulkan-video"), allow(dead_code))]
-    pub(crate) queue_index: u32,
+pub struct VulkanContext {
+    pub gpu: DirectContext,
+    /// Held around everything that reaches [`Self::queue`]: Skia's submits, presents, readbacks.
+    pub queue_lock: super::QueueLock,
+    pub queue: vk::Queue,
+    /// The index of [`Self::queue`] in the queue family of the backend.
+    pub queue_index: u32,
 }
 
 unsafe impl Send for SkiaVulkanCtx {}
@@ -55,28 +56,42 @@ unsafe impl Sync for SkiaVulkanCtx {}
 
 impl SkiaVulkanCtx {
     pub fn new(width: usize, height: usize) -> FFramesRendererResult<Self> {
+        Self::new_with_instance_extensions(width, height, &[])
+    }
+
+    /// Like [`Self::new`], with more instance extensions enabled. Presenting to a window
+    /// needs the surface extension of its window system (`VK_KHR_xlib_surface`,
+    /// `VK_KHR_wayland_surface`, `VK_KHR_win32_surface`, `VK_EXT_metal_surface`, ...).
+    pub fn new_with_instance_extensions(
+        width: usize,
+        height: usize,
+        instance_extensions: &[&'static CStr],
+    ) -> FFramesRendererResult<Self> {
         unsafe {
             let entry = Entry::load().map_err(|e| {
                 FFramesRendererError::Skia(format!("Failed to load Vulkan entry: {e}"))
             })?;
 
+            let api_version = vulkan_version(&entry)?.map_or_else(
+                || vk::make_api_version(0, 1, 1, 0),
+                |(major, minor, patch)| {
+                    vk::make_api_version(0, major as u32, minor as u32, patch as u32)
+                },
+            );
+            let mut extension_names = vec![
+                vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_NAME,
+                vk::KHR_SURFACE_NAME,
+                vk::KHR_PORTABILITY_ENUMERATION_NAME,
+            ];
+            for name in instance_extensions {
+                if !extension_names.contains(name) {
+                    extension_names.push(*name);
+                }
+            }
             let instance: Instance = {
-                let api_version = vulkan_version(&entry)?.map_or_else(
-                    || vk::make_api_version(0, 1, 1, 0),
-                    |(major, minor, patch)| {
-                        vk::make_api_version(0, major as u32, minor as u32, patch as u32)
-                    },
-                );
-
                 let app_name = CString::new("fframes_skia_renderer").map_err(|e| {
                     FFramesRendererError::Skia(format!("Failed to create CString: {e}"))
                 })?;
-
-                let extension_names = [
-                    vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_NAME,
-                    vk::KHR_SURFACE_NAME,
-                    vk::KHR_PORTABILITY_ENUMERATION_NAME,
-                ];
 
                 let extension_name_ptrs: Vec<*const c_char> =
                     extension_names.iter().map(|name| name.as_ptr()).collect();
@@ -282,18 +297,29 @@ impl SkiaVulkanCtx {
         self.encoder_device.as_ref()
     }
 
-    #[cfg(feature = "vulkan-video")]
-    pub(crate) fn device(&self) -> &ash::Device {
+    pub fn entry(&self) -> &Entry {
+        &self.entry
+    }
+
+    pub fn instance(&self) -> &Instance {
+        &self.instance
+    }
+
+    pub fn physical_device(&self) -> vk::PhysicalDevice {
+        self.physical_device
+    }
+
+    pub fn device(&self) -> &ash::Device {
         &self.device
     }
 
-    #[cfg(feature = "vulkan-video")]
-    pub(crate) fn queue_family_index(&self) -> u32 {
+    /// The graphics queue family every context of this backend submits to.
+    pub fn queue_family_index(&self) -> u32 {
         self.queue_family_index
     }
 
     /// A new Skia context on the next queue of the device.
-    pub(crate) fn create_context(&self) -> FFramesRendererResult<VulkanContext> {
+    pub fn create_context(&self) -> FFramesRendererResult<VulkanContext> {
         unsafe {
             let get_proc = |of| {
                 let proc_ptr = match of {
@@ -317,6 +343,9 @@ impl SkiaVulkanCtx {
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                 % self.queues.len();
             let queue = self.queues[queue_index];
+            let queue_lock = self.queue_locks[queue_index].clone();
+            // The factory may destroy a partially initialized GPU context on failure.
+            let _guard = super::lock_queue(Some(&queue_lock));
 
             // Initialize Skia Vulkan backend context
             let mut backend_context = gpu::vk::BackendContext::new_builder(
@@ -374,29 +403,11 @@ impl SkiaVulkanCtx {
 
             Ok(VulkanContext {
                 gpu,
-                queue_lock: self.queue_locks[queue_index].clone(),
+                queue_lock: queue_lock.clone(),
                 queue,
                 queue_index: queue_index as u32,
             })
         }
-    }
-
-    fn find_memory_type_index(
-        &self,
-        type_filter: u32,
-        properties: vk::MemoryPropertyFlags,
-    ) -> Option<u32> {
-        let mem_properties = unsafe {
-            self.instance
-                .get_physical_device_memory_properties(self.physical_device)
-        };
-
-        (0..mem_properties.memory_type_count).find(|&i| {
-            (type_filter & (1 << i)) != 0
-                && mem_properties.memory_types[i as usize]
-                    .property_flags
-                    .contains(properties)
-        })
     }
 }
 
@@ -407,125 +418,63 @@ impl SkiaBackend for SkiaVulkanCtx {
     }
 
     fn create_skia_context(&self) -> FFramesRendererResult<super::SkiaContext> {
-        unsafe {
-            let VulkanContext {
-                gpu: mut gpu_context,
-                queue_lock,
-                queue,
-                ..
-            } = self.create_context()?;
-            let reader = super::vulkan_readback::VulkanSurfaceReader::new(
-                &self.device,
-                &self
-                    .instance
-                    .get_physical_device_memory_properties(self.physical_device),
-                self.queue_family_index,
-                queue,
-                queue_lock.clone(),
-            )?;
-
-            let image_create_info = vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .format(vk::Format::R8G8B8A8_UNORM)
-                .extent(vk::Extent3D {
-                    width: self.width as u32,
-                    height: self.height as u32,
-                    depth: 1,
-                })
-                .mip_levels(1)
-                .array_layers(1)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .usage(
-                    vk::ImageUsageFlags::COLOR_ATTACHMENT
-                        | vk::ImageUsageFlags::SAMPLED
-                        | vk::ImageUsageFlags::TRANSFER_SRC
-                        | vk::ImageUsageFlags::TRANSFER_DST,
-                )
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .initial_layout(vk::ImageLayout::UNDEFINED);
-
-            let image = self
-                .device
-                .create_image(&image_create_info, None)
-                .map_err(|e| FFramesRendererError::Skia(format!("Failed to create image: {e}")))?;
-
-            // Allocate memory for the image
-            let mem_requirements = self.device.get_image_memory_requirements(image);
-            let memory_type_index = self
-                .find_memory_type_index(
-                    mem_requirements.memory_type_bits,
-                    vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                )
-                .ok_or_else(|| {
-                    FFramesRendererError::Skia("Failed to find suitable memory type".to_string())
-                })?;
-
-            let alloc_info = vk::MemoryAllocateInfo::default()
-                .allocation_size(mem_requirements.size)
-                .memory_type_index(memory_type_index);
-
-            let memory = self
-                .device
-                .allocate_memory(&alloc_info, None)
-                .map_err(|e| {
-                    FFramesRendererError::Skia(format!("Failed to allocate memory: {e}"))
-                })?;
-
-            self.device
-                .bind_image_memory(image, memory, 0)
-                .map_err(|e| {
-                    FFramesRendererError::Skia(format!("Failed to bind image memory: {e}"))
-                })?;
-
-            // this is correct to have at the texture level, this is just a way
-            // to get the space already allocated by device and entity
-            let allocator = gpu::vk::Alloc::from_device_memory(
-                memory.as_raw() as _,
-                0,
-                mem_requirements.size,
-                gpu::vk::AllocFlag::empty(),
-            );
-
-            let image_info = gpu::vk::ImageInfo::new(
-                image.as_raw() as _,
-                allocator,
-                gpu::vk::ImageTiling::OPTIMAL,
-                gpu::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                gpu::vk::Format::R8G8B8A8_UNORM,
-                1,
-                Some(self.queue_family_index),
-                None,
-                gpu::Protected::No,
-                None,
-            );
-
-            let backend_render_target = backend_render_targets::make_vk(
+        let context = self.create_context()?;
+        let lock = context.queue_lock.clone();
+        // Declare the guard before the GPU/surface locals so error cleanup stays locked.
+        let _guard = super::lock_queue(Some(&lock));
+        let VulkanContext {
+            gpu: mut gpu_context,
+            queue_lock,
+            queue,
+            ..
+        } = context;
+        let reader = super::vulkan_readback::VulkanSurfaceReader::new(
+            &self.device,
+            &unsafe {
+                self.instance
+                    .get_physical_device_memory_properties(self.physical_device)
+            },
+            self.queue_family_index,
+            queue,
+            queue_lock.clone(),
+        )?;
+        // Skia owns the image and its allocation, including failed construction.
+        // A wrapped backend render target only borrows caller-owned Vulkan resources.
+        let mut surface = gpu::surfaces::render_target(
+            &mut gpu_context,
+            gpu::Budgeted::Yes,
+            &ImageInfo::new(
                 (self.width as i32, self.height as i32),
-                &image_info,
-            );
-
-            let surface = gpu::surfaces::wrap_backend_render_target(
-                &mut gpu_context,
-                &backend_render_target,
-                SurfaceOrigin::TopLeft,
                 ColorType::RGBA8888,
+                AlphaType::Premul,
                 None,
-                None,
-            )
-            .ok_or_else(|| {
-                FFramesRendererError::Skia("Failed to wrap backend render target".to_string())
-            })?;
+            ),
+            None,
+            SurfaceOrigin::TopLeft,
+            None,
+            false,
+            None,
+        )
+        .ok_or_else(|| {
+            FFramesRendererError::Skia("Failed to create Vulkan render target".into())
+        })?;
 
-            Ok(super::SkiaContext {
-                surface,
-                gpu: Some(gpu_context),
-                queue_lock: Some(queue_lock),
-                reader: Some(Box::new(reader)),
-            })
-        }
+        // Owned surfaces may allocate lazily. Detect allocation failure now, rather
+        // than after callers have started writing output or rendering a frame.
+        gpu::surfaces::get_backend_render_target(
+            &mut surface,
+            skia_safe::surface::BackendHandleAccess::FlushRead,
+        )
+        .ok_or_else(|| {
+            FFramesRendererError::Skia("Failed to allocate Vulkan render target".into())
+        })?;
+        Ok(super::SkiaContext {
+            surface,
+            gpu: Some(gpu_context),
+            queue_lock: Some(queue_lock),
+            reader: Some(Box::new(reader)),
+        })
     }
-
     #[cfg(feature = "vulkan-video")]
     fn negotiate_hardware_frames(
         &self,
@@ -612,3 +561,7 @@ fn vulkan_version(entry: &Entry) -> FFramesRendererResult<Option<(usize, usize, 
         )
     }))
 }
+
+#[cfg(test)]
+#[path = "vulkan_lifetime_tests.rs"]
+mod lifetime_tests;

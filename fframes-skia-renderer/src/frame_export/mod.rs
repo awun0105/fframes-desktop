@@ -238,10 +238,14 @@ impl<'b> SkiaEncoderFrameRenderer<'b> {
                 reader,
             } = crate::context_with_size(backend, width, height)?;
             let exporter = match gpu.as_mut() {
-                Some(gpu) if mode != SkiaFrameExport::CpuConversion => {
-                    planes::PlaneExporter::new(gpu, input.pixel_format, width, height)
-                        .and_then(Result::ok)
-                }
+                Some(gpu) if mode != SkiaFrameExport::CpuConversion => planes::PlaneExporter::new(
+                    gpu,
+                    input.pixel_format,
+                    input.color_matrix,
+                    width,
+                    height,
+                )
+                .and_then(Result::ok),
                 _ => None,
             };
 
@@ -357,10 +361,11 @@ impl Drop for SkiaEncoderFrameRenderer<'_> {
             (Some(Target::Hardware(target)), Some(gpu)) => target.retire(gpu),
             (target, gpu) => {
                 drop(target);
-                self.queue.reader = None;
                 // destroying a context waits for its queue
                 let _queue = lock_queue(self.queue.lock.as_ref());
                 drop(gpu);
+                // A failed readback may still have a copy using the reader's resources.
+                self.queue.reader = None;
             }
         }
     }

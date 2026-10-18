@@ -1,10 +1,11 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use fframes_media::FFmpegDecoder;
+use fframes_media::{FFmpegDecoder, FrameConvertOptions, ResizeVideoFrame};
 
 const FPS: usize = 30;
 const FRAME_COUNT: i64 = 300;
@@ -16,8 +17,12 @@ impl VideoFixture {
         Self::with_rate(b_frames, FPS, FRAME_COUNT)
     }
 
-    // Requires the ffmpeg CLI with libx264, like the end-to-end render tests.
     fn with_rate(b_frames: usize, rate: usize, frames: i64) -> Self {
+        Self::with_size(b_frames, rate, frames, (32, 32))
+    }
+
+    // Requires the ffmpeg CLI with libx264, like the end-to-end render tests.
+    fn with_size(b_frames: usize, rate: usize, frames: i64, (width, height): (u32, u32)) -> Self {
         static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "fframes-decoder-eof-{}-{}",
@@ -35,7 +40,7 @@ impl VideoFixture {
                 "-f",
                 "lavfi",
                 "-i",
-                &format!("testsrc2=size=32x32:rate={rate}"),
+                &format!("testsrc2=size={width}x{height}:rate={rate}"),
                 "-frames:v",
                 &frames.to_string(),
                 "-c:v",
@@ -120,6 +125,44 @@ fn b_frames_are_drained_and_decoding_can_restart_after_eof() {
 }
 
 #[test]
+fn an_older_frame_is_not_returned_after_a_failed_conversion() {
+    let video = VideoFixture::new(0);
+    // The scaler can't be created for an empty output
+    let empty = FrameConvertOptions {
+        resize: ResizeVideoFrame {
+            width: 0,
+            height: 0,
+        },
+    };
+    // A single buffer, as in the CPU renderer, so frame 50 is written into frame 0's buffer
+    let mut decoder = unsafe { FFmpegDecoder::new(&video.path(), FPS, 1) }.unwrap();
+    assert_frame(&mut decoder, 0);
+    unsafe {
+        let mut reference = FFmpegDecoder::new(&video.path(), FPS, 1).unwrap();
+        assert!(reference.decode_up_to(50).unwrap());
+        let expected = reference
+            .get_raw_frame()
+            .convert_last_decoded_frame_into_svg_image(None)
+            .unwrap();
+
+        assert!(decoder.decode_up_to(50).unwrap());
+        let frame = decoder.get_raw_frame();
+        assert!(
+            frame
+                .convert_last_decoded_frame_into_svg_image(Some(&empty))
+                .is_err()
+        );
+        let image = frame
+            .convert_last_decoded_frame_into_svg_image(None)
+            .unwrap();
+        assert!(
+            image.data == expected.data,
+            "frame 50 differs from a decoder that converted it without a failure"
+        );
+    }
+}
+
+#[test]
 fn videos_without_b_frames_stop_at_eof() {
     let video = VideoFixture::new(0);
     let mut decoder = unsafe { FFmpegDecoder::new(&video.path(), FPS, 1) }.unwrap();
@@ -128,6 +171,55 @@ fn videos_without_b_frames_stop_at_eof() {
     }
     for _ in 0..2 {
         assert!(!unsafe { decoder.decode_up_to(FRAME_COUNT) }.unwrap());
+    }
+}
+
+#[test]
+fn a_frame_requested_again_at_another_size_is_converted_to_that_size() {
+    let video = VideoFixture::new(0);
+    let thumbnail = FrameConvertOptions {
+        resize: ResizeVideoFrame {
+            width: 16,
+            height: 16,
+        },
+    };
+    let thumbnail_len = 16 * 16 * 4;
+    // The CPU renderer decodes into a single reused buffer, the Skia pipeline into a ring.
+    for buffer_size in [1, 3] {
+        unsafe {
+            let mut decoder = FFmpegDecoder::new(&video.path(), FPS, buffer_size).unwrap();
+            let mut reference = FFmpegDecoder::new(&video.path(), FPS, 1).unwrap();
+            assert!(decoder.decode_up_to(5).unwrap());
+            assert!(reference.decode_up_to(5).unwrap());
+            let expected = reference
+                .get_raw_frame()
+                .convert_last_decoded_frame_into_svg_image(Some(&thumbnail))
+                .unwrap();
+
+            // One frame drawn at its own size and as a thumbnail, e.g. by two scenes
+            let frame = decoder.get_raw_frame();
+            let image = frame
+                .convert_last_decoded_frame_into_svg_image(None)
+                .unwrap();
+            assert_eq!((image.width, image.height), (32, 32));
+            // The second thumbnail request is served from the cache
+            for _ in 0..2 {
+                let image = frame
+                    .convert_last_decoded_frame_into_svg_image(Some(&thumbnail))
+                    .unwrap();
+                assert_eq!(
+                    (image.width, image.height),
+                    (16, 16),
+                    "buffer size {buffer_size}"
+                );
+                // A buffer last sized for a larger output can be longer than the image
+                assert!(
+                    image.data[..thumbnail_len] == expected.data[..thumbnail_len],
+                    "the thumbnail differs from a decoder that only converts to 16x16 \
+                     (buffer size {buffer_size})"
+                );
+            }
+        }
     }
 }
 
@@ -171,4 +263,66 @@ fn last_frame_is_shown_until_the_stream_ends_at_a_higher_fps() {
     assert!(unsafe { decoder.decode_up_to(59) }.unwrap());
     let frame = decoder.get_raw_frame();
     assert!((unsafe { frame.timestamp_seconds() } - last_frame_seconds).abs() < 0.0001);
+}
+
+fn convert_frame(decoder: &mut FFmpegDecoder, index: i64, size: Option<(u32, u32)>) -> Vec<u8> {
+    let options = size.map(|(width, height)| FrameConvertOptions {
+        resize: ResizeVideoFrame { width, height },
+    });
+    let (width, height) = size.unwrap_or((32, 32));
+    unsafe {
+        assert!(
+            decoder.decode_up_to(index).unwrap(),
+            "missing frame {index}"
+        );
+        let image = decoder
+            .get_raw_frame()
+            .convert_last_decoded_frame_into_svg_image(options.as_ref())
+            .unwrap();
+        assert_eq!((image.width, image.height), (width, height));
+        assert_eq!(
+            image.data.len(),
+            (width * height * 4) as usize,
+            "wrong data length for frame {index} at {width}x{height}"
+        );
+        image.data.to_vec()
+    }
+}
+
+#[test]
+fn frames_can_be_requested_at_a_larger_size_than_before() {
+    let video = VideoFixture::new(0);
+    // The 32x32 stream at its own size, grown and shrunk, four frames each.
+    let sizes = [None, Some((256, 256)), Some((16, 16))];
+    // The CPU renderer decodes into a single reused buffer, the Skia pipeline into a ring.
+    for buffer_size in [1, 3] {
+        let mut decoder = unsafe { FFmpegDecoder::new(&video.path(), FPS, buffer_size) }.unwrap();
+        // Decoders that are only ever asked for one size
+        let mut references = HashMap::new();
+        for index in 0..12 {
+            let size = sizes[index as usize / 4];
+            let image = convert_frame(&mut decoder, index, size);
+            let reference = references
+                .entry(size)
+                .or_insert_with(|| unsafe { FFmpegDecoder::new(&video.path(), FPS, 1) }.unwrap());
+            assert!(
+                image == convert_frame(reference, index, size),
+                "frame {index} at {size:?} differs from a decoder that only converts to that size \
+                 (buffer size {buffer_size})"
+            );
+        }
+    }
+}
+
+#[test]
+fn frames_can_be_converted_at_widths_that_are_not_a_multiple_of_16() {
+    // At their own size, swscale's x86 YUV to RGB converter writes these rows in whole blocks
+    // of 16 pixels, from 56 bytes (2 px wide) to 8 bytes (46 px) past the last one
+    for width in [2, 40, 42, 44, 46] {
+        let video = VideoFixture::with_size(0, FPS, 8, (width, 32));
+        let mut decoder = unsafe { FFmpegDecoder::new(&video.path(), FPS, 1) }.unwrap();
+        for index in 0..8 {
+            convert_frame(&mut decoder, index, Some((width, 32)));
+        }
+    }
 }

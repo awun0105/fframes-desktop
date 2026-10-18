@@ -5,12 +5,66 @@ use ffmpeg_sys_fframes::SwsFlags::{SWS_BICUBIC, SWS_BILINEAR};
 use ffmpeg_sys_fframes::*;
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
-use std::ffi::{CString, c_void};
+use std::ffi::{CStr, CString, c_void};
 use std::mem::size_of;
 use std::path::Path;
 use std::ptr;
 use std::sync::Arc;
 use usvgr::PreloadedImageData;
+
+/// The video stream's duration in its own time base. Matroska and `WebM` leave the stream
+/// duration unset (`AV_NOPTS_VALUE`); their muxers write each track's length as a `DURATION`
+/// tag instead, so use that. Only when the tag is missing too fall back to the container's
+/// duration, which also covers any longer audio track. Any of these can be missing or 0; the
+/// caller treats a non-positive duration as unknown.
+unsafe fn stream_duration(fmt_ctx: *mut AVFormatContext, stream: *mut AVStream) -> i64 {
+    unsafe {
+        if (*stream).duration > 0 {
+            return (*stream).duration;
+        }
+        if let Some(micros) = duration_tag(stream) {
+            return av_rescale_q(micros, AV_TIME_BASE_Q, (*stream).time_base);
+        }
+        if (*fmt_ctx).duration <= 0 {
+            return (*stream).duration;
+        }
+        av_rescale_q((*fmt_ctx).duration, AV_TIME_BASE_Q, (*stream).time_base)
+    }
+}
+
+/// The stream's `DURATION` tag (`HH:MM:SS.nnnnnnnnn`) in `AV_TIME_BASE` units.
+unsafe fn duration_tag(stream: *mut AVStream) -> Option<i64> {
+    let entry = unsafe { av_dict_get((*stream).metadata, c"DURATION".as_ptr(), ptr::null(), 0) };
+    if entry.is_null() {
+        return None;
+    }
+    let value = unsafe { CStr::from_ptr((*entry).value) }.to_str().ok()?;
+    let mut parts = value.trim().splitn(3, ':');
+    let hours: i64 = parts.next()?.parse().ok()?;
+    let minutes: i64 = parts.next()?.parse().ok()?;
+    let seconds = parts.next()?;
+    let (seconds, fraction) = seconds.split_once('.').unwrap_or((seconds, ""));
+    let seconds: i64 = seconds.parse().ok()?;
+    // Keep the first 6 fractional digits (microseconds), right-padded with zeros.
+    let micros = fraction
+        .bytes()
+        .chain(std::iter::repeat(b'0'))
+        .take(6)
+        .try_fold(0i64, |acc, digit| {
+            digit
+                .is_ascii_digit()
+                .then(|| acc * 10 + i64::from(digit - b'0'))
+        })?;
+    // A malformed tag can be arbitrarily large; treat an overflow like a missing tag.
+    let total = hours
+        .checked_mul(60)?
+        .checked_add(minutes)?
+        .checked_mul(60)?
+        .checked_add(seconds)?
+        .checked_mul(1_000_000)?
+        .checked_add(micros)?;
+    (total > 0).then_some(total)
+}
 
 const FFRAMES_VIDEO_PATH_TAG: &str = "___fframes_internal_video_frame_pts___";
 // just a little bit faster than the format! macro
@@ -71,6 +125,13 @@ impl Drop for SwsScaler {
 }
 
 const PIX_FMT_SIZE: usize = size_of::<i32>();
+
+/// Bytes `sws_scale` may write past the end of an RGBA image whose rows are `width * 4` bytes
+/// apart. The x86 YUV to RGB converter of `FFmpeg` (`yuv2rgb_fn` in
+/// `libswscale/x86/yuv_2_rgb.asm`) stores whole blocks of 16 pixels (64 bytes), at least one
+/// per row, so it can write up to 60 bytes past the last row. Frames allocated by `FFmpeg`
+/// have padding there.
+const SWS_DST_PADDING: usize = 64;
 
 impl SwsScaler {
     unsafe fn init_sws_context(
@@ -233,7 +294,7 @@ impl SwsScaler {
         &mut self,
         options: Option<FrameConvertOptions>,
         source_frame: *mut AVFrame,
-        rgba_dst: &mut [u8],
+        rgba_dst: &mut Vec<u8>,
     ) -> Result<()> {
         let source_pix_fmt: AVPixelFormat = std::mem::transmute((*source_frame).format);
         // Decoded frame metadata takes precedence over the stream defaults and
@@ -254,6 +315,13 @@ impl SwsScaler {
         {
             self.reinit_sws_context(source_pix_fmt, source_color, options)?;
         }
+
+        // A reused buffer may still have the length of another output size. This
+        // reallocates only when the output grows and does nothing when the size is
+        // unchanged. `sws_scale` can write past the image, see `SWS_DST_PADDING`.
+        let capacity = self.frame_data_len + SWS_DST_PADDING;
+        rgba_dst.reserve(capacity.saturating_sub(rgba_dst.len()));
+        rgba_dst.resize(self.frame_data_len, 0);
 
         let ret = sws_scale(
             self.sws_ctx,
@@ -375,14 +443,6 @@ unsafe impl Send for FFmpegFrameBuf {}
 unsafe impl Sync for FFmpegFrameBuf {}
 
 impl FFmpegFrameBuf {
-    fn alloc_data_vec(ctx: &SwsScaler) -> Vec<u8> {
-        let frame_data_len = ctx.frame_data_len;
-        let mut data_vec = Vec::with_capacity(frame_data_len * PIX_FMT_SIZE);
-        data_vec.reserve(frame_data_len);
-        data_vec.resize(frame_data_len, 0);
-        data_vec
-    }
-
     unsafe fn new(
         resource_name: String,
         video_stream_info: VideoStreamInfo,
@@ -409,7 +469,6 @@ impl FFmpegFrameBuf {
     unsafe fn write_new_frame(&self) -> Option<&'static mut ScaledFrameImage> {
         unsafe {
             let queue = self.data_buf.get().as_mut()?;
-            let scaler = self.sws_scaler.get().as_ref()?;
             let latest_pts = (*self.latest_av_frame).pts;
 
             // fast path for the cpu renderer which will always have capacity 1
@@ -421,19 +480,15 @@ impl FFmpegFrameBuf {
                 return Some(image);
             }
 
+            // `SwsScaler::convert` sizes the buffer once it knows the requested output size
             if queue.len() == queue.capacity() {
                 let mut last_buffer = queue.pop_front()?;
-
-                if last_buffer.data.len() != scaler.frame_data_len {
-                    last_buffer.data.set_len(scaler.frame_data_len);
-                }
-
                 last_buffer.pts = latest_pts;
                 queue.push_back(last_buffer);
             } else {
                 queue.push_back(ScaledFrameImage {
                     pts: latest_pts,
-                    data: Self::alloc_data_vec(scaler),
+                    data: Vec::new(),
                 });
             }
 
@@ -478,10 +533,14 @@ impl FFmpegFrameBuf {
     ) -> Result<Arc<PreloadedImageData>> {
         unsafe {
             let scaler = self.sws_scaler.get().as_mut().unwrap();
-            // fast path if we have the image already decoded and converted last time
-            // e.g. the same video frame is requested from multiple scenes
+            // fast path if we have the image already decoded and converted last time with the
+            // same options (the scaler keeps them), e.g. the same video frame is requested at
+            // the same size from multiple scenes
             match self.data_buf.get().as_ref().and_then(|q| q.back()) {
-                Some(image) if image.pts == (*self.latest_av_frame).pts => {
+                Some(image)
+                    if image.pts == (*self.latest_av_frame).pts
+                        && scaler.options == options.copied() =>
+                {
                     return Ok(create_preloaded_image(
                         scaler.video_stream_info.pixel_format,
                         encode_video_resource(&self.resource_name, image.pts),
@@ -494,7 +553,16 @@ impl FFmpegFrameBuf {
             }
 
             let image = self.write_new_frame().unwrap();
-            scaler.convert(options.copied(), self.latest_av_frame, &mut image.data)?;
+            if let Err(err) =
+                scaler.convert(options.copied(), self.latest_av_frame, &mut image.data)
+            {
+                // the buffer already has this frame's pts but not its pixels (a reused buffer
+                // still holds an older frame), so drop it instead of returning it for this pts
+                if let Some(queue) = self.data_buf.get().as_mut() {
+                    queue.pop_back();
+                }
+                return Err(err);
+            }
 
             Ok(create_preloaded_image(
                 scaler.video_stream_info.pixel_format,
@@ -773,7 +841,7 @@ impl FFmpegDecoder {
                 color_space: (*video_dec_ctx).colorspace,
                 color_range: (*video_dec_ctx).color_range,
                 time_base: (*stream).time_base,
-                duration: (*stream).duration,
+                duration: stream_duration(fmt_ctx, stream),
                 frame_rate: (*stream).r_frame_rate,
             })
         }
@@ -818,7 +886,8 @@ impl FFmpegDecoder {
     /// # Safety
     /// Generally safe but uses libav functions
     pub unsafe fn adjust_offset_for_looping(&mut self, offset: i64) -> Result<i64> {
-        if offset < self.duration_in_frames {
+        // An unknown or empty duration can't be looped over (and would divide by zero below).
+        if self.duration_in_frames <= 0 || offset < self.duration_in_frames {
             return Ok(offset);
         }
 

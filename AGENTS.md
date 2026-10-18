@@ -206,6 +206,9 @@ let make = (~prop1: type1, ~prop2: type2) => {
 - Unit tests in `#[cfg(test)] mod tests` blocks
 - Integration tests in `/e2e/tests/`
 - Visual regression tests compare rendered frames using `odiff`
+- `just e2e cpu|skia-cpu|gpu` renders key frames of every example through its CLI and compares
+  them with `e2e/snapshots`, the same images for every renderer; pass `--update` after an
+  intended change and commit the new PNGs
 
 **Running specific tests:**
 
@@ -285,7 +288,9 @@ the editor bridge builds the library with `default-features = false`.
 Embed static assets with `include_media_dir!`. The path is relative to the **workspace root**
 and every file in the folder becomes a field of the generated struct; fonts are registered by
 their family name. Audio (`mp3`, `wav`, `flac`, `aac`, `ogg`, `m4a`) is decoded to mono at
-compile time; files loaded with `MediaDirectory` keep stereo.
+compile time unless the macro gets the `stereo` option
+(`include_media_dir!(pub struct MyVideoMedia, "examples/my-video/media", stereo)`, twice the
+embedded size); files loaded with `MediaDirectory` keep stereo.
 
 ```rust
 use fframes::include_media_dir;
@@ -422,8 +427,8 @@ let paragraph = frame.text_break_lines(ctx, self.description, BreakLinesOpts {
 ```
 
 Use the same `FontQuery` values in the `<text>` attributes (`font-family`, `font-size`,
-`font-weight`) so what is measured is what is drawn. `font-weight` must be numeric or
-`normal`/`bold`.
+`font-weight`) so what is measured is what is drawn. `font-weight` is a number from 1 to
+1000, written or as `{expr}`, or `normal`/`bold`; a number outside that range is ignored.
 
 ### 6. Scenes (optional)
 
@@ -542,8 +547,38 @@ AudioMap::from([
   range renders) get 5 ms de-click fades.
 - Verify without listening: `audio analyze` (integrated/short-term loudness in LUFS, true
   peak, clipping, silent ranges, loudness per scene, `--waveform` PNG with scenes and cues)
-  and `audio at 4.2s` (which files play, where in the file, at what level, ducked or not).
-  Aim for about -14 LUFS integrated for web video and a true peak below -1 dBTP.
+  and `audio at 4.2s` (which files play, where in the file, at what level, ducked or not,
+  rate and effects). Aim for about -14 LUFS integrated for web video and a true peak below
+  -1 dBTP.
+
+Per-track effects master the takes inside `fn audio`, no ffmpeg pass before the mix:
+
+```rust
+use fframes::{AudioTrack, AudioTimestamp::*, Compressor};
+
+AudioTrack::new("voice.wav", Second(1.)..Eof)
+    .highpass(80.)                         // 12 dB/oct, Butterworth; twice for 24 dB/oct
+    .peak(3000., 2.5, 1.2)                 // hz, db, q
+    .high_shelf(9000., -3.)                // hz, db (half of db at hz); also low_shelf
+    .compress(Compressor { threshold_db: -24., ratio: 3., ..Default::default() })
+    .normalize_lufs(-16.)                  // integrated loudness of the played part
+    .gain_db(-1.)                          // applies after the effects
+    .voice();
+AudioTrack::new("whoosh.wav", Second(4.)..Eof).rate(0.8).width(1.5); // a lower, longer, wider variation
+```
+
+- Order: the file is read at `rate`, then the effects run in the order of the calls, then
+  gain, pan, fades and ducking. Filters run at the mix rate, after the rate change.
+- `rate(f)` changes speed and pitch together like a tape. A range that ends at `Eof` follows
+  the new length. `offset` stays in seconds of the file.
+- `compress`: feed-forward, peak detector, both channels linked; `Compressor::default()` is
+  -18 dB, 3:1, 10 ms attack, 150 ms release, 6 dB soft knee.
+- `width(w)`: mid/side, 0 mono, 1 unchanged, above 1 wider; the mono sum does not change. A
+  mono file becomes stereo (a delayed, high-passed side signal).
+- `normalize_lufs` measures after the effects before it, so put it after `compress`.
+- The mixer renders a track with effects once, when it is built (one per render, preview or
+  `audio` command). It keeps the played part in memory at the mix rate: 23 MB per stereo
+  minute at 48 kHz. Tracks without effects are read from the file as before.
 
 ### 8. Render it: `fframes::cli`
 
@@ -596,20 +631,21 @@ See `examples/teej-podcast/src/main.rs`; `cargo fframes new` generates the same 
 | command | what |
 | --- | --- |
 | `render [RANGE] [-o out.mp4] [--draft]` | the video or a range of it (default command); `--draft` = half size + fastest preset |
-| `frame 1s,50%,Intro@end [-o dir] [--svg]` | PNGs of single frames plus the problems found in them |
-| `strip [RANGE] -n 12` | labelled contact sheet of evenly spaced frames, one image to review motion |
+| `frame 1s,50%,Intro@end [-o dir] [--svg] [--crop x,y,w,h] [--zoom N] [--ids]` | PNGs of single frames plus the problems found in them; `--crop` renders one rectangle sharply (zoomed to about 960 px wide), `--ids` outlines and labels every element with an `id` |
+| `strip [RANGE \| TIMES] -n 12 [--crop x,y,w,h]` | labelled contact sheet of evenly spaced frames (or of comma separated times), one image to review motion |
 | `onion RANGE -n 6` | frames blended into one image, shows the path of a movement |
 | `svg TIME` | the frame as SVG after conversion |
 | `timeline` | size, fps, scenes with frame and second ranges, audio tracks |
-| `inspect [RANGE] [--every 0.25s]` | missing media/fonts/glyphs, text cut by the canvas edge, NaN transforms, panics; exit code 2 on errors |
+| `inspect [RANGE] [--every 0.25s] [--pops]` | missing media/fonts/glyphs, text cut by the canvas edge, NaN transforms, panics; exit code 2 on errors. `--pops` also renders every frame small and warns about pops: parts that change in one frame between still frames (an element appearing, vanishing or jumping in front of another) |
 | `snapshot TIMES [--update]` | compare frames with approved PNGs, writes `.actual.png` and `.diff.png` |
 | `audio render/analyze/at` | WAV of the mix, loudness report and waveform, tracks playing at a time |
 | `preview [TIME] [--paused] [--mute]` | real-time GPU window (`fframes_native_player`), blocks until closed |
 
 Global flags: `--json` (one JSON document on stdout, JSON progress events on stderr),
-`--scale 0.5`. Times: frames `120`, `3.2s`, `1:05`, `50%`, `start`/`end`, scenes `Intro`
-(`IntroScene` also matches), `#3`, `Intro[1]`, `Intro@1.5s`/`@50%`/`@end`; ranges `a..b`,
-`a..`, `..b`, `all` or a scene name.
+`--scale 0.5`, `--renderer cpu|skia-cpu|gpu` (another backend for this run, see below).
+Times: frames `120`, `3.2s`, `1:05`, `50%`, `start`/`end`, scenes `Intro` (`IntroScene` also
+matches), `#3`, `Intro[1]`, `Intro@1.5s`/`@50%`/`@end`; ranges `a..b`, `a..`, `..b`, `all` or
+a scene name.
 
 - Backends: `fframes::cpu::CpuRenderingBackend` (default, tiny-skia, multi-threaded) or the
   Skia backend from `fframes_skia_renderer` with `SkiaFFramesRenderer::new_vulkan(&SkiaVulkanCtx::new(W, H)?, SkiaPipelineConfig { .. })`
@@ -632,6 +668,10 @@ Global flags: `--json` (one JSON document on stdout, JSON progress events on std
   `FFramesRenderBackend::negotiate_encoder_input` (a software format or
   `EncoderInput::hardware_frames`) and `encoder_frame_renderer`, which returns libav frames
   (`fframes::VideoFrame`) for `SegmentWriter::submit_frame`.
+- `--renderer skia-cpu|gpu` needs `.renderers(SkiaRenderers::default())` before `.run()`
+  (`fframes_skia_renderer::cli`, feature `cli`): it builds the Skia backend that is asked for
+  (Metal on macOS, Vulkan elsewhere). `SkiaRenderers::gpu(SkiaPipelineConfig { .. })` also
+  renders on the GPU without the flag. Every example does this.
 - macOS: request `hevc_videotoolbox` only with `fframes = { features = ["videotoolbox"] }`
   (see `examples/teej-podcast/Cargo.toml`), otherwise the encoder silently falls back.
 - In code: `fframes::Previewer::new(&video, &options)` keeps fonts, images and caches between

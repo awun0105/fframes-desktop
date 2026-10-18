@@ -1,5 +1,6 @@
 //! Real-time native preview of an fframes [`Video`] in a desktop window, rendered by the
-//! Skia backend.
+//! Skia backend. The GPU backends draw into the swapchain of the window (a `CAMetalLayer`
+//! drawable or a Vulkan swapchain image) and no frame is read back.
 //!
 //! ```rust,ignore
 //! fn main() {
@@ -139,6 +140,7 @@ pub fn play<'a, 'media: 'a, TVideo: Video + Sync>(
             title: options.title,
             window_size: initial_window_size::<TVideo>(options),
             backend: options.backend,
+            vsync: options.vsync,
             fps: TVideo::FPS,
             duration_in_frames: timeline.duration_in_frames,
             background: TVideo::BACKGROUND_COLOR,
