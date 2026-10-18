@@ -35,7 +35,7 @@ M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1,
 
 | # | Phase | Status |
 |---|-------|--------|
-| 1 | [Milestone merge gates](./phase-01-milestone-merge-gates.md) | Completed: gates passed on `feat/studio-rewrite` and the Windows preview dry run passed; merge into `main` not done (owner step) |
+| 1 | [Milestone merge gates](./phase-01-milestone-merge-gates.md) | Completed: gates and the Windows preview dry run passed; merged into `main` on 2026-10-18 (`693d083`) |
 
 ## Confirmed contract
 
@@ -54,7 +54,7 @@ M3 phases 1 and 2 run beside M2 from the start; phase 5 starts after M2 phase 1,
 
 **Priority decision 2026-10-18:** focus on Windows testing first to reach production promptly. Finish the remaining Windows app checks and fix failures before the release dry run. No additional macOS or Linux validation is part of this immediate work; the recorded platform coverage still applies.
 
-**Windows acceptance 2026-10-18:** the owner confirmed all Windows hand checks passed ("test all okay by my hand"). The [M6 platform report](../261013-0733-studio-m6-cleanup/reports/platform-checks.md) records this alongside the automated validation. Windows app testing is complete, and the Windows preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed on 2026-10-18. Every milestone is complete on `feat/studio-rewrite`; merging the branch into `main` is a separate owner step.
+**Windows acceptance 2026-10-18:** the owner confirmed all Windows hand checks passed ("test all okay by my hand"). The [M6 platform report](../261013-0733-studio-m6-cleanup/reports/platform-checks.md) records this alongside the automated validation. Windows app testing is complete, and the Windows preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed on 2026-10-18. Every milestone is complete, and `feat/studio-rewrite` was merged into `main` on 2026-10-18 (`693d083`).
 
 **Release decision 2026-10-18:** the owner selected a Windows unsigned preview using the existing preview workflow. The remaining release check is its non-publishing Windows dry run; consumer publication stays disabled with its existing signing and provenance requirements.
 

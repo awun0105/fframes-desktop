@@ -46,6 +46,8 @@ Reconstructed from Git history on 2026-10-18. These are integration checkpoints 
 | M5 | 2026-10-17 | `df53e56` | Agent UX complete and integrated; remaining limitations handed to M6 |
 | M6 | 2026-10-18 | `8cd1a5a`, `5a3722e` | Windows fixes committed; preview dry run [39110213274](https://github.com/khanhthanhdev/fframes-desktop/actions/runs/39110213274) passed |
 
+**Merged into `main` 2026-10-18:** every milestone landed together in the merge `693d083` of `feat/studio-rewrite` (`8189600`) into `main` (`a6f122c`). The Windows gate ran on the merged tree: root fmt, clippy and tests on the Windows CI package list plus the studio crates, desktop fmt, clippy and `cargo test --workspace`, and the packaging and release-gate script tests. `cargo deny` is not installed on the Windows host and was not run. The merge kept main's renderer backends and the rewrite's timing file in the CLI, kept main's duration reader, fixed the last frame of joined WebM segments and re-approved one hello-world snapshot after the svgr 0.50.2 update.
+
 ## Consistency sweep
 
 Run on 2026-10-13 after applying the red-team findings.
