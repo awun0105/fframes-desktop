@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Playback pipeline"
-status: done-with-concerns
+status: completed
 priority: P1
 effort: "2.5-3.5d"
 dependencies: [3]
@@ -48,7 +48,7 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 - [x] Out-of-order counter
 - [x] Timer removed
 - [x] Tests: the coordinator latest-wins test, the playback-clock stale-snapshot test (`rejects_stale_backwards_invalid_and_rate_change_snapshots`), the audio callback gate test (`callback_gates_do_not_consume_but_mute_underrun_and_stale_do`), a shorter model clamping the playhead, the out-of-order counter (counts, survives a clear), and a parity test seeking during playback.
-- [ ] Manual check on the VM
+- [x] Manual Windows check passed, owner-reported 2026-10-18
 
 ## Success criteria
 
@@ -65,4 +65,4 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 - Conversion at 1080p in a debug build measured 52 ms, above the 4 ms threshold, so `opt-level = 3` was added for studio-ui; with a chunked loop the conversion takes about 5 ms.
 - The grep criterion targets production code. The parity harness keeps a named fake-clock step of 16 ms, which is a test clock increment, not a timer.
 - There is no 100-frame foreign-thread burst test: the producer is the worker thread overwriting one mutex-guarded slot, with no channel to block on, so latest-wins is covered by the coordinator test and its late-frame metric.
-- Open: no manual check of seeking during playback in a real window yet.
+- Closed 2026-10-18: the owner confirmed the playback hand checks passed, including seeking and audible playback/mute; see [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md).

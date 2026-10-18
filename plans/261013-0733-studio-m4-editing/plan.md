@@ -1,7 +1,7 @@
 ---
 title: "M4 Editing: timing doc, SDK release, Cap timeline, playback, export panel"
 description: "Add the timeline.json timing model end to end with its own timing revision, ship it and the extended export contract in an SDK release with project migration, and port Cap's timeline, edit history, playhead wake and export panel."
-status: pending
+status: completed
 priority: P1
 effort: "24-33d"
 branch: feat/studio-rewrite
@@ -49,9 +49,9 @@ Snapping (part of the confirmed editing scope) ports from Cap: `arm_drag_snap` a
 | 2 | [SDK release, template and project migration](./phase-02-sdk-release-and-migration.md) | 4-6d | 1 | Completed |
 | 3 | [Engine timing document and edit history](./phase-03-engine-timeline-doc.md) | 3-4d | 1 (manual check needs 2) | Completed |
 | 4 | [Port Cap's timeline view](./phase-04-timeline-view-port.md) | 5-7d | 3 | Completed |
-| 5 | [Trim, split, reorder and snapping](./phase-05-timeline-edit-interactions.md) | 2.5-3.5d | 2, 4 | Done, manual check open |
-| 6 | [Playback pipeline](./phase-06-playback-pump.md) | 2.5-3.5d | 3 | Done, manual check open |
-| 7 | [Export panel](./phase-07-export-panel.md) | 3-4d | 2, 3 | Done with concerns |
+| 5 | [Trim, split, reorder and snapping](./phase-05-timeline-edit-interactions.md) | 2.5-3.5d | 2, 4 | Completed; owner Windows hand checks passed 2026-10-18 |
+| 6 | [Playback pipeline](./phase-06-playback-pump.md) | 2.5-3.5d | 3 | Completed; owner Windows playback/audio hand checks passed 2026-10-18 |
+| 7 | [Export panel](./phase-07-export-panel.md) | 3-4d | 2, 3 | Completed; real-SDK pixel comparison and owner hand checks passed 2026-10-18 |
 
 Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port-closure.md)) re-estimated phases 4-7 and found that Cap's timeline snaps, so phase 5 ports snapping.
 
@@ -59,8 +59,10 @@ Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port
 
 Checked on 2026-10-16 against the code, the default test runs and CI (the self-hosted Linux and Windows validation and the macOS run all passed on `ab47dc9`).
 
-- [ ] In a project created from (or migrated to) the new template, trimming, splitting or reordering a scene updates the preview with no build queued, writes `timeline.json` at gesture end, and Ctrl+Z restores the previous file. **Code and engine tests done; the check by hand in a real window is open.** The engine tests (`studio-engine/tests/timing.rs`) cover retime without a build, the single write per gesture and undo; the view tests (`studio-ui/src/timeline/view.rs`) cover trim, split, reorder and snapping; the parity suite covers a split through the fake worker's `timing` mode, and undo through a real worker is only in the `SDK_BUNDLE` tests, which are ignored here.
-- [ ] An export with an edited `timeline.json` matches preview frames at three times: the renderer's frames before encoding are pixel-identical to the preview's, and the decoded output is within the `odiff` threshold the e2e tests use. **Not met as written; a proxy passes.** `fframes-studio-runtime/tests/export.rs::an_exported_timing_document_matches_the_preview_frames` exports with a timing file, renders frames 0, 50 and 100 of the same video through `fframes::Previewer` with that document and compares each preview centre pixel with the decoded export (colour tolerance, since the export is lossy). It first checks that the document changes the preview, then it runs at the runtime level on the CPU backend, not through the assembled SDK bundle, and it uses a pixel tolerance rather than `odiff` and does not check pre-encode pixel identity. `export_plays_the_timing_file_and_fails_without_it` and `fframes/src/renderer/tests/timing_tests.rs` cover the halves.
+**Closed 2026-10-18:** the owner confirmed all Windows app hand checks passed. The ignored real-SDK qualification was run, and commit `8fd8425` adds a stronger assembled-SDK export comparison: preview matches the pre-encode CPU renderer byte for byte at frames 0, 135 and 269 after reorder/trim; decoded H.264 passes the existing e2e `odiff -t 0.4` threshold at all three times; a visibly different image is rejected. This establishes the comparison for H.264, not every lossy codec: an initial MPEG-4 attempt differed at one pixel under that strict threshold. [Current evidence](../261013-0733-studio-m6-cleanup/reports/final-fixes-2026-10-18.md). M6's owner-approved refusal policy supersedes the historical migration criterion below; macOS remains CI-only under the accepted platform scope.
+
+- [x] In a project created from the new template, trimming, splitting or reordering updates preview without a build, writes `timeline.json`, and Ctrl+Z restores it. Engine/view/parity checks and real-worker replays pass; the owner accepted the Windows app hand checks on 2026-10-18.
+- [x] An export with edited `timeline.json` matches preview at three times: pixel identity before encoding and decoded output within the e2e `odiff` threshold. `studio-engine/tests/timing_retime.rs::edited_sdk_export_matches_preview_and_preencode_at_three_times` passes against the assembled SDK with H.264, as detailed above. The earlier runtime centre-pixel proxy is retained as additional coverage.
 - [x] Projects not yet migrated keep previewing; editing shows "migrate project" with a reason. `studio-ui/tests/parity/timeline.rs::edits_wait_for_a_migrated_project_and_say_why`, the engine's `project_migration.rs`, and the export panel test for an unmigrated project.
 - [x] Playback runs without the 16 ms tick; a new out-of-order presentation counter stays at zero across seek and timing changes. The grep finds only the test harness's fake clock step. The counter is asserted across seeks during playback (`transport.rs`), across a rebuild (`services.rs`) and across a split followed by a seek (`timeline.rs::a_split_then_a_seek_does_not_present_frames_out_of_order`, against the fake worker's opt-in `timing` mode).
 - [x] The export panel offers container, codec, scale and fps presets, an estimate, progress and cancel. Unit tests for the options and the estimate; parity tests for a running export, cancel, a failure with its reason, the unmigrated state, and no project or no SDK (the panel does not open). `every_reported_format_exports_at_the_requested_size_and_rate` exports every format the SDK's FFmpeg reports (mpeg4, libx264, libx265, libvpx-vp9 here).
@@ -68,7 +70,4 @@ Checked on 2026-10-16 against the code, the default test runs and CI (the self-h
 
 ## Open items
 
-- Hand checks on the VM for phases 5, 6 and 7 (trim, split, reorder and undo in a window; seeking during playback; the export panel and the cancel time).
-- Export versus preview through the assembled SDK bundle with `odiff` (the runtime-level proxy test passes).
-- Real-SDK qualification (`SDK_BUNDLE`, ignored here), including undo through a real timeline-ready worker. A different SDK bundle's FFmpeg may report other formats; the panel follows what the worker reports.
-- Phase 6 note: `position` reached 90 (one past the last frame) while the shown frame was 86 on the slow macOS runner; the last frame is only asserted once painted.
+No outstanding Windows acceptance item. The real-SDK checks and owner hand checks close the original three follow-ups. The panel still follows the formats its SDK reports; the strict decoded pixel comparison above is qualified for H.264. The historical slow-macOS-runner observation remains documented in phase 6, with the test waiting for the last frame to paint; macOS hand checks remain outside the accepted scope.

@@ -57,8 +57,10 @@ Spike S4 ([port closure](../261013-0733-studio-m1-foundations/reports/spike-port
 
 ## Success criteria
 
+**2026-10-18 follow-up:** the owner accepted all Windows app hand checks, including the title bar, caption gestures and hover behaviour; see [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md). This closes the Windows title-bar follow-up from phase 4. The phase table above records the original implementation status; the release dry run below remains pending.
+
 - [x] Parity tests, `cargo test` and `just clippy` pass after each phase. Verified on the final tree (full CI run 38695521718 on Linux and Windows, plus local runs). Earlier full runs were red during phase 7 until the X11 fix.
 - [x] No `.rs` file under `desktop/` exceeds 1,500 lines (merge gate 6).
 - [x] `studio-engine`, `studio-proto` and `studio-harness` have no `gpui` dependency (`cargo tree -p <crate> -e normal | grep -c gpui` is 0).
 - [x] UI crates hold no `Mutex<Controller>` and no agent or preview polling; the 16 ms playback tick (which reads the audio snapshot) stays until M4 phase 6; the engine may keep internal locking. The panel reads the agent snapshot only when the workflow wakes the window; the tick forwards the playhead and thumbnail requests and keeps an 8 s fallback build for an accepted source that never got a preview.
-- [ ] The bounds-probe harness, qualification scripts and their CI jobs are gone; containment, writer qualification (`qualify-writer`, until M3 phase 4) and the release gate replacement work. The harness, scripts and jobs are gone and the release gate tests pass in CI; open until the user runs the release dry run.
+- [ ] The bounds-probe harness, qualification scripts and their CI jobs are gone; containment and the release gate replacement work. The harness, scripts and jobs are gone, M3 replaced writer qualification with runtime containment, and release-gate tests pass. The owner-selected Windows unsigned-preview dry run is in progress; consumer publication stays disabled with its signing and provenance controls intact.

@@ -14,6 +14,8 @@ Documents:
 
 ## Setup
 
+For a Windows-only preview release dry run, dispatch [Desktop Release](../../.github/workflows/desktop-release.yml) on the source branch with `preview_release=true`, `windows_only=true`, `dry_run=true` and `consumer_release=false`. Set `tag` to `v` plus the app version. It prepares the ZIP, installer, checksums and install manifests as the `studio-preview-dry-run` artifact and publishes nothing. Consumer publishing retains its separate signing and eligibility gates.
+
 Run Studio from a checkout:
 
 ```sh
@@ -52,11 +54,11 @@ The agent panel is the sidebar's first tab, **Agent**, next to Project, Assets a
 
 ### Providers and wires
 
-Studio has three agent wires, and the **Protocol** control on the Agent page chooses one per saved adapter: Claude Code's native stream-json wire and Codex's native app-server wire, which start the `claude` or `codex` CLI you point the executable at, and the Agent Client Protocol (ACP v1) for every other agent. The built-in Claude, Codex, Pi and Antigravity profiles start on ACP with each agent's ACP adapter until you choose a native protocol ([`provider_profiles.rs`](../../desktop/crates/studio-engine/src/providers/provider_profiles.rs)). The native wires refuse a CLI older than the minimum version in [`claude/launch.rs`](../../desktop/crates/studio-harness/src/driver/runtime/claude/launch.rs) and [`codex/launch.rs`](../../desktop/crates/studio-harness/src/driver/runtime/codex/launch.rs). See [architecture, agent wires](architecture.md#agent-wires).
+Studio has three agent wires, and the **Protocol** control on the Agent page chooses one per saved adapter: Claude Code's native stream-json wire and Codex's native app-server wire, which start the `claude` or `codex` CLI you point the executable at, and the Agent Client Protocol (ACP v1) for every other agent. New Claude and Codex profiles use their native CLIs; Pi and Antigravity use ACP. Saved protocol choices are retained ([`provider_profiles.rs`](../../desktop/crates/studio-engine/src/providers/provider_profiles.rs)). The native wires refuse a CLI older than the minimum version in [`claude/launch.rs`](../../desktop/crates/studio-harness/src/driver/runtime/claude/launch.rs) and [`codex/launch.rs`](../../desktop/crates/studio-harness/src/driver/runtime/codex/launch.rs). See [architecture, agent wires](architecture.md#agent-wires).
 
 - **Detect agents** lists installed agents by checking that files exist; it never starts them. Launching uses only the saved absolute path or the managed adapters folder, never a search of the global `PATH`.
 - **Select** saves the adapter in `provider-registry.json` and runs one connection test. **Check adapter** tests again, for example after you sign in with the agent's own tool. **Install adapter** installs a pinned ACP adapter package from the lockfile Studio ships; **Install guide** opens the agent's official install page. Opening a project never launches an agent.
-- When the agent's CLI is found but its ACP adapter is not, the Agent page says so and offers **Install adapter** (and **Get Node.js** when Node is missing); an install stops after 15 minutes ([`adapter_install.rs`](../../desktop/crates/studio-harness/src/adapter_install.rs)).
+- For an ACP profile, when the agent's CLI is found but its ACP adapter is not, the Agent page says so and offers **Install adapter** (and **Get Node.js** when Node is missing); an install stops after 15 minutes ([`adapter_install.rs`](../../desktop/crates/studio-harness/src/adapter_install.rs)).
 - Sign-in stays with each agent. The registry stores only the names of sign-in environment variables, never their values, and refuses a value pasted where a name belongs. `CLAUDECODE*` variables are never passed to an agent ([`discovery.rs`](../../desktop/crates/studio-harness/src/discovery.rs)).
 - A turn stops after 15 minutes without agent activity or 2 hours in total ([`runtime/mod.rs`](../../desktop/crates/studio-harness/src/driver/runtime/mod.rs)). Every permission request becomes a card with the agent's choices and **Decline**; Studio never answers one for you.
 - The Agent page shows the writer containment the last launch verified (a job object on Windows, a process group with an escape scan on Linux and macOS). A writer that is not contained cannot have its candidate captured.
@@ -96,7 +98,7 @@ On macOS the command key replaces Ctrl. Controls are tab stops and activate on E
 - **Linux** compiles and runs the tests on the self-hosted CI runner, including the X11 shell test on Xvfb in full runs ([self-hosted runners](self-hosted-runners.md)).
 - **macOS is not fully tested.** It is covered only by CI: the Desktop CI `desktop-macos` job runs the tests and clippy on hosted macOS for pull requests and manual runs ([`desktop.yml`](../../.github/workflows/desktop.yml)), and Desktop Release builds the macOS package. No hand check, real-CLI check or on-screen check runs on macOS ([roadmap, Platforms](../../plans/261013-0733-studio-rewrite-roadmap/plan.md#confirmed-contract)).
 
-Every agent test uses scripted peers or fake CLIs. The real Claude Code and Codex CLI tests are ignored by default and need a signed-in CLI: `cargo test --manifest-path desktop/Cargo.toml -p studio-harness --test claude_real_cli --test codex_real_cli -- --ignored`.
+Ordinary agent tests use scripted peers or fake CLIs. The ignored `claude_acp_real_cli` test installs the pinned adapter, checks its actual advisor-result conversion, then verifies denied and approved edits with a signed-in Claude session; see its source for the required environment variables. The real Claude Code and Codex CLI tests are ignored by default and need a signed-in CLI: `cargo test --manifest-path desktop/Cargo.toml -p studio-harness --test claude_real_cli --test codex_real_cli -- --ignored`.
 
 ## Architecture at a glance
 

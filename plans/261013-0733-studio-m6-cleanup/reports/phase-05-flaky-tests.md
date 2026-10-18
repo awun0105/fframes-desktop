@@ -67,6 +67,11 @@ A `cargo test --workspace` run, and parity runs next to the `studio-engine` suit
 
 Owner decision, no change in M6: in the app, a Build pressed while another command runs is dropped without feedback.
 
+### Fast acknowledgement follow-up, 2026-10-18
+
+A later full workspace run exposed the other side of the build helper's busy check: `canvas::overlapping_objects_select_the_top_one_then_cycle` and `services::a_failed_export_is_shown` failed at ?the build was not taken?, although their telemetry already reported `preview.status: building` and `job: Running`. The command completed before the helper sampled its transient `busy` flag. The helper now also recognizes active build/preparation, compiler start or an installed transport epoch, without issuing a second build. After correction, all 79 parity tests pass in three full runs and both previously failing cases pass 30 consecutive runs each. [Final evidence](./final-fixes-2026-10-18.md).
+
+
 ## Limitations
 
 | Item | Result | Test |

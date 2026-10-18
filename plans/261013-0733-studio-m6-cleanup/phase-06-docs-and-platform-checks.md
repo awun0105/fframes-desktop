@@ -7,7 +7,11 @@ effort: "1.5d"
 dependencies: [1]
 ---
 
-# Phase 2: Docs and platform checks
+# Phase 6: Docs and platform checks
+
+**2026-10-18 acceptance:** the owner confirmed all Windows app hand checks passed ("test all okay by my hand"). [Platform checks](./reports/platform-checks.md) record the tested build and owner-reported results. Docs and Windows validation are complete; this phase remains in progress only for the owner release dry run in step 6.
+
+**Release-path decision 2026-10-18:** the owner selected Windows unsigned preview preparation. Step 6 is now a Windows preview dry run with `preview_release=true`, `dry_run=true`, `windows_only=true`, `consumer_release=false`; consumer publication remains disabled. The signing and provenance requirements for a future consumer release are unchanged.
 
 ## Context
 

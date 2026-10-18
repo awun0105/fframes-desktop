@@ -1,5 +1,7 @@
 # Research findings
 
+Historical record. Snapshot paths beginning `/root/` identify the reference checkouts used for this inspection; they are text references, not paths in this repository. For the current design, see [architecture.md](architecture.md).
+
 Date: 2026-10-01. Repository inspection and official protocol/framework documentation; no reference applications or real agent sessions were launched.
 
 ## 1. What the references establish
@@ -14,13 +16,13 @@ These sources support the architectural patterns below. Their performance measur
 
 ## 2. Zeron: an agent host with a native viewport
 
-Zeron's [overview](/root/zeron/README.md) describes a local agent controller with optional device sync. Its [architecture](/root/zeron/ARCHITECTURE.md) separates a Rust engine from a GPUI viewport, with a typed RPC boundary used for embedded and daemon operation. The engine owns sessions, subprocesses, repositories, transcripts and recovery. The UI renders state and dispatches actions; it does not block on agent or filesystem work.
+Zeron's overview (snapshot `/root/zeron/README.md`) describes a local agent controller with optional device sync. Its architecture (snapshot `/root/zeron/ARCHITECTURE.md`) separates a Rust engine from a GPUI viewport, with a typed RPC boundary used for embedded and daemon operation. The engine owns sessions, subprocesses, repositories, transcripts and recovery. The UI renders state and dispatches actions; it does not block on agent or filesystem work.
 
 For Studio, this is a stronger reference than embedding agent subprocess handling directly inside UI components. A project engine can serve the GPUI app today and a headless render/test interface later. Studio does not need Zeron's CRDT sync, cloud relay, mobile clients or persistent daemon for its first release.
 
 ### ACP is one transport, not the entirety of Zeron's current integration
 
-The current [Harness implementation](/root/zeron/crates/harness/src/lib.rs) is more specific than the high-level overview:
+The current Harness implementation (snapshot `/root/zeron/crates/harness/src/lib.rs`) is more specific than the high-level overview:
 
 | Requested agent | Current Zeron implementation      | Lesson for Studio                                                             |
 | --------------- | --------------------------------- | ----------------------------------------------------------------------------- |
@@ -29,7 +31,7 @@ The current [Harness implementation](/root/zeron/crates/harness/src/lib.rs) is m
 | Pi              | Native JSONL RPC driver           | A prompt acknowledgement may differ from completed work                       |
 | Antigravity     | ACP server through AcpHarness     | Native ACP can fit the generic transport directly                             |
 
-Zeron previously adopted Claude/Codex ACP adapters. Its code now documents a return to native drivers after completion/streaming problems. The historical [ACP decision record](/root/zeron/docs/research/acp.md), [ACP driver](/root/zeron/crates/harness/src/acp/mod.rs), and [Pi contract](/root/zeron/crates/harness/src/pi/PROTOCOL.md) distinguish acknowledgement, turn completion, background activity and session readiness.
+Zeron previously adopted Claude/Codex ACP adapters. Its code now documents a return to native drivers after completion/streaming problems. The historical ACP decision record (snapshot `/root/zeron/docs/research/acp.md`), ACP driver (snapshot `/root/zeron/crates/harness/src/acp/mod.rs`), and Pi contract (snapshot `/root/zeron/crates/harness/src/pi/PROTOCOL.md`) distinguish acknowledgement, turn completion, background activity and session readiness.
 
 This is evidence from Zeron's pinned implementation, not proof that the current upstream adapters still have the same defects. Studio should qualify current versions through a compatibility suite before selecting defaults.
 
@@ -42,7 +44,7 @@ This is evidence from Zeron's pinned implementation, not proof that the current 
 - Provider/model/option catalogs come from discovery where possible, with a bounded cached fallback.
 - Agent installation happens in a visible setup step. Zeron's managed adapters install into versioned app-owned directories; they do not depend on a fresh npm download during every prompt.
 
-These patterns are demonstrated in [JSON-RPC transport](/root/zeron/crates/harness/src/jsonrpc.rs), [managed adapter installation](/root/zeron/crates/harness/src/adapter_install.rs), [run journal](/root/zeron/crates/engine/src/run_journal.rs), and [installation overview](/root/zeron/crates/harness/README.md).
+These patterns are demonstrated in JSON-RPC transport (snapshot `/root/zeron/crates/harness/src/jsonrpc.rs`), managed adapter installation (snapshot `/root/zeron/crates/harness/src/adapter_install.rs`), run journal (snapshot `/root/zeron/crates/engine/src/run_journal.rs`), and installation overview (snapshot `/root/zeron/crates/harness/README.md`).
 
 ### Policies to choose independently
 
@@ -89,9 +91,9 @@ Code retrieval remains an app/agent tool concern. ACP does not automatically map
 
 ## 4. Cap: a reference for the video workspace
 
-The inspected Cap checkout contains a Tauri desktop app and a separate GPUI implementation. The [GPUI README](/root/Cap/apps/desktop-gpui/README.md) contains historical development sections, some of which describe earlier stages; the current source is the better authority for which behaviors are implemented.
+The inspected Cap checkout contains a Tauri desktop app and a separate GPUI implementation. The GPUI README (snapshot `/root/Cap/apps/desktop-gpui/README.md`) contains historical development sections, some of which describe earlier stages; the current source is the better authority for which behaviors are implemented.
 
-The native app uses the same Cap project, editor, rendering and export crates as the existing app. Its [EditorInstance interface](/root/Cap/crates/editor/src/lib.rs) is UI independent. The [editor window](/root/Cap/apps/desktop-gpui/src/editor_window.rs) composes preview, playback, timeline and configuration UI around that engine.
+The native app uses the same Cap project, editor, rendering and export crates as the existing app. Its EditorInstance interface (snapshot `/root/Cap/crates/editor/src/lib.rs`) is UI independent. The editor window (snapshot `/root/Cap/apps/desktop-gpui/src/editor_window.rs`) composes preview, playback, timeline and configuration UI around that engine.
 
 ### Frame delivery and playback
 
@@ -103,15 +105,15 @@ Cap documents local playback measurements, but Studio must measure its own pipel
 
 ### Timeline and history
 
-Cap keeps selection/drag/trim/history mathematics outside GPUI in [editor_edits.rs](/root/Cap/apps/desktop-gpui/src/editor_edits.rs). Studio should use the same separation for time geometry, snapping, range selection and hit testing.
+Cap keeps selection/drag/trim/history mathematics outside GPUI in editor_edits.rs (snapshot `/root/Cap/apps/desktop-gpui/src/editor_edits.rs`). Studio should use the same separation for time geometry, snapping, range selection and hit testing.
 
 The data model differs. Cap edits a structured recording project. fframes scenes, timing and animations are ordinary Rust functions. Studio cannot directly borrow Cap's timeline mutation model: an edit must change an explicit runtime parameter or become a coding task, and the resulting timeline must be re-derived from the compiled project.
 
 ### Packaging
 
-Cap's [release workflow](/root/Cap/.github/workflows/desktop-release.yml) and [GPUI build script](/root/Cap/scripts/build-gpui-binary.sh) show the breadth of platform work: native builds, bundled sidecars/libraries, signing, macOS notarization and Linux packages. Treat this as a release engineering workstream, not a final step after UI work.
+Cap's release workflow (snapshot `/root/Cap/.github/workflows/desktop-release.yml`) and GPUI build script (snapshot `/root/Cap/scripts/build-gpui-binary.sh`) show the breadth of platform work: native builds, bundled sidecars/libraries, signing, macOS notarization and Linux packages. Treat this as a release engineering workstream, not a final step after UI work.
 
-Use Cap as an architectural reference. Its GPUI/editor code is covered by the repository's AGPL terms; the [license](/root/Cap/LICENSE) lists narrower exceptions for capture/camera crates. Do not copy those editor files into fframes' MIT code as part of this proposal. Zeron is MIT licensed; any source reuse should retain notices and go through a dependency review.
+Use Cap as an architectural reference. Its GPUI/editor code is covered by the repository's AGPL terms; the license (snapshot `/root/Cap/LICENSE`) lists narrower exceptions for capture/camera crates. Do not copy those editor files into fframes' MIT code as part of this proposal. Zeron is MIT licensed; any source reuse should retain notices and go through a dependency review.
 
 ## 5. GPUI fit
 

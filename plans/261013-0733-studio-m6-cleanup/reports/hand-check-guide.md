@@ -2,17 +2,19 @@
 
 Step-by-step checks for the rows of [platform checks](./platform-checks.md) that need a person at the screen. Each step says what to do and what you should see. Note pass or fail, and anything odd, as you go; a failure becomes a finding, not a silent fix.
 
+**Completed 2026-10-18:** the owner reported all Windows hand checks passed. Results are recorded in [platform checks](./platform-checks.md). Keep this guide for later regression checks; the release dry run is still pending separately.
+
 ## What is prepared
 
 | Item | Where |
 | --- | --- |
-| Release build of `feat/studio-m6` at `21a7f13` | `C:\Users\Administrator\fframes-m6\desktop\target\release\fframes-studio.exe` |
-| SDK bundle `studio-sdk-x86_64-pc-windows-msvc-v4`, assembled from the same checkout | `C:\Users\Administrator\fframes-m6\desktop\target\phase-zero-sdk` |
+| Release build of `feat/studio-m6` at `84ba69c` plus the 2026-10-18 fixes | `C:\Users\Administrator\fframes-m6\desktop\target\release\fframes-studio.exe` |
+| SDK bundle `studio-sdk-x86_64-pc-windows-msvc-v4`, assembled from the same checkout | `C:\Users\Administrator\fframes-m6\desktop\target\m6-fixed-sdk` |
 | Launcher (sets `FFRAMES_SDK_BUNDLE`, puts FFmpeg's DLLs on `PATH`) | `C:\Users\Administrator\studio-hand-checks\start-studio.ps1` |
 | Mock projects | `C:\Users\Administrator\studio-hand-checks\01-â€¦` to `05-â€¦` (below) |
 | Your pre-M6 Studio data, moved aside so Studio starts clean | `%LOCALAPPDATA%\fframes-studio.pre-m6-backup-20261017`; put it back with `restore-old-studio-data.ps1` in the same folder |
 
-The installed v2 SDK in `~\.fframes\sdk\active` is kept: installing v4 moves it to the installer's `previous` slot.
+The corrected SDK is installed in `~\.fframes\sdk\active`; the preceding SDK is in `previous`. Projects 01, 02 and 05 now pin the corrected SDK checksum. Their original manifests are backed up under `C:\Users\Administrator\fframes-desktop\output\m6-completion`; their timelines were preserved. Project 03 still awaits Import Rust, and project 04 remains the older-format refusal fixture.
 
 | Project | Made from | Used for |
 | --- | --- | --- |
@@ -23,6 +25,8 @@ The installed v2 SDK in `~\.fframes\sdk\active` is kept: installing v4 moves it 
 | `05-agent-playground` | the studio template | agent turns, so agent edits stay out of the timeline checks |
 
 ## 0. Start
+
+Windows is the immediate production priority (owner decision, 2026-10-18). Use this order: window chrome and dialogs (sections 2–3), timeline edits and export on 01 (section 4), reorder and audible playback on 02 (section 4), then agent connection, review and composer on 05 (sections 5–7). Record each result as you go and fix a failure before repeating its affected checks. The release dry run follows the Windows app checks.
 
 1. Connect over RDP and keep the session visible.
 2. In PowerShell: `& C:\Users\Administrator\studio-hand-checks\start-studio.ps1`.
@@ -52,14 +56,14 @@ The installed v2 SDK in `~\.fframes\sdk\active` is kept: installing v4 moves it 
 
 ## 4. Timeline edits in a template project (Done-means 2)
 
-Open `01-template`.
+Open `01-template`. This folder retains the six clips from the saved session (three `intro`, two `story`, one `outro`, 314 frames). The steps below undo only the new edits you make; they do not reset that starting layout.
 
-1. Click **Build preview**. **Expect** the first build to take a minute or two, then the preview and three clips in the timeline: `intro`, `story`, `outro`.
+1. Click **Build preview**. **Expect** the first build to take a minute or two, then the preview and the saved six-clip timeline. A fresh template starts with `intro`, `story`, `outro`.
 2. Press Space to play and Space to pause. Left and Right step a frame; Home and End seek.
 3. Seek to about the middle, click the timeline so it has focus, and press **C**. **Expect** the clip under the playhead to become two. Note how long the preview takes to update: it should update without a "compiling" state.
-4. Check the file: `Get-Content C:\Users\Administrator\studio-hand-checks\01-template\timeline.json`. **Expect** two clips with the key of the scene you split (for example `story`) and different trims, next to the other two scenes.
+4. Check the file: `Get-Content C:\Users\Administrator\studio-hand-checks\01-template\timeline.json`. **Expect** two adjacent clips with the key of the scene you split (for example `story`) and different trims; the other saved clips stay in place. Splitting exactly on a clip edge is refused; move the playhead inside it.
 5. Drag the right edge of the second clip to the left. **Expect** it to shrink, snapping to the playhead unless you hold Shift. Run step 4 again: `trim_end_frames` has changed.
-6. Press Ctrl+Z twice. **Expect** the trim, then the split, to be undone. Run step 4 again: after both undos the timeline is back to `intro`, `story`, `outro` untrimmed. Ctrl+Shift+Z redoes.
+6. Press Ctrl+Z twice. **Expect** the trim, then the split, to be undone. Run step 4 again: after both undos the timeline is back to the layout you opened (six clips in the prepared folder). Ctrl+Shift+Z redoes.
 7. Make one split and one trim again, then click **Exportâ€¦**. Pick MP4 and a destination. **Expect** a native save dialog, a size estimate, progress, and a finished file.
 8. Open the exported MP4 in a player. **Expect** the same cut and length as the preview.
 9. Start another export and press **Cancel export**. **Expect** no output file left behind.
@@ -67,13 +71,13 @@ Open `01-template`.
 Open `02-scenes-and-audio`, then **Build preview**.
 
 10. Drag a clip to a new position in the order. **Expect** the order to change, and `timeline.json` to list the clips in the new order.
-11. Play across the overlay. **Expect** it to cross-fade with its neighbour and the audio cue to play. **Mute** silences the sound while the clock keeps running.
+11. Play across the overlay. **Expect** the overlapping scenes to blend and their authored audio cues to play. **Mute** silences the sound while the clock keeps running.
 
 ## 5. Agent connection (Done-means 3)
 
 Open `05-agent-playground`. The Agent tab is the first sidebar tab. Its settings button opens Settings â€º Agent.
 
-The built-in Claude and Codex profiles start on ACP (see the finding in [platform checks](./platform-checks.md#findings)). Check all three wires:
+New Claude and Codex profiles start on their native protocols; saved choices remain in effect. Check all three wires:
 
 **A. Claude Code, native wire**
 1. On the Agent page, set **Protocol** to **Claude Code (stream-json)**, and **Executable** to `C:\Users\Administrator\.local\bin\claude.exe` with Arguments empty. Click **Save**, then **Check adapter**.
@@ -85,7 +89,7 @@ The built-in Claude and Codex profiles start on ACP (see the finding in [platfor
 
 **C. ACP**
 1. Click **Detect agents**. **Expect** Claude and Codex to be listed without being started.
-2. Select the Claude profile, which uses ACP. If it says the adapter is missing, click **Install adapter** (it needs Node.js and npm). Then **Check adapter**.
+2. Select the Claude profile; if needed, choose **ACP** explicitly and **Save** before **Detect agents**. The corrected managed adapter is already installed for these hand checks. Select it, then **Check adapter**. On another setup, **Install adapter** installs that pinned correction (it needs Node.js and npm). A saved custom launch path is not rewritten. The corrected version directory ends in `0.89.1-advisor-result-v1`.
 
 ## 6. An agent turn (Done-means 3)
 

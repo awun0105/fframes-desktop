@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Trim, split, reorder and snapping"
-status: done-with-concerns
+status: completed
 priority: P1
 effort: "2.5-3.5d"
 dependencies: [2, 4]
@@ -55,9 +55,9 @@ From [the Zeron report](../reports/research-261013-1749-zeron-agent-control.md) 
 - gpui tests cover trim, reorder, split, snapping and the disabled state at the view, and the shell path in the parity suite. Undo through a real timeline-ready worker stays with the ignored `SDK_BUNDLE` qualification test.
 - A rebuilt preview or a cleared timeline closes a live trim but drops a live reorder, whose indices belong to the old layout. A parity test asserts Ctrl/Cmd+Z is bound to timeline undo outside text fields and not while the prompt has focus.
 
-### Open
+### Windows acceptance, 2026-10-18
 
-- Manual check on this VM (trim, split, reorder, undo against a timeline-ready project) is not done. The parity fixture runs timeline-ready with the fake worker's `timing` mode (a split is covered); undo through a real engine is covered by the engine tests and the ignored `SDK_BUNDLE` qualification.
+- The owner confirmed the Windows app hand checks passed, including trim, split, reorder and undo. The real-worker qualification also ran successfully; see [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md).
 
 ## Success criteria
 

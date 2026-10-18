@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Export panel"
-status: done-with-concerns
+status: completed
 priority: P2
 effort: "3-4d"
 dependencies: [2, 3]
@@ -50,8 +50,8 @@ Deviations and open items:
 - The destination extension is forced to the container's (`.mp4` / `.webm`).
 - The saved choice persists in app settings and is validated against the worker's reported formats before use.
 - Unmigrated projects get only the default MPEG-4 export, with a migrate notice.
-- Open: the real-export pixel match against the preview needs `SDK_BUNDLE`, which is not available on this host.
+- Closed 2026-10-18: assembled-SDK H.264 export passes pre-encode pixel identity and decoded `odiff -t 0.4` at three times, with a failing negative control; see [M4 completion](./plan.md#success-criteria).
 - This SDK's FFmpeg reports mpeg4, libx264, libx265, libvpx-vp9, libopus and aac; `every_reported_format_exports_at_the_requested_size_and_rate` exports each reported format. Presets follow the worker's reported formats.
-- Open: manual VM checks for phases 5, 6 and 7 (panel on screen, cancel latency).
+- Closed 2026-10-18: the owner confirmed the Windows app hand checks passed, including the export panel and cancellation; see [M6 platform checks](../261013-0733-studio-m6-cleanup/reports/platform-checks.md).
 - Tests: gpui parity tests cover the fake worker answering as a legacy SDK (support unmigrated; the migration-available route is covered by the second test), an unmigrated project ignoring a saved non-default choice and still starting, cancel, failure with its reason and a running export. The `Ready` path (worker formats, estimate) has unit tests in `studio-engine/src/export_options.rs` and `studio-ui/src/export/` only.
 - With no project or no SDK the panel does not open and an export cannot start (`the_export_panel_does_not_open_without_a_project`, `the_export_panel_does_not_open_without_an_sdk`).
