@@ -5,6 +5,12 @@ edition = "2024"
 license = "MIT"
 description = "Worker runtime serving loop and IPC transport for fframes desktop studio"
 
+[features]
+default = ["skia"]
+# Render previews and exports with Skia: on the GPU when one works (Vulkan, Metal on
+# macOS), on the CPU when chosen. Shaders need the compile-time svg tree.
+skia = ["dep:fframes_skia_renderer", "fframes/compile-time-svgtree"]
+
 [dependencies]
 fframes = { workspace = true }
 fframes-studio-protocol = { workspace = true }
@@ -13,6 +19,12 @@ serde_json = "1.0"
 thiserror = "2.0"
 parking_lot = "0.12"
 sha2 = "0.10"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+fframes_skia_renderer = { workspace = true, optional = true, features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+fframes_skia_renderer = { workspace = true, optional = true, features = ["vulkan"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -5,6 +5,8 @@ use std::fmt;
 pub const PREVIEW_CONTRACT_VERSION: u32 = 1;
 pub const MAX_PREVIEW_WIDTH: u32 = 1280;
 pub const MAX_PREVIEW_HEIGHT: u32 = 720;
+/// Upper bound of [`PreviewHelloResponse::backend_detail`].
+pub const MAX_BACKEND_DETAIL_BYTES: usize = 256;
 pub const MAX_INSPECT_FRAMES: usize = 256;
 pub const MAX_DIAGNOSTICS: usize = 1024;
 pub const MAX_EDITOR_OBJECTS_PER_FRAME: usize = 4096;
@@ -67,6 +69,10 @@ pub struct PreviewHelloResponse {
     pub max_preview_height: u32,
     pub audio_sample_rates: Vec<u32>,
     pub audio_sample_format: String,
+    /// What `backend` renders on (`vulkan <device> <type>`, `metal`), or why the GPU was
+    /// not used. One line of at most [`MAX_BACKEND_DETAIL_BYTES`]. Older workers omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -172,6 +178,19 @@ pub struct ScaledFrameResponse {
     pub record: BinaryRecordHeader,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor_metadata: Option<EditorFrameMetadata>,
+    /// Set on the frame where the worker left its GPU for the CPU renderer after a GPU
+    /// failure: this and later frames come from the new backend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_change: Option<BackendChange>,
+}
+
+/// The backend a worker switched to during a session, see [`ScaledFrameResponse::backend_change`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackendChange {
+    pub backend: String,
+    pub capability_gaps: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -510,6 +529,7 @@ mod editor_metadata_tests {
                 payload_len: 4,
             },
             editor_metadata: None,
+            backend_change: None,
         };
         let mut old_response = serde_json::to_value(response).unwrap();
         old_response

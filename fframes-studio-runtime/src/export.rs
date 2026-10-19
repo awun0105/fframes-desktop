@@ -11,6 +11,8 @@ use fframes_studio_protocol::export::{
     ExportSettings,
 };
 
+use crate::renderer::{BackendChoice, RendererPreference};
+
 type ExportResult<T> = Result<T, Box<dyn Error>>;
 
 /// Opus encodes only 48 kHz among the rates fframes mixes at.
@@ -122,13 +124,151 @@ pub fn run_export<V: Video + Send>(
     if settings.container == ExportContainer::Webm {
         options.audio_encoder_options.sample_rate = OPUS_SAMPLE_RATE;
     }
-    fframes::render(
+    render_with_selected_backend(
         &output,
         video,
-        fframes::cpu::CpuRenderingBackend::default(),
         &options,
+        RendererPreference::from_args(args),
+        (size.width, size.height, fps),
     )?;
     verify_export(&output, video, &settings, size, fps)
+}
+
+/// Renders with the backend `preference` selects at the export size. Skia is used only after
+/// it encoded a probe frame; a Skia export that fails in the backend rather than in the video
+/// is rendered again once with the built-in CPU renderer.
+fn render_with_selected_backend<V: Video + Send>(
+    output: &Path,
+    video: &V,
+    options: &RenderOptions<'_, '_>,
+    preference: RendererPreference,
+    (width, height, fps): (usize, usize, usize),
+) -> ExportResult<()> {
+    #[cfg(feature = "skia")]
+    {
+        use crate::renderer::{CPU_BACKEND, one_line};
+        use fframes::{EncoderFrameRenderer, FFramesRenderBackend, VideoEncoderInfo};
+        use fframes_skia_renderer::{
+            SkiaFFramesRenderer, SkiaPipelineConcurrencyPolicy, SkiaPipelineConfig,
+        };
+
+        let cpu = |reason: String| {
+            let reason = one_line(&reason);
+            eprintln!(
+                "{}",
+                serde_json::json!({ "event": "warning", "message": reason })
+            );
+            log_backend(&BackendChoice::new(CPU_BACKEND, Some(reason)));
+        };
+
+        if preference != RendererPreference::Cpu && options.frame_stride(V::FPS)? != 1 {
+            // the Skia pipeline encodes every frame of the video
+            cpu(format!(
+                "Skia cannot export at {fps} fps, the video runs at {}; exporting with the CPU \
+                 renderer, which skips shader layers",
+                V::FPS
+            ));
+        } else {
+            let selection =
+                crate::renderer::select(preference, width, height, crate::renderer::platform_gpu)?;
+            match &selection.ctx {
+                None => log_backend(&selection.choice),
+                Some(ctx) => {
+                    let pipeline = SkiaPipelineConfig {
+                        concurrency_policy: SkiaPipelineConcurrencyPolicy::MaxPerformance,
+                        ..Default::default()
+                    };
+                    let backend = SkiaFFramesRenderer::new(pipeline, ctx);
+                    // a missing encoder is not the backend's fault and fails the export
+                    let encoder = VideoEncoderInfo::for_output(
+                        output,
+                        (width as i32, height as i32, fps as i32),
+                        &options.video_encoder_options,
+                    )
+                    .map_err(|error| fframes::FFramesRendererError::from_chunk(0, error))?;
+                    match encode_probe(&backend, &encoder, (width as u32, height as u32)) {
+                        Err(error) => cpu(format!(
+                            "{} could not encode a probe frame, exporting with the CPU renderer: \
+                             {error}",
+                            selection.choice.name
+                        )),
+                        Ok(()) => {
+                            log_backend(&selection.choice);
+                            match fframes::render(output, video, backend, options) {
+                                Ok(()) => return Ok(()),
+                                Err(error) if is_backend_failure(&error) => cpu(format!(
+                                    "{} failed, exporting with the CPU renderer: {error}",
+                                    selection.choice.name
+                                )),
+                                Err(error) => return Err(error.into()),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// Opens the encoder input the way the export will and draws one frame into it, so
+        /// GPU format conversion and hardware frames are tried before the export starts.
+        fn encode_probe(
+            backend: &impl FFramesRenderBackend,
+            encoder: &VideoEncoderInfo<'_>,
+            (width, height): (u32, u32),
+        ) -> fframes::FFramesRendererResult<()> {
+            let input = backend
+                .negotiate_encoder_input(encoder)
+                .map_err(|error| fframes::FFramesRendererError::from_chunk(0, error))?;
+            let tree = fframes::usvgr::Tree::from_str(
+                ENCODE_PROBE_SVG,
+                &fframes::usvgr::Options {
+                    fast_shapes: true,
+                    ..Default::default()
+                },
+                &Default::default(),
+            )
+            .map_err(|error| fframes::FFramesRendererError::Internal(error.to_string()))?;
+            backend
+                .encoder_frame_renderer(&input, width, height)?
+                .render_tree(&tree, fframes::Color::BLACK)?;
+            Ok(())
+        }
+    }
+    #[cfg(not(feature = "skia"))]
+    {
+        let _ = (width, height, fps);
+        log_backend(&crate::renderer::cpu_only(preference)?);
+    }
+    fframes::render(
+        output,
+        video,
+        fframes::cpu::CpuRenderingBackend::default(),
+        options,
+    )?;
+    Ok(())
+}
+
+/// The frame a Skia export encodes before it is used: a rounded rectangle and a circle.
+#[cfg(feature = "skia")]
+const ENCODE_PROBE_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="32" rx="8" fill="#ff0000"/><circle cx="32" cy="48" r="12" fill="#00ff00"/></svg>"##;
+
+/// One `backend` event on stderr; the export service keeps it with the diagnostics.
+fn log_backend(choice: &BackendChoice) {
+    eprintln!(
+        "{}",
+        serde_json::json!({ "event": "backend", "backend": choice.name, "detail": choice.detail })
+    );
+}
+
+/// Whether a Skia export failed in the backend rather than in the video or the encoder:
+/// panics, missing media, encoder errors and cancellation fail the same way on the CPU.
+#[cfg(feature = "skia")]
+fn is_backend_failure(error: &fframes::FFramesRendererError) -> bool {
+    matches!(
+        error,
+        fframes::FFramesRendererError::Skia(_)
+            | fframes::FFramesRendererError::Internal(_)
+            | fframes::FFramesRendererError::ConcurrencyError
+    )
 }
 
 /// The first encoder of `codec` this FFmpeg build has.

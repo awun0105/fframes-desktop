@@ -1,6 +1,8 @@
 use fframes::{Color, Duration, Frame, RenderOptions, Svgr, Video};
 use fframes_studio_protocol::*;
-use fframes_studio_runtime::{PreviewWorkerConfig, WorkerTransport, serve_preview_worker};
+use fframes_studio_runtime::{
+    PreviewWorkerConfig, RendererPreference, WorkerTransport, serve_preview_worker,
+};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::io::{self, Cursor, Read, Write};
@@ -121,6 +123,13 @@ struct RunningWorker {
 }
 impl RunningWorker {
     fn new(seconds: f32, cache: &std::path::Path) -> Self {
+        Self::with_video(TestVideo(seconds), RendererPreference::Auto, cache)
+    }
+    fn with_video<V: Video + Send + 'static>(
+        video: V,
+        renderer: RendererPreference,
+        cache: &std::path::Path,
+    ) -> Self {
         fn pair() -> (TcpStream, TcpStream) {
             let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
             let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
@@ -137,14 +146,10 @@ impl RunningWorker {
         };
         let mut config = PreviewWorkerConfig::new(identity.clone(), "sdk-v2", "1.1.0");
         config.cache_directory = cache.into();
+        config.renderer = renderer;
         let task = std::thread::spawn(move || {
             let transport = WorkerTransport::new(input.try_clone().unwrap(), input, output);
-            let _ = serve_preview_worker(
-                &TestVideo(seconds),
-                &RenderOptions::default(),
-                transport,
-                config,
-            );
+            let _ = serve_preview_worker(&video, &RenderOptions::default(), transport, config);
         });
         Self {
             control,
@@ -181,15 +186,40 @@ impl RunningWorker {
         self.send(request);
         self.reply()
     }
-    fn hello(&mut self, id: u64) {
-        assert!(matches!(
-            self.exchange(PreviewRequest::Hello(PreviewHelloRequest {
-                offered_versions: vec![1],
-                required_capabilities: vec![],
-                request_id: id
-            })),
-            PreviewResponse::Hello(_)
-        ));
+    fn hello(&mut self, id: u64) -> PreviewHelloResponse {
+        match self.hello_reply(id) {
+            PreviewResponse::Hello(hello) => hello,
+            other => panic!("{other:?}"),
+        }
+    }
+    fn hello_reply(&mut self, id: u64) -> PreviewResponse {
+        self.exchange(PreviewRequest::Hello(PreviewHelloRequest {
+            offered_versions: vec![1],
+            required_capabilities: vec![],
+            request_id: id,
+        }))
+    }
+    /// The response to a full-size frame request and its pixels, or the error response.
+    #[cfg(feature = "skia")]
+    fn frame(
+        &mut self,
+        id: u64,
+        frame_index: usize,
+    ) -> Result<(ScaledFrameResponse, Vec<u8>), Box<PreviewResponse>> {
+        match self.exchange(PreviewRequest::ScaledFrame(ScaledFrameRequest {
+            envelope: self.envelope(id),
+            frame_index,
+            seek_serial: id,
+            scale: 1.0,
+        })) {
+            PreviewResponse::ScaledFrame(frame) => {
+                let record: BinaryRecordHeader = Self::receive(&mut self.bulk);
+                let mut pixels = vec![0; record.payload_len];
+                self.bulk.read_exact(&mut pixels).unwrap();
+                Ok((frame, pixels))
+            }
+            other => Err(Box::new(other)),
+        }
     }
     fn prepare(&mut self, id: u64) -> PreparedAudioDescriptor {
         match self.exchange(PreviewRequest::PrepareAudio(PrepareAudioRequest {
@@ -313,4 +343,122 @@ fn cancellation_interrupts_inflight_mix_and_removes_partial_artifact() {
     assert!(matches!(worker.reply(), PreviewResponse::Ack(_)));
     assert!(started.elapsed() < Wait::from_secs(2));
     assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+}
+
+/// A shader fills the left half green on a black background; frame 1 panics.
+#[cfg(feature = "skia")]
+struct ShaderVideo {
+    shader: fframes::Shader,
+}
+#[cfg(feature = "skia")]
+impl Video for ShaderVideo {
+    const FPS: usize = 10;
+    const WIDTH: usize = 320;
+    const HEIGHT: usize = 180;
+    const BACKGROUND_COLOR: Color = Color::BLACK;
+    fn duration(&self) -> Duration<'_> {
+        Duration::Frames(3)
+    }
+    fn audio(&self) -> fframes::AudioMap<'_> {
+        fframes::AudioMap::none()
+    }
+    fn render_frame<'a>(
+        &'a self,
+        frame: Frame,
+        _ctx: &fframes::FFramesContext<'a, '_>,
+    ) -> Svgr<'a> {
+        assert_ne!(frame.index, 1, "the video fails on frame 1");
+        let layer = self.shader.draw(&frame, fframes::ShaderUniforms::new());
+        fframes::svgr!(
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">
+                <image href={layer.href()} x="0" y="0" width="160" height="180" />
+            </svg>
+        )
+    }
+}
+
+#[cfg(feature = "skia")]
+fn shader_worker(renderer: RendererPreference, cache: &std::path::Path) -> RunningWorker {
+    let shader = fframes::Shader::sksl("half4 main(float2 coord) { return half4(0, 1, 0, 1); }");
+    RunningWorker::with_video(ShaderVideo { shader }, renderer, cache)
+}
+
+/// The RGB of pixel (`x`, `y`) of a 320 px wide straight RGBA frame.
+#[cfg(feature = "skia")]
+fn rgb(pixels: &[u8], x: usize, y: usize) -> [u8; 3] {
+    let at = (y * 320 + x) * 4;
+    [pixels[at], pixels[at + 1], pixels[at + 2]]
+}
+
+#[cfg(feature = "skia")]
+#[test]
+fn skia_cpu_preview_draws_shader_layer_and_reports_no_gap() {
+    let cache = tempfile::tempdir().unwrap();
+    let mut worker = shader_worker(RendererPreference::SkiaCpu, cache.path());
+    let hello = worker.hello(1);
+    assert_eq!(hello.backend, "skia-cpu");
+    assert!(
+        hello.capability_gaps.is_empty(),
+        "{:?}",
+        hello.capability_gaps
+    );
+    let (frame, pixels) = worker.frame(2, 0).unwrap();
+    assert_eq!((frame.header.width, frame.header.height), (320, 180));
+    let left = rgb(&pixels, 80, 90);
+    assert!(
+        left[0] < 8 && left[1] > 247 && left[2] < 8,
+        "shader half is {left:?}"
+    );
+    assert_eq!(
+        rgb(&pixels, 240, 90),
+        [0, 0, 0],
+        "the background is untouched"
+    );
+}
+
+#[cfg(feature = "skia")]
+#[test]
+fn cpu_preview_skips_the_shader_layer_and_reports_the_gap() {
+    let cache = tempfile::tempdir().unwrap();
+    let mut worker = shader_worker(RendererPreference::Cpu, cache.path());
+    let hello = worker.hello(1);
+    assert_eq!(hello.backend, "cpu");
+    assert_eq!(hello.capability_gaps, vec!["shader_preview".to_string()]);
+    let (_, pixels) = worker.frame(2, 0).unwrap();
+    assert_eq!(rgb(&pixels, 80, 90), [0, 0, 0], "tiny-skia draws no shader");
+}
+
+#[cfg(feature = "skia")]
+#[test]
+fn user_frame_error_is_not_a_backend_failure() {
+    let cache = tempfile::tempdir().unwrap();
+    let mut worker = shader_worker(RendererPreference::SkiaCpu, cache.path());
+    worker.hello(1);
+    let failed = worker.frame(2, 1).unwrap_err();
+    assert!(
+        matches!(&*failed, PreviewResponse::Error(e) if e.code == "RENDER_ERROR"),
+        "{failed:?}"
+    );
+    let (frame, pixels) = worker.frame(3, 2).unwrap();
+    assert_eq!(frame.backend_change, None, "the worker keeps Skia");
+    assert!(rgb(&pixels, 80, 90)[1] > 247, "Skia still draws the shader");
+}
+
+#[cfg(not(feature = "skia"))]
+#[test]
+fn a_skia_preference_without_skia_is_refused_at_hello() {
+    let cache = tempfile::tempdir().unwrap();
+    for renderer in [RendererPreference::Gpu, RendererPreference::SkiaCpu] {
+        let mut worker = RunningWorker::with_video(TestVideo(0.1), renderer, cache.path());
+        let reply = worker.hello_reply(1);
+        assert!(
+            matches!(&reply, PreviewResponse::Error(e) if e.code == "RENDERER_UNAVAILABLE"),
+            "{reply:?}"
+        );
+    }
+    let mut worker =
+        RunningWorker::with_video(TestVideo(0.1), RendererPreference::Auto, cache.path());
+    let hello = worker.hello(1);
+    assert_eq!(hello.backend, "cpu");
+    assert_eq!(hello.capability_gaps, vec!["shader_preview".to_string()]);
 }

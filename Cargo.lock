@@ -1274,6 +1274,7 @@ version = "0.2.0"
 dependencies = [
  "fframes",
  "fframes-studio-protocol",
+ "fframes_skia_renderer",
  "parking_lot",
  "serde",
  "serde_json",

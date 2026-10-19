@@ -1,5 +1,6 @@
+use crate::renderer::{BackendChoice, CPU_BACKEND, RendererPreference, Renderers};
 use crate::{WorkerError, WorkerTransport};
-use fframes::{AudioMixer, CpuFrameRenderer, Previewer, RenderOptions, Video};
+use fframes::{AudioMixer, Previewer, RenderOptions, Video};
 use fframes_studio_protocol::*;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -23,6 +24,8 @@ pub struct PreviewWorkerConfig {
     /// Timing applied before the first request, with its generation. Without it the
     /// worker plays the code order until the first `SetTiming`.
     pub initial_timing: Option<(u64, fframes::TimingDoc)>,
+    /// The renderer asked for with `--renderer` on the worker's command line.
+    pub renderer: RendererPreference,
 }
 impl PreviewWorkerConfig {
     pub fn new(
@@ -37,6 +40,7 @@ impl PreviewWorkerConfig {
             cache_directory: std::env::temp_dir().join("fframes-preview-audio"),
             preparation_deadline: Duration::from_secs(120),
             initial_timing: None,
+            renderer: RendererPreference::from_args(&std::env::args().collect::<Vec<_>>()),
         }
     }
 
@@ -341,7 +345,44 @@ pub fn serve_preview_worker<V: Video>(
             Err(error) => eprintln!("startup timing ignored: {error}"),
         }
     }
-    let mut renderer = CpuFrameRenderer::default();
+    // Selected before Hello so it reports the backend that actually renders. Skia contexts
+    // are made at the size of a full-window playback frame.
+    let fit = (MAX_PREVIEW_WIDTH as f64 / V::WIDTH as f64)
+        .min(MAX_PREVIEW_HEIGHT as f64 / V::HEIGHT as f64)
+        .min(1.);
+    let size = (
+        ((V::WIDTH as f64 * fit).round() as usize).max(1),
+        ((V::HEIGHT as f64 * fit).round() as usize).max(1),
+    );
+    #[cfg(feature = "skia")]
+    let selection = crate::renderer::select(
+        config.renderer,
+        size.0,
+        size.1,
+        crate::renderer::platform_gpu,
+    );
+    #[cfg(feature = "skia")]
+    let (mut renderer, unavailable) = match &selection {
+        Ok(selection) => (selection.renderers(), None),
+        Err(error) => (
+            Renderers::cpu(BackendChoice::new(CPU_BACKEND, None)),
+            Some(error.to_string()),
+        ),
+    };
+    #[cfg(not(feature = "skia"))]
+    let (mut renderer, unavailable) = {
+        let _ = size;
+        match crate::renderer::cpu_only(config.renderer) {
+            Ok(choice) => (Renderers::cpu(choice), None),
+            Err(error) => (
+                Renderers::cpu(BackendChoice::new(CPU_BACKEND, None)),
+                Some(error.to_string()),
+            ),
+        }
+    };
+    if let Some(error) = &unavailable {
+        eprintln!("preview renderer unavailable: {error}");
+    }
     let mut artifacts = Artifacts {
         entries: VecDeque::new(),
     };
@@ -421,6 +462,14 @@ pub fn serve_preview_worker<V: Video>(
                     transport.write_control_message(&error(None,"INCOMPATIBLE_PREVIEW_BRIDGE",format!("install an SDK/bridge supporting preview contract {PREVIEW_CONTRACT_VERSION}; missing: {}",gaps.join(", "))))?;
                     continue;
                 }
+                if let Some(reason) = &unavailable {
+                    transport.write_control_message(&error(
+                        None,
+                        "RENDERER_UNAVAILABLE",
+                        reason,
+                    ))?;
+                    continue;
+                }
                 negotiated = true;
                 transport.write_control_message(&PreviewResponse::Hello(PreviewHelloResponse {
                     contract_version: PREVIEW_CONTRACT_VERSION,
@@ -430,13 +479,13 @@ pub fn serve_preview_worker<V: Video>(
                     fframes_version: config.fframes_version.clone(),
                     runtime_version: env!("CARGO_PKG_VERSION").into(),
                     sdk_version: config.sdk_version.clone(),
-                    backend: "cpu".into(),
+                    backend: renderer.choice().name.into(),
                     capabilities: PREVIEW_CAPABILITIES
                         .iter()
                         .chain(OPTIONAL_PREVIEW_CAPABILITIES)
                         .map(|s| (*s).into())
                         .collect(),
-                    capability_gaps: vec!["shader_preview".into()],
+                    capability_gaps: renderer.choice().capability_gaps(),
                     max_frame_bytes: MAX_FRAME_PAYLOAD_BYTES,
                     max_control_bytes: crate::worker::MAX_CONTROL_MESSAGE_SIZE,
                     max_preview_width: MAX_PREVIEW_WIDTH,
@@ -445,6 +494,7 @@ pub fn serve_preview_worker<V: Video>(
                         8000, 16000, 22050, 24000, 44100, 48000, 88200, 96000, 192000,
                     ],
                     audio_sample_format: "f32le_stereo_interleaved".into(),
+                    backend_detail: renderer.choice().detail.clone(),
                 }))?;
             }
             PreviewRequest::Timeline(env) => {
@@ -507,7 +557,15 @@ pub fn serve_preview_worker<V: Video>(
                 let scale = req.scale.min(max_scale);
                 previewer.set_scale(scale);
                 let started = Instant::now();
-                match previewer.render_with_editor_geometry(req.frame_index, &mut renderer) {
+                let mut rendered =
+                    previewer.render_with_editor_geometry(req.frame_index, &mut renderer);
+                // the GPU failed: the frame is built and drawn again for the CPU renderer
+                let backend_change = renderer.take_change();
+                if backend_change.is_some() {
+                    rendered =
+                        previewer.render_with_editor_geometry(req.frame_index, &mut renderer);
+                }
+                match rendered {
                     Ok((frame, geometry)) => {
                         let expected = (frame.width as usize)
                             .checked_mul(frame.height as usize)
@@ -552,6 +610,7 @@ pub fn serve_preview_worker<V: Video>(
                             render_duration_micros: started.elapsed().as_micros() as u64,
                             record: record.clone(),
                             editor_metadata: Some(editor_metadata),
+                            backend_change: backend_change.clone(),
                         });
                         transport.write_control_message(&response)?;
                         transport.write_binary_record(&record, &frame.pixels)?

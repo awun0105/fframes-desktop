@@ -118,9 +118,23 @@ impl SkiaVulkanCtx {
                     FFramesRendererError::Skia(format!("Failed to enumerate physical devices: {e}"))
                 })?;
 
-                physical_devices.iter().copied().next().ok_or_else(|| {
-                    FFramesRendererError::Skia("No Vulkan physical devices found".to_string())
-                })?
+                // a real GPU before a virtual one before a software rasterizer (lavapipe,
+                // SwiftShader), which would be slower than rendering with Skia on the CPU
+                physical_devices
+                    .iter()
+                    .copied()
+                    .min_by_key(|device| {
+                        match instance.get_physical_device_properties(*device).device_type {
+                            vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+                            vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+                            vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
+                            vk::PhysicalDeviceType::CPU => 4,
+                            _ => 3,
+                        }
+                    })
+                    .ok_or_else(|| {
+                        FFramesRendererError::Skia("No Vulkan physical devices found".to_string())
+                    })?
             };
 
             Self::new_with_device(entry, instance, physical_device, width, height)
@@ -307,6 +321,19 @@ impl SkiaVulkanCtx {
 
     pub fn physical_device(&self) -> vk::PhysicalDevice {
         self.physical_device
+    }
+
+    /// The name and type of the device this context renders on.
+    pub fn device_info(&self) -> (String, vk::PhysicalDeviceType) {
+        let properties = unsafe {
+            self.instance
+                .get_physical_device_properties(self.physical_device)
+        };
+        let name = properties
+            .device_name_as_c_str()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        (name, properties.device_type)
     }
 
     pub fn device(&self) -> &ash::Device {

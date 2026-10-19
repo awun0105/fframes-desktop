@@ -80,6 +80,11 @@ fn tone_wav() -> Vec<u8> {
 
 /// Exports with the arguments after `--export-v1 --output <output>`.
 fn export(output: &Path, extra: &[&str]) -> Result<(), String> {
+    export_video(&ScenesVideo::new(), output, extra)
+}
+
+/// Exports `video` like [`export`].
+fn export_video<V: Video + Send>(video: &V, output: &Path, extra: &[&str]) -> Result<(), String> {
     let media_dir = output.with_extension("media");
     std::fs::create_dir_all(&media_dir).unwrap();
     std::fs::write(media_dir.join("tone.wav"), tone_wav()).unwrap();
@@ -92,7 +97,7 @@ fn export(output: &Path, extra: &[&str]) -> Result<(), String> {
     let mut args = vec!["--export-v1".to_owned(), "--output".to_owned()];
     args.push(output.to_string_lossy().into_owned());
     args.extend(extra.iter().map(|arg| (*arg).to_owned()));
-    run_export(&ScenesVideo::new(), &options, &args).map_err(|e| e.to_string())
+    run_export(video, &options, &args).map_err(|e| e.to_string())
 }
 
 /// RGB of the centre of a decoded frame.
@@ -292,4 +297,47 @@ fn an_exported_timing_document_matches_the_preview_frames() {
         let preview = [rgba.pixels[at], rgba.pixels[at + 1], rgba.pixels[at + 2]];
         assert_close(centre_pixel(&output, 10, frame as i64), preview);
     }
+}
+
+/// A full-frame shader that paints green over a red rectangle.
+#[cfg(feature = "skia")]
+struct ShaderVideo(fframes::Shader);
+#[cfg(feature = "skia")]
+impl Video for ShaderVideo {
+    const FPS: usize = 10;
+    const WIDTH: usize = 64;
+    const HEIGHT: usize = 36;
+    fn duration(&self) -> Duration<'_> {
+        Duration::Frames(5)
+    }
+    fn audio(&self) -> fframes::AudioMap<'_> {
+        fframes::AudioMap::none()
+    }
+    fn render_frame<'a>(&'a self, frame: Frame, _: &fframes::FFramesContext<'a, '_>) -> Svgr<'a> {
+        let layer = self.0.draw(&frame, fframes::ShaderUniforms::new());
+        fframes::svgr!(
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 36">
+                <rect x="0" y="0" width="64" height="36" fill="#ff0000" />
+                <image href={layer.href()} x="0" y="0" width="64" height="36" />
+            </svg>
+        )
+    }
+}
+
+#[cfg(feature = "skia")]
+#[test]
+fn a_skia_export_draws_shader_layers_and_the_cpu_export_skips_them() {
+    let temp = tempfile::tempdir().unwrap();
+    let video = ShaderVideo(fframes::Shader::sksl(
+        "half4 main(float2 coord) { return half4(0, 1, 0, 1); }",
+    ));
+    for (renderer, expected) in [("skia-cpu", [0, 255, 0]), ("cpu", [255, 0, 0])] {
+        let output = temp.path().join(format!("{renderer}.mp4"));
+        export_video(&video, &output, &["--renderer", renderer]).unwrap();
+        assert_close(centre_pixel(&output, 10, 2), expected);
+    }
+    // Skia encodes every frame of the video, so another frame rate exports on the CPU
+    let output = temp.path().join("half-rate.mp4");
+    export_video(&video, &output, &["--renderer", "skia-cpu", "--fps", "5"]).unwrap();
+    assert_close(centre_pixel(&output, 5, 1), [255, 0, 0]);
 }
