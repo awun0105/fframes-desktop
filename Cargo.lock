@@ -1191,7 +1191,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a5e934a31a22b4963bdf39567fae5306eff3f5fb4b99d018fa0d2498a5c7933"
 dependencies = [
  "fframes",
- "ttf-parser 0.25.1",
+ "ttf-parser",
 ]
 
 [[package]]
