@@ -906,7 +906,14 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
                         s.metrics.late_frames += 1;
                     }
                 }
-                Err(e) => shared.lock().error = Some((c.ready.tag().clone(), e.to_string())),
+                Err(e) => {
+                    let error = displayed_frame_failed(
+                        c.worker.backend(),
+                        c.worker.has_stopped(),
+                        e.to_string(),
+                    );
+                    shared.lock().error = Some((c.ready.tag().clone(), error));
+                }
             }
             {
                 let mut s = shared.lock();
@@ -976,6 +983,20 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
     // The pump is its own background thread: reap the displayed worker here.
     if let Some(displayed) = displayed {
         let _ = displayed.teardown_now();
+    }
+}
+
+/// The error of a frame the displayed worker did not deliver. A worker that rendered on the
+/// GPU and was stopped (it missed its deadline or exited) may have hung the GPU: the rest of
+/// the session renders with the built-in CPU renderer, from the next preview build on. A
+/// frame the worker refused (an error in the video) changes nothing.
+fn displayed_frame_failed(backend: &str, stopped: bool, error: String) -> String {
+    if stopped && super::renderer_preference::gpu_worker_failed(backend, &error) {
+        format!(
+            "{error}. The GPU renderer stopped responding; previews of this session render on the CPU from the next build."
+        )
+    } else {
+        error
     }
 }
 
@@ -1122,6 +1143,101 @@ mod tests {
     use crate::services::worker_client::WorkerClient;
     use crate::{OpenSession, OperationId};
     use std::io::{Cursor, empty, sink};
+
+    #[test]
+    fn only_a_stopped_gpu_worker_moves_the_session_to_the_cpu_renderer() {
+        use crate::services::renderer_preference as preference;
+        let _serial = preference::tests_lock();
+        preference::reset_for_tests();
+        // an error in the video, answered by a running worker
+        assert_eq!(
+            displayed_frame_failed("skia-gpu", false, "render".into()),
+            "render"
+        );
+        // a slow Skia CPU or tiny-skia worker is not a GPU hang
+        assert_eq!(
+            displayed_frame_failed("skia-cpu", true, "deadline".into()),
+            "deadline"
+        );
+        assert_eq!(
+            displayed_frame_failed("cpu", true, "deadline".into()),
+            "deadline"
+        );
+        assert!(preference::demotion().is_none());
+        let error = displayed_frame_failed("skia-gpu", true, "deadline".into());
+        assert!(
+            error.starts_with("deadline. The GPU renderer stopped responding"),
+            "{error}"
+        );
+        assert_eq!(preference::current(), preference::RendererChoice::Cpu);
+        assert_eq!(preference::demotion().as_deref(), Some("deadline"));
+        preference::reset_for_tests();
+    }
+
+    #[test]
+    fn a_gpu_worker_that_stops_answering_a_frame_is_killed_and_the_next_launch_uses_the_cpu() {
+        use crate::services::preview_worker_client::PreviewWorkerClient;
+        use crate::services::renderer_preference as preference;
+        let _serial = preference::tests_lock();
+        preference::reset_for_tests();
+        preference::set_choice(preference::RendererChoice::Gpu);
+        let cwd = tempfile::tempdir().unwrap();
+        std::fs::write(
+            cwd.path().join("fframes-fake-worker.json"),
+            br#"{"hang_frame": 3}"#,
+        )
+        .unwrap();
+        let script = std::path::Path::new(studio_test_support::ENGINE_TESTS_DIR)
+            .join("support/fake-preview-worker.py");
+        let script = script.to_str().unwrap();
+        let identity = PreviewIdentity {
+            project_id: "p".into(),
+            open_session: "s".into(),
+            source_revision: "r".into(),
+            worker_generation: 1,
+        };
+        let manager = studio_bootstrap::ProcessTreeManager::new();
+        let [flag, renderer] = preference::worker_args();
+        let mut transport = WorkerClient::new("r", 1);
+        transport.set_request_timeout(std::time::Duration::from_secs(2));
+        transport
+            .spawn_worker(
+                studio_test_support::python(),
+                &[
+                    script,
+                    flag,
+                    renderer,
+                    "--project-id",
+                    "p",
+                    "--open-session",
+                    "s",
+                    "--audio-cache",
+                    "audio",
+                ],
+                Some(cwd.path()),
+                studio_bootstrap::ChildEnvironment::default_allowlist(),
+                &manager,
+            )
+            .unwrap();
+        let mut worker = PreviewWorkerClient::new(transport, identity);
+        worker.negotiate().unwrap();
+        assert_eq!(worker.backend(), "skia-gpu");
+        worker.timeline().unwrap();
+        worker.frame(0, 1, 1.0).expect("frames before the hang");
+        let error = worker.frame(3, 2, 1.0).unwrap_err().to_string();
+        assert!(
+            worker.has_stopped(),
+            "the hung worker is killed at the deadline"
+        );
+        assert_eq!(manager.active_count(), 0);
+        let error = displayed_frame_failed(worker.backend(), worker.has_stopped(), error);
+        assert!(
+            error.contains("The GPU renderer stopped responding"),
+            "{error}"
+        );
+        assert_eq!(preference::worker_args(), ["--renderer", "cpu"]);
+        preference::reset_for_tests();
+    }
 
     fn inspection(diagnostics: Vec<PreviewDiagnostic>, truncated: bool) -> InspectResponse {
         InspectResponse {

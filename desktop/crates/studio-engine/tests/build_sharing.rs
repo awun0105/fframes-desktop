@@ -866,7 +866,7 @@ fn a_key_the_compiler_cannot_honor_is_refused_before_any_compile_or_cache_entry(
 }
 
 #[test]
-fn the_cargo_compiler_only_accepts_the_default_cpu_debug_worker_key() {
+fn the_cargo_compiler_only_accepts_the_default_skia_debug_worker_key() {
     use studio_engine::services::build_service::Compiler;
     use studio_engine::services::worker_project::CargoCompiler;
     let e = env();
@@ -875,7 +875,7 @@ fn the_cargo_compiler_only_accepts_the_default_cpu_debug_worker_key() {
     assert!(CargoCompiler.accepts(&base).is_ok());
     for key in [
         base.clone().with_features(["gpu".to_owned()]),
-        base.clone().with_backend("gpu"),
+        base.clone().with_backend("cpu"),
         base.clone().with_options(["--release".to_owned()]),
     ] {
         assert!(
@@ -1215,4 +1215,45 @@ fn accounting_against_an_entry_the_cache_dropped_is_refused_without_panicking() 
     );
     drop(guard);
     assert_eq!(svc.stats().artifact_bytes, 0);
+}
+
+#[test]
+fn every_preview_launch_asks_for_the_sessions_renderer_and_negotiates_what_started() {
+    use studio_engine::services::renderer_preference::{self, RendererChoice};
+    use studio_engine::services::worker_project::launch_preview_worker;
+    if std::env::var_os("FFRAMES_STUDIO_RENDERER").is_some() {
+        return; // The override decides every launch of this process.
+    }
+    let e = env();
+    let project = create_project(&e.temp.path().join("video"));
+    let svc = service(FakeCompiler::new(true), BuildLimits::default());
+    let key = build_key(&project, &e.sdk, &e.builds);
+    let lease = svc
+        .subscribe(
+            key,
+            request(&project, &e.sdk, &e.builds),
+            who(SubscriberKind::Tool, "tool"),
+        )
+        .unwrap()
+        .wait(&never)
+        .unwrap();
+    let manager = ProcessTreeManager::new();
+    for (choice, backend) in [
+        (RendererChoice::SkiaCpu, "skia-cpu"),
+        (RendererChoice::Gpu, "skia-gpu"),
+        (RendererChoice::Cpu, "cpu"),
+    ] {
+        renderer_preference::set_choice(choice);
+        let identity = fframes_studio_protocol::PreviewIdentity {
+            project_id: project.manifest.project_id.clone().into(),
+            open_session: "session".into(),
+            source_revision: project.inventory.revision.as_str().to_owned(),
+            worker_generation: 1,
+        };
+        let worker = launch_preview_worker(lease.build().clone(), identity, &manager)
+            .unwrap_or_else(|error| panic!("{choice:?}: {error}"));
+        assert_eq!(worker.backend(), backend, "{choice:?}");
+    }
+    renderer_preference::set_choice(RendererChoice::Auto);
+    manager.terminate_all(Duration::from_millis(300));
 }

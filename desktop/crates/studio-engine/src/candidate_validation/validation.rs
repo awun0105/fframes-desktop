@@ -125,12 +125,12 @@ pub(super) fn is_unsupported_shader(key: &str, message: &str) -> bool {
     text.contains("shader")
         && (text.contains("unsupported")
             || text.contains("not supported")
-            || text.contains("fallback")
-            || text.contains("cpu"))
+            || text.contains("fallback"))
 }
 
-/// The only backend the owned preview worker validates.
-pub const VALIDATED_BACKEND: &str = "cpu";
+/// The worker build candidates are validated with; see
+/// [`crate::services::build_service::WORKER_BUILD_BACKEND`].
+pub const VALIDATED_BACKEND: &str = crate::services::build_service::WORKER_BUILD_BACKEND;
 
 /// A compile that does not name exactly the captured candidate (or the validated
 /// backend) proves nothing about it.
@@ -343,11 +343,14 @@ pub(super) fn run_probe(
             output: String::new(),
         });
     }
+    let backend = bound_tail(&probe.backend(), 32, false);
+    let mut shader_gap = false;
     for gap in probe.capability_gaps().into_iter().take(16) {
         let gap = bound_tail(&gap, 128, false);
         if gap.to_lowercase().contains("shader") {
+            shader_gap = true;
             collector.warn(format!(
-                "Unsupported shaders: the CPU preview worker reports the capability gap `{gap}`; shader effects in this video cannot be shown faithfully."
+                "Unsupported shaders: the `{backend}` preview renderer reports the capability gap `{gap}`; shader effects in this video cannot be shown faithfully."
             ));
         }
         collector.note(
@@ -387,9 +390,10 @@ pub(super) fn run_probe(
             );
         }
         for d in response.diagnostics {
-            if is_unsupported_shader(&d.key, &d.message) {
+            // a renderer that draws shaders (Skia) has no shader gap to warn about
+            if shader_gap && is_unsupported_shader(&d.key, &d.message) {
                 collector.warn(format!(
-                    "Unsupported shader at frame {}: {} ({}); the CPU preview cannot show it faithfully.",
+                    "Unsupported shader at frame {}: {} ({}); the `{backend}` preview cannot show it faithfully.",
                     d.frame, d.message, d.key
                 ));
             }

@@ -242,6 +242,12 @@ impl CandidateProbe for WorkerProbe<'_> {
             .unwrap_or_default()
     }
 
+    fn backend(&self) -> String {
+        self.worker
+            .as_ref()
+            .map_or_else(String::new, |worker| worker.backend().to_owned())
+    }
+
     fn cancelled(&self) -> bool {
         (self.cancelled)()
     }

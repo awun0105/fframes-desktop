@@ -5,6 +5,7 @@ pub mod candidate_runner;
 pub mod export_service;
 pub mod preview_coordinator;
 pub mod preview_worker_client;
+pub mod renderer_preference;
 pub mod teardown;
 pub mod thumbnail_cache;
 pub mod worker_client;

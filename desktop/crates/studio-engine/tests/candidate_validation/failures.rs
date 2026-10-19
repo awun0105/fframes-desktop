@@ -140,24 +140,39 @@ fn inspection_errors_truncation_and_unsupported_shaders() {
     assert!(!report.passed());
     assert_eq!(report.failure().unwrap().stage, ValidationStage::Inspection);
 
-    // Unsupported shader: a visible warning, still a pass.
-    let f3 = fixture();
-    let mut probe = Fake::new("x", 60);
-    probe.diagnostics = vec![PreviewDiagnostic {
+    // Unsupported shader on a renderer with the shader gap: a visible warning, still a pass.
+    let shader_diagnostic = PreviewDiagnostic {
         frame: 3,
         severity: DiagnosticSeverity::Warning,
         key: "shader_unsupported".into(),
         message: "custom shader falls back to CPU preview".into(),
-    }];
+    };
+    let f3 = fixture();
+    let mut probe = Fake::new("x", 60);
+    probe.gaps = vec!["shader_preview".into()];
+    probe.diagnostics = vec![shader_diagnostic.clone()];
     let (report, _c) = run(&f3, &mut probe, |_| {});
     assert!(report.passed());
     assert!(
         report
             .warnings()
             .iter()
-            .any(|w| w.contains("Unsupported shader"))
+            .any(|w| w.starts_with("Unsupported shader at frame 3") && w.contains("`cpu`"))
     );
     assert!(report.diagnostics_total() >= 1);
+
+    // A Skia worker draws shaders: the same diagnostic is no warning.
+    let f4 = fixture();
+    let mut probe = Fake::new("x", 60);
+    probe.backend = "skia-cpu".into();
+    probe.diagnostics = vec![shader_diagnostic];
+    let (report, _c) = run(&f4, &mut probe, |_| {});
+    assert!(report.passed());
+    assert!(
+        report.warnings().iter().all(|w| !w.contains("shader")),
+        "{:?}",
+        report.warnings()
+    );
 }
 
 #[test]

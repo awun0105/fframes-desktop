@@ -198,6 +198,7 @@ pub fn export_video(
     options.args([EXPORT_FLAG, "--output"]);
     options.arg(&temporary_path);
     options.args(settings.to_args());
+    options.args(crate::services::renderer_preference::worker_args());
     if let Some(timing_file) = &timing_file {
         options.arg("--timing-file");
         options.arg(timing_file);

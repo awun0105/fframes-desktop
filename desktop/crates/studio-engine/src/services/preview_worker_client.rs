@@ -49,6 +49,10 @@ fn frame_geometry_matches(
 /// (version, capability, backend or limits): an SDK/environment problem, not an edit.
 pub const INCOMPATIBLE_BRIDGE: &str = "Incompatible preview SDK/worker bridge; source unchanged. Select an SDK with preview support and an explicit preview entry.";
 
+/// The backends a preview worker may report: the built-in CPU renderer, Skia on the CPU,
+/// Skia on a GPU.
+pub const RUNTIME_BACKENDS: [&str; 3] = ["cpu", "skia-cpu", "skia-gpu"];
+
 impl PreviewWorkerClient {
     pub fn new(transport: WorkerClient, identity: PreviewIdentity) -> Self {
         Self {
@@ -60,10 +64,46 @@ impl PreviewWorkerClient {
             stopped: None,
         }
     }
+    /// Whether the worker was killed or exited: it missed a deadline, crashed or broke the
+    /// protocol. A worker that answered a request with an error is still running.
+    pub fn has_stopped(&self) -> bool {
+        self.stopped.is_some() || self.transport.is_crashed()
+    }
     /// Kills a worker whose connection can no longer be trusted and keeps the first reason.
     fn stop(&mut self, reason: &WorkerClientError) {
         let _ = self.transport.force_crash();
         self.stopped.get_or_insert_with(|| reason.to_string());
+    }
+    /// The backend the worker renders with now (`cpu`, `skia-cpu`, `skia-gpu`). Empty
+    /// before negotiation.
+    pub fn backend(&self) -> &str {
+        self.hello.as_ref().map_or("", |h| h.backend.as_str())
+    }
+    /// What the backend runs on, or why the GPU is not used.
+    pub fn backend_detail(&self) -> Option<&str> {
+        self.hello
+            .as_ref()
+            .and_then(|h| h.backend_detail.as_deref())
+    }
+    /// A worker left its GPU for the CPU renderer during the session: later frames and
+    /// gaps are the new backend's.
+    fn apply_backend_change(&mut self, change: &BackendChange) -> Result<(), WorkerClientError> {
+        if !RUNTIME_BACKENDS.contains(&change.backend.as_str())
+            || change
+                .backend_detail
+                .as_ref()
+                .is_some_and(|d| d.len() > MAX_BACKEND_DETAIL_BYTES)
+        {
+            let error = invalid("Invalid preview backend change");
+            self.stop(&error);
+            return Err(error);
+        }
+        if let Some(hello) = self.hello.as_mut() {
+            hello.backend = change.backend.clone();
+            hello.capability_gaps = change.capability_gaps.clone();
+            hello.backend_detail = change.backend_detail.clone();
+        }
+        Ok(())
     }
     /// Capabilities the negotiated worker declared unavailable (for example
     /// `shader_preview`). Empty before negotiation.
@@ -335,7 +375,10 @@ impl PreviewWorkerClient {
                         && PREVIEW_CAPABILITIES
                             .iter()
                             .all(|s| h.capabilities.iter().any(|c| c == s))
-                        && h.backend == "cpu"
+                        && RUNTIME_BACKENDS.contains(&h.backend.as_str())
+                        && h.backend_detail
+                            .as_ref()
+                            .is_none_or(|d| d.len() <= MAX_BACKEND_DETAIL_BYTES)
                         && h.max_frame_bytes <= MAX_FRAME_PAYLOAD_BYTES
                         && h.max_control_bytes <= 1024 * 1024
                         && h.max_preview_width == MAX_PREVIEW_WIDTH
@@ -415,6 +458,9 @@ impl PreviewWorkerClient {
                     pixels: bytes.unwrap(),
                 };
                 f.validate(&self.identity).map_err(invalid)?;
+                if let Some(change) = &f.response.backend_change {
+                    self.apply_backend_change(change)?;
+                }
                 Ok(f)
             }
             _ => {
@@ -668,6 +714,15 @@ mod tests {
 
     /// A negotiated client whose worker answers with `responses` (after Hello) in order.
     fn scripted_worker(timing: bool, responses: Vec<PreviewResponse>) -> PreviewWorkerClient {
+        scripted_worker_on("cpu", timing, responses)
+    }
+
+    /// [`scripted_worker`] with a worker that renders with `backend`.
+    fn scripted_worker_on(
+        backend: &str,
+        timing: bool,
+        responses: Vec<PreviewResponse>,
+    ) -> PreviewWorkerClient {
         let mut capabilities: Vec<String> =
             PREVIEW_CAPABILITIES.iter().map(|c| (*c).into()).collect();
         if timing {
@@ -681,7 +736,7 @@ mod tests {
             fframes_version: "1.3.0".into(),
             runtime_version: "0.2.0".into(),
             sdk_version: "sdk".into(),
-            backend: "cpu".into(),
+            backend: backend.into(),
             capabilities,
             capability_gaps: vec![],
             max_frame_bytes: MAX_FRAME_PAYLOAD_BYTES,
@@ -690,6 +745,7 @@ mod tests {
             max_preview_height: MAX_PREVIEW_HEIGHT,
             audio_sample_rates: vec![48_000],
             audio_sample_format: "f32le_stereo_interleaved".into(),
+            backend_detail: None,
         });
         let mut framed = Vec::new();
         let mut bulk = Vec::new();
@@ -758,6 +814,7 @@ mod tests {
             header,
             render_duration_micros: 1,
             editor_metadata: None,
+            backend_change: None,
         })
     }
 
@@ -830,6 +887,72 @@ mod tests {
         worker.timeline().unwrap();
         assert!(worker.frame(0, 9, 0.5).is_err());
         assert!(worker.transport.is_crashed());
+    }
+
+    #[test]
+    fn skia_workers_negotiate_and_a_frame_that_switches_backend_updates_backend_and_gaps() {
+        for backend in ["skia-gpu", "skia-cpu"] {
+            assert_eq!(
+                scripted_worker_on(backend, false, vec![]).backend(),
+                backend
+            );
+        }
+        let mut frame = scaled_frame(3, 0.5);
+        if let PreviewResponse::ScaledFrame(frame) = &mut frame {
+            frame.backend_change = Some(BackendChange {
+                backend: "cpu".into(),
+                capability_gaps: vec!["shader_preview".into()],
+                backend_detail: Some("skia-gpu failed, using the CPU renderer".into()),
+            });
+        }
+        let mut worker = scripted_worker_on("skia-gpu", false, vec![laid_out(2, 0), frame]);
+        assert!(worker.capability_gaps().is_empty());
+        worker.timeline().unwrap();
+        worker.frame(0, 9, 0.5).unwrap();
+        assert_eq!(worker.backend(), "cpu");
+        assert_eq!(worker.capability_gaps(), ["shader_preview".to_owned()]);
+        assert_eq!(
+            worker.backend_detail(),
+            Some("skia-gpu failed, using the CPU renderer")
+        );
+        assert!(!worker.has_stopped(), "the worker keeps serving frames");
+    }
+
+    #[test]
+    fn a_worker_reporting_an_unknown_backend_is_incompatible() {
+        let hello = |backend: &str| {
+            let mut transport = WorkerClient::new("rev", 7);
+            let response = PreviewResponse::Hello(PreviewHelloResponse {
+                contract_version: PREVIEW_CONTRACT_VERSION,
+                supported_versions: vec![PREVIEW_CONTRACT_VERSION],
+                identity: timing_identity(),
+                request_id: 1,
+                fframes_version: "1.3.0".into(),
+                runtime_version: "0.2.0".into(),
+                sdk_version: "sdk".into(),
+                backend: backend.into(),
+                capabilities: PREVIEW_CAPABILITIES.iter().map(|c| (*c).into()).collect(),
+                capability_gaps: vec![],
+                max_frame_bytes: MAX_FRAME_PAYLOAD_BYTES,
+                max_control_bytes: 1024 * 1024,
+                max_preview_width: MAX_PREVIEW_WIDTH,
+                max_preview_height: MAX_PREVIEW_HEIGHT,
+                audio_sample_rates: vec![48_000],
+                audio_sample_format: "f32le_stereo_interleaved".into(),
+                backend_detail: None,
+            });
+            let bytes = serde_json::to_vec(&response).unwrap();
+            let mut framed = (bytes.len() as u32).to_be_bytes().to_vec();
+            framed.extend(bytes);
+            transport.attach_pipes(
+                std::io::sink(),
+                std::io::Cursor::new(framed),
+                std::io::Cursor::new(Vec::new()),
+            );
+            PreviewWorkerClient::new(transport, timing_identity()).negotiate()
+        };
+        assert!(hello("skia-gpu").is_ok());
+        assert!(hello("vulkan").is_err());
     }
 
     #[test]

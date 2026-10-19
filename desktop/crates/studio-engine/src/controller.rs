@@ -10,7 +10,8 @@ use crate::{
         capture_candidate_scoped_observed, next_step,
     },
     edit_transaction::{
-        ApplyGate, ConflictReport, Executor, Interrupt, NoHooks, RecoveryReport, TransactionHooks,
+        ApplyGate, Boundary, ConflictReport, Executor, Interrupt, NoHooks, RecoveryReport,
+        TransactionHooks,
     },
     journal::{Journal, TaskJournal},
     store::{Record, Store},
@@ -30,6 +31,43 @@ use studio_project::{
     checkpoint::Checkpoints,
     revision::{FileKind, TIMING_FILE},
 };
+
+/// The compatibility manifest of the SDK installed at `path`.
+fn read_sdk_manifest(path: &Path) -> Result<studio_sdk::CompatibilityManifest, EngineError> {
+    let manifest_path = path.join("compatibility.json");
+    let json = fs::read_to_string(&manifest_path).map_err(|e| {
+        EngineError::Diagnostic(format!(
+            "{}: SDK manifest unavailable: {e}; select a complete compatible installed SDK",
+            manifest_path.display()
+        ))
+    })?;
+    studio_sdk::CompatibilityManifest::from_json_str(&json).map_err(|e| {
+        EngineError::Diagnostic(format!(
+            "{}: SDK manifest: {e}; select a compatible installed SDK",
+            manifest_path.display()
+        ))
+    })
+}
+
+/// The pin that moves a project pinned to `current` to `sdk`, when `sdk` is a newer release
+/// of the same SDK line (`<line>-v<N>`, same target) that previews candidates.
+pub fn repin_offer(
+    current: &studio_project::manifest::SdkPin,
+    sdk: &studio_sdk::CompatibilityManifest,
+) -> Option<studio_project::manifest::SdkPin> {
+    let release = |id: &str| {
+        let (line, version) = id.rsplit_once("-v")?;
+        Some((line.to_owned(), version.parse::<u32>().ok()?))
+    };
+    let (line, from) = release(&current.release)?;
+    let (target_line, to) = release(&sdk.sdk_id)?;
+    let newer = line == target_line && to > from;
+    let previews = sdk
+        .preview_contract_versions
+        .contains(&fframes_studio_protocol::PREVIEW_CONTRACT_VERSION);
+    (newer && previews && sdk.validate().is_ok())
+        .then(|| crate::build_materialization::sdk_pin(sdk))
+}
 
 mod preset;
 mod promotion;
@@ -485,19 +523,7 @@ impl Controller {
         Ok(())
     }
     pub fn select_sdk(&mut self, path: PathBuf) -> Result<(), EngineError> {
-        let manifest_path = path.join("compatibility.json");
-        let json = fs::read_to_string(&manifest_path).map_err(|e| {
-            EngineError::Diagnostic(format!(
-                "{}: SDK manifest unavailable: {e}; select a complete compatible installed SDK",
-                manifest_path.display()
-            ))
-        })?;
-        let manifest = studio_sdk::CompatibilityManifest::from_json_str(&json).map_err(|e| {
-            EngineError::Diagnostic(format!(
-                "{}: SDK manifest: {e}; select a compatible installed SDK",
-                manifest_path.display()
-            ))
-        })?;
+        let manifest = read_sdk_manifest(&path)?;
         if crate::build_materialization::framework_for(&self.project.manifest, &manifest).is_none()
         {
             return Err(EngineError::Diagnostic(
@@ -515,6 +541,58 @@ impl Controller {
                 report.format_summary()
             )));
         }
+        let mut record = self.record.clone();
+        record.sdk_path = Some(path);
+        self.persist(record)
+    }
+    /// Moves the project to the SDK at `path`, a newer release of the SDK it is pinned to,
+    /// after the user confirmed it: `studio.json`'s `sdk` pin is replaced through the
+    /// project's atomic manifest replacement and the SDK becomes the project's selection.
+    /// Every refusal leaves `studio.json` byte for byte as it was.
+    pub fn repin_sdk(&mut self, path: PathBuf) -> Result<(), EngineError> {
+        let refuse = |reason: String| Err(EngineError::Diagnostic(reason));
+        self.reconcile()?;
+        self.ensure_mutable()?;
+        if self.agent.active().is_some() {
+            return refuse(
+                "An agent task is running; finish or cancel it before changing the SDK".into(),
+            );
+        }
+        if matches!(
+            self.state().job(),
+            JobState::Queued(_) | JobState::Running(_) | JobState::CancelRequested(_)
+        ) {
+            return refuse("A job is running; wait for it before changing the SDK".into());
+        }
+        let manifest = read_sdk_manifest(&path)?;
+        let Some(offer) = repin_offer(&self.project.manifest.sdk, &manifest) else {
+            return refuse(format!(
+                "SDK {} is not a newer release of the project's SDK {}; select the project's compatible SDK",
+                manifest.sdk_id, self.project.manifest.sdk.release
+            ));
+        };
+        crate::build_materialization::check_binding(&self.project, &path, &manifest)?;
+        let report = studio_sdk::Doctor::verify_candidate_sdk_with_processes(
+            &path,
+            &manifest,
+            Some(&self.processes),
+        );
+        if !report.is_ready() {
+            return refuse(format!(
+                "SDK unavailable: {}; repair prerequisites or select a complete SDK",
+                report.format_summary()
+            ));
+        }
+        let mut next = self.project.manifest.clone();
+        next.sdk = offer;
+        if let Some(fault) = self.controller_boundary(Boundary::Manifest { after: false })? {
+            return refuse(format!("SDK pin not updated: {fault}"));
+        }
+        crate::preset_state::verify_manifest_unchanged(&self.project.root, &self.project.inventory)
+            .map_err(EngineError::from)?;
+        studio_project::lifecycle::write_manifest(&self.project.root, &next)?;
+        self.controller_boundary(Boundary::Manifest { after: true })?;
+        self.reconcile()?;
         let mut record = self.record.clone();
         record.sdk_path = Some(path);
         self.persist(record)

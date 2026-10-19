@@ -37,6 +37,9 @@ pub struct Presentation {
     pub project: Option<ProjectPresentation>,
     pub recents: Vec<Recent>,
     pub sdk: String,
+    /// The SDK release the open project can move to (`Command::RepinSdk`), when its pin
+    /// names an older release of the selected SDK.
+    pub sdk_repin: Option<String>,
     pub state: Option<crate::ProjectState>,
     pub owner: Option<studio_bootstrap::ProcessTreeManager>,
     pub paths: Option<AppPaths>,
@@ -69,6 +72,9 @@ pub enum Command {
     Close,
     RemoveRecent(ProjectId),
     SelectSdk(PathBuf),
+    /// Moves the open project's pin to the selected SDK, which `Presentation::sdk_repin`
+    /// offered and the user confirmed.
+    RepinSdk,
     InstallSdk,
     ImportSdkBundle(PathBuf),
     Restore(PathBuf, studio_project::SourceRevision),
@@ -92,6 +98,7 @@ pub struct Backend {
     pub compatibility_error: String,
     pub sdk_home: Option<PathBuf>,
     pub sdk: String,
+    pub sdk_repin: Option<String>,
     pub agent_sdk: Option<AgentSdk>,
     /// The manifest of the SDK the open project builds with (the project's selection or
     /// the active installation), whether or not it verified.
@@ -312,6 +319,16 @@ impl Backend {
                     .map_err(|e| e.to_string())?;
                 self.check_sdk();
             }
+            Command::RepinSdk => {
+                let path = self
+                    .selected_sdk_path()
+                    .ok_or("No installed SDK to move the project to")?;
+                self.current()?
+                    .lock()
+                    .repin_sdk(path)
+                    .map_err(|e| e.to_string())?;
+                self.check_sdk();
+            }
             Command::InstallSdk => {
                 if let Err(error) = crate::sdk_setup::install_sdk(
                     self.compatibility
@@ -418,15 +435,19 @@ impl Backend {
         }
         self.check_sdk();
     }
-    pub fn check_sdk(&mut self) {
-        self.agent_sdk = None;
-        self.selected_sdk = None;
-        let sdk = self
-            .controller
+    /// The SDK the open project builds with: its own selection, else the active installation.
+    fn selected_sdk_path(&self) -> Option<PathBuf> {
+        self.controller
             .as_ref()
             .and_then(|c| c.lock().sdk_path().map(PathBuf::from))
             .or_else(|| self.sdk_home.as_ref().map(|h| h.join("active")))
-            .filter(|path| path.exists());
+            .filter(|path| path.exists())
+    }
+    pub fn check_sdk(&mut self) {
+        self.agent_sdk = None;
+        self.selected_sdk = None;
+        self.sdk_repin = None;
+        let sdk = self.selected_sdk_path();
         // Host prerequisites come from the SDK that is actually selected, which may be the
         // only manifest this host has; the app default stands in while none is installed.
         let selected = sdk.as_ref().map(|path| {
@@ -461,12 +482,22 @@ impl Backend {
                         return;
                     }
                 };
-                if self
+                if let Some(pin) = self
                     .controller
                     .as_ref()
-                    .is_some_and(|c| framework_for(&c.lock().project.manifest, &selected).is_none())
+                    .map(|c| c.lock().project.manifest.clone())
+                    .filter(|manifest| framework_for(manifest, &selected).is_none())
+                    .map(|manifest| manifest.sdk)
                 {
-                    self.sdk = "Incompatible SDK pin; select the project's compatible SDK".into();
+                    self.sdk_repin =
+                        crate::controller::repin_offer(&pin, &selected).map(|offer| offer.release);
+                    self.sdk = match &self.sdk_repin {
+                        Some(release) => format!(
+                            "Project pinned to SDK {}; move it to {release} or select the project's compatible SDK",
+                            pin.release
+                        ),
+                        None => "Incompatible SDK pin; select the project's compatible SDK".into(),
+                    };
                     return;
                 }
                 let report = Doctor::verify_candidate_sdk_with_processes(
@@ -530,6 +561,7 @@ impl Backend {
             project: open.as_ref().map(|(project, ..)| project.clone()),
             recents,
             sdk: self.sdk.clone(),
+            sdk_repin: self.sdk_repin.clone(),
             state: open.as_ref().map(|(_, state, ..)| state.clone()),
             preset: open.as_ref().map(|(_, _, _, preset, _)| preset.clone()),
             timeline: open.as_ref().map(|(.., timeline)| timeline.clone()),
@@ -608,6 +640,7 @@ mod tests {
             compatibility_error: "SDK manifest unavailable".into(),
             sdk_home: None,
             sdk: String::new(),
+            sdk_repin: None,
             agent_sdk: None,
             selected_sdk: None,
             closed: Arc::new(AtomicBool::new(false)),

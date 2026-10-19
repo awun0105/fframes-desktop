@@ -7,7 +7,8 @@ every revision can describe its own timeline, diagnostics and audio:
 
   frames, fps, width, height, scenes [[start,end]], tracks [[start_s,end_s]],
   inspect [{frame,severity,key,message}], render_fail_frame, audio
-  (silent|tone|clip|misplaced), pixel (base byte), backend, fail_start, delay_ms,
+  (silent|tone|clip|misplaced), pixel (base byte), backend (default: the one `--renderer` asks
+  for, `cpu` for `auto`), hang_frame (stops answering at that frame), fail_start, delay_ms,
   export_hang, timing (offer set_timing_v1: scenes are keyed s0, s1 ... and a timing document
   trims, splits and reorders them), editor_objects [{component, object, bounds: [x, y, width, height]}] (every
   frame carries them as exact-bounds editor metadata in video pixels)
@@ -193,7 +194,8 @@ while True:
         send(dict(
             type="Hello", contract_version=1, supported_versions=[1], identity=identity,
             request_id=request["request_id"], fframes_version="1.1.0", runtime_version="0.1.0",
-            sdk_version=arg("--sdk-version", "test"), backend=CONFIG.get("backend", "cpu"),
+            sdk_version=arg("--sdk-version", "test"),
+            backend=CONFIG.get("backend") or {"skia-cpu": "skia-cpu", "gpu": "skia-gpu"}.get(arg("--renderer"), "cpu"),
             capabilities=["preview_identity_v1", "scaled_frame_v1", "inspect_v1", "prepared_audio_v1"]
             + (["set_timing_v1"] if TIMING else []),
             capability_gaps=CONFIG.get("capability_gaps", []), max_frame_bytes=64 * 1024 * 1024, max_control_bytes=1024 * 1024,
@@ -242,6 +244,8 @@ while True:
     elif kind == "ScaledFrame":
         env = request["envelope"]
         index = request["frame_index"]
+        while CONFIG.get("hang_frame") == index:
+            time.sleep(0.05)
         if CONFIG.get("render_fail_frame") == index:
             send(dict(type="Error", envelope=env, code="render", message="fake render failure"))
             continue

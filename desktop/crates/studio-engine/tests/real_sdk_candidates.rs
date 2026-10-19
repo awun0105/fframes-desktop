@@ -224,6 +224,11 @@ impl Real {
 #[test]
 #[ignore = "requires SDK_BUNDLE or SDK_ACTIVE; real compiler + preview worker candidate validation"]
 fn real_sdk_candidate_validation_scenarios() {
+    // The project CLI renders with the built-in CPU renderer; the validator's worker must
+    // too for frame zero to match byte for byte.
+    studio_engine::services::renderer_preference::set_choice(
+        studio_engine::services::renderer_preference::RendererChoice::Cpu,
+    );
     let mut real = Real::new();
 
     // Baseline: the unchanged fixture validates and stages matching playback.
@@ -238,7 +243,7 @@ fn real_sdk_candidate_validation_scenarios() {
     let frame_zero = run.report.frames()[0].sha256.clone();
     assert_eq!(run.report.frames()[0].frame, 0);
     // The ordinary project CLI renders the same candidate bytes to the same pixels as the
-    // validator's real preview frame (identical assets, fonts and CPU backend).
+    // validator's real preview frame (identical assets, fonts and built-in CPU renderer).
     let source = staged.ready().audio_source.as_ref().expect("retained PCM");
     let build = source.build().clone();
     let cli_scope = real.controller.processes.sub_manager();

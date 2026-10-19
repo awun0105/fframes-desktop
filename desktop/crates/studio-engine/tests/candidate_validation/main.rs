@@ -180,6 +180,7 @@ fn frame(revision: &str, index: usize, value: u8) -> PreviewFrame {
                 payload_len: 32,
             },
             editor_metadata: None,
+            backend_change: None,
         },
         pixels: vec![value; 32],
     }
@@ -219,6 +220,8 @@ struct Fake {
     rendered: Vec<usize>,
     pixel: u8,
     gaps: Vec<String>,
+    /// The renderer the worker reported at Hello.
+    backend: String,
     /// Reports `cancelled()` once this many frames have been rendered (0: at once).
     cancel_after_renders: Option<usize>,
     /// Diagnostics returned by the nth inspection batch (overrides `diagnostics`).
@@ -245,6 +248,7 @@ impl Fake {
             rendered: vec![],
             pixel: 7,
             gaps: vec![],
+            backend: "cpu".into(),
             cancel_after_renders: None,
             batch_diagnostics: vec![],
             truncate_batch: None,
@@ -295,6 +299,9 @@ impl CandidateProbe for Fake {
     fn capability_gaps(&self) -> Vec<String> {
         self.gaps.clone()
     }
+    fn backend(&self) -> String {
+        self.backend.clone()
+    }
     fn cancelled(&self) -> bool {
         self.cancel_after_renders
             .is_some_and(|after| self.rendered.len() >= after)
@@ -312,7 +319,7 @@ fn build_identity(captured: &CapturedCandidate) -> BuildIdentity {
         package: "video".into(),
         worker_target: "worker".into(),
         profile: "debug".into(),
-        backend: "cpu".into(),
+        backend: "skia".into(),
     }
 }
 

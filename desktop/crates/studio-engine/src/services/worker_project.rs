@@ -1,7 +1,7 @@
 use super::{
     build_service::{
         BuildKey, BuildLimits, BuildProfile, BuildService, CompileEnvironment, CompileRequest,
-        Compiler, Subscriber, SubscriberKind,
+        Compiler, Subscriber, SubscriberKind, WORKER_BUILD_BACKEND,
     },
     worker_client::{WorkerClient, WorkerClientError},
 };
@@ -94,16 +94,16 @@ impl Compiler for CargoCompiler {
     }
 
     fn accepts(&self, key: &BuildKey) -> Result<(), String> {
-        // `compile_with_cargo` builds the default-feature debug CPU worker and nothing else.
+        // `compile_with_cargo` builds the default-feature debug worker and nothing else.
         if !key.features.is_empty() {
             return Err(format!("features {:?} are not supported", key.features));
         }
         if !key.options.is_empty() {
             return Err(format!("options {:?} are not supported", key.options));
         }
-        if key.backend != "cpu" {
+        if key.backend != WORKER_BUILD_BACKEND {
             return Err(format!(
-                "backend {:?} is not supported (cpu only)",
+                "backend {:?} is not supported ({WORKER_BUILD_BACKEND} only)",
                 key.backend
             ));
         }
@@ -267,12 +267,15 @@ pub fn launch_preview_worker_checked(
     let cache = cache
         .to_str()
         .ok_or_else(|| PreviewLaunchError::Failed("Preview cache path must be UTF-8".into()))?;
+    let [renderer_flag, renderer] = crate::services::renderer_preference::worker_args();
     let mut transport = WorkerClient::new(&identity.source_revision, identity.worker_generation);
     transport
         .spawn_worker(
             &binary,
             &[
                 "--preview-worker",
+                renderer_flag,
+                renderer,
                 "--project-id",
                 &identity.project_id,
                 "--open-session",

@@ -66,6 +66,11 @@ impl BuildProfile {
     }
 }
 
+/// The renderer a worker build links: the SDK worker carries Skia and the built-in CPU
+/// renderer and picks one at launch (`--renderer`). What it runs with is the Hello's
+/// `backend`, not this.
+pub const WORKER_BUILD_BACKEND: &str = "skia";
+
 /// Everything that determines the compiled worker bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct BuildKey {
@@ -108,7 +113,7 @@ impl BuildKey {
             worker_target: project.manifest.entry.worker_target.clone(),
             features: Vec::new(),
             profile: BuildProfile::Debug,
-            backend: "cpu".into(),
+            backend: WORKER_BUILD_BACKEND.into(),
             options: Vec::new(),
         }
     }

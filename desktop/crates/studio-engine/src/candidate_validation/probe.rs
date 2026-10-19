@@ -91,6 +91,10 @@ pub trait CandidateProbe {
     fn render(&mut self, frame: usize) -> Result<PreviewFrame, ProbeError>;
     /// Prepare the mix and scan its PCM locally.
     fn audio(&mut self) -> Result<AudioProbe, ProbeError>;
+    /// The renderer the worker reported (`cpu`, `skia-cpu`, `skia-gpu`). Defaults to `cpu`.
+    fn backend(&self) -> String {
+        "cpu".into()
+    }
     /// Capabilities the worker's hello declared unavailable. Defaults to none.
     fn capability_gaps(&self) -> Vec<String> {
         Vec::new()

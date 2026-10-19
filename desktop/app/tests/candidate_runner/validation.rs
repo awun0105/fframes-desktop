@@ -389,9 +389,26 @@ fn the_workers_declared_shader_gap_reaches_the_report_as_a_visible_warning() {
         run.report
             .warnings()
             .iter()
-            .any(|m| m.contains("Unsupported shaders"))
+            .any(|m| m.contains("Unsupported shaders") && m.contains("`cpu`"))
     );
     // The preview still stages: the limitation is visible, not fatal.
+    assert!(run.staged.is_some());
+}
+
+#[test]
+fn a_skia_worker_without_the_shader_gap_reports_no_shader_warning() {
+    let mut w = world();
+    let context = w.start();
+    worker_config(&context.draft, json!({"backend": "skia-cpu"}));
+    let captured = w.capture(&context);
+    let run = w.run(&captured, 0);
+    assert!(run.report.passed(), "{:?}", run.report.failure());
+    assert!(run.report.capability_gaps().is_empty());
+    assert!(
+        run.report.warnings().iter().all(|m| !m.contains("shader")),
+        "{:?}",
+        run.report.warnings()
+    );
     assert!(run.staged.is_some());
 }
 

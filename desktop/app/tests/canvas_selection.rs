@@ -92,6 +92,7 @@ fn frame(
                 payload_len: 64,
             },
             editor_metadata,
+            backend_change: None,
         },
         pixels: vec![0; 64],
     }

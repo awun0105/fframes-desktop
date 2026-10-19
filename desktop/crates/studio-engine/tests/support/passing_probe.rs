@@ -94,6 +94,7 @@ impl CandidateProbe for PassingProbe {
                     payload_len: 32,
                 },
                 editor_metadata: None,
+                backend_change: None,
             },
             pixels: vec![7; 32],
         })
@@ -131,7 +132,7 @@ pub fn build_identity(captured: &CapturedCandidate) -> BuildIdentity {
         package: "video".into(),
         worker_target: "worker".into(),
         profile: "debug".into(),
-        backend: "cpu".into(),
+        backend: "skia".into(),
     }
 }
 

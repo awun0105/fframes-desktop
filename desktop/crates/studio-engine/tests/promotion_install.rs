@@ -41,6 +41,7 @@ fn frame(t: &OperationTag, position: usize, serial: u64) -> PreviewFrame {
                 payload_len: 16,
             },
             editor_metadata: None,
+            backend_change: None,
         },
         pixels: vec![37; 16],
     }

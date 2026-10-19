@@ -53,6 +53,36 @@ pub fn framework_for<'a>(
     })
 }
 
+/// Whether every `Cargo.toml` of `project` binds to the framework of the SDK at `sdk` as it
+/// would at build time (exact framework versions, crates present), whatever the project is
+/// pinned to. Reads the live files; nothing is written.
+pub fn check_binding(
+    project: &OpenProject,
+    sdk: &Path,
+    compatibility: &CompatibilityManifest,
+) -> Result<(), ProjectError> {
+    let framework = FrameworkSet {
+        fframes_version: &compatibility.fframes_version,
+        runtime_version: &compatibility.runtime_version,
+        rel_path: FRAMEWORK_REL_PATH,
+    };
+    for file in &project.inventory.files {
+        if file.path.as_str().rsplit('/').next() != Some("Cargo.toml") {
+            continue;
+        }
+        let mut cargo = read_cargo(&project.root, &file.path)?;
+        bind(
+            &mut cargo,
+            &project.root,
+            &project.root,
+            Path::new(file.path.as_str()).parent().unwrap(),
+            &sdk.join(framework.rel_path),
+            framework,
+        )?;
+    }
+    Ok(())
+}
+
 /// SDK binding never mutates portable source, its lock/config, or the installed SDK.
 pub fn materialize(
     project: &OpenProject,
