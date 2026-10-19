@@ -248,6 +248,39 @@ class ArtifactTests(unittest.TestCase):
             native = dependencies['cfg(not(any(target_arch = "wasm32", windows, fframes_docsrs)))']["dependencies"]
             self.assertEqual(native["ffmpeg-sys-fframes"]["features"], ["static"])
 
+    def test_bundled_skia_never_compiles_and_ships_no_dev_dependencies(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shutil.copytree(assembly.ROOT / "fframes-skia-renderer", root / "fframes-skia-renderer", ignore=shutil.ignore_patterns("target"))
+            assembly.configure_bundled_skia(root)
+            manifest = tomllib.loads((root / "fframes-skia-renderer/Cargo.toml").read_text())
+            self.assertIn("no-compile", manifest["dependencies"]["skia-safe"]["features"])
+            self.assertNotIn("dev-dependencies", manifest)
+            self.assertIn("features", manifest)
+            self.assertFalse((root / "fframes-skia-renderer/examples").exists())
+
+    def test_every_target_has_a_reviewed_skia_archive_and_a_mismatch_is_refused(self):
+        pins = json.loads((assembly.ROOT / assembly.SKIA_PINS).read_text())["archives"]
+        self.assertEqual(set(pins), {"x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"})
+        for target, pin in pins.items():
+            self.assertTrue(pin["key"].split("-", 1)[1].startswith(target), target)
+            self.assertRegex(pin["sha256"], "^[0-9a-f]{64}$")
+        with tempfile.TemporaryDirectory() as temp:
+            cache = Path(temp) / "cache"
+            cache.mkdir()
+            pin = pins["x86_64-pc-windows-msvc"]
+            (cache / f"skia-binaries-{pin['key']}.tar.gz").write_bytes(b"not the reviewed archive")
+            previous = os.environ.get("SKIA_ARCHIVE_DIR")
+            os.environ["SKIA_ARCHIVE_DIR"] = str(cache)
+            try:
+                with self.assertRaisesRegex(ValueError, "does not match"):
+                    assembly.stage_skia("x86_64-pc-windows-msvc", Path(temp) / "skia")
+            finally:
+                if previous is None:
+                    del os.environ["SKIA_ARCHIVE_DIR"]
+                else:
+                    os.environ["SKIA_ARCHIVE_DIR"] = previous
+
     def test_archive_metadata_matches_bytes_and_corruption_rejects(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

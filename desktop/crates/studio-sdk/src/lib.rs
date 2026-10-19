@@ -10,7 +10,7 @@ pub mod release_manifest;
 
 pub use doctor::{Doctor, DoctorItem, DoctorReport, DoctorStage, ProbeStatus, install_hint};
 pub use download::{DownloadError, ReleaseArtifactKind, SdkDownloader};
-pub use environment::SdkEnvironment;
+pub use environment::{SdkEnvironment, skia_binaries_url};
 pub use install::{InstallError, SdkArtifactReceipt, SdkInstallReceipt, SdkInstaller};
 pub use manifest::{
     CURRENT_SCHEMA_VERSION, CompatibilityManifest, FfmpegManifestInfo, HostPrerequisiteProbe,

@@ -8,6 +8,16 @@ fn child_path(path: &Path) -> String {
         .into_owned()
 }
 
+/// The `file://` URL template of the Skia archive the SDK ships at `framework/skia/`.
+pub fn skia_binaries_url(sdk_dir: &Path) -> String {
+    let archive = sdk_dir
+        .join("framework")
+        .join("skia")
+        .join("skia-binaries-{key}.tar.gz");
+    // skia-bindings reads the path after `file://` as is: `file:///opt/...`, `file://C:\...`
+    format!("file://{}", child_path(&archive))
+}
+
 #[derive(Debug, Clone)]
 pub struct SdkEnvironment {
     pub sdk_dir: PathBuf,
@@ -74,6 +84,19 @@ impl SdkEnvironment {
         let ffmpeg_cache = ffmpeg_dir.join("cache");
         env.set("FFMPEG_DIR", child_path(&ffmpeg_dir));
         env.set("FFMPEG_BINARIES_CACHE", child_path(&ffmpeg_cache));
+
+        // 2b. Skia comes from the prebuilt archive inside the SDK; `{key}` is filled in by the
+        // skia-bindings build script. Host Skia variables could redirect it or force a build.
+        let host_skia: Vec<String> = env
+            .iter()
+            .map(|(key, _)| key)
+            .filter(|key| key.starts_with("SKIA_") || key.starts_with("FORCE_SKIA_"))
+            .map(str::to_owned)
+            .collect();
+        for key in host_skia {
+            env.remove(&key);
+        }
+        env.set("SKIA_BINARIES_URL", skia_binaries_url(&self.sdk_dir));
 
         // 3. Libclang resolution (the host allowlist already carries LIBCLANG_PATH)
         if env.get("LIBCLANG_PATH").is_none() {
@@ -177,6 +200,36 @@ mod tests {
         );
         assert_eq!(child_env.get("RUSTUP_TOOLCHAIN"), Some("1.98.1"));
         assert!(child_env.get("FFMPEG_DIR").is_some());
+    }
+
+    #[test]
+    fn skia_comes_from_the_sdk_archive_whatever_the_host_sets() {
+        let temp = tempfile::tempdir().unwrap();
+        let sdk = temp.path().join("sdk");
+        let sdk_env = SdkEnvironment::new(
+            &sdk,
+            temp.path().join("builds"),
+            CompatibilityManifest::default_linux_x64(),
+            true,
+        );
+        let mut host = ChildEnvironment::empty();
+        host.set("SKIA_SOURCE_DIR", "/home/dev/skia")
+            .set("SKIA_BINARIES_URL", "https://example.invalid/{key}.tar.gz")
+            .set("FORCE_SKIA_BUILD", "1")
+            .set("SKIAPATH", "kept");
+        let child_env = sdk_env.resolve_child_environment(host);
+
+        assert_eq!(child_env.get("SKIA_SOURCE_DIR"), None);
+        assert_eq!(child_env.get("FORCE_SKIA_BUILD"), None);
+        assert_eq!(child_env.get("SKIAPATH"), Some("kept"));
+        let url = child_env.get("SKIA_BINARIES_URL").unwrap();
+        let path = url.strip_prefix("file://").expect("a file URL");
+        assert!(path.ends_with("skia-binaries-{key}.tar.gz"), "{url}");
+        let archive_dir = std::path::Path::new(path).parent().unwrap();
+        assert_eq!(
+            archive_dir,
+            studio_bootstrap::external_path(&sdk.join("framework").join("skia"))
+        );
     }
 
     #[cfg(windows)]

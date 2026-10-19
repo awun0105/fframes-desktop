@@ -9,3 +9,5 @@ This distribution and its managed SDK artifacts may incorporate components from:
    Copyright (c) Zed Industries, Inc.
 4. tiny-skia / resvg (MPL-2.0)
    Copyright (c) Yevhenii Reizner
+5. Skia and the libraries built into its prebuilt archive (BSD-3-Clause and others)
+   Copyright (c) Google Inc.; see skia-LICENSE.txt

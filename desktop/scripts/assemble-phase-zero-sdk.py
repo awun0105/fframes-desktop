@@ -13,13 +13,18 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+import urllib.request
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
-CRATES = ["fframes", "fframes-media", "svgr-macro", "media-dir-macro", "webvtt-parser", "fframes-studio-protocol", "fframes-studio-runtime"]
+CRATES = ["fframes", "fframes-media", "svgr-macro", "media-dir-macro", "webvtt-parser", "fframes-studio-protocol", "fframes-studio-runtime", "fframes-skia-renderer"]
 # This bundle's release. Projects pin it; those of earlier releases are not built by it.
-SDK_RELEASE = "v4"
+SDK_RELEASE = "v5"
 OVERLAY = "desktop/fixtures/annotated-video-overlay"
+# The reviewed prebuilt Skia archive of each target, see `stage_skia`.
+SKIA_PINS = "desktop/packaging/sdk/skia-binaries.json"
+# Host variables that would make skia-bindings download, build or bind another Skia.
+SKIA_VARIABLE_PREFIXES = ("SKIA_", "FORCE_SKIA_")
 
 
 def run(args, **kwargs):
@@ -89,9 +94,64 @@ def configure_bundled_ffmpeg(framework):
     media_manifest.write_text(source.replace(original, 'features = ["static"]'))
 
 
+def configure_bundled_skia(framework):
+    # SDK projects link the pinned archive shipped in the framework. `no-compile` turns a key
+    # miss into an immediate error instead of a Skia source build that downloads Skia. The
+    # dev-dependencies are workspace examples the SDK does not ship.
+    manifest = framework / "fframes-skia-renderer/Cargo.toml"
+    source = manifest.read_text()
+    original = 'skia-safe = { version = "0.153.3", features = ["svg"] }'
+    if source.count(original) != 1 or source.count("[dev-dependencies]") != 1:
+        raise ValueError("Unexpected Skia dependency; review the bundled Skia configuration")
+    source = source.replace(original, 'skia-safe = { version = "0.153.3", features = ["svg", "no-compile"] }')
+    source = re.sub(r"\[dev-dependencies\]\n(?:[^\[\n][^\n]*\n|\n)*", "", source)
+    manifest.write_text(source)
+    for unshipped in ["examples", "tests"]:
+        shutil.rmtree(framework / "fframes-skia-renderer" / unshipped, ignore_errors=True)
+
+
+def stage_skia(target, destination):
+    """Copy the reviewed Skia archive of `target` to `destination` and return its pin.
+
+    `SKIA_ARCHIVE_DIR` may hold archives fetched before; otherwise the archive is downloaded
+    from the pinned release. Either way it must match the reviewed size and sha256."""
+    pins = json.loads((ROOT / SKIA_PINS).read_text())
+    pin = pins["archives"].get(target)
+    if pin is None:
+        raise ValueError(f"No reviewed Skia archive for {target} in {SKIA_PINS}")
+    name = f"skia-binaries-{pin['key']}.tar.gz"
+    destination.mkdir(parents=True)
+    archive_path = destination / name
+    cached = Path(os.environ["SKIA_ARCHIVE_DIR"]) / name if os.environ.get("SKIA_ARCHIVE_DIR") else None
+    if cached and cached.is_file():
+        shutil.copy(cached, archive_path)
+    else:
+        with urllib.request.urlopen(f"{pins['release_url']}/{name}", timeout=600) as response, archive_path.open("wb") as file:
+            shutil.copyfileobj(response, file)
+    with archive_path.open("rb") as stream:
+        checksum = hashlib.file_digest(stream, "sha256").hexdigest()
+    if checksum != pin["sha256"] or archive_path.stat().st_size != pin["size_bytes"]:
+        raise ValueError(f"{name} does not match its reviewed pin in {SKIA_PINS}")
+    return dict(pin, archive=name)
+
+
+def skia_binaries_url(skia_dir):
+    """The `SKIA_BINARIES_URL` template for archives in `skia_dir` (`{key}` stays literal)."""
+    return "file://" + str(skia_dir / "skia-binaries-{key}.tar.gz")
+
+
+def check_skia_from_archive(target_dir, skia):
+    """Fail unless skia-bindings installed the shipped archive instead of building or fetching."""
+    outputs = list(Path(target_dir).glob("debug/build/skia-bindings-*/output"))
+    installed = [o for o in outputs if "FROM: file://" in o.read_text(errors="replace") and skia["key"] in o.read_text(errors="replace")]
+    if not installed or any("DOWNLOAD AND INSTALL SUCCEEDED" not in o.read_text(errors="replace") for o in installed):
+        raise ValueError("The qualification build did not install the shipped Skia archive")
+
+
 def write_framework(framework, workspace_toml):
     """Make the copied CRATES in `framework` one workspace with the source's dependencies."""
     configure_bundled_ffmpeg(framework)
+    configure_bundled_skia(framework)
     workspace = tomllib.loads(workspace_toml)["workspace"]
     dependencies = {k: v for k, v in workspace["dependencies"].items() if not isinstance(v, dict) or "path" not in v or v["path"] in CRATES}
     content = '[workspace]\nresolver = "2"\nmembers = ' + toml_value(CRATES) + "\ndependencies = " + toml_value(dependencies) + "\nlints = " + toml_value(workspace["lints"]) + "\n"
@@ -109,7 +169,19 @@ def worker_manifest(tree):
             f'fframes-studio-protocol={{path="../framework/{tree}/fframes-studio-protocol"}}\nsha2="0.10"\n')
 
 
-def verify_preview_worker(binary, worker, environment):
+def check_backend(hello, renderer):
+    """`--renderer skia-cpu` must draw with Skia, which proves it is linked on any host. The
+    default draws on the GPU, or with the built-in CPU renderer and its shader gap."""
+    backend, gaps = hello["backend"], hello["capability_gaps"]
+    if renderer == "skia-cpu":
+        valid = backend == "skia-cpu" and "shader_preview" not in gaps
+    else:
+        valid = (backend == "skia-gpu" and "shader_preview" not in gaps) or (backend == "cpu" and "shader_preview" in gaps)
+    if not valid:
+        raise ValueError(f"Preview worker reported backend {backend} with gaps {gaps} for renderer {renderer or 'auto'}")
+
+
+def verify_preview_worker(binary, worker, environment, renderer=None):
     """Exercise the actual offline-built entry before declaring preview support."""
     identity = dict(project_id="sdk-probe", open_session="assembly", source_revision="sdk-probe-revision", worker_generation=7)
     with socket.socket() as listener, tempfile.TemporaryDirectory(prefix="preview-probe-") as cache, tempfile.TemporaryFile() as errors:
@@ -118,7 +190,8 @@ def verify_preview_worker(binary, worker, environment):
         listener.settimeout(120)
         process = subprocess.Popen([str(binary), "--worker", "--preview-worker", "--frame-port", str(listener.getsockname()[1]),
                                     "--project-id", identity["project_id"], "--open-session", identity["open_session"],
-                                    "--revision", identity["source_revision"], "--generation", "7", "--audio-cache", cache],
+                                    "--revision", identity["source_revision"], "--generation", "7", "--audio-cache", cache]
+                                   + (["--renderer", renderer] if renderer else []),
                                    cwd=worker, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors)
         watchdog = threading.Timer(120, process.kill)
         watchdog.start()
@@ -159,8 +232,9 @@ def verify_preview_worker(binary, worker, environment):
                         raise ValueError(f"Invalid preview response: {response}")
                     return response
                 hello = request("Hello", offered_versions=[1], required_capabilities=["preview_identity_v1", "scaled_frame_v1", "inspect_v1", "prepared_audio_v1"])
-                if hello["identity"] != identity or hello["contract_version"] != 1 or hello["backend"] != "cpu":
-                    raise ValueError("Preview hello did not bind launch identity/backend")
+                if hello["identity"] != identity or hello["contract_version"] != 1:
+                    raise ValueError("Preview hello did not bind launch identity")
+                check_backend(hello, renderer)
                 timeline = request("Timeline")
                 frame = request("ScaledFrame", frame_index=0, seek_serial=13, scale=0.5)
                 record = read_json(bulk)
@@ -225,6 +299,9 @@ def assemble(output, ffmpeg_root, vendor=None):
         for crate in CRATES:
             shutil.copytree(ROOT / crate, framework / crate, ignore=shutil.ignore_patterns("target", ".git"))
         write_framework(framework, (ROOT / "Cargo.toml").read_text())
+        # installed as <sdk>/framework/skia/, where the SDK's SKIA_BINARIES_URL points
+        skia_dir = staging / "framework/skia"
+        skia = stage_skia(target, skia_dir)
         worker = staging / "worker"
         shutil.copytree(ROOT / OVERLAY, worker, ignore=shutil.ignore_patterns("target"))
         (worker / "Cargo.toml").write_text(worker_manifest("framework"))
@@ -236,22 +313,25 @@ def assemble(output, ffmpeg_root, vendor=None):
         # Prove the archive inputs can compile without ambient Cargo downloads.
         (worker / ".cargo").mkdir(exist_ok=True)
         (worker / ".cargo/config.toml").write_text('[source.crates-io]\nreplace-with="vendored-sources"\n[source.vendored-sources]\ndirectory=' + json.dumps(str(vendor_dir)) + '\n')
-        environment = {k: v for k, v in os.environ.items() if not k.startswith(("CARGO_", "RUST"))}
+        environment = {k: v for k, v in os.environ.items() if not k.startswith(("CARGO_", "RUST", *SKIA_VARIABLE_PREFIXES))}
         environment.update(PATH=str(staging / "toolchain/bin") + os.pathsep + environment.get("PATH", ""),
                            CARGO_HOME=str(staging / "cargo-home"), CARGO_NET_OFFLINE="true",
                            CARGO_TARGET_DIR=str(staging / "build-output"), FFMPEG_DIR=str(staging / "ffmpeg"),
-                           RUSTC=str(staging / "toolchain/bin" / ("rustc.exe" if os.name == "nt" else "rustc")))
+                           RUSTC=str(staging / "toolchain/bin" / ("rustc.exe" if os.name == "nt" else "rustc")),
+                           SKIA_BINARIES_URL=skia_binaries_url(skia_dir))
         if os.name == "nt":
             environment["PATH"] = str(staging / "ffmpeg/bin") + os.pathsep + environment["PATH"]
         cargo = str(staging / "toolchain/bin" / ("cargo.exe" if os.name == "nt" else "cargo"))
         for directory, attempt in [(worker, "first"), (worker, "second")]:
             environment["CARGO_TARGET_DIR"] = str(staging / f"build-{attempt}")
             run([cargo, "build", "--offline"], cwd=directory, env=environment)
+            check_skia_from_archive(environment["CARGO_TARGET_DIR"], skia)
             run([cargo, "run", "--offline", "--", "frame", "0", "-o", "frames"], cwd=directory, env=environment)
             png = directory / "frames/0.png"
             if not png.is_file() or png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
                 raise ValueError("Candidate SDK did not produce a valid frame PNG")
             binary = Path(environment["CARGO_TARGET_DIR"]) / "debug" / ("sdk-qualification-worker.exe" if os.name == "nt" else "sdk-qualification-worker")
+            verify_preview_worker(binary, directory, environment, "skia-cpu")
             verify_preview_worker(binary, directory, environment)
         artifacts = [archive(staging / name, output, f"{name}-{target}", name) for name in ["toolchain", "ffmpeg", "framework"]]
     manifest.update(sdk_id=f"studio-sdk-{target}-{SDK_RELEASE}", runtime_version=crate_version(ROOT / "fframes-studio-runtime/Cargo.toml"), target_triple=target, arch=target.split("-")[0], artifacts=artifacts,
@@ -268,7 +348,7 @@ def assemble(output, ffmpeg_root, vendor=None):
     (output / "compatibility.json").write_text(json.dumps(manifest, indent=2) + "\n")
     shutil.copytree(ROOT / "desktop/packaging/sdk/notices", output / "notices")
     shutil.copy(ROOT / "desktop/fixtures/annotated-video-overlay/media/OFL.txt", output / "notices/DM-Sans-OFL.txt")
-    (output / "provenance.json").write_text(json.dumps({"rustc": version, "target": target, "ffmpeg_observed_version": observed_ffmpeg, "offline_worker_builds": 2, "frame_png_verified": True, "preview_contract_verified": True, "qualification": "PENDING: sterile clean-account native run required; local build evidence is not that gate"}, indent=2) + "\n")
+    (output / "provenance.json").write_text(json.dumps({"rustc": version, "target": target, "ffmpeg_observed_version": observed_ffmpeg, "offline_worker_builds": 2, "frame_png_verified": True, "skia_archive": skia, "preview_contract_verified": True, "qualification": "PENDING: sterile clean-account native run required; local build evidence is not that gate"}, indent=2) + "\n")
     return output
 
 
