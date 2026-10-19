@@ -25,6 +25,31 @@ use studio_sdk::CompatibilityManifest;
 #[path = "passing_probe.rs"]
 pub mod passing_probe;
 
+/// Runs `each(n)` for every `n` in `0..count`, a few at a time. A boundary replay builds
+/// its own fixture and controller, so replays share nothing and need not wait for each
+/// other; run one after another, the every-boundary matrices were the slowest tests.
+/// A panic in any replay fails the caller once every replay has finished.
+pub fn for_each_boundary(count: usize, each: impl Fn(usize) + Sync) {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism()
+        .map_or(4, |n| n.get())
+        .clamp(1, 8)
+        .min(count);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                loop {
+                    let n = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if n >= count {
+                        break;
+                    }
+                    each(n);
+                }
+            });
+        }
+    });
+}
+
 pub struct Fx {
     pub temp: tempfile::TempDir,
     pub root: PathBuf,

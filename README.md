@@ -4,7 +4,7 @@
     <img alt="fframes" src="landing/brand/fframes-wordmark.svg" width="360" />
   </picture>
 </p>
-
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/khanhthanhdev/fframes-desktop)
 <p align="center">
   <b>Video vibe coding framework that is actually fast.</b><br />
   Write your video in Rust and SVG, render it on the GPU.

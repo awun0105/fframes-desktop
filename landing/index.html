@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fframes</title>
-<meta name="description" content="fframes is a video vibe coding framework that is actually fast. Write your video in Rust and SVG and render it on the GPU.">
+<meta name="description" content="fframes is a video vibe coding framework that is actually fast. Write your video in Rust and SVG and render it on the GPU, or edit it with an AI agent in fframes Studio.">
 <meta name="color-scheme" content="light">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -214,6 +214,7 @@
   .btn--primary:hover { background: #2d2d2d; }
 
   @media (max-width: 479px) {
+    .btn--nav { display: none; }
     .btn--ghost { padding: 0; width: 36px; }
     .btn--ghost .label {
       position: absolute; width: 1px; height: 1px; overflow: hidden;
@@ -488,7 +489,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     h1 .accent { animation: none; background-size: 100% 0.06em; }
-    .btn { transition: none; }
+    .btn, .studio-callout { transition: none; }
     .footer-mark .echo { transition: none; transform: none; }
     .grain, .light-leak::before, .light-leak::after { animation: none; }
   }
@@ -525,7 +526,17 @@
   .studio h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
   .studio p.small { margin: 0; color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
   .studio-cols { display: grid; gap: 16px; margin-top: 16px; }
-  @media (min-width: 900px) { .studio-cols { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 900px) { .studio-cols { grid-template-columns: repeat(3, 1fr); } .studio-card--wide { grid-column: span 2; } }
+  .studio-card p.small a { color: inherit; text-underline-offset: 3px; }
+  .btn--outline { box-shadow: inset 0 0 0 1px var(--border); }
+  .studio-callout {
+    display: inline-flex; align-items: center; gap: 8px; margin-bottom: 20px; padding: 4px 12px 4px 4px;
+    border-radius: var(--r-full); box-shadow: inset 0 0 0 1px var(--border); background: rgb(255 255 255 / .7);
+    color: var(--text-secondary); font-size: 14px; text-decoration: none; transition: background-color .15s ease;
+  }
+  .studio-callout:hover { background: var(--ghost-hover); color: var(--text); }
+  .studio-callout b { padding: 2px 8px; border-radius: var(--r-full); background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; }
+  .studio-callout:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   .studio-card .command { margin-top: 14px; }
   .studio-stat { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; }
   .studio-stat b { font-size: clamp(2.25rem, 4vw, 3rem); line-height: 1; letter-spacing: -0.04em; color: var(--studio); font-weight: 600; }
@@ -582,6 +593,7 @@
     <div class="wrap">
       <a class="wordmark" href="#top" aria-label="fframes, back to top"><img src="brand/fframes-wordmark.svg" alt="" width="103" height="26" /></a>
       <nav class="links" aria-label="Project links">
+        <a class="btn btn--nav" href="#studio">Studio</a>
         <a class="btn btn--ghost btn--icon" href="https://x.com/fframes_rust" aria-label="fframes on X" target="_blank" rel="noopener noreferrer">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
         </a>
@@ -602,6 +614,7 @@
 
   <main id="top" class="wrap">
     <section class="masthead">
+      <a class="studio-callout" href="#studio"><b>New</b> fframes Studio, the desktop editor for fframes videos &rarr;</a>
       <h1><span class="name">fframes</span> – video vibe coding framework that is <span class="accent">actually fast</span></h1>
       <div class="standfirst">
         <span class="rule" aria-hidden="true"></span>
@@ -656,40 +669,46 @@
       </script>
     </figure>
     <section class="studio" id="studio" aria-labelledby="studio-title">
-      <p class="studio-eyebrow">fframes Studio &middot; desktop app</p>
-      <h2 id="studio-title">Select it. Prompt it. <em>It&rsquo;s just Rust.</em></h2>
-      <p class="studio-lede">A desktop editor for fframes videos. Click an element on the canvas, say what should change, and an AI agent finds the exact Rust source behind it and edits it. Every edit is a normal source diff you can review, undo and keep in Git.</p>
+      <p class="studio-eyebrow">Introducing fframes Studio &middot; desktop app</p>
+      <h2 id="studio-title">Describe it. Watch it. <em>Point and change it.</em></h2>
+      <p class="studio-lede">fframes Studio is a native desktop app, written in Rust, for making fframes videos with a coding agent. Describe a video, watch it play with audio, then click a scene or any object on the canvas and say what should change. The agent edits an ordinary fframes Rust project; Studio builds it, checks it and shows you the result. Rust source stays the authority, so every edit is a diff you can review, undo and keep in Git.</p>
 
       <ol class="studio-steps">
-        <li><h3>Select</h3><p class="small">Click any element on the canvas, or draw a rectangle for a scene or range.</p></li>
-        <li><h3>Ground</h3><p class="small">Studio resolves the selection to its source anchor, so the agent reads the right code.</p></li>
-        <li><h3>Edit</h3><p class="small">Your agent (Codex or Claude Code over ACP) proposes a change to the Rust source.</p></li>
-        <li><h3>Build</h3><p class="small">The candidate is compiled against your pinned SDK and checked before it is applied.</p></li>
-        <li><h3>Preview</h3><p class="small">The new revision plays with audio. Undo restores the previous one.</p></li>
+        <li><h3>Select</h3><p class="small">Click an object on the canvas, pick a scene, or drag a time range on the timeline.</p></li>
+        <li><h3>Prompt</h3><p class="small">The selection scopes the task, so the agent reads the source behind exactly what you picked.</p></li>
+        <li><h3>Edit</h3><p class="small">Claude Code or Codex over their native CLIs, or any other agent over ACP, changes the Rust source.</p></li>
+        <li><h3>Build</h3><p class="small">The candidate compiles in an isolated copy against a managed SDK, then frames and audio are checked.</p></li>
+        <li><h3>Review</h3><p class="small">The new revision plays with audio. Review the diff, revert a file or undo the whole edit.</p></li>
       </ol>
 
       <div class="studio-cols">
         <article class="studio-card">
-          <h3>Easy to install</h3>
-          <p class="small">Download the app, connect an agent, and let Studio fetch the SDK. No terminal and no setup scripts for the default workflow. Installers target macOS (Apple Silicon), Windows x64 and Linux x64.</p>
+          <h3>A real timeline</h3>
+          <p class="small">Scene clips in play order, audio files and the mix waveform. Split, trim and move clips with undo and redo; timing edits write <code>timeline.json</code> and don&rsquo;t need a rebuild. Export to the formats your project can encode, with progress and cancel.</p>
         </article>
         <article class="studio-card">
-          <h3>A better SDK, built from source</h3>
-          <p class="small">Studio builds your project against an SDK pinned to the fframes source, with a compatibility check between app and SDK. Opening a project never silently installs or upgrades it, and builds are cached per revision.</p>
-          <div class="command"><pre><code><span class="prompt">$ </span>cargo run -p fframes-studio</code></pre>
+          <h3>You stay in control of the agent</h3>
+          <p class="small">Every permission request becomes a card that only you answer. Steer a running turn, queue the next brief, answer the agent&rsquo;s questions, and keep many chat sessions per project. Review every diff, or switch to manual review so nothing applies until you press Apply.</p>
+        </article>
+        <article class="studio-card">
+          <h3>Your code stays the authority</h3>
+          <p class="small">Projects are ordinary Rust crates. <strong>Create</strong> starts from a template; <strong>Import Rust</strong> keeps your files and Git history and adds only <code>studio.json</code>. Checkpoints can be restored as a copy, and a failed build never replaces the preview you have.</p>
+        </article>
+      </div>
+
+      <div class="studio-cols">
+        <article class="studio-card">
+          <h3>Get Studio</h3>
+          <p class="small">Run it from a checkout of the repository; preview installers are on the way. Studio installs its SDK step by step on first launch, and opening a project never installs an SDK or runs Cargo on its own.</p>
+          <div class="command"><pre><code><span class="prompt">$ </span>git clone https://github.com/khanhthanhdev/fframes-desktop
+<span class="prompt">$ </span>cd fframes-desktop
+<span class="prompt">$ </span>cargo run --locked --manifest-path desktop/Cargo.toml -p fframes-studio</code></pre>
             <button class="copy" type="button" aria-label="Copy command">
               <svg class="idle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               <svg class="done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
             </button></div>
         </article>
-        <article class="studio-card">
-          <h3>Your code stays the authority</h3>
-          <p class="small">Projects are ordinary Rust crates. Studio adds one <code>studio.json</code> and never hides the source. Agent edits go through a validated, recoverable apply with undo.</p>
-        </article>
-      </div>
-
-      <div class="studio-cols">
-        <article class="studio-card" style="grid-column: 1 / -1">
+        <article class="studio-card studio-card--wide">
           <h3>Why it is so fast</h3>
           <div class="studio-stat"><b>~10&times;</b><span>faster than the CPU backend at 1080p with the Skia GPU backend</span></div>
           <p class="small">fframes renders SVG trees directly instead of driving a browser. In the repo&rsquo;s 100,000-text-node benchmark (300 frames at 4K, Apple M-series) fframes on Skia/Metal took 4.07&nbsp;s against 121.13&nbsp;s for Remotion, 29.7&times; faster.</p>
@@ -703,9 +722,10 @@
       </div>
 
       <div class="studio-cta">
-        <a class="btn btn--studio btn--large" style="margin:0" href="https://github.com/khanhthanhdev/fframes-desktop">khanhthanhdev/fframes-desktop</a>
+        <a class="btn btn--studio btn--large" style="margin:0" href="https://github.com/khanhthanhdev/fframes-desktop">Get fframes Studio</a>
+        <a class="btn btn--outline btn--large" style="margin:0" href="https://github.com/khanhthanhdev/fframes-desktop/blob/main/docs/desktop/README.md">Read the docs</a>
       </div>
-      <p class="studio-note">Studio is under active development. Provider sign-in, Windows and macOS interaction, and physical audio and display qualification are still being completed.</p>
+      <p class="studio-note">Studio is a preview. Windows is where it is checked by hand; Linux runs the tests in CI; macOS is covered only by CI and is not fully tested.</p>
     </section>
   </main>
 
@@ -741,6 +761,7 @@
       <a class="btn btn--primary btn--large" href="https://github.com/dmtrKovalenko/fframes" target="_blank" rel="noopener noreferrer">Star on GitHub</a>
       <ul class="footer-links">
         <li><a href="https://github.com/dmtrKovalenko/fframes" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+        <li><a href="#studio">Studio</a></li>
         <li><a href="https://x.com/fframes_rust" target="_blank" rel="noopener noreferrer">X</a></li>
         <li><a href="https://discord.gg/5UaUVewRe" target="_blank" rel="noopener noreferrer">Discord</a></li>
         <li><a href="https://github.com/sponsors/dmtrKovalenko" target="_blank" rel="noopener noreferrer">Sponsor</a></li>

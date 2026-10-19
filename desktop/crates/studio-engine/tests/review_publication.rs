@@ -322,7 +322,7 @@ fn matrix(case: Case, label: &str) {
     drop((played, c));
     let count = probe.boundaries().len();
     assert!(count > 15, "{label}: only {count} boundaries");
-    for n in 0..count {
+    for_each_boundary(count, |n| {
         let (played, c, result) = play(case, Some(Tape::crashing_at(n)));
         assert!(
             is_crash(&result.unwrap_err()),
@@ -330,12 +330,12 @@ fn matrix(case: Case, label: &str) {
         );
         drop(c);
         assert_converged(&played, &format!("{label}: crash at {n}"));
-    }
-    for n in 0..count {
+    });
+    for_each_boundary(count, |n| {
         let (played, c, _) = play(case, Some(Tape::failing_at(n, ErrorKind::Other)));
         drop(c);
         assert_converged(&played, &format!("{label}: I/O failure at {n}"));
-    }
+    });
 }
 
 #[test]
