@@ -100,8 +100,6 @@ tests, and a short status bar label.
 
 These need the layout-a shell files, so they wait for that commit with the rest of this phase.
 
-- [ ] The "Use SDK v5 for this project" action. Show it when `Presentation::sdk_repin` is set, and
-      confirm before sending `Command::RepinSdk`.
 - [ ] The automatic relaunch on `cpu` after a GPU hang, and the relaunch when the Settings choice
       changes. The session preference is already demoted. Mind that PCM artifact ids are
       nonce-keyed.

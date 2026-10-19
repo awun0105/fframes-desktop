@@ -12,8 +12,8 @@ dependencies: [2]
 ## Goal
 
 Studio builds the Skia worker, passes it a renderer preference, accepts every backend the
-runtime can report, and recovers from a GPU that hangs. Existing v4 projects can move to the v5
-SDK through an explicit, confirmed repin.
+runtime can report, and recovers from a GPU that hangs. Projects pinned to an older SDK are not
+migrated (user decision, validation session 2).
 
 ## Context
 
@@ -69,13 +69,6 @@ The test fixtures that change with these sites:
   mid-session fallback) is handled like a relaunch: the new backend replaces the old one, thumbnails
   are keyed by it from then on, and the shader gap is re-evaluated. When a `skia-gpu` worker misses its request deadline or exits
   during a frame, relaunch it once with `cpu` and record the reason. A change of the Settings choice relaunches the preview worker with the new `--renderer`; no rebuild is needed. <!-- Updated: Validation Session 1 - fallback is tiny-skia; preference comes from Settings -->
-- Modify: `desktop/crates/studio-engine/src/controller.rs` and `build_materialization.rs`. Add an
-  explicit "move project to the installed SDK" repin: a durable write of `studio.json`'s `sdk` pin,
-  following the existing checkpoint/journal rules for project writes.
-- Modify: the UI surface that shows the "SDK pin mismatch" error today. The pin spike finds it.
-  Add a "Use SDK v5 for this project" action with a confirmation there. If that surface is one
-  of the shell files edited by `261019-1437-studio-layout-a`, this task waits for that commit, as
-  Phase 4 does.
 
 ## Tasks & steps
 
@@ -87,11 +80,7 @@ The test fixtures that change with these sites:
     kept the versions at 0.2.0.
   - Find the UI surface that shows the mismatch error.
   - Write down the outcome, and stop to re-plan if the pin works differently.
-- [x] Implement the repin (engine side; the UI action waits for layout-a, see notes). When the pin does not match and the installed SDK's framework is a newer
-      compatible release, the error offers "Use SDK v5 for this project". Confirming writes the new
-      pin through the durable-write path, and the next build uses v5. Declining leaves the file byte
-      for byte unchanged, as architecture §11 requires. Test both paths, and that a newer-format
-      `studio.json` is still refused.
+- [x] ~~Implement the repin.~~ Dropped in validation session 2: no migration from older SDKs.
 - [x] Split the three meanings of `"cpu"` as in the table, and update the fixtures.
 - [x] Add `renderer_preference.rs` and pass `--renderer` to the preview, agent-tool and export workers.
       Engine test: spawn a real worker with `--renderer cpu`, and Hello reports `cpu` with the gap.
@@ -106,12 +95,10 @@ The test fixtures that change with these sites:
 - From `desktop/`: `cargo test -p studio-engine -p studio-sdk -p studio-project`
 - `cargo test -p fframes-studio --test candidate_runner --test timeline_controls`
 - `desktop/crates/studio-engine/tests/timing_retime.rs` passes with the Skia worker.
-- Manual: open a v4 project, accept the repin, then build and preview on this VM (`cpu` by default, `skia-cpu` with `FFRAMES_STUDIO_RENDERER=skia-cpu`).
+- Manual: create a project on SDK v5, then build and preview on this VM (`cpu` by default, `skia-cpu` with `FFRAMES_STUDIO_RENDERER=skia-cpu`).
 
 ## Risks
 
-- The repin changes a user file. It happens only after confirmation, through the existing
-  durable-write path, and declining changes nothing.
 - A Windows GPU driver reset (TDR) caused by a project shader can also reset Studio's own GPUI
   device. The engine can only recover the worker. Phase 5 tests the GPUI side on the GPU host, and
   docs §2 records the limit.
@@ -128,26 +115,9 @@ The test fixtures that change with these sites:
 - The mismatch reaches the user only as `Backend::sdk` (the status text shown by the shell), set in
   `engine/backend.rs` `check_sdk`. The shell files that show it belong to layout-a.
 
-**Repin** (engine side)
-- `controller::repin_offer` offers a pin only for a newer `-vN` release of the same SDK line that
-  supports the preview contract.
-- `Controller::repin_sdk` reconciles first, then checks in order:
-  - the mutation gate, an agent task, and a running job;
-  - that the SDK is offered;
-  - `build_materialization::check_binding`: `bind` as a dry run over the live `Cargo.toml` files;
-  - Doctor.
-- It then writes `studio.json` through `write_manifest` inside the `Boundary::Manifest` fences,
-  reconciles, and persists the SDK selection.
-- `Presentation::sdk_repin` carries the offered release; `Command::RepinSdk` runs the repin.
-  The UI action ("Use SDK v5 for this project" with a confirmation) waits for layout-a and moves to
-  Phase 4.
-- Tests (`crates/studio-engine/tests/sdk_repin.rs`):
-  - which releases are offered;
-  - every refusal (framework mismatch, unverified SDK, older release, running job) leaves
-    `studio.json` byte for byte unchanged;
-  - a newer-format `studio.json` is refused and never rewritten;
-  - ignored, with `SDK_BUNDLE`: a confirmed repin changes only `sdk`, and the project then binds to
-    the installed v5 SDK. It passed.
+**Repin**
+- Implemented, released in `v0.1.2`, then removed (validation session 2). A project pinned to
+  an older SDK gets the existing "SDK pin mismatch" refusal.
 
 **Backend split and renderer**
 - Build key: `WORKER_BUILD_BACKEND = "skia"`.

@@ -37,7 +37,7 @@ only builds and accepts a `"cpu"` worker, so a physical GPU would change nothing
   - No new protocol version is needed.
 - **Requested scope:** Skia GPU rendering for Studio's preview, with export on the same backend. The
   architecture promises that preview and export share one backend (`docs/desktop/architecture.md:371`).
-  The SDK packaging and the v4 → v5 repin are required to deliver it, not additions. Validation
+  The SDK packaging is required to deliver it, not an addition. Validation
   session 1 added a Settings renderer picker and kept the red-team additions.
 - **Complexity:** about 28 files in 5 crates plus the SDK script; two new modules
   (`fframes-studio-runtime/src/renderer.rs`, `studio-engine/src/services/renderer_preference.rs`).
@@ -69,9 +69,9 @@ only builds and accepts a `"cpu"` worker, so a physical GPU would change nothing
    archive is nested in the framework artifact, `SKIA_BINARIES_URL` points at it, and the SDK copy of
    the manifest enables `skia-safe/no-compile`, so a miss is a fast error (the dev workspace is unchanged). It is also listed in the signed runtime
    inventory with its licenses.
-6. **Existing projects move to SDK v5 by a confirmed repin.** Without one, the v5 pin mismatch
-   strands every project. Framework crate versions stay `0.2.0`, so only `studio.json` changes. The user's `Cargo.lock` is never involved, because Studio builds in a
-   staging tree with a fresh lock.
+6. **No migration from older SDKs (user decision, session 2).** Studio is in development, so a
+   project pinned to an older SDK is refused with the existing "SDK pin mismatch" error and is
+   recreated. Framework crate versions stay `0.2.0`.
 7. **Transport stays the same.** Frames are read back to straight RGBA and sent over loopback.
 
 ## Non-goals
@@ -90,7 +90,7 @@ only builds and accepts a `"cpu"` worker, so a physical GPU would change nothing
 |---|-------|--------|
 | 1 | [Phase 1: Runtime renderer selection](./phase-01-runtime-renderer-selection.md) | Completed |
 | 2 | [Phase 2: SDK Skia packaging](./phase-02-sdk-skia-packaging.md) | In progress (Linux/macOS runner checks and the signed inventory remain) |
-| 3 | [Phase 3: Engine backend wiring](./phase-03-engine-backend-wiring.md) | In progress (engine done; the UI repin action, relaunch and thumbnail key move to Phase 4) |
+| 3 | [Phase 3: Engine backend wiring](./phase-03-engine-backend-wiring.md) | In progress (engine done; the relaunch and thumbnail key move to Phase 4) |
 | 4 | [Phase 4: Renderer setting, metrics and backend label](./phase-04-preview-metrics-and-backend-label.md) | Blocked on layout-a |
 | 5 | [Phase 5: Verification and docs](./phase-05-verification-and-docs.md) | Pending (needs the GPU hosts) |
 
@@ -109,7 +109,7 @@ each start with a spike that can stop the plan: the Skia archive key and the SDK
            ▼                                     └─────────────────────────────────┘
 ┌───────────────────────┐   SDK v5: vendored skia crates, pinned skia-binaries
 │ Settings, label, p95  │   archive in framework/skia, SKIA_BINARIES_URL=file://,
-└───────────────────────┘   no-compile; v4 projects repin on confirmation
+└───────────────────────┘   no-compile; projects of older SDKs are refused
 ```
 
 ## Success criteria
@@ -123,8 +123,6 @@ each start with a spike that can stop the plan: the Skia archive key and the SDK
 - [ ] The Settings choice survives a restart, and changing it switches the backend without a rebuild.
 - [ ] The SDK builds a Skia worker with the network blocked, fails fast on a bad archive, and
       lists Skia in the signed inventory with its notices. The SDK size growth is recorded.
-- [ ] A v4 project opens in a v5 Studio, offers the repin, and after confirmation builds and previews.
-      Declining leaves its files unchanged.
 - [ ] Per-frame worker render time (p50/p95) is visible in the observation JSON, and
       `reports/benchmark.md` holds preview, export and build numbers for each backend.
 - [ ] `just clippy` and the test commands in each phase pass.
@@ -140,7 +138,7 @@ the Skia CPU speed note (`fframes-skia-renderer/src/backends/mod.rs:101-104`). T
 
 | # | Finding | Severity | Disposition | Applied To |
 |---|---------|----------|-------------|------------|
-| 1 | SDK v5 pin mismatch strands every existing project; no repin path | Critical | Accept | Phase 3, plan |
+| 1 | SDK v5 pin mismatch strands every existing project; no repin path | Critical | Withdrawn in session 2: Studio is in development, so older projects are not migrated | Plan |
 | 2 | `FFRAMES_STUDIO_RENDERER` is stripped from the cleared child environment, and is hashed into the build key if allowlisted | Critical | Accept: `--renderer` argument | Phases 1, 3, 5 |
 | 3 | Skia archive fails open: curl ignores offline mode, silent source build, archive unpacked by the installer | Critical | Accept: `no-compile`, nested archive, network-blocked check | Phase 2 |
 | 4 | Lock-refresh premise is false; Studio already deletes and regenerates the lock in staging | High | Accept: task removed | Phase 3 |
@@ -248,3 +246,8 @@ success criteria 1 to 4, red-team row 12, and the Phase 1 to 5 bodies. The remai
 mentions are the explicit-choice backend, which is intended. No unresolved contradictions.
 
 <!-- slug: studio-native-gpu-preview -->
+
+### Session 2 — 2026-10-19
+- **Decision (user):** "I want it totally new since it's in development, no need to care about the
+  compatibility for old version." The v4 → v5 repin (answer 1a above, red-team finding 1) is
+  dropped. The engine repin shipped in `v0.1.2` was removed again; nothing else changes.

@@ -176,7 +176,6 @@ impl EngineHandle {
             compatibility_error: "SDK manifest unavailable".into(),
             sdk_home: None,
             sdk: "Checking SDK…".into(),
-            sdk_repin: None,
             agent_sdk: None,
             selected_sdk: None,
             closed: closed.clone(),
