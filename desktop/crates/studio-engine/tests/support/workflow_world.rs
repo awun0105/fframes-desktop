@@ -268,6 +268,9 @@ impl World {
                 .then(|| PathBuf::from(env!("CARGO_BIN_EXE_studio-tools"))),
         });
         config.limits.shutdown_grace = Duration::from_secs(1);
+        // The scripted adapter answers a cancel at once; the production 2 s is too tight for a
+        // Python adapter on a loaded Windows CI runner.
+        config.limits.cancel_ack_timeout = Duration::from_secs(10);
         config.probe_timeout = Duration::from_secs(20);
         config.handoff = self.options.handoff.clone();
         config.job_faults = self.options.job_faults.clone();
