@@ -42,7 +42,28 @@ pub fn run<V: Video + Send + Sync>(video: &V, default_output: &str) -> ExitCode 
         Ok(dynamic) => dynamic,
         Err(err) => return fail(json, &format!("dynamic media: {err}")),
     };
-    let all = CombinedMediaProvider::from([&media as &dyn MediaProvider, &dynamic]);
+    // clips and stills of other examples and of the CLI tools, shown in the 16:9 cut
+    let own_folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("dynamic_media");
+    let own_dir = match MediaDirectory::read_folder(&own_folder) {
+        Ok(dir) => dir,
+        Err(err) => {
+            return fail(
+                json,
+                &format!("dynamic media folder {}: {err}", own_folder.display()),
+            );
+        }
+    };
+    let own = match own_dir.process_media_source() {
+        Ok(own) => own,
+        Err(err) => return fail(json, &format!("dynamic media: {err}")),
+    };
+    // the fonts fframes-components draws some of its text in (Inter for the prompt's greeting)
+    let components = match fframes_components::ComponentsMedia::prepare() {
+        Ok(components) => components,
+        Err(err) => return fail(json, &format!("fframes-components media: {err}")),
+    };
+    let all =
+        CombinedMediaProvider::from([&media as &dyn MediaProvider, &dynamic, &own, &components]);
     let options = RenderOptions {
         media: Some(&all),
         video_encoder_options: EncoderOptions {

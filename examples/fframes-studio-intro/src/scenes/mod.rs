@@ -25,6 +25,7 @@ macro_rules! beat_scene {
 pub mod first_run;
 pub mod hook;
 pub mod install;
+pub mod keynote;
 pub mod outro;
 pub mod parallel;
 pub mod portrait;

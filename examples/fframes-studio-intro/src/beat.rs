@@ -12,6 +12,16 @@ pub const DOWNBEAT0: f32 = 2.148_51;
 /// The video stops a moment after the last bar and the music fades out under it.
 pub const TOTAL_SECONDS: f32 = 108.8;
 
+/// The 16:9 cut plays one 32-beat phrase of the music twice (see `audio_map_long`),
+/// so it runs longer than the portrait and short cuts.
+pub const LONG_EXTRA_BEATS: f32 = 32.0;
+/// Video beat where the repeated phrase starts in the 16:9 cut.
+pub const LONG_REPEAT_AT: f32 = 144.0;
+/// Last beat of the 16:9 cut, where it stops.
+pub const LONG_END: f32 = (TOTAL_SECONDS - DOWNBEAT0) / BEAT + LONG_EXTRA_BEATS;
+/// Length of the 16:9 cut.
+pub const LONG_TOTAL_SECONDS: f32 = TOTAL_SECONDS + LONG_EXTRA_BEATS * BEAT;
+
 pub fn beat_time(beat: f32) -> f32 {
     DOWNBEAT0 + beat * BEAT
 }
