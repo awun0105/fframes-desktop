@@ -86,18 +86,37 @@ pub fn resolve_manifest(
         .ok_or_else(|| missing_sdk_bundle_message(host.unwrap_or("this platform")))
 }
 
+/// The installer the app uses: a first install is checked in place by building and
+/// rendering the starter project into the shared target under `builds`, which also warms
+/// it for the first preview.
+pub fn installer(sdk_home: &Path, processes: &ProcessTreeManager, builds: &Path) -> SdkInstaller {
+    let (check_processes, builds) = (processes.clone(), builds.to_owned());
+    SdkInstaller::new(sdk_home)
+        .with_process_manager(processes.clone())
+        .with_candidate_check(std::sync::Arc::new(move |sdk, manifest| {
+            crate::services::worker_project::check_sdk_build(
+                sdk,
+                manifest,
+                &builds,
+                &check_processes,
+            )
+        }))
+}
+
 /// Install only the SDK. Product setup must not generate a project.
-/// `app_version` is the running app's version the SDK must be compatible with.
+/// `app_version` is the running app's version the SDK must be compatible with; `builds`
+/// is the app's build folder.
 pub fn install_sdk(
     manifest: &CompatibilityManifest,
     sdk_home: &Path,
     processes: &ProcessTreeManager,
     app_version: &str,
+    builds: &Path,
 ) -> Result<PathBuf, String> {
     manifest
         .validate_for_current_app_version(app_version)
         .map_err(|error| format!("SDK compatibility rejected before setup: {error}"))?;
-    let installer = SdkInstaller::new(sdk_home).with_process_manager(processes.clone());
+    let installer = installer(sdk_home, processes, builds);
     installer
         .recover_interrupted_install()
         .map_err(|error| format!("Interrupted SDK install recovery failed: {error}"))?;
@@ -180,6 +199,7 @@ pub fn install_sdk_from_bundle(
     sdk_home: &Path,
     processes: &ProcessTreeManager,
     app_version: &str,
+    builds: &Path,
 ) -> Result<PathBuf, String> {
     let manifest_path = bundle.join("compatibility.json");
     let json = fs::read_to_string(&manifest_path)
@@ -190,7 +210,7 @@ pub fn install_sdk_from_bundle(
         .validate_for_current_app_version(app_version)
         .map_err(|error| format!("SDK bundle is incompatible: {error}"))?;
 
-    let installer = SdkInstaller::new(sdk_home).with_process_manager(processes.clone());
+    let installer = installer(sdk_home, processes, builds);
     installer
         .recover_interrupted_install()
         .map_err(|error| format!("Interrupted SDK install recovery failed: {error}"))?;

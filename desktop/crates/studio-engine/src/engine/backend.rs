@@ -320,6 +320,7 @@ impl Backend {
                     self.sdk_home.as_deref().ok_or("SDK home unavailable")?,
                     &self.processes,
                     self.app_version,
+                    &paths.builds(),
                 ) {
                     Ok(sdk) => sdk,
                     Err(error) => {
@@ -342,6 +343,7 @@ impl Backend {
                     self.sdk_home.as_deref().ok_or("SDK home unavailable")?,
                     &self.processes,
                     self.app_version,
+                    &paths.builds(),
                 ) {
                     Ok(sdk) => sdk,
                     Err(error) => {

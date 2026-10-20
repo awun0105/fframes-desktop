@@ -22,6 +22,7 @@ use std::{
 use studio_bootstrap::ProcessTreeManager;
 use studio_engine::{
     build_materialization::sdk_pin,
+    sdk_setup,
     services::{
         build_service::{BuildLimits, BuildService, Subscriber, SubscriberKind},
         worker_project::{
@@ -29,7 +30,7 @@ use studio_engine::{
         },
     },
 };
-use studio_sdk::{CompatibilityManifest, SdkInstaller};
+use studio_sdk::CompatibilityManifest;
 
 /// Budgets in seconds, about twice what the self-hosted Windows runner measures.
 const BUDGETS: [(&str, f64); 4] = [
@@ -118,10 +119,11 @@ fn preview_latency_stays_within_budget() {
     let builds = temporary.path().join("builds");
 
     let started = Instant::now();
-    let sdk = SdkInstaller::new(temporary.path().join("sdk"))
+    let processes = ProcessTreeManager::new();
+    // As the app installs: checked in place by building the starter project, then warmed.
+    let sdk = sdk_setup::installer(&temporary.path().join("sdk"), &processes, &builds)
         .install_from_local_artifacts(&manifest, &artifacts)
         .expect("install the SDK bundle");
-    let processes = ProcessTreeManager::new();
     warm_build_cache(&sdk, &builds, &processes).expect("warm the build cache");
     let install = started.elapsed();
 

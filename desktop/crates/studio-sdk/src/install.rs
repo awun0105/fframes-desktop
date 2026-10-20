@@ -18,6 +18,12 @@ const INSTALL_RECEIPT_SCHEMA_VERSION: u32 = 1;
 const BUILD_PROBE_RESERVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const INSTALL_TRANSACTION_FILE: &str = "install-transaction.json";
 const ROLLBACK_TRANSACTION_FILE: &str = "rollback-transaction.json";
+/// Present in an active SDK that is still being installed in place; recovery removes it.
+const IN_PLACE_MARKER: &str = ".installing";
+
+/// Builds and renders with a candidate SDK from the directory it is installed in.
+pub type CandidateCheck =
+    std::sync::Arc<dyn Fn(&Path, &CompatibilityManifest) -> Result<(), String> + Send + Sync>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,6 +98,7 @@ pub enum InstallError {
 pub struct SdkInstaller {
     sdk_home: PathBuf,
     processes: studio_bootstrap::ProcessTreeManager,
+    candidate_check: Option<CandidateCheck>,
 }
 
 impl SdkInstaller {
@@ -99,12 +106,21 @@ impl SdkInstaller {
         Self {
             sdk_home: sdk_home.into(),
             processes: studio_bootstrap::ProcessTreeManager::new(),
+            candidate_check: None,
         }
     }
 
     /// Use the app's owner so shutdown can cancel verification and reject later compilers.
     pub fn with_process_manager(mut self, processes: studio_bootstrap::ProcessTreeManager) -> Self {
         self.processes = processes;
+        self
+    }
+
+    /// With no active SDK to keep, install in place and verify with `check` from the final
+    /// directory instead of building the bundled probes in staging. Cargo's artifacts are
+    /// bound to the SDK's path, so what `check` builds there stays reusable.
+    pub fn with_candidate_check(mut self, check: CandidateCheck) -> Self {
+        self.candidate_check = Some(check);
         self
     }
 
@@ -149,6 +165,12 @@ impl SdkInstaller {
     }
 
     fn recover_interrupted_transactions_locked(&self) -> Result<bool, InstallError> {
+        let active = self.active_sdk_dir();
+        if active.join(IN_PLACE_MARKER).exists() {
+            // An in-place install never finished: no known-good SDK was here before it.
+            fs::remove_dir_all(&active)?;
+            sync_directory(&self.sdk_home)?;
+        }
         let install_recovered = self.recover_interrupted_install_locked()?;
         let rollback_recovered = self.recover_interrupted_rollback_locked()?;
         Ok(install_recovered || rollback_recovered)
@@ -478,8 +500,21 @@ impl SdkInstaller {
                 .unwrap()
                 .as_millis()
         );
-        let staging_dir = self.staging_root_dir().join(&tx_id);
+        // With nothing to replace, the SDK is installed and checked where it will be used.
+        let in_place = self
+            .candidate_check
+            .as_ref()
+            .filter(|_| !self.active_sdk_dir().exists());
+        let staging_dir = if in_place.is_some() {
+            self.active_sdk_dir()
+        } else {
+            self.staging_root_dir().join(&tx_id)
+        };
         fs::create_dir_all(&staging_dir)?;
+        if in_place.is_some() {
+            File::create(staging_dir.join(IN_PLACE_MARKER))?.sync_all()?;
+            sync_directory(&self.sdk_home)?;
+        }
 
         // Clean up staging on any failure
         let result = (|| -> Result<(), InstallError> {
@@ -518,11 +553,14 @@ impl SdkInstaller {
             if self.processes.is_shutdown() {
                 return Err(InstallError::Other("SDK installation cancelled".into()));
             }
-            // 3. Write embedded manifest into staging root
+            // 3. Write embedded manifest into staging root. In place it comes last: until
+            // then nothing reads the directory as an installed SDK.
             let manifest_path = staging_dir.join("compatibility.json");
             let manifest_json = serde_json::to_string_pretty(manifest)
                 .map_err(|e| InstallError::Other(e.to_string()))?;
-            fs::write(manifest_path, manifest_json)?;
+            if in_place.is_none() {
+                fs::write(&manifest_path, &manifest_json)?;
+            }
 
             // 4. Verify candidate SDK via Doctor before promotion
             let candidate_report = Doctor::verify_candidate_sdk_with_processes(
@@ -545,26 +583,10 @@ impl SdkInstaller {
                 manifest.clone(),
                 true,
             );
+            // One build: the worker probe builds everything a plain project does and more.
             let verification = (|| -> Result<(), crate::ProjectError> {
-                let template = probe_root.join("template");
-                crate::ProjectManager::generate_cpu_project_with_sdk(
-                    "sdk-template-probe",
-                    &template,
-                    &manifest.fframes_version,
-                    Some(&staging_dir),
-                )?;
-                crate::ProjectManager::build_project(&template, &environment, &manager)?;
-                let (_, pixels) = crate::ProjectManager::render_frame(
-                    &template,
-                    &environment,
-                    0,
-                    Path::new("frames"),
-                    &manager,
-                )?;
-                if !pixels.starts_with(b"\x89PNG\r\n\x1a\n") {
-                    return Err(crate::ProjectError::BuildError(
-                        "Template did not render a PNG".into(),
-                    ));
+                if let Some(check) = in_place {
+                    return check(&staging_dir, manifest).map_err(crate::ProjectError::BuildError);
                 }
                 let worker = probe_root.join("worker");
                 crate::ProjectManager::generate_annotated_worker_project(&worker, &staging_dir)?;
@@ -607,9 +629,14 @@ impl SdkInstaller {
             use std::io::Write;
             receipt_file.write_all(b"\n")?;
             receipt_file.sync_all()?;
-            fs::remove_dir_all(&probe_root)?;
+            if probe_root.exists() {
+                fs::remove_dir_all(&probe_root)?;
+            }
             if self.processes.is_shutdown() {
                 return Err(InstallError::Other("SDK installation cancelled".into()));
+            }
+            if in_place.is_some() {
+                fs::write(&manifest_path, &manifest_json)?;
             }
 
             Ok(())
@@ -618,6 +645,11 @@ impl SdkInstaller {
         if let Err(err) = result {
             let _ = fs::remove_dir_all(&staging_dir);
             return Err(err);
+        }
+        if in_place.is_some() {
+            fs::remove_file(staging_dir.join(IN_PLACE_MARKER))?;
+            sync_directory(&self.sdk_home)?;
+            return Ok(staging_dir);
         }
 
         // 5. Atomic and recoverable promotion
@@ -1172,5 +1204,38 @@ mod tests {
             Err(InstallError::CandidateVerificationFailed { .. })
         ));
         assert!(!installer.active_sdk_dir().exists());
+
+        // Installed in place, a rejected candidate leaves no active SDK behind either.
+        let checked = SdkInstaller::new(tmp.path().join("sdk_home"))
+            .with_candidate_check(std::sync::Arc::new(|_, _| Ok(())));
+        let res = checked.install_from_local_artifacts(
+            &manifest,
+            &[
+                (manifest.artifacts[0].clone(), &toolchain_tar),
+                (manifest.artifacts[1].clone(), &ffmpeg_tar),
+                (manifest.artifacts[2].clone(), &framework_tar),
+            ],
+        );
+        assert!(matches!(
+            res,
+            Err(InstallError::CandidateVerificationFailed { .. })
+        ));
+        assert!(!checked.active_sdk_dir().exists());
+    }
+
+    #[test]
+    fn recovery_removes_an_unfinished_in_place_install_and_keeps_a_finished_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installer = SdkInstaller::new(tmp.path().join("sdk_home"));
+        let active = installer.active_sdk_dir();
+        fs::create_dir_all(active.join("toolchain")).unwrap();
+        fs::write(active.join(IN_PLACE_MARKER), b"").unwrap();
+        installer.recover_interrupted_install().unwrap();
+        assert!(!active.exists());
+
+        fs::create_dir_all(&active).unwrap();
+        fs::write(active.join("compatibility.json"), b"{}").unwrap();
+        installer.recover_interrupted_install().unwrap();
+        assert!(active.join("compatibility.json").is_file());
     }
 }

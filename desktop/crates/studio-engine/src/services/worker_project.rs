@@ -179,18 +179,28 @@ pub fn compile_portable_worker(
     )
 }
 
-/// Compiles a throwaway Studio starter project against the installed `sdk` into the shared
-/// target under `builds`, so the first preview reuses the framework instead of compiling
-/// it. The installer's probes cannot: they build the staged SDK, and Cargo's artifacts are
-/// bound to the SDK's path.
+/// [`check_sdk_build`] for an installed `sdk`, reading its manifest.
 pub fn warm_build_cache(
     sdk: &Path,
     builds: &Path,
     manager: &ProcessTreeManager,
 ) -> Result<(), String> {
-    let manifest = &std::fs::read_to_string(sdk.join("compatibility.json"))
+    let manifest = std::fs::read_to_string(sdk.join("compatibility.json"))
         .map_err(|e| e.to_string())
         .and_then(|json| CompatibilityManifest::from_json_str(&json).map_err(|e| e.to_string()))?;
+    check_sdk_build(sdk, &manifest, builds, manager)
+}
+
+/// Compiles a throwaway Studio starter project against `sdk` into the shared target under
+/// `builds` and renders its first frame with a preview worker: proof that the SDK builds
+/// and renders Studio projects, and a warm cache for the first preview. Cargo's artifacts
+/// are bound to the SDK's path, so this only warms the cache from the SDK's final folder.
+pub fn check_sdk_build(
+    sdk: &Path,
+    manifest: &CompatibilityManifest,
+    builds: &Path,
+    manager: &ProcessTreeManager,
+) -> Result<(), String> {
     std::fs::create_dir_all(builds).map_err(|e| e.to_string())?;
     let scratch = tempfile::Builder::new()
         .prefix("warm-")
@@ -205,7 +215,20 @@ pub fn warm_build_cache(
     )
     .map_err(|e| e.to_string())?;
     let environment = CompileEnvironment::resolve(sdk, manifest, builds)?;
-    compile_with_cargo(&project, &environment, manager).map(drop)
+    let build = compile_with_cargo(&project, &environment, manager)?;
+    let identity = fframes_studio_protocol::PreviewIdentity {
+        project_id: project.manifest.project_id.clone().into(),
+        open_session: uuid::Uuid::new_v4().to_string(),
+        source_revision: project.inventory.revision.as_str().to_owned(),
+        worker_generation: 1,
+    };
+    let workers = manager.sub_manager();
+    let rendered = launch_preview_worker(build, identity, &workers).and_then(|mut worker| {
+        worker.timeline().map_err(|e| e.to_string())?;
+        worker.frame(0, 1, 1.0).map_err(|e| e.to_string()).map(drop)
+    });
+    workers.shutdown(Duration::from_secs(5));
+    rendered
 }
 
 fn compile_with_cargo(

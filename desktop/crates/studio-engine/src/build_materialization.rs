@@ -346,9 +346,12 @@ pub fn materialize_in_environment(
     }
     let cargo_config_path = root.join(".cargo/config.toml");
     // Line tables keep file and line in backtraces; full debug info only made each preview
-    // build link (and write the PDB) about two seconds longer.
+    // build link (and write the PDB) about two seconds longer. The framework and other
+    // dependencies are optimized: unoptimized, they rendered 12 times slower, and level 1
+    // compiles faster than none while rendering as fast as level 3. The project's own crates
+    // stay unoptimized for quick edits.
     let cargo_config = format!(
-        "[source.crates-io]\nreplace-with = \"studio-vendor\"\n[source.studio-vendor]\ndirectory = {}\n[profile.dev]\ndebug = \"line-tables-only\"\n",
+        "[source.crates-io]\nreplace-with = \"studio-vendor\"\n[source.studio-vendor]\ndirectory = {}\n[profile.dev]\ndebug = \"line-tables-only\"\n[profile.dev.package.\"*\"]\nopt-level = 1\n",
         toml::Value::String(vendor.to_string_lossy().into_owned())
     );
     // This file is also inside the private staging tree; a failed write discards that tree.

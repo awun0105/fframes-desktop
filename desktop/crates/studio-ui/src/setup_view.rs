@@ -197,11 +197,15 @@ impl SetupView {
         process_tree: ProcessTreeManager,
         app_version: &str,
     ) -> Result<(PathBuf, Duration, Duration), String> {
+        let builds = studio_engine::app_paths::AppPaths::system()
+            .map_err(|e| e.to_string())?
+            .builds();
         let active_sdk = studio_engine::sdk_setup::install_sdk(
             &manifest,
             &sdk_home,
             &process_tree,
             app_version,
+            &builds,
         )?;
         // 3. Generate template project using the managed SDK's standalone framework
         fs::create_dir_all(&projects_root).map_err(|e| e.to_string())?;
