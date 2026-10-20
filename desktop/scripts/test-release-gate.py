@@ -266,7 +266,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("inputs.windows_only == true", predicate)
         self.assertIn("inputs.consumer_release != true", predicate)
         windows, full = ("'[" + alternatives).split(" || ")
-        self.assertEqual(json.loads(windows.strip("'")), [{"runner": "windows-2025", "target": WINDOWS}])
+        self.assertEqual(json.loads(windows.strip("'")), [{"runner": ["self-hosted", "Windows", "X64"], "target": WINDOWS}])
         self.assertEqual({row["target"] for row in json.loads(full.strip("'"))},
                          {LINUX, WINDOWS, "aarch64-apple-darwin"})
 

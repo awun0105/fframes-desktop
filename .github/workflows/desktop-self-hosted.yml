@@ -13,6 +13,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/desktop-self-hosted.yml"
+      - ".github/actions/desktop-windows-self-hosted-setup/**"
   workflow_dispatch:
     inputs:
       full:
@@ -138,8 +139,8 @@ jobs:
           export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
           # SDK_ACTIVE is the SDK the audio parity step installed.
           SDK_ACTIVE="$RUNNER_TEMP/m2-home/.fframes/sdk/active" SDK_BUNDLE="$RUNNER_TEMP/studio-sdk" cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test x11_shell -- --ignored --test-threads=1
-      # Test builds are named studio-test-*: the release workflow collects only
-      # fframes-studio-* packages, which come from hosted runners.
+      # Test builds are named studio-test-*: the release workflow collects only the
+      # fframes-studio-* packages its own jobs build.
       - name: Package native app and SDK test build
         if: inputs.full
         run: python3 desktop/scripts/package-phase-zero.py --out "$RUNNER_TEMP/studio-test-x86_64-unknown-linux-gnu" --sdk-bundle "$RUNNER_TEMP/studio-sdk"
@@ -188,60 +189,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # The runner service does not inherit the interactive profile: it has no ~/.cargo/bin,
-      # FFMPEG_DIR, LIBCLANG_PATH or `python` (spawned by test fixtures) on its environment.
-      # setup-rust-toolchain is deliberately not used here: on this shared machine it reinstalled
-      # rustup with a GNU default host, and the job left ~/.cargo/bin without rustup.exe.
-      - name: Prepare the Windows build environment
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          # AppendAllText writes UTF-8 without a BOM, which Windows PowerShell's Out-File would add.
-          function Add-Line([string]$File, [string]$Line) { [IO.File]::AppendAllText($File, "$Line`n") }
-          $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
-          if (-not (Test-Path (Join-Path $cargoBin "rustup.exe"))) { throw "rustup is not installed for the runner user ($cargoBin)" }
-          Add-Line $env:GITHUB_PATH $cargoBin
-          # An explicit MSVC triple, so the result never depends on rustup's default host.
-          & (Join-Path $cargoBin "rustup.exe") toolchain install 1.98.1-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy --no-self-update
-          if ($LASTEXITCODE -ne 0) { throw "rustup toolchain install failed" }
-          Add-Line $env:GITHUB_ENV "RUSTUP_TOOLCHAIN=1.98.1-x86_64-pc-windows-msvc"
-
-          # Same pinned FFmpeg build as the release workflow, kept in the runner's tool cache.
-          $distribution = "ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-shared-9.0"
-          $release = "autobuild-2026-10-07-13-07"
-          $expected = "124799F0643A75EB84A64A589F1ABAC8F81732587942F3F34458688036153F0D"
-          $cache = Join-Path $env:RUNNER_TOOL_CACHE "fframes-ffmpeg"
-          $ffmpeg = Join-Path $cache $distribution
-          if (-not (Test-Path (Join-Path $ffmpeg "bin\avcodec-63.dll"))) {
-            New-Item -ItemType Directory -Force -Path $cache | Out-Null
-            $archive = Join-Path $env:RUNNER_TEMP "$distribution.zip"
-            Invoke-WebRequest -UseBasicParsing "https://github.com/BtbN/FFmpeg-Builds/releases/download/$release/$distribution.zip" -OutFile $archive
-            if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw "FFmpeg download checksum mismatch" }
-            # Windows' bsdtar reads ZIPs and copes with long paths, unlike Expand-Archive. Extract
-            # into a staging folder and move it into place, so a failure leaves no partial cache.
-            $staging = Join-Path $cache ".partial"
-            Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
-            New-Item -ItemType Directory -Path $staging | Out-Null
-            & "$env:SystemRoot\System32\tar.exe" -xf $archive -C $staging
-            if ($LASTEXITCODE -ne 0) { Remove-Item -LiteralPath $staging -Recurse -Force; throw "FFmpeg extraction failed" }
-            Remove-Item -LiteralPath $ffmpeg -Recurse -Force -ErrorAction SilentlyContinue
-            Move-Item -LiteralPath (Join-Path $staging $distribution) -Destination $ffmpeg
-            Remove-Item -LiteralPath $staging, $archive -Recurse -Force
-          }
-          Add-Line $env:GITHUB_ENV "FFMPEG_DIR=$ffmpeg"
-          Add-Line $env:GITHUB_PATH (Join-Path $ffmpeg "bin")
-
-          $llvm = Join-Path $env:ProgramFiles "LLVM\bin"
-          if (-not (Test-Path (Join-Path $llvm "libclang.dll"))) { throw "LLVM (libclang) not found at $llvm" }
-          Add-Line $env:GITHUB_ENV "LIBCLANG_PATH=$llvm"
-
-          $python = & py -3 -c "import os, sys; print(os.path.dirname(sys.executable))"
-          if ($LASTEXITCODE -ne 0 -or -not $python) { throw "No Python 3 found through the py launcher" }
-          Add-Line $env:GITHUB_PATH $python
-
-          # checkout cleans ignored files, which would make every run a cold build. A target
-          # directory in the tool cache survives between runs (and keeps paths short).
-          Add-Line $env:GITHUB_ENV "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TOOL_CACHE 'fframes-target')"
+      - uses: ./.github/actions/desktop-windows-self-hosted-setup
       - name: Check formatting
         run: cargo fmt --manifest-path desktop/Cargo.toml --all --check
       - name: Test desktop workspace
@@ -284,8 +232,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:AUDIO_PREVIEW_EVIDENCE = "$env:RUNNER_TEMP\m2-parity.json"
           cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
-      # Test builds are named studio-test-*: the release workflow collects only
-      # fframes-studio-* packages, which come from hosted runners.
+      # Test builds are named studio-test-*: the release workflow collects only the
+      # fframes-studio-* packages its own jobs build.
       - name: Package native app and SDK test build
         if: env.TEST_BUILD == 'true'
         run: |
