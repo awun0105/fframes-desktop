@@ -144,7 +144,7 @@ On macOS the command key replaces Ctrl. Controls are tab stops and activate on E
 - **Linux** compiles and runs the tests on the self-hosted CI runner, including the X11 shell test on Xvfb in full runs ([self-hosted runners](self-hosted-runners.md)).
 - **macOS is not fully tested.** It is covered only by CI: the Desktop CI `desktop-macos` job runs the tests and clippy on hosted macOS for pull requests and manual runs ([`desktop.yml`](../../.github/workflows/desktop.yml)), and Desktop Release builds the macOS package. No hand check, real-CLI check or on-screen check runs on macOS ([roadmap, Platforms](../../plans/261013-0733-studio-rewrite-roadmap/plan.md#confirmed-contract)).
 
-Ordinary agent tests use scripted peers or fake CLIs. The ignored `claude_acp_real_cli` test installs the pinned adapter, checks its actual advisor-result conversion, then verifies denied and approved edits with a signed-in Claude session; see its source for the required environment variables. The real Claude Code and Codex CLI tests are ignored by default and need a signed-in CLI: `cargo test --manifest-path desktop/Cargo.toml -p studio-harness --test claude_real_cli --test codex_real_cli -- --ignored`.
+Agent tests use scripted peers or fake CLIs.
 
 ## Architecture at a glance
 

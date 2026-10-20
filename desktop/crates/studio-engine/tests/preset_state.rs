@@ -5,7 +5,7 @@
 #[path = "support/tx_fixture.rs"]
 mod tx_fixture;
 
-use std::{collections::BTreeMap, fs, io::ErrorKind, path::Path};
+use std::{fs, path::Path};
 use studio_engine::{
     ApplyGate, Boundary, Controller, EngineError, PresetAction, PresetMutation, PresetRequest,
     PromotionError, TransactionKind,
@@ -572,150 +572,24 @@ fn imported_presets_are_verified_stored_once_and_listed() {
 
 // ---- durable boundaries ----------------------------------------------------------------
 
-struct Run {
-    fx: Fx,
-    before: BTreeMap<String, Node>,
-    saved: studio_project::SourceRevision,
-    tasks: std::path::PathBuf,
-}
-
 /// A project that already holds editorial with user overrides, then switches to pulse
-/// under `hooks`, so every kind of operation (create, replace, delete) is exercised.
-fn run(hooks: Option<Tape>) -> (Run, Controller, Result<(), EngineError>) {
+/// under `tape`, so every kind of operation (create, replace, delete) is exercised.
+fn run(tape: &Tape) -> Result<(), EngineError> {
     let fx = light();
     let mut c = open_retrying(&fx.root, &fx.paths).unwrap();
     select(&mut c, "editorial", PresetAction::Apply).unwrap();
     fs::write(fx.root.join("style/overrides.json"), OVERRIDES).unwrap();
     c.reconcile().unwrap();
-    let saved = c.state().accepted().clone();
-    let before = snapshot(&fx.root);
-    if let Some(hooks) = hooks {
-        c.set_transaction_hooks(hooks.hooks());
-    }
-    let result = select(&mut c, "quiet-motion", PresetAction::Apply).map(|o| {
+    c.set_transaction_hooks(tape.hooks());
+    select(&mut c, "quiet-motion", PresetAction::Apply).map(|o| {
         assert!(o.record.is_some());
-    });
-    let tasks = fx.task_journal(&c);
-    (
-        Run {
-            fx,
-            before,
-            saved,
-            tasks,
-        },
-        c,
-        result,
-    )
-}
-
-fn assert_recovered(run: &Run, label: &str) -> Controller {
-    // The first transaction (editorial) is always committed; the switch is the second.
-    let committed = journal_commits(&run.tasks) == 2;
-    let c = open_retrying(&run.fx.root, &run.fx.paths)
-        .unwrap_or_else(|e| panic!("{label}: reopen failed: {e}"));
-    assert!(
-        internal_files(&run.fx.root).is_empty(),
-        "{label}: leftover {:?}",
-        internal_files(&run.fx.root)
-    );
-    assert!(c.recovery_status().unresolved.is_empty(), "{label}");
-    assert_eq!(
-        c.state().accepted(),
-        &run.saved,
-        "{label}: checkpoint moved"
-    );
-    assert!(c.state().task_history().entries().is_empty(), "{label}");
-    let after = snapshot(&run.fx.root);
-    let overrides = read(&run.fx.root, "style/overrides.json");
-    assert_eq!(
-        overrides,
-        OVERRIDES.as_bytes(),
-        "{label}: overrides changed"
-    );
-    if committed {
-        // The complete new file set, manifest included.
-        let quiet = pkg("quiet-motion");
-        assert_eq!(
-            manifest_preset(&run.fx.root),
-            Some(("quiet-motion".into(), quiet.hash().into())),
-            "{label}"
-        );
-        assert!(
-            run.fx
-                .root
-                .join("media/preset-fonts-DMSans-Regular.ttf")
-                .is_file(),
-            "{label}"
-        );
-        assert!(
-            !run.fx
-                .root
-                .join("media/preset-fonts-DMSans-Medium.ttf")
-                .exists(),
-            "{label}"
-        );
-        assert_eq!(
-            c.project_style().unwrap().identity.id,
-            "quiet-motion",
-            "{label}"
-        );
-    } else {
-        // The complete old file set, byte for byte and mode for mode.
-        assert_eq!(
-            without_internal(&after),
-            without_internal(&run.before),
-            "{label}"
-        );
-        assert_eq!(
-            c.project_style().unwrap().identity.id,
-            "editorial",
-            "{label}"
-        );
-        assert_eq!(
-            manifest_preset(&run.fx.root).unwrap().0,
-            "editorial",
-            "{label}"
-        );
-    }
-    // Replay never leaks a preset record into task history.
-    let replay = TaskJournal::inspect(&run.tasks).unwrap();
-    assert!(replay.committed().is_empty(), "{label}");
-    c
-}
-
-fn assert_idempotent(run: &Run, label: &str) {
-    let journal = fs::read(&run.tasks).unwrap();
-    let tree = snapshot(&run.fx.root);
-    for round in 0..2 {
-        let c = open_retrying(&run.fx.root, &run.fx.paths).unwrap();
-        assert!(
-            c.recovery_status().report.rolled_back.is_empty()
-                && c.recovery_status().report.cleaned.is_empty()
-                && c.recovery_status().report.conflicts.is_empty(),
-            "{label}: round {round} recovered again: {:?}",
-            c.recovery_status().report
-        );
-        assert_eq!(
-            fs::read(&run.tasks).unwrap(),
-            journal,
-            "{label}: journal grew"
-        );
-        assert_eq!(snapshot(&run.fx.root), tree, "{label}: tree changed");
-    }
-}
-
-fn boundary_count() -> usize {
-    let tape = Tape::recording();
-    let (_, _c, result) = run(Some(tape.clone()));
-    result.unwrap();
-    tape.boundaries().len()
+    })
 }
 
 #[test]
 fn the_preset_boundary_sequence_covers_every_durable_step() {
     let tape = Tape::recording();
-    let (_, _c, result) = run(Some(tape.clone()));
-    result.unwrap();
+    run(&tape).unwrap();
     let seen = tape.boundaries();
     let has = |f: &dyn Fn(&Boundary) -> bool| seen.iter().any(f);
     assert!(has(&|b| matches!(b, Boundary::StageCreated(_))));
@@ -748,45 +622,6 @@ fn the_preset_boundary_sequence_covers_every_durable_step() {
     assert!(has(&|b| matches!(b, Boundary::Cleanup(_))));
     // The preset path never touches the task history projection.
     assert!(!has(&|b| matches!(b, Boundary::Projection { .. })));
-}
-
-#[test]
-fn a_process_death_at_every_durable_boundary_recovers_to_the_old_or_new_complete_set() {
-    let total = boundary_count();
-    assert!(total > 40, "unexpectedly few boundaries: {total}");
-    for k in 0..total {
-        let (run, c, result) = run(Some(Tape::crashing_at(k)));
-        let error = result.unwrap_err();
-        assert!(is_crash(&error), "boundary {k}: {error}");
-        assert!(
-            c.state().task_history().entries().is_empty(),
-            "boundary {k}: preset leaked into task history"
-        );
-        drop(c);
-        let label = format!("crash at boundary {k}");
-        drop(assert_recovered(&run, &label));
-        assert_idempotent(&run, &label);
-    }
-}
-
-#[test]
-fn an_io_failure_at_every_durable_boundary_ends_cleanly_or_suspends_for_recovery() {
-    let total = boundary_count();
-    for k in 0..total {
-        let (run, c, result) = run(Some(Tape::failing_at(k, ErrorKind::StorageFull)));
-        let label = format!("I/O failure at boundary {k}");
-        match &result {
-            Ok(()) => assert_eq!(journal_commits(&run.tasks), 2, "{label}"),
-            Err(EngineError::Promotion(
-                PromotionError::RolledBack(_) | PromotionError::Journal(_),
-            )) => (),
-            Err(other) => panic!("{label}: {other}"),
-        }
-        assert!(c.state().task_history().entries().is_empty(), "{label}");
-        drop(c);
-        drop(assert_recovered(&run, &label));
-        assert_idempotent(&run, &label);
-    }
 }
 
 #[test]

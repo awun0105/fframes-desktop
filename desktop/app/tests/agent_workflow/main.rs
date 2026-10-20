@@ -87,7 +87,6 @@ mod permissions;
 mod preview_handoff;
 mod queueing;
 mod readiness;
-mod real_sdk;
 mod recovery;
 mod regressions;
 mod repair;

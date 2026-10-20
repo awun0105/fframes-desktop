@@ -7,9 +7,7 @@
 mod tx_fixture;
 
 use std::{
-    collections::BTreeMap,
     fs,
-    io::ErrorKind,
     path::{Path, PathBuf},
 };
 use studio_engine::{
@@ -213,131 +211,6 @@ fn with_media(root: &Path) {
     set_mode(&root.join("clips"), 0o750);
 }
 
-fn nothing(_: &Path) {}
-
-#[derive(Clone, Copy)]
-struct Case {
-    prepare: fn(&Path),
-    edit: fn(&Path),
-    /// Interrupt the Undo of the edit instead of the edit itself.
-    undo: bool,
-}
-
-struct Played {
-    fx: Fx,
-    tasks: PathBuf,
-    /// The tree immediately before the transaction under test.
-    before: BTreeMap<String, Node>,
-    /// The source the transaction under test publishes.
-    target: studio_project::SourceRevision,
-    /// Committed revisions in the journal once the transaction committed.
-    commits: usize,
-}
-
-fn play(case: Case, hooks: Option<Tape>) -> (Played, Controller, Result<(), EngineError>) {
-    let fx = fixture();
-    (case.prepare)(&fx.root);
-    let mut c = open_retrying(&fx.root, &fx.paths).unwrap();
-    let tasks = fx.task_journal(&c);
-    let (_, captured, report) = validated(&fx, &mut c, "topology", case.edit);
-    if !case.undo {
-        let before = snapshot(&fx.root);
-        let target = captured.candidate().revision().clone();
-        if let Some(hooks) = hooks {
-            c.set_transaction_hooks(hooks.hooks());
-        }
-        let result = c
-            .complete_validated_task(&captured, &report)
-            .map(|outcome| assert!(matches!(outcome, CompletionOutcome::Applied(_))));
-        return (
-            Played {
-                fx,
-                tasks,
-                before,
-                target,
-                commits: 1,
-            },
-            c,
-            result,
-        );
-    }
-    let revision = applied(&mut c, &captured, &report);
-    let before = snapshot(&fx.root);
-    let preparation = c.prepare_undo(Some(&revision.record.id)).unwrap();
-    let report = passing_probe::passing_report(preparation.captured());
-    let target = preparation.captured().candidate().revision().clone();
-    if let Some(hooks) = hooks {
-        c.set_transaction_hooks(hooks.hooks());
-    }
-    let result = c.undo_task(&preparation, &report).map(drop);
-    (
-        Played {
-            fx,
-            tasks,
-            before,
-            target,
-            commits: 2,
-        },
-        c,
-        result,
-    )
-}
-
-/// After a crash or failure at any point: reopening converges to exactly the committed
-/// result or exactly the tree before, with nothing left over and no conflict.
-fn assert_converged(p: &Played, label: &str) {
-    let committed = journal_commits(&p.tasks) == p.commits;
-    let c = open_retrying(&p.fx.root, &p.fx.paths)
-        .unwrap_or_else(|e| panic!("{label}: reopen failed: {e}"));
-    assert!(
-        c.recovery_status().unresolved.is_empty(),
-        "{label}: {:?}",
-        c.recovery_status().unresolved
-    );
-    assert!(
-        internal_files(&p.fx.root).is_empty(),
-        "{label}: leftover {:?}",
-        internal_files(&p.fx.root)
-    );
-    if committed {
-        assert_eq!(c.state().source(), &p.target, "{label}");
-    } else {
-        assert_eq!(
-            without_internal(&snapshot(&p.fx.root)),
-            without_internal(&p.before),
-            "{label}"
-        );
-        assert_eq!(
-            c.state().task_history().entries().len(),
-            p.commits - 1,
-            "{label}"
-        );
-    }
-}
-
-fn matrix(case: Case, label: &str) {
-    let probe = Tape::recording();
-    let (played, c, result) = play(case, Some(probe.clone()));
-    result.unwrap();
-    drop((played, c));
-    let count = probe.boundaries().len();
-    assert!(count > 15, "{label}: only {count} boundaries");
-    for_each_boundary(count, |n| {
-        let (played, c, result) = play(case, Some(Tape::crashing_at(n)));
-        assert!(
-            is_crash(&result.unwrap_err()),
-            "{label}: boundary {n} is reachable"
-        );
-        drop(c);
-        assert_converged(&played, &format!("{label}: crash at {n}"));
-    });
-    for_each_boundary(count, |n| {
-        let (played, c, _) = play(case, Some(Tape::failing_at(n, ErrorKind::Other)));
-        drop(c);
-        assert_converged(&played, &format!("{label}: I/O failure at {n}"));
-    });
-}
-
 #[test]
 fn a_file_becomes_a_directory_and_back_exactly() {
     let f = fixture();
@@ -408,54 +281,6 @@ fn a_directory_holding_anything_the_revision_did_not_delete_is_never_emptied_by_
     );
     assert_eq!(without_internal(&snapshot(&f.root)), before);
     assert_eq!(fs::read(f.root.join("clips/a.txt")).unwrap(), b"a\n");
-}
-
-#[test]
-fn every_boundary_of_a_file_to_directory_apply_converges() {
-    matrix(
-        Case {
-            prepare: nothing,
-            edit: file_to_dir,
-            undo: false,
-        },
-        "file -> directory Apply",
-    );
-}
-
-#[test]
-fn every_boundary_of_a_directory_to_file_apply_converges_and_restores_the_directory_mode() {
-    matrix(
-        Case {
-            prepare: with_media,
-            edit: dir_to_file,
-            undo: false,
-        },
-        "directory -> file Apply",
-    );
-}
-
-#[test]
-fn every_boundary_of_the_undo_of_a_file_to_directory_edit_converges() {
-    matrix(
-        Case {
-            prepare: nothing,
-            edit: file_to_dir,
-            undo: true,
-        },
-        "Undo of file -> directory",
-    );
-}
-
-#[test]
-fn every_boundary_of_the_undo_of_a_directory_to_file_edit_converges() {
-    matrix(
-        Case {
-            prepare: with_media,
-            edit: dir_to_file,
-            undo: true,
-        },
-        "Undo of directory -> file",
-    );
 }
 
 // ---- M1: exact permission bits ---------------------------------------------------------

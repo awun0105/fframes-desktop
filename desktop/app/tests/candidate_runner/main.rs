@@ -1,6 +1,6 @@
 //! Candidate validation and the six project tools against a real preview-worker process
 //! (a deterministic python worker installed by an injected compiler) and the real shared
-//! build service. No SDK is needed; real-SDK checks live in `real_sdk_candidates.rs`.
+//! build service. No SDK is needed.
 use serde_json::{Value, json};
 use std::{
     fs,

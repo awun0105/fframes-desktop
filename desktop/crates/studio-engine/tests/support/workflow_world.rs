@@ -434,11 +434,6 @@ impl World {
         self.wf().submit("plan brief").unwrap();
     }
 
-    fn submit_scoped_plan(&self, brief: &str, scope: TaskScope, turns: &[Value]) {
-        self.set_plan(turns);
-        self.wf().submit_scoped(brief, scope).unwrap();
-    }
-
     fn evidence(&self, name: &str) -> Vec<Value> {
         fs::read_to_string(self.agent.join(name))
             .unwrap_or_default()

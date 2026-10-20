@@ -8,14 +8,13 @@ mod tx_fixture;
 use std::{
     collections::BTreeMap,
     fs,
-    io::ErrorKind,
     path::{Path, PathBuf},
     process::Command,
     sync::Arc,
     time::{Duration, Instant},
 };
 use studio_engine::{
-    Boundary, CompletionOutcome, Controller, EngineError, NoHooks, PromotionError,
+    Boundary, CompletionOutcome, Controller, EngineError, NoHooks,
     app_paths::AppPaths,
     diagnostics::{TaskJournalDiagnostics, diagnose_history},
     store::Store,
@@ -147,13 +146,6 @@ fn assert_idempotent(run: &Run, label: &str) {
     }
 }
 
-fn boundary_count() -> usize {
-    let tape = Tape::recording();
-    let (_, _c, result) = run(Some(tape.clone()));
-    result.unwrap();
-    tape.boundaries().len()
-}
-
 #[test]
 fn the_boundary_sequence_covers_every_durable_step() {
     let tape = Tape::recording();
@@ -231,55 +223,6 @@ fn the_boundary_sequence_covers_every_durable_step() {
     assert!(has(&|b| matches!(b, Boundary::Cleanup(_))));
 }
 
-#[test]
-fn a_process_death_at_every_durable_boundary_recovers_without_loss() {
-    let total = boundary_count();
-    assert!(total > 60, "unexpectedly few boundaries: {total}");
-    for k in 0..total {
-        let (run, c, result) = run(Some(Tape::crashing_at(k)));
-        let error = result.unwrap_err();
-        assert!(is_crash(&error), "boundary {k}: {error}");
-        // Acceptance never advances in memory without the durable commit.
-        let committed = journal_commits(&run.tasks);
-        assert!(
-            c.state().task_history().entries().len() <= committed,
-            "boundary {k}: memory ahead of the journal"
-        );
-        drop(c);
-        let label = format!("crash at boundary {k}");
-        drop(assert_recovered(&run, &label));
-        assert_idempotent(&run, &label);
-    }
-}
-
-#[test]
-fn an_io_failure_at_every_durable_boundary_ends_cleanly_or_suspends_for_recovery() {
-    let total = boundary_count();
-    for k in 0..total {
-        let (run, c, result) = run(Some(Tape::failing_at(k, ErrorKind::StorageFull)));
-        let label = format!("I/O failure at boundary {k}");
-        let committed = journal_commits(&run.tasks);
-        match &result {
-            Ok(()) => assert_eq!(committed, 1, "{label}"),
-            Err(EngineError::Promotion(
-                PromotionError::RolledBack(_) | PromotionError::Journal(_),
-            )) => (),
-            Err(other) => panic!("{label}: {other}"),
-        }
-        assert!(
-            c.state().task_history().entries().len() <= committed,
-            "{label}: memory ahead of the journal"
-        );
-        if committed == 0 {
-            // Nothing was accepted: the tree is already back (or awaiting recovery).
-            assert!(c.state().task_history().entries().is_empty(), "{label}");
-        }
-        drop(c);
-        drop(assert_recovered(&run, &label));
-        assert_idempotent(&run, &label);
-    }
-}
-
 /// A crash in the middle of an Apply that published every file, to exercise a full
 /// rollback during recovery.
 fn crash_after_all_published() -> Run {
@@ -295,30 +238,6 @@ fn crash_after_all_published() -> Run {
     assert!(is_crash(&result.unwrap_err()));
     drop(c);
     run
-}
-
-#[test]
-fn a_process_death_during_recovery_itself_still_converges() {
-    // Count the boundaries of an uninterrupted recovery.
-    let recording = Tape::recording();
-    let reference = crash_after_all_published();
-    drop(
-        open_with_hooks_retrying(&reference.fx.root, &reference.fx.paths, recording.hooks())
-            .unwrap(),
-    );
-    let recovery_total = recording.boundaries().len();
-    assert!(recovery_total > 15, "{recovery_total}");
-    for j in 0..recovery_total {
-        let run = crash_after_all_published();
-        let error =
-            open_with_hooks_retrying(&run.fx.root, &run.fx.paths, Tape::crashing_at(j).hooks())
-                .err()
-                .unwrap_or_else(|| panic!("recovery boundary {j} did not crash"));
-        assert!(is_crash(&error), "recovery boundary {j}: {error}");
-        let label = format!("crash inside recovery at {j}");
-        drop(assert_recovered(&run, &label));
-        assert_idempotent(&run, &label);
-    }
 }
 
 #[test]

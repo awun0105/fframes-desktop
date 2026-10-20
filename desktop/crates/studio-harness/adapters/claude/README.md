@@ -15,11 +15,8 @@ existing uncorrected installations are left alone and are not reused as this
 revision. For an existing ACP profile, use **Install adapter** and **Select** to use
 the corrected install. Saved custom launch paths are not rewritten.
 
-The ignored `claude_acp_real_cli` integration test installs through the production
-installer, runs `advisor-result.test.mjs` against that actual module, then checks a
-denied and approved edit using signed-in Claude. It requires absolute `FFRAMES_NODE`
-and `FFRAMES_NPM` paths and an isolated `ACP_ADAPTER_HOME` cache. No model call is
-needed to run the JavaScript conversion regression directly:
+Run the JavaScript conversion regression against the installed module; no model call is
+needed:
 
 ```text
 node advisor-result.test.mjs <installed-package>/dist/acp-agent.js
