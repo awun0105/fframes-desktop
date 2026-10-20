@@ -9,9 +9,9 @@
   const label = figure.querySelector("[data-gate-label]");
   const index = figure.querySelector(".readout-index");
   const ready = document.querySelector("[data-readiness]");
-  const supporting = [...document.querySelectorAll("[data-scroll-figure]")].map(
-    element => ({ element, top: 0, height: 0, last: -1 })
-  );
+  const supporting = [
+    ...document.querySelectorAll("[data-scroll-figure], [data-explanation]"),
+  ].map(element => ({ element, top: 0, height: 0, last: -1 }));
   const motion = window.studioScrollMotion;
   const mobile = matchMedia("(max-width: 760px)");
   const clamp = x => Math.max(0, Math.min(1, x));
@@ -65,10 +65,11 @@
       const a = ramp(progress, 0, 0.35),
         b = ramp(progress, 0.2, 0.65),
         c = ramp(progress, 0.5, 0.95);
-      item.element.style.setProperty("--support-b-y", `${30 * (1 - b)}px`);
-      item.element.style.setProperty("--support-c-y", `${48 * (1 - c)}px`);
-      item.element.style.setProperty("--support-travel", `${32 * b}px`);
+      // Nodes and connector endpoints share fixed geometry; move the signal,
+      // not a connected card independently of its line.
+      item.element.style.setProperty("--support-travel", `${24 * b}px`);
       item.element.style.setProperty("--support-line", a);
+      item.element.style.setProperty("--support-middle", b);
       item.element.style.setProperty("--support-return", c);
       item.element.style.setProperty("--support-packet", a * (1 - c));
     }
@@ -99,8 +100,7 @@
           "--plane-y",
           `${(i - 2) * 42 * (1 - opened)}px`
         );
-        const focus = ramp(p, i - 0.4, i) * (1 - ramp(p, i + 0.2, i + 0.6));
-        plane.style.setProperty("--plane-x", `${-38 * focus}px`);
+        plane.style.setProperty("--plane-x", "0px");
       });
       const current = Math.min(4, Math.floor(p + 0.12));
       if (current !== last) {

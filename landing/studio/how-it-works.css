@@ -628,14 +628,135 @@
   fill: #e9a7be;
   stroke: #c57894;
 }
+.support-arrow {
+  fill: none;
+  stroke: #7b9581;
+  stroke-width: 1.5;
+}
+.support-context [data-optional-link],
+.support-optional {
+  stroke-dasharray: 4 5;
+}
+.internals-motion .support-context [data-optional-link] {
+  stroke-dasharray: 4 5;
+  stroke-dashoffset: 0;
+  opacity: calc(0.4 + 0.6 * var(--support-return, 1));
+}
+.support-baseline {
+  stroke: #6c9475;
+  stroke-width: 1.5;
+  fill: none;
+}
+.transaction-explanations {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 36px;
+  margin-top: 24px;
+}
+.explanation-figure .diagram-scroll svg {
+  max-width: 1120px;
+  min-width: 640px;
+}
+.pipeline-explanations {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
+  margin-top: 64px;
+}
+.explanation-process .diagram-scroll svg {
+  min-width: 800px;
+}
+.explanation-containment .diagram-scroll svg {
+  min-width: 760px;
+}
+.ex-node rect {
+  stroke: #98a99b;
+  stroke-width: 1;
+}
+.ex-paper {
+  fill: #fafbf8;
+}
+.ex-blue {
+  fill: #e3eefb;
+}
+.ex-green {
+  fill: #e4eddf;
+}
+.ex-amber {
+  fill: #f3f1df;
+}
+.ex-boundary {
+  fill: none;
+  stroke: #9fb2a2;
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+.ex-title {
+  font: 500 14px var(--mono);
+  fill: #334a3b;
+}
+.ex-copy {
+  font: 12px var(--mono);
+  fill: #55685a;
+}
+.ex-label {
+  font: 10px var(--mono);
+  letter-spacing: 0.4px;
+  fill: #5a7061;
+}
+.ex-or {
+  font:
+    20px "Geist",
+    Arial,
+    sans-serif;
+  fill: #6b7f70;
+}
+.ex-structure {
+  stroke: #bdc8be;
+  fill: none;
+  stroke-width: 1;
+}
+.ex-path {
+  stroke: #609074;
+  fill: none;
+  stroke-width: 1.5;
+}
+.ex-arrow {
+  fill: none;
+  stroke: #609074;
+  stroke-width: 1.5;
+}
+.ex-escape {
+  stroke: #8a7051;
+}
+.ex-stop {
+  stroke: #8a7051;
+  stroke-width: 2;
+  fill: none;
+}
+.internals-motion .ex-step-a {
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--support-line, 1));
+}
+.internals-motion .ex-step-b {
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--support-middle, 1));
+}
+.internals-motion .ex-step-c {
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--support-return, 1));
+}
+.internals-motion .ex-confirm {
+  opacity: calc(0.75 + 0.25 * var(--support-return, 1));
+}
+@media (max-width: 1100px) {
+  .transaction-explanations {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
 .support-packet {
   display: none;
-}
-.internals-motion .support-b {
-  transform: translateY(var(--support-b-y, 0px));
-}
-.internals-motion .support-c {
-  transform: translateY(var(--support-c-y, 0px));
 }
 .internals-motion .support-connector {
   stroke-dasharray: 1;

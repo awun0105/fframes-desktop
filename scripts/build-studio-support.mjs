@@ -16,7 +16,7 @@ const figure = (
   <p class="diagram-hint">Scroll the diagram sideways <span aria-hidden="true">↔</span></p>
   <div class="support-scroll" tabindex="0" role="region" aria-label="${title}; scroll horizontally on small screens">
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="${id}-title ${id}-desc">
-    <title id="${id}-title">${title}</title><desc id="${id}-desc">${description}</desc>${body}</svg>
+    <title id="${id}-title">${title}</title><desc id="${id}-desc">${description}</desc><defs><marker id="support-${id}-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="m1 1 8 4-8 4" class="support-arrow"/></marker></defs>${body.replaceAll('class="support-connector"', `class="support-connector" marker-end="url(#support-${id}-arrow)"`).replaceAll('class="support-return"', `class="support-return" marker-end="url(#support-${id}-arrow)"`)}</svg>
   </div><figcaption>${caption}</figcaption>
 </figure>`;
 const context = figure(
@@ -25,14 +25,13 @@ const context = figure(
   "A selected title supplies project context",
   "A selected title supplies a stable editor key. A registered source anchor can add source context. It is optional and supplied by the project.",
   `
-<path d="M44 285H856" class="support-guide"/>
-<g class="support-part support-a"><rect x="30" y="56" width="260" height="206" rx="4" class="support-paper"/><path d="M30 87H290" class="support-line"/><text x="47" y="76" class="support-small">01 / CURRENT FRAME</text><text x="79" y="184" class="support-headline">Hello.</text><path d="M67 134v-12h15m133 12v-12h-15M67 195v12h15m133-12v12h-15" class="support-selection"/><text x="47" y="242" class="support-small">Selected object · headline</text></g>
-<path d="M302 158H346" class="support-connector" pathLength="1"/><g class="support-packet"><rect x="303" y="152" width="12" height="12" rx="2" class="support-pink"/></g>
-<g class="support-part support-b"><rect x="355" y="91" width="250" height="171" rx="4" class="support-blue"/><text x="375" y="118" class="support-small">02 / STABLE EDITOR KEY</text><text x="375" y="159" class="support-code">intro / starter-title</text><text x="375" y="184" class="support-code">headline / primary</text><path d="M375 207H584" class="support-line"/><text x="375" y="239" class="support-small">Identity from the project</text></g>
-<path d="M617 176H656" class="support-connector" pathLength="1"/>
-<g class="support-part support-c"><rect x="665" y="126" width="205" height="136" rx="4" class="support-green"/><text x="685" y="153" class="support-small">03 / OPTIONAL ANCHOR</text><text x="685" y="192" class="support-code">src/lib.rs</text><text x="685" y="218" class="support-code">render_frame</text><text x="685" y="244" class="support-small">When registered</text></g>
-<text x="30" y="320" class="support-small">VISIBLE OBJECT</text><text x="870" y="320" text-anchor="end" class="support-small">USEFUL CONTEXT FOR THE AGENT →</text>`,
-  "Illustrative title with a project-registered anchor. Selection identifies context; it does not edit the source."
+<g class="support-part support-a" data-support-node="selected-frame"><rect x="30" y="65" width="250" height="210" rx="4" class="support-paper"/><path d="M30 99H280" class="support-line"/><text x="48" y="88" class="support-small">01 / SELECTED FRAME</text><text x="78" y="183" class="support-headline">Hello.</text><path d="M66 133v-12h15m127 12v-12h-15M66 197v12h15m127-12v12h-15" class="support-selection"/><text x="48" y="252" class="support-small">Selected object · headline</text></g>
+<path d="M292 167H333" class="support-connector" pathLength="1"/><g class="support-packet"><rect x="296" y="161" width="12" height="12" rx="2" class="support-pink"/></g>
+<g class="support-part support-b" data-support-node="object-identity"><rect x="345" y="65" width="250" height="210" rx="4" class="support-blue"/><text x="365" y="95" class="support-small">02 / OBJECT IDENTITY</text><text x="365" y="143" class="support-code">intro / starter-title</text><text x="365" y="171" class="support-code">headline / primary</text><path d="M365 204H575" class="support-line"/><text x="365" y="230" class="support-small">From this frame’s</text><text x="365" y="250" class="support-small">object map</text></g>
+<path d="M607 185H648" class="support-connector" data-optional-link/>
+<g class="support-part support-c" data-support-node="optional-anchor"><rect x="660" y="110" width="210" height="165" rx="4" class="support-paper support-optional"/><text x="680" y="141" class="support-small">03 / SOURCE ANCHOR</text><text x="680" y="180" class="support-code">src/lib.rs</text><text x="680" y="207" class="support-code">render_frame</text><text x="680" y="250" class="support-small">Only if registered</text></g>
+<text x="30" y="322" class="support-small">SELECTION PROVIDES CONTEXT. IT DOES NOT EDIT SOURCE.</text>`,
+  "Frame → stable object identity → optional source anchor. Without a registered anchor, Studio does not infer a source location."
 );
 const broker = figure(
   "broker",
@@ -56,14 +55,14 @@ const recovery = figure(
   "Recovery keeps the accepted revision and retains the draft",
   "After an interruption, the last accepted revision remains the recovery point. Unfinished work is marked interrupted and its draft retained. The draft does not become the accepted revision.",
   `
-<g class="support-part support-a"><rect x="25" y="45" width="250" height="170" rx="4" class="support-green"/><text x="47" y="76" class="support-small">LAST ACCEPTED REVISION</text><text x="47" y="130" class="support-headline">Kept.</text><path d="m48 172 7 7 14-17" class="support-check"/><text x="81" y="179" class="support-code">Recovery point</text></g>
-<g class="support-part support-b"><rect x="326" y="71" width="236" height="144" rx="4" class="support-paper"/><text x="348" y="102" class="support-small">UNFINISHED TASK</text><path d="M350 126h8v27h-8Zm15 0h8v27h-8Z" class="support-pause"/><text x="348" y="183" class="support-code">Marked interrupted</text></g>
-<path d="M574 144H618" class="support-connector" pathLength="1"/><g class="support-packet"><rect x="579" y="138" width="12" height="12" rx="2" class="support-pink"/></g>
-<g class="support-part support-c"><rect x="632" y="98" width="243" height="117" rx="4" class="support-blue"/><text x="654" y="130" class="support-small">RETAINED DRAFT</text><text x="654" y="169" class="support-code">Unfinished work remains.</text><text x="654" y="193" class="support-small">Available after recovery</text></g>
-<path d="M26 247H875" class="support-guide"/><text x="26" y="278" class="support-small">ACCEPTED FILES REMAIN THE BASELINE</text><text x="875" y="278" text-anchor="end" class="support-small">DRAFT ≠ ACCEPTED REVISION</text>`,
-  "Recovery model, not a recording of the application. An exited process does not prove that an edit succeeded.",
+<g class="support-part support-a" data-support-node="accepted-baseline"><rect x="25" y="65" width="250" height="185" rx="4" class="support-green"/><text x="45" y="96" class="support-small">ACCEPTED REVISION</text><text x="45" y="153" class="support-headline">Kept.</text><path d="m46 200 7 7 14-17" class="support-check"/><text x="80" y="207" class="support-code">Recovery baseline</text></g>
+<g class="support-part support-b" data-support-node="interrupted-task"><rect x="335" y="65" width="230" height="145" rx="4" class="support-paper"/><text x="355" y="96" class="support-small">UNFINISHED TASK</text><path d="M357 116h7v24h-7Zm14 0h7v24h-7Z" class="support-pause"/><text x="355" y="181" class="support-code">Marked interrupted</text></g>
+<path d="M577 137H623" class="support-connector" pathLength="1"/><g class="support-packet"><rect x="582" y="131" width="12" height="12" rx="2" class="support-blue"/></g>
+<g class="support-part support-c" data-support-node="retained-draft"><rect x="635" y="65" width="240" height="145" rx="4" class="support-blue"/><text x="655" y="96" class="support-small">RETAINED DRAFT</text><text x="655" y="143" class="support-code">Unfinished work remains.</text><text x="655" y="181" class="support-small">Available after recovery</text></g>
+<path d="M25 285H275" class="support-baseline"/><path d="M335 285H875" class="support-guide"/><text x="25" y="324" class="support-small">ACCEPTED FILES ARE THE BASELINE</text><text x="875" y="324" text-anchor="end" class="support-small">RETAINED DRAFT ≠ ACCEPTED REVISION</text>`,
+  "Two separate outcomes: recover the accepted revision and retain the interrupted draft. Retaining a draft does not accept it.",
   900,
-  310
+  350
 );
 let html = readFileSync(file, "utf8");
 if (!html.includes("<!-- support:context -->")) {

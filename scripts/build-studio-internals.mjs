@@ -32,7 +32,7 @@ const readiness = `<p class="diagram-hint">Scroll the diagram sideways <span ari
 <g class="prepare-lane"><rect x="385" y="133" width="255" height="42" class="prepare-fill"/></g><text x="401" y="159" class="lane-copy">Prepare worker, frame, audio</text>
 <g class="ready-lane"><rect x="640" y="133" width="224" height="42" class="ready-fill"/></g><text x="660" y="159" class="lane-copy">Ready to replace</text>
 <g class="readiness-marker"><path d="M152 22V190"/><path d="m146 22 6 8 6-8Z"/></g>
-<g class="handoff-marker"><path d="M750 82v43m-6-7 6 7 6-7"/><text x="750" y="222" text-anchor="middle" class="lane-label">SWITCH AT THE PLAYHEAD</text><text x="750" y="243" text-anchor="middle" class="gate-subtitle">Worker · frame · audio together</text></g>
+<g class="handoff-marker"><path d="M864 82v43m-6-7 6 7 6-7"/><text x="864" y="222" text-anchor="end" class="lane-label">SWITCH AT THE PLAYHEAD</text><text x="864" y="243" text-anchor="end" class="gate-subtitle">Worker · frame · audio together</text></g>
 <text x="152" y="243" class="gate-subtitle">Compile alone is not readiness.</text></svg>`;
 let html = readFileSync(file, "utf8");
 for (const [name, drawing] of Object.entries({ gates, readiness })) {

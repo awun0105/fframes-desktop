@@ -120,149 +120,226 @@
             own process. Your video runs in a separate preview worker.
           </p>
         </div>
-        <figure class="technical-figure process-figure">
+        <!-- explanations:process -->
+        <figure
+          class="technical-figure explanation-figure explanation-process"
+          data-explanation="process"
+        >
           <div class="figure-heading">
-            <span class="eyebrow">PROCESS MAP</span
+            <span class="eyebrow">WHO DOES WHAT</span
             ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">
-            Scroll the diagram sideways <span aria-hidden="true">↔</span>
-          </p>
+          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
           <div
             class="diagram-scroll"
             tabindex="0"
             role="region"
-            aria-label="Process map; scroll horizontally on small screens"
+            aria-label="Studio, the coding agent and preview worker are separate processes; scroll horizontally on small screens"
           >
-            <!-- fig:proc --><svg
-              viewBox="0 0 880 450"
+            <svg
+              viewBox="0 0 1000 555"
               role="img"
-              aria-labelledby="fig-proc-t fig-proc-d"
-              style="--min: 640px"
+              aria-labelledby="ex-process-t ex-process-d"
             >
-              <title id="fig-proc-t">Studio’s processes</title>
-              <desc id="fig-proc-d">
-                Inside the Studio process: the UI thread, the engine thread, the
-                agent workflow, the build service, the journal and the tool
-                broker. Outside: the coding agent, which edits a draft copy and
-                calls the tool broker, and the preview worker, your video
-                compiled as its own program.
+              <title id="ex-process-t">
+                Studio, the coding agent and preview worker are separate
+                processes
+              </title>
+              <desc id="ex-process-d">
+                Studio holds the UI, engine, task workflow, build service,
+                journal and read-only broker. A managed coding-agent process
+                edits its draft. The build service prepares a separate preview
+                worker. Directed paths illustrate launch, tool calls and preview
+                preparation.
               </desc>
-              <rect x="20" y="24" width="470" height="380" class="f-faint" />
-              <text x="32" y="44" class="f-title">fframes-studio process</text>
+              <defs>
+                <marker
+                  id="ex-process-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="m1 1 8 4-8 4" class="ex-arrow" />
+                </marker>
+              </defs>
               <rect
-                x="40"
-                y="64"
-                width="200"
-                height="52"
-                class="t-blue f-line"
+                x="25"
+                y="48"
+                width="570"
+                height="450"
+                rx="5"
+                class="ex-boundary"
               />
-              <text x="52" y="86" class="f-label">UI thread</text>
-              <text x="52" y="102" class="f-small">draws only</text>
-              <rect
-                x="270"
-                y="64"
-                width="200"
-                height="52"
-                class="t-paper f-line"
+              <text x="43" y="33" class="ex-label">STUDIO APPLICATION</text>
+              <g class="ex-node" data-ex-node="ui">
+                <rect
+                  x="55"
+                  y="90"
+                  width="220"
+                  height="90"
+                  rx="4"
+                  class="ex-blue"
+                />
+                <text x="73" y="120" class="ex-title">UI + interaction</text>
+                <text x="73" y="145" class="ex-copy">
+                  Draws; forwards input
+                </text>
+              </g>
+              <g class="ex-node" data-ex-node="engine">
+                <rect
+                  x="315"
+                  y="90"
+                  width="250"
+                  height="90"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="333" y="120" class="ex-title">Engine state</text>
+                <text x="333" y="145" class="ex-copy">Serialized commands</text>
+              </g>
+              <g class="ex-node" data-ex-node="workflow">
+                <rect
+                  x="55"
+                  y="240"
+                  width="220"
+                  height="95"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="73" y="270" class="ex-title">Agent workflow</text>
+                <text x="73" y="295" class="ex-copy">
+                  Task + draft lifecycle
+                </text>
+              </g>
+              <g class="ex-node" data-ex-node="build">
+                <rect
+                  x="315"
+                  y="240"
+                  width="250"
+                  height="95"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="333" y="270" class="ex-title">Build service</text>
+                <text x="333" y="295" class="ex-copy">
+                  Shared, keyed builds
+                </text>
+              </g>
+              <g class="ex-node" data-ex-node="journal">
+                <rect
+                  x="55"
+                  y="390"
+                  width="220"
+                  height="80"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="73" y="420" class="ex-title">Journal + store</text>
+                <text x="73" y="445" class="ex-copy">History + recovery</text>
+              </g>
+              <g class="ex-node" data-ex-node="broker">
+                <rect
+                  x="315"
+                  y="390"
+                  width="250"
+                  height="80"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="333" y="420" class="ex-title">Read-only broker</text>
+                <text x="333" y="445" class="ex-copy">
+                  Project facts + output
+                </text>
+              </g>
+              <path
+                d="M275 135H315M440 180V240M165 180V240M165 335V390"
+                class="ex-structure"
               />
-              <text x="282" y="86" class="f-label">Engine thread</text>
-              <text x="282" y="102" class="f-small">one job at a time</text>
-              <rect
-                x="40"
-                y="176"
-                width="200"
-                height="52"
-                class="t-paper f-line"
+              <g class="ex-node" data-ex-node="agent">
+                <rect
+                  x="650"
+                  y="80"
+                  width="300"
+                  height="110"
+                  rx="4"
+                  class="ex-blue"
+                />
+                <text x="668" y="110" class="ex-title">Coding agent</text>
+                <text x="668" y="135" class="ex-copy">
+                  Managed child process
+                </text>
+                <text x="668" y="155" class="ex-copy">
+                  Edits its draft copy
+                </text>
+              </g>
+              <g class="ex-node" data-ex-node="draft">
+                <rect
+                  x="650"
+                  y="230"
+                  width="300"
+                  height="90"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="668" y="260" class="ex-title">Agent draft</text>
+                <text x="668" y="285" class="ex-copy">
+                  Separate working files
+                </text>
+              </g>
+              <g class="ex-node" data-ex-node="worker">
+                <rect
+                  x="650"
+                  y="380"
+                  width="300"
+                  height="110"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="668" y="410" class="ex-title">Preview worker</text>
+                <text x="668" y="435" class="ex-copy">Your compiled video</text>
+                <text x="668" y="455" class="ex-copy">
+                  Frames · timing · audio
+                </text>
+              </g>
+              <path
+                class="ex-path ex-step-a"
+                d="M275 280H292V210H630V125H650"
+                pathLength="1"
+                marker-end="url(#ex-process-arrow)"
               />
-              <text x="52" y="198" class="f-label">Agent workflow</text>
-              <text x="52" y="214" class="f-small">task state machine</text>
-              <rect
-                x="270"
-                y="176"
-                width="200"
-                height="52"
-                class="t-paper f-line"
+              <path
+                class="ex-path ex-step-a"
+                d="M800 190V230"
+                pathLength="1"
+                marker-end="url(#ex-process-arrow)"
               />
-              <text x="282" y="198" class="f-label">Build service</text>
-              <text x="282" y="214" class="f-small">one build per key</text>
-              <rect
-                x="40"
-                y="288"
-                width="200"
-                height="52"
-                class="t-paper f-line"
+              <path
+                class="ex-path ex-step-b"
+                d="M650 165H610V430H565"
+                pathLength="1"
+                marker-end="url(#ex-process-arrow)"
               />
-              <text x="52" y="310" class="f-label">Journal + store</text>
-              <text x="52" y="326" class="f-small">history, recovery</text>
-              <rect
-                x="270"
-                y="288"
-                width="200"
-                height="52"
-                class="t-paper f-line"
+              <text x="650" y="354" class="ex-label">TOOLS</text>
+              <path
+                class="ex-path ex-step-c"
+                d="M565 288H628V435H650"
+                pathLength="1"
+                marker-end="url(#ex-process-arrow)"
               />
-              <text x="282" y="310" class="f-label">Tool broker</text>
-              <text x="282" y="326" class="f-small">read-only tools</text>
-              <line x1="240" y1="90" x2="270" y2="90" class="f-line" />
-              <line x1="140" y1="116" x2="140" y2="176" class="f-line" />
-              <line x1="370" y1="116" x2="370" y2="176" class="f-line" />
-              <line x1="240" y1="202" x2="270" y2="202" class="f-line" />
-              <line x1="140" y1="228" x2="140" y2="288" class="f-line" />
-              <path d="M200 228 V258 H370 V288" class="f-line" />
-              <rect
-                x="560"
-                y="140"
-                width="300"
-                height="88"
-                class="t-dark f-line"
-              />
-              <text x="574" y="164" class="f-on-dark">Coding agent</text>
-              <text x="574" y="182" class="f-small-dark">
-                contained process
+              <text x="650" y="530" class="ex-label">
+                SEPARATE WORKER, SEPARATE PROCESS
               </text>
-              <text x="574" y="198" class="f-small-dark">
-                edits the draft copy
-              </text>
-              <rect
-                x="560"
-                y="30"
-                width="170"
-                height="52"
-                class="t-grey f-line"
-              />
-              <text x="572" y="52" class="f-label">Draft copy</text>
-              <text x="572" y="68" class="f-small">app data</text>
-              <line x1="645" y1="140" x2="645" y2="82" class="f-line" />
-              <path d="M200 176 V150 H560" class="f-line k-red" />
-              <text x="300" y="144" class="f-small c-red">
-                claude · codex · acp
-              </text>
-              <path d="M470 314 H620 V228" class="f-line" />
-              <text x="630" y="264" class="f-small">mcp / cli</text>
-              <rect
-                x="560"
-                y="330"
-                width="300"
-                height="88"
-                class="t-yellow f-line"
-              />
-              <text x="574" y="354" class="f-label">Preview worker</text>
-              <text x="574" y="372" class="f-small">your video, compiled</text>
-              <text x="574" y="388" class="f-small">
-                frames · timeline · audio
-              </text>
-              <path d="M470 90 H530 V374 H560" class="f-line k-blue" />
-              <text x="540" y="440" class="f-small c-blue">
-                preview protocol
-              </text></svg
-            ><!-- /fig:proc -->
+            </svg>
           </div>
           <figcaption>
-            A video crash ends the preview worker, while the Studio app remains
-            a separate process.
+            Responsibility map, not a complete call graph. The agent owns draft
+            edits; the preview worker remains separate from the Studio UI.
           </figcaption>
         </figure>
+        <!-- /explanations:process -->
       </section>
       <section
         class="transaction"
@@ -523,6 +600,263 @@
           </nav>
         </figure>
       </section>
+      <div class="transaction-explanations">
+        <!-- explanations:capture -->
+        <figure
+          class="technical-figure explanation-figure explanation-capture"
+          data-explanation="capture"
+        >
+          <div class="figure-heading">
+            <span class="eyebrow">WHY CAPTURE TWICE?</span
+            ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
+          </div>
+          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
+          <div
+            class="diagram-scroll"
+            tabindex="0"
+            role="region"
+            aria-label="Only matching captures proceed to validation; scroll horizontally on small screens"
+          >
+            <svg
+              viewBox="0 0 760 395"
+              role="img"
+              aria-labelledby="ex-capture-t ex-capture-d"
+            >
+              <title id="ex-capture-t">
+                Only matching captures proceed to validation
+              </title>
+              <desc id="ex-capture-d">
+                Once the writer is quiescent, Studio captures the draft twice.
+                Matching bytes can proceed to validation. Any difference fails
+                the capture.
+              </desc>
+              <defs>
+                <marker
+                  id="ex-capture-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="m1 1 8 4-8 4" class="ex-arrow" />
+                </marker>
+              </defs>
+              <g class="ex-node" data-ex-node="writer">
+                <rect
+                  x="25"
+                  y="125"
+                  width="180"
+                  height="125"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="43" y="155" class="ex-title">Writer quiescent</text>
+                <text x="43" y="180" class="ex-copy">Draft is ready</text>
+                <text x="43" y="200" class="ex-copy">for capture</text>
+              </g>
+              <g class="ex-node" data-ex-node="capture-a">
+                <rect
+                  x="265"
+                  y="45"
+                  width="205"
+                  height="100"
+                  rx="4"
+                  class="ex-blue"
+                />
+                <text x="283" y="75" class="ex-title">Capture A</text>
+                <text x="283" y="100" class="ex-copy">Captured bytes</text>
+              </g>
+              <g class="ex-node" data-ex-node="capture-b">
+                <rect
+                  x="265"
+                  y="225"
+                  width="205"
+                  height="100"
+                  rx="4"
+                  class="ex-blue"
+                />
+                <text x="283" y="255" class="ex-title">Capture B</text>
+                <text x="283" y="280" class="ex-copy">Captured bytes</text>
+              </g>
+              <path
+                class="ex-path ex-step-a"
+                d="M205 175H235V95H265"
+                pathLength="1"
+                marker-end="url(#ex-capture-arrow)"
+              />
+              <path
+                class="ex-path ex-step-b"
+                d="M205 195H235V275H265"
+                pathLength="1"
+                marker-end="url(#ex-capture-arrow)"
+              />
+              <path
+                class="ex-path ex-step-c"
+                d="M470 95H510V180H550"
+                pathLength="1"
+                marker-end="url(#ex-capture-arrow)"
+              />
+              <path
+                class="ex-path ex-step-c"
+                d="M470 275H510V200H550"
+                pathLength="1"
+                marker-end="url(#ex-capture-arrow)"
+              />
+              <g class="ex-node ex-confirm" data-ex-node="matching">
+                <rect
+                  x="550"
+                  y="135"
+                  width="185"
+                  height="120"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="568" y="165" class="ex-title">Same bytes?</text>
+                <text x="568" y="190" class="ex-copy">Yes → validate</text>
+                <text x="568" y="210" class="ex-copy">No → refuse capture</text>
+              </g>
+              <text x="25" y="370" class="ex-label">
+                A CHANGING DRAFT DOES NOT PROCEED
+              </text>
+            </svg>
+          </div>
+          <figcaption>
+            Two captures are compared after writer quiescence. A compile success
+            cannot replace this capture check.
+          </figcaption>
+        </figure>
+        <!-- /explanations:capture --><!-- explanations:review -->
+        <figure
+          class="technical-figure explanation-figure explanation-review"
+          data-explanation="review"
+        >
+          <div class="figure-heading">
+            <span class="eyebrow">TWO POLICIES, ONE ACCEPTANCE BOUNDARY</span
+            ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
+          </div>
+          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
+          <div
+            class="diagram-scroll"
+            tabindex="0"
+            role="region"
+            aria-label="Automatic application or manual Apply; scroll horizontally on small screens"
+          >
+            <svg
+              viewBox="0 0 760 405"
+              role="img"
+              aria-labelledby="ex-review-t ex-review-d"
+            >
+              <title id="ex-review-t">
+                Automatic application or manual Apply
+              </title>
+              <desc id="ex-review-d">
+                The default policy applies a validated candidate automatically.
+                The optional manual policy waits for Apply. Both publish through
+                the same guarded transaction. A changed file subset is validated
+                again.
+              </desc>
+              <defs>
+                <marker
+                  id="ex-review-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="m1 1 8 4-8 4" class="ex-arrow" />
+                </marker>
+              </defs>
+              <g class="ex-node" data-ex-node="candidate">
+                <rect
+                  x="25"
+                  y="135"
+                  width="200"
+                  height="120"
+                  rx="4"
+                  class="ex-blue"
+                />
+                <text x="43" y="165" class="ex-title">Validated candidate</text>
+                <text x="43" y="190" class="ex-copy">Checks completed</text>
+                <text x="43" y="210" class="ex-copy">for this candidate</text>
+              </g>
+              <g class="ex-node" data-ex-node="automatic">
+                <rect
+                  x="300"
+                  y="40"
+                  width="195"
+                  height="100"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="318" y="70" class="ex-title">Automatic</text>
+                <text x="318" y="95" class="ex-copy">Default policy</text>
+              </g>
+              <g class="ex-node" data-ex-node="manual">
+                <rect
+                  x="300"
+                  y="240"
+                  width="195"
+                  height="100"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="318" y="270" class="ex-title">Manual</text>
+                <text x="318" y="295" class="ex-copy">Wait for Apply</text>
+              </g>
+              <text x="398" y="200" text-anchor="middle" class="ex-or">OR</text>
+              <path
+                class="ex-path ex-step-a"
+                d="M225 175H260V90H300"
+                pathLength="1"
+                marker-end="url(#ex-review-arrow)"
+              />
+              <path
+                class="ex-path ex-step-b"
+                d="M225 205H260V290H300"
+                pathLength="1"
+                marker-end="url(#ex-review-arrow)"
+              />
+              <path
+                class="ex-path ex-step-c"
+                d="M495 90H530V175H565"
+                pathLength="1"
+                marker-end="url(#ex-review-arrow)"
+              />
+              <path
+                class="ex-path ex-step-c"
+                d="M495 290H530V205H565"
+                pathLength="1"
+                marker-end="url(#ex-review-arrow)"
+              />
+              <g class="ex-node ex-confirm" data-ex-node="accepted">
+                <rect
+                  x="565"
+                  y="135"
+                  width="170"
+                  height="120"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="583" y="165" class="ex-title">Accepted</text>
+                <text x="583" y="190" class="ex-copy">Guarded file-set</text>
+                <text x="583" y="210" class="ex-copy">publication</text>
+              </g>
+              <text x="25" y="380" class="ex-label">
+                SUBSET CHANGED? VALIDATE THAT SUBSET AGAIN.
+              </text>
+            </svg>
+          </div>
+          <figcaption>
+            Alternative policies, not sequential steps. Manual review is
+            optional; neither route bypasses the publication guards.
+          </figcaption>
+        </figure>
+        <!-- /explanations:review -->
+      </div>
       <section
         class="guide-section"
         id="grounding"
@@ -579,91 +913,122 @@
                 source anchor can add source context. It is optional and
                 supplied by the project.
               </desc>
-              <path d="M44 285H856" class="support-guide" />
-              <g class="support-part support-a">
+              <defs>
+                <marker
+                  id="support-context-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="m1 1 8 4-8 4" class="support-arrow" />
+                </marker>
+              </defs>
+              <g
+                class="support-part support-a"
+                data-support-node="selected-frame"
+              >
                 <rect
                   x="30"
-                  y="56"
-                  width="260"
-                  height="206"
+                  y="65"
+                  width="250"
+                  height="210"
                   rx="4"
                   class="support-paper"
                 />
-                <path d="M30 87H290" class="support-line" />
-                <text x="47" y="76" class="support-small">
-                  01 / CURRENT FRAME
+                <path d="M30 99H280" class="support-line" />
+                <text x="48" y="88" class="support-small">
+                  01 / SELECTED FRAME
                 </text>
-                <text x="79" y="184" class="support-headline">Hello.</text>
+                <text x="78" y="183" class="support-headline">Hello.</text>
                 <path
-                  d="M67 134v-12h15m133 12v-12h-15M67 195v12h15m133-12v12h-15"
+                  d="M66 133v-12h15m127 12v-12h-15M66 197v12h15m127-12v12h-15"
                   class="support-selection"
                 />
-                <text x="47" y="242" class="support-small">
+                <text x="48" y="252" class="support-small">
                   Selected object · headline
                 </text>
               </g>
-              <path d="M302 158H346" class="support-connector" pathLength="1" />
+              <path
+                d="M292 167H333"
+                class="support-connector"
+                marker-end="url(#support-context-arrow)"
+                pathLength="1"
+              />
               <g class="support-packet">
                 <rect
-                  x="303"
-                  y="152"
+                  x="296"
+                  y="161"
                   width="12"
                   height="12"
                   rx="2"
                   class="support-pink"
                 />
               </g>
-              <g class="support-part support-b">
+              <g
+                class="support-part support-b"
+                data-support-node="object-identity"
+              >
                 <rect
-                  x="355"
-                  y="91"
+                  x="345"
+                  y="65"
                   width="250"
-                  height="171"
+                  height="210"
                   rx="4"
                   class="support-blue"
                 />
-                <text x="375" y="118" class="support-small">
-                  02 / STABLE EDITOR KEY
+                <text x="365" y="95" class="support-small">
+                  02 / OBJECT IDENTITY
                 </text>
-                <text x="375" y="159" class="support-code">
+                <text x="365" y="143" class="support-code">
                   intro / starter-title
                 </text>
-                <text x="375" y="184" class="support-code">
+                <text x="365" y="171" class="support-code">
                   headline / primary
                 </text>
-                <path d="M375 207H584" class="support-line" />
-                <text x="375" y="239" class="support-small">
-                  Identity from the project
+                <path d="M365 204H575" class="support-line" />
+                <text x="365" y="230" class="support-small">
+                  From this frame’s
                 </text>
+                <text x="365" y="250" class="support-small">object map</text>
               </g>
-              <path d="M617 176H656" class="support-connector" pathLength="1" />
-              <g class="support-part support-c">
+              <path
+                d="M607 185H648"
+                class="support-connector"
+                marker-end="url(#support-context-arrow)"
+                data-optional-link
+              />
+              <g
+                class="support-part support-c"
+                data-support-node="optional-anchor"
+              >
                 <rect
-                  x="665"
-                  y="126"
-                  width="205"
-                  height="136"
+                  x="660"
+                  y="110"
+                  width="210"
+                  height="165"
                   rx="4"
-                  class="support-green"
+                  class="support-paper support-optional"
                 />
-                <text x="685" y="153" class="support-small">
-                  03 / OPTIONAL ANCHOR
+                <text x="680" y="141" class="support-small">
+                  03 / SOURCE ANCHOR
                 </text>
-                <text x="685" y="192" class="support-code">src/lib.rs</text>
-                <text x="685" y="218" class="support-code">render_frame</text>
-                <text x="685" y="244" class="support-small">
-                  When registered
+                <text x="680" y="180" class="support-code">src/lib.rs</text>
+                <text x="680" y="207" class="support-code">render_frame</text>
+                <text x="680" y="250" class="support-small">
+                  Only if registered
                 </text>
               </g>
-              <text x="30" y="320" class="support-small">VISIBLE OBJECT</text>
-              <text x="870" y="320" text-anchor="end" class="support-small">
-                USEFUL CONTEXT FOR THE AGENT →
+              <text x="30" y="322" class="support-small">
+                SELECTION PROVIDES CONTEXT. IT DOES NOT EDIT SOURCE.
               </text>
             </svg>
           </div>
           <figcaption>
-            Illustrative title with a project-registered anchor. Selection
-            identifies context; it does not edit the source.
+            Frame → stable object identity → optional source anchor. Without a
+            registered anchor, Studio does not infer a source location.
           </figcaption>
         </figure>
         <!-- /support:context -->
@@ -736,6 +1101,19 @@ let title_id = title_key.render_id();</code></pre>
                   broker. Project facts and rendered output return to the agent.
                   The agent's own editing tools remain separate.
                 </desc>
+                <defs>
+                  <marker
+                    id="support-broker-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto"
+                  >
+                    <path d="m1 1 8 4-8 4" class="support-arrow" />
+                  </marker>
+                </defs>
                 <g class="support-part support-a">
                   <rect
                     x="16"
@@ -755,6 +1133,7 @@ let title_id = title_key.render_id();</code></pre>
                 <path
                   d="M147 125H194M351 125H394"
                   class="support-connector"
+                  marker-end="url(#support-broker-arrow)"
                   pathLength="1"
                 />
                 <g class="support-packet">
@@ -805,6 +1184,7 @@ let title_id = title_key.render_id();</code></pre>
                 <path
                   d="M450 232v27H80v-27"
                   class="support-return"
+                  marker-end="url(#support-broker-arrow)"
                   pathLength="1"
                 />
                 <text
@@ -953,11 +1333,11 @@ let title_id = title_key.render_id();</code></pre>
               <path d="m146 22 6 8 6-8Z" />
             </g>
             <g class="handoff-marker">
-              <path d="M750 82v43m-6-7 6 7 6-7" />
-              <text x="750" y="222" text-anchor="middle" class="lane-label">
+              <path d="M864 82v43m-6-7 6 7 6-7" />
+              <text x="864" y="222" text-anchor="end" class="lane-label">
                 SWITCH AT THE PLAYHEAD
               </text>
-              <text x="750" y="243" text-anchor="middle" class="gate-subtitle">
+              <text x="864" y="243" text-anchor="end" class="gate-subtitle">
                 Worker · frame · audio together
               </text>
             </g>
@@ -997,99 +1377,145 @@ let title_id = title_key.render_id();</code></pre>
             </p>
           </div>
         </div>
-        <figure class="technical-figure">
-          <p class="diagram-hint">
-            Scroll the diagram sideways <span aria-hidden="true">↔</span>
-          </p>
+        <!-- explanations:containment -->
+        <figure
+          class="technical-figure explanation-figure explanation-containment"
+          data-explanation="containment"
+        >
+          <div class="figure-heading">
+            <span class="eyebrow">OBSERVED ESCAPE → CAPTURE REFUSED</span
+            ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
+          </div>
+          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
           <div
             class="diagram-scroll"
             tabindex="0"
             role="region"
-            aria-label="Writer containment diagram; scroll horizontally on small screens"
+            aria-label="An observed writer escape blocks candidate capture; scroll horizontally on small screens"
           >
-            <!-- fig:fence --><svg
-              viewBox="0 0 740 220"
+            <svg
+              viewBox="0 0 960 420"
               role="img"
-              aria-labelledby="fig-fence-t fig-fence-d"
-              style="--min: 560px"
+              aria-labelledby="ex-containment-t ex-containment-d"
             >
-              <title id="fig-fence-t">
-                Only a contained agent’s work is captured
+              <title id="ex-containment-t">
+                An observed writer escape blocks candidate capture
               </title>
-              <desc id="fig-fence-d">
-                The agent and its child processes sit inside a dashed fence, a
-                job object on Windows or a process group elsewhere. A child that
-                escapes the fence makes Studio refuse the candidate.
+              <desc id="ex-containment-d">
+                The agent and child processes are tracked in a Windows job
+                object or a process group with escape checks. If Studio observes
+                a writer escape, its candidate is refused. This is not a
+                general-purpose sandbox.
               </desc>
+              <defs>
+                <marker
+                  id="ex-containment-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="m1 1 8 4-8 4" class="ex-arrow" />
+                </marker>
+              </defs>
               <rect
-                x="40"
-                y="30"
-                width="420"
-                height="170"
-                rx="6"
-                class="f-line k-blue"
-                stroke-dasharray="5 4"
+                x="25"
+                y="55"
+                width="550"
+                height="285"
+                rx="5"
+                class="ex-boundary"
               />
-              <text x="54" y="52" class="f-label c-blue">
-                job object · process group
+              <text x="43" y="38" class="ex-label">
+                OBSERVED WRITER PROCESS TREE
               </text>
-              <rect
-                x="70"
-                y="80"
-                width="140"
-                height="40"
-                class="t-dark f-line"
-              />
-              <text x="84" y="104" class="f-on-dark">agent</text>
-              <rect
-                x="260"
-                y="70"
-                width="110"
-                height="32"
-                class="t-paper f-line"
-              />
-              <text x="272" y="90" class="f-label">node</text>
-              <rect
-                x="260"
-                y="130"
-                width="110"
-                height="32"
-                class="t-paper f-line"
-              />
-              <text x="272" y="150" class="f-label">cargo</text>
-              <rect
-                x="120"
-                y="150"
-                width="110"
-                height="32"
-                class="t-paper f-line"
-              />
-              <text x="132" y="170" class="f-label">rustc</text>
-              <path d="M210 100 H260" class="f-line" />
-              <path d="M210 110 C 235 110, 240 146, 260 146" class="f-line" />
-              <path d="M140 120 V150" class="f-line" />
-              <rect
-                x="560"
-                y="90"
-                width="130"
-                height="32"
-                class="t-red f-line"
-              />
-              <text x="572" y="110" class="f-label">escaped child</text>
+              <g class="ex-node" data-ex-node="agent">
+                <rect
+                  x="55"
+                  y="145"
+                  width="185"
+                  height="100"
+                  rx="4"
+                  class="ex-blue"
+                />
+                <text x="73" y="175" class="ex-title">Agent</text>
+                <text x="73" y="200" class="ex-copy">Managed writer</text>
+              </g>
+              <g class="ex-node" data-ex-node="node">
+                <rect
+                  x="310"
+                  y="90"
+                  width="220"
+                  height="85"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="328" y="120" class="ex-title">Child process</text>
+                <text x="328" y="145" class="ex-copy">For example: node</text>
+              </g>
+              <g class="ex-node" data-ex-node="cargo">
+                <rect
+                  x="310"
+                  y="225"
+                  width="220"
+                  height="85"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="328" y="255" class="ex-title">Child process</text>
+                <text x="328" y="280" class="ex-copy">For example: cargo</text>
+              </g>
               <path
-                d="M370 86 C 470 86, 480 106, 560 106"
-                class="f-lead k-red"
+                class="ex-path ex-step-a"
+                d="M240 180H270V132H310"
+                pathLength="1"
+                marker-end="url(#ex-containment-arrow)"
               />
-              <text x="625" y="150" class="f-label c-red" text-anchor="middle">
-                candidate refused
-              </text></svg
-            ><!-- /fig:fence -->
+              <path
+                class="ex-path ex-step-a"
+                d="M240 205H270V267H310"
+                pathLength="1"
+                marker-end="url(#ex-containment-arrow)"
+              />
+              <path
+                class="ex-path ex-step-b ex-escape"
+                d="M530 132H612V180H655"
+                pathLength="1"
+                marker-end="url(#ex-containment-arrow)"
+              />
+              <g class="ex-node ex-confirm" data-ex-node="escaped">
+                <rect
+                  x="655"
+                  y="130"
+                  width="280"
+                  height="120"
+                  rx="4"
+                  class="ex-amber"
+                />
+                <text x="673" y="160" class="ex-title">Observed escape</text>
+                <text x="673" y="185" class="ex-copy">
+                  Outside tracked tree
+                </text>
+                <text x="673" y="205" class="ex-copy">Candidate refused</text>
+              </g>
+              <path d="m598 173 13 13m0-13-13 13" class="ex-stop" />
+              <text x="655" y="303" class="ex-label">
+                CAPTURE DOES NOT PROCEED
+              </text>
+              <text x="25" y="390" class="ex-label">
+                WINDOWS: JOB OBJECT · LINUX/macOS: PROCESS GROUP + CHECKS
+              </text>
+            </svg>
           </div>
           <figcaption>
-            Illustrative processes. Only work from a writer whose containment is
-            verified may be captured.
+            The dashed line is an observed process boundary, not a universal
+            sandbox. Work delegated to pre-existing services can be outside this
+            boundary.
           </figcaption>
         </figure>
+        <!-- /explanations:containment -->
       </section>
       <section
         class="guide-section recovery-section"
@@ -1143,7 +1569,7 @@ let title_id = title_key.render_id();</code></pre>
             aria-label="Recovery keeps the accepted revision and retains the draft; scroll horizontally on small screens"
           >
             <svg
-              viewBox="0 0 900 310"
+              viewBox="0 0 900 350"
               role="img"
               aria-labelledby="recovery-title recovery-desc"
             >
@@ -1155,88 +1581,403 @@ let title_id = title_key.render_id();</code></pre>
                 recovery point. Unfinished work is marked interrupted and its
                 draft retained. The draft does not become the accepted revision.
               </desc>
-              <g class="support-part support-a">
+              <defs>
+                <marker
+                  id="support-recovery-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="m1 1 8 4-8 4" class="support-arrow" />
+                </marker>
+              </defs>
+              <g
+                class="support-part support-a"
+                data-support-node="accepted-baseline"
+              >
                 <rect
                   x="25"
-                  y="45"
+                  y="65"
                   width="250"
-                  height="170"
+                  height="185"
                   rx="4"
                   class="support-green"
                 />
-                <text x="47" y="76" class="support-small">
-                  LAST ACCEPTED REVISION
+                <text x="45" y="96" class="support-small">
+                  ACCEPTED REVISION
                 </text>
-                <text x="47" y="130" class="support-headline">Kept.</text>
-                <path d="m48 172 7 7 14-17" class="support-check" />
-                <text x="81" y="179" class="support-code">Recovery point</text>
+                <text x="45" y="153" class="support-headline">Kept.</text>
+                <path d="m46 200 7 7 14-17" class="support-check" />
+                <text x="80" y="207" class="support-code">
+                  Recovery baseline
+                </text>
               </g>
-              <g class="support-part support-b">
+              <g
+                class="support-part support-b"
+                data-support-node="interrupted-task"
+              >
                 <rect
-                  x="326"
-                  y="71"
-                  width="236"
-                  height="144"
+                  x="335"
+                  y="65"
+                  width="230"
+                  height="145"
                   rx="4"
                   class="support-paper"
                 />
-                <text x="348" y="102" class="support-small">
+                <text x="355" y="96" class="support-small">
                   UNFINISHED TASK
                 </text>
                 <path
-                  d="M350 126h8v27h-8Zm15 0h8v27h-8Z"
+                  d="M357 116h7v24h-7Zm14 0h7v24h-7Z"
                   class="support-pause"
                 />
-                <text x="348" y="183" class="support-code">
+                <text x="355" y="181" class="support-code">
                   Marked interrupted
                 </text>
               </g>
-              <path d="M574 144H618" class="support-connector" pathLength="1" />
+              <path
+                d="M577 137H623"
+                class="support-connector"
+                marker-end="url(#support-recovery-arrow)"
+                pathLength="1"
+              />
               <g class="support-packet">
                 <rect
-                  x="579"
-                  y="138"
+                  x="582"
+                  y="131"
                   width="12"
                   height="12"
                   rx="2"
-                  class="support-pink"
+                  class="support-blue"
                 />
               </g>
-              <g class="support-part support-c">
+              <g
+                class="support-part support-c"
+                data-support-node="retained-draft"
+              >
                 <rect
-                  x="632"
-                  y="98"
-                  width="243"
-                  height="117"
+                  x="635"
+                  y="65"
+                  width="240"
+                  height="145"
                   rx="4"
                   class="support-blue"
                 />
-                <text x="654" y="130" class="support-small">
-                  RETAINED DRAFT
-                </text>
-                <text x="654" y="169" class="support-code">
+                <text x="655" y="96" class="support-small">RETAINED DRAFT</text>
+                <text x="655" y="143" class="support-code">
                   Unfinished work remains.
                 </text>
-                <text x="654" y="193" class="support-small">
+                <text x="655" y="181" class="support-small">
                   Available after recovery
                 </text>
               </g>
-              <path d="M26 247H875" class="support-guide" />
-              <text x="26" y="278" class="support-small">
-                ACCEPTED FILES REMAIN THE BASELINE
+              <path d="M25 285H275" class="support-baseline" />
+              <path d="M335 285H875" class="support-guide" />
+              <text x="25" y="324" class="support-small">
+                ACCEPTED FILES ARE THE BASELINE
               </text>
-              <text x="875" y="278" text-anchor="end" class="support-small">
-                DRAFT ≠ ACCEPTED REVISION
+              <text x="875" y="324" text-anchor="end" class="support-small">
+                RETAINED DRAFT ≠ ACCEPTED REVISION
               </text>
             </svg>
           </div>
           <figcaption>
-            Recovery model, not a recording of the application. An exited
-            process does not prove that an edit succeeded.
+            Two separate outcomes: recover the accepted revision and retain the
+            interrupted draft. Retaining a draft does not accept it.
           </figcaption>
         </figure>
         <!-- /support:recovery -->
       </section>
+      <div class="pipeline-explanations">
+        <!-- explanations:timing -->
+        <figure
+          class="technical-figure explanation-figure explanation-timing"
+          data-explanation="timing"
+        >
+          <div class="figure-heading">
+            <span class="eyebrow">TIMING HAS ITS OWN DOCUMENT</span
+            ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
+          </div>
+          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
+          <div
+            class="diagram-scroll"
+            tabindex="0"
+            role="region"
+            aria-label="Timeline edits reuse the current Rust build; scroll horizontally on small screens"
+          >
+            <svg
+              viewBox="0 0 760 395"
+              role="img"
+              aria-labelledby="ex-timing-t ex-timing-d"
+            >
+              <title id="ex-timing-t">
+                Timeline edits reuse the current Rust build
+              </title>
+              <desc id="ex-timing-d">
+                Compiled scenes supply stable keys. Timeline gestures update
+                order, splits and trims in timeline.json. The worker applies
+                timing with the same source build.
+              </desc>
+              <defs>
+                <marker
+                  id="ex-timing-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="m1 1 8 4-8 4" class="ex-arrow" />
+                </marker>
+              </defs>
+              <g class="ex-node" data-ex-node="scenes">
+                <rect
+                  x="25"
+                  y="45"
+                  width="210"
+                  height="110"
+                  rx="4"
+                  class="ex-blue"
+                />
+                <text x="43" y="75" class="ex-title">Compiled scenes</text>
+                <text x="43" y="100" class="ex-copy">Stable scene keys</text>
+                <text x="43" y="120" class="ex-copy">Current built source</text>
+              </g>
+              <g class="ex-node" data-ex-node="gesture">
+                <rect
+                  x="25"
+                  y="240"
+                  width="210"
+                  height="110"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="43" y="270" class="ex-title">Timeline gesture</text>
+                <text x="43" y="295" class="ex-copy">Split · trim · move</text>
+                <text x="43" y="315" class="ex-copy">Undo / redo</text>
+              </g>
+              <path
+                class="ex-path ex-step-a"
+                d="M235 100H265V150H290"
+                pathLength="1"
+                marker-end="url(#ex-timing-arrow)"
+              />
+              <path
+                class="ex-path ex-step-b"
+                d="M235 295H265V210H290"
+                pathLength="1"
+                marker-end="url(#ex-timing-arrow)"
+              />
+              <g class="ex-node" data-ex-node="timing-doc">
+                <rect
+                  x="290"
+                  y="115"
+                  width="210"
+                  height="130"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="308" y="145" class="ex-title">timeline.json</text>
+                <text x="308" y="170" class="ex-copy">
+                  Order · splits · trims
+                </text>
+                <text x="308" y="190" class="ex-copy">
+                  Separate timing revision
+                </text>
+              </g>
+              <path
+                class="ex-path ex-step-c"
+                d="M500 180H540"
+                pathLength="1"
+                marker-end="url(#ex-timing-arrow)"
+              />
+              <g class="ex-node ex-confirm" data-ex-node="timed-worker">
+                <rect
+                  x="540"
+                  y="115"
+                  width="195"
+                  height="130"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="558" y="145" class="ex-title">Preview worker</text>
+                <text x="558" y="170" class="ex-copy">Applies timing</text>
+                <text x="558" y="190" class="ex-copy">Same Rust build</text>
+              </g>
+              <text x="290" y="330" class="ex-label">
+                TIMING CHANGE ≠ SOURCE REBUILD
+              </text>
+            </svg>
+          </div>
+          <figcaption>
+            Timing-only changes reuse the current build. Source changes still
+            need compilation; timing edits are unavailable during an agent task.
+          </figcaption>
+        </figure>
+        <!-- /explanations:timing --><!-- explanations:export -->
+        <figure
+          class="technical-figure explanation-figure explanation-export"
+          data-explanation="export"
+        >
+          <div class="figure-heading">
+            <span class="eyebrow">A FROZEN PROJECT, THE SESSION’S TIMING</span
+            ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
+          </div>
+          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
+          <div
+            class="diagram-scroll"
+            tabindex="0"
+            role="region"
+            aria-label="Export combines a frozen project with session timing; scroll horizontally on small screens"
+          >
+            <svg
+              viewBox="0 0 760 430"
+              role="img"
+              aria-labelledby="ex-export-t ex-export-d"
+            >
+              <title id="ex-export-t">
+                Export combines a frozen project with session timing
+              </title>
+              <desc id="ex-export-d">
+                The worker reports supported formats. Export uses a frozen
+                project revision plus the current session timing document. Its
+                worker encoder renders the chosen output with progress and
+                cancellation.
+              </desc>
+              <defs>
+                <marker
+                  id="ex-export-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="m1 1 8 4-8 4" class="ex-arrow" />
+                </marker>
+              </defs>
+              <g class="ex-node" data-ex-node="capabilities">
+                <rect
+                  x="25"
+                  y="30"
+                  width="210"
+                  height="100"
+                  rx="4"
+                  class="ex-blue"
+                />
+                <text x="43" y="60" class="ex-title">Worker capabilities</text>
+                <text x="43" y="85" class="ex-copy">Supported formats</text>
+              </g>
+              <path
+                class="ex-path ex-step-a"
+                d="M235 80H295"
+                pathLength="1"
+                marker-end="url(#ex-export-arrow)"
+              />
+              <g class="ex-node" data-ex-node="settings">
+                <rect
+                  x="295"
+                  y="30"
+                  width="200"
+                  height="100"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="313" y="60" class="ex-title">Export settings</text>
+                <text x="313" y="85" class="ex-copy">Format · size · fps</text>
+              </g>
+              <path
+                class="ex-path ex-step-b"
+                d="M495 80H645V175"
+                pathLength="1"
+                marker-end="url(#ex-export-arrow)"
+              />
+              <g class="ex-node" data-ex-node="frozen-source">
+                <rect
+                  x="25"
+                  y="220"
+                  width="210"
+                  height="110"
+                  rx="4"
+                  class="ex-paper"
+                />
+                <text x="43" y="250" class="ex-title">Frozen project</text>
+                <text x="43" y="275" class="ex-copy">
+                  Selected code revision
+                </text>
+                <text x="43" y="295" class="ex-copy">
+                  Immutable render input
+                </text>
+              </g>
+              <path
+                class="ex-path ex-step-b"
+                d="M235 275H260V220H555"
+                pathLength="1"
+                marker-end="url(#ex-export-arrow)"
+              />
+              <g class="ex-node" data-ex-node="session-timing">
+                <rect
+                  x="295"
+                  y="250"
+                  width="200"
+                  height="90"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="313" y="280" class="ex-title">Session timing</text>
+                <text x="313" y="305" class="ex-copy">Current timeline</text>
+              </g>
+              <path
+                class="ex-path ex-step-c"
+                d="M495 295H525V265H555"
+                pathLength="1"
+                marker-end="url(#ex-export-arrow)"
+              />
+              <g class="ex-node ex-confirm" data-ex-node="render">
+                <rect
+                  x="555"
+                  y="175"
+                  width="180"
+                  height="130"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="573" y="205" class="ex-title">Render job</text>
+                <text x="573" y="230" class="ex-copy">Worker encoder</text>
+                <text x="573" y="250" class="ex-copy">Progress + Cancel</text>
+              </g>
+              <path
+                class="ex-path ex-step-c"
+                d="M645 305V340"
+                pathLength="1"
+                marker-end="url(#ex-export-arrow)"
+              />
+              <g class="ex-node" data-ex-node="output-file">
+                <rect
+                  x="555"
+                  y="340"
+                  width="180"
+                  height="70"
+                  rx="4"
+                  class="ex-green"
+                />
+                <text x="573" y="370" class="ex-title">Video file</text>
+              </g>
+            </svg>
+          </div>
+          <figcaption>
+            Formats are worker-dependent. The frozen project's source and the
+            session’s timing are separate inputs; rendering does not hold the
+            live project open.
+          </figcaption>
+        </figure>
+        <!-- /explanations:export -->
+      </div>
       <aside class="guide-install" aria-labelledby="next-title">
         <div>
           <p class="eyebrow">TRY THE WORKFLOW</p>
