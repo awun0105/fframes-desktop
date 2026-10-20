@@ -1,147 +1,1016 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How fframes Studio works</title>
-<meta name="description" content="What happens to an edit in fframes Studio: separate processes, five checks before anything is accepted, a click mapped to the Rust that drew it, read-only agent tools, a preview that swaps only when ready, and a fence around the agent.">
-<meta name="color-scheme" content="light">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="studio.css">
-<link rel="icon" href="../brand/favicon.ico" sizes="48x48" />
-<link rel="icon" href="../brand/fframes-mark.svg" type="image/svg+xml" />
-<link rel="apple-touch-icon" href="../brand/apple-touch-icon.png" />
-<link rel="manifest" href="../site.webmanifest" />
-<meta name="theme-color" content="#0d0d0d" />
-<link rel="canonical" href="https://fframes.studio/studio/how-it-works" />
-<meta property="og:type" content="article" />
-<meta property="og:site_name" content="fframes" />
-<meta property="og:title" content="How fframes Studio works" />
-<meta property="og:description" content="An agent is fast and sometimes wrong. Studio is built so that being wrong is cheap." />
-<meta property="og:url" content="https://fframes.studio/studio/how-it-works" />
-<meta property="og:image" content="https://fframes.studio/brand/og-image.png" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:image" content="https://fframes.studio/brand/og-image.png" />
-<script defer data-domain="fframes.studio" src="https://plausible.io/js/script.pageview-props.js"></script>
-<script>window.plausible = window.plausible || function () { (window.plausible.q = window.plausible.q || []).push(arguments); };</script>
-</head>
-<body>
-  <div class="light-leak" aria-hidden="true"></div>
-  <div class="grid-lines" aria-hidden="true"><div></div></div>
-
-  <header class="topbar">
-    <div class="wrap">
-      <a class="wordmark" href="../index.html" aria-label="fframes home"><img src="../brand/fframes-wordmark.svg" alt="" width="95" height="24" /><span>Studio</span></a>
-      <nav class="links" aria-label="Studio pages">
-        <a class="btn" href="index.html">Overview</a>
-        <a class="btn" href="how-it-works.html" aria-current="page">How it works</a>
-        <a class="btn btn--primary hide-sm" href="https://github.com/khanhthanhdev/fframes-desktop" target="_blank" rel="noopener noreferrer">GitHub</a>
-      </nav>
-    </div>
-  </header>
-
-  <main class="wrap">
-    <section class="masthead">
-      <p class="eyebrow">fframes Studio &middot; how it works</p>
-      <h1>An agent writes code. <em>Studio decides what counts.</em></h1>
-      <p class="standfirst">An agent is fast and sometimes wrong. Studio is built so that being wrong is cheap.</p>
-    </section>
-
-    <figure class="fig">
-      <div class="scroll"><!-- fig:proc --><svg viewBox="0 0 880 450" role="img" aria-labelledby="fig-proc-t fig-proc-d" style="--min:640px"><title id="fig-proc-t">Studio’s processes</title><desc id="fig-proc-d">Inside the Studio process: the UI thread, the engine thread, the agent workflow, the build service, the journal and the tool broker. Outside: the coding agent, which edits a draft copy and calls the tool broker, and the preview worker, your video compiled as its own program.</desc><rect x="20" y="24" width="470" height="380" class="f-faint"/><text x="32" y="44" class="f-title">fframes-studio process</text><rect x="40" y="64" width="200" height="52" class="t-blue f-line"/><text x="52" y="86" class="f-label">UI thread</text><text x="52" y="102" class="f-small">draws only</text><rect x="270" y="64" width="200" height="52" class="t-paper f-line"/><text x="282" y="86" class="f-label">Engine thread</text><text x="282" y="102" class="f-small">one job at a time</text><rect x="40" y="176" width="200" height="52" class="t-paper f-line"/><text x="52" y="198" class="f-label">Agent workflow</text><text x="52" y="214" class="f-small">task state machine</text><rect x="270" y="176" width="200" height="52" class="t-paper f-line"/><text x="282" y="198" class="f-label">Build service</text><text x="282" y="214" class="f-small">one build per key</text><rect x="40" y="288" width="200" height="52" class="t-paper f-line"/><text x="52" y="310" class="f-label">Journal + store</text><text x="52" y="326" class="f-small">history, recovery</text><rect x="270" y="288" width="200" height="52" class="t-paper f-line"/><text x="282" y="310" class="f-label">Tool broker</text><text x="282" y="326" class="f-small">read-only tools</text><line x1="240" y1="90" x2="270" y2="90" class="f-line"/><line x1="140" y1="116" x2="140" y2="176" class="f-line"/><line x1="370" y1="116" x2="370" y2="176" class="f-line"/><line x1="240" y1="202" x2="270" y2="202" class="f-line"/><line x1="140" y1="228" x2="140" y2="288" class="f-line"/><path d="M200 228 V258 H370 V288" class="f-line"/><rect x="560" y="140" width="300" height="88" class="t-dark f-line"/><text x="574" y="164" class="f-on-dark">Coding agent</text><text x="574" y="182" class="f-small-dark">contained process</text><text x="574" y="198" class="f-small-dark">edits the draft copy</text><rect x="560" y="30" width="170" height="52" class="t-grey f-line"/><text x="572" y="52" class="f-label">Draft copy</text><text x="572" y="68" class="f-small">app data</text><line x1="645" y1="140" x2="645" y2="82" class="f-line"/><path d="M200 176 V150 H560" class="f-line k-red"/><text x="300" y="144" class="f-small c-red">claude · codex · acp</text><path d="M470 314 H620 V228" class="f-line"/><text x="630" y="264" class="f-small">mcp / cli</text><rect x="560" y="330" width="300" height="88" class="t-yellow f-line"/><text x="574" y="354" class="f-label">Preview worker</text><text x="574" y="372" class="f-small">your video, compiled</text><text x="574" y="388" class="f-small">frames · timeline · audio</text><path d="M470 90 H530 V374 H560" class="f-line k-blue"/><text x="540" y="440" class="f-small c-blue">preview protocol</text></svg><!-- /fig:proc --></div>
-      <figcaption>Your video runs as its own program, so a crash ends only the worker<span class="hint">Scroll sideways to see all of it</span></figcaption>
-    </figure>
-
-    <section class="block split" aria-labelledby="filters-title">
-      <div>
-        <p class="kicker">01 &middot; Checks</p>
-        <h2 id="filters-title">Five filters <em>on the way up</em></h2>
-        <p class="lede">Captured twice, built, inspected, optionally reviewed, then written in one atomic step. Anything that fails stays a draft.</p>
-        <p class="note"><b>Undo</b> &nbsp;Undo and per-file revert pass the same checks. A revert is refused if the file changed since.</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How fframes Studio works</title>
+    <meta
+      name="description"
+      content="Follow a Studio draft through capture, build, inspection, review and acceptance. See how selection, read-only project tools and preview readiness connect."
+    />
+    <meta name="color-scheme" content="light" />
+    <link rel="stylesheet" href="home.css" />
+    <link rel="stylesheet" href="how-it-works.css" />
+    <link rel="icon" href="../brand/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="../brand/fframes-mark.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../brand/apple-touch-icon.png" />
+    <link rel="manifest" href="../site.webmanifest" />
+    <meta name="theme-color" content="#fafbf8" />
+    <link rel="canonical" href="https://fframes.studio/studio/how-it-works" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="fframes" />
+    <meta property="og:title" content="How fframes Studio works" />
+    <meta
+      property="og:description"
+      content="How a captured draft becomes an accepted revision: build, inspection, review policy, and a prepared preview."
+    />
+    <meta
+      property="og:url"
+      content="https://fframes.studio/studio/how-it-works"
+    />
+    <meta
+      property="og:image"
+      content="https://fframes.studio/brand/og-image.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:image"
+      content="https://fframes.studio/brand/og-image.png"
+    />
+    <script
+      defer
+      data-domain="fframes.studio"
+      src="https://plausible.io/js/script.pageview-props.js"
+    ></script>
+    <script>
+      window.plausible =
+        window.plausible ||
+        function () {
+          (window.plausible.q = window.plausible.q || []).push(arguments);
+        };
+    </script>
+  </head>
+  <body class="internals-page">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="container nav">
+        <a class="brand" href="index.html" aria-label="fframes Studio home"
+          ><img src="wordmark.svg" alt="fframes" width="96" height="24" /><span
+            >Studio</span
+          ></a
+        >
+        <nav class="nav-links" aria-label="Studio navigation">
+          <a class="desktop-link" href="index.html">Overview</a
+          ><a href="how-it-works.html" aria-current="page">How it works</a
+          ><a
+            class="desktop-link"
+            href="https://github.com/khanhthanhdev/fframes-desktop"
+            target="_blank"
+            rel="noopener noreferrer"
+            >GitHub ↗</a
+          ><a class="button small" href="index.html#install"
+            >Get Studio <span aria-hidden="true">↗</span></a
+          >
+        </nav>
       </div>
-      <figure class="fig"><div class="scroll"><!-- fig:filters --><svg viewBox="0 0 760 480" role="img" aria-labelledby="fig-filters-t fig-filters-d" style="--min:600px"><title id="fig-filters-t">Every edit passes five filters</title><desc id="fig-filters-d">The agent’s draft travels up through five planes: capture twice, build, inspect, optional review and publish. It comes out on top as the accepted revision. A failure at inspect goes back for one repair turn.</desc><line x1="200.1" y1="360" x2="200.1" y2="180" class="f-faint"/><line x1="330" y1="435" x2="330" y2="255" class="f-faint"/><line x1="459.9" y1="360" x2="459.9" y2="180" class="f-faint"/><g class="see-through"><polygon points="200.1,365 330,440 330,435 200.1,360" class="s-paper f-line"/><polygon points="459.9,365 330,440 330,435 459.9,360" class="s-paper f-line"/><polygon points="330,285 459.9,360 330,435 200.1,360" class="t-paper f-line"/></g><line x1="465.9" y1="360" x2="520" y2="360" class="f-lead"/><text x="528" y="364" class="f-label">Capture twice</text><text x="528" y="378" class="f-small">both copies must match</text><g class="see-through"><polygon points="200.1,320 330,395 330,390 200.1,315" class="s-paper f-line"/><polygon points="459.9,320 330,395 330,390 459.9,315" class="s-paper f-line"/><polygon points="330,240 459.9,315 330,390 200.1,315" class="t-paper f-line"/></g><line x1="465.9" y1="315" x2="520" y2="315" class="f-lead"/><text x="528" y="319" class="f-label">Build</text><text x="528" y="333" class="f-small">pinned SDK, isolated copy</text><g class="see-through"><polygon points="200.1,275 330,350 330,345 200.1,270" class="s-paper f-line"/><polygon points="459.9,275 330,350 330,345 459.9,270" class="s-paper f-line"/><polygon points="330,195 459.9,270 330,345 200.1,270" class="t-paper f-line"/></g><line x1="465.9" y1="270" x2="520" y2="270" class="f-lead"/><text x="528" y="274" class="f-label">Inspect</text><text x="528" y="288" class="f-small">range, edges, audio</text><g class="see-through"><polygon points="200.1,230 330,305 330,300 200.1,225" class="s-paper f-line"/><polygon points="459.9,230 330,305 330,300 459.9,225" class="s-paper f-line"/><polygon points="330,150 459.9,225 330,300 200.1,225" class="t-paper f-line"/></g><line x1="465.9" y1="225" x2="520" y2="225" class="f-lead"/><text x="528" y="229" class="f-label">Review</text><text x="528" y="243" class="f-small">optional: keep some files</text><g class="see-through"><polygon points="200.1,185 330,260 330,255 200.1,180" class="s-blue f-line"/><polygon points="459.9,185 330,260 330,255 459.9,180" class="s-blue f-line"/><polygon points="330,105 459.9,180 330,255 200.1,180" class="t-blue f-line"/></g><line x1="465.9" y1="180" x2="520" y2="180" class="f-lead"/><text x="528" y="184" class="f-label">Publish</text><text x="528" y="198" class="f-small">one atomic file write</text><rect x="324" y="93" width="12" height="308" class="c-blue" opacity=".45"/><path d="M317 105 L330 89 L343 105" class="f-line k-blue"/><text x="330" y="79" class="f-label c-blue" text-anchor="middle">accepted revision</text><text x="330" y="464" class="f-label" text-anchor="middle">agent draft</text><path d="M194.1 270 H 160" class="f-lead k-red"/><text x="152" y="274" class="f-label c-red" text-anchor="end">fail</text><text x="152" y="288" class="f-small" text-anchor="end">one repair turn</text></svg><!-- /fig:filters --></div><figcaption>The edit transaction<span class="hint">Scroll sideways to see all of it</span></figcaption></figure>
-    </section>
-
-    <section class="block" aria-labelledby="chain-title">
-      <p class="kicker">02 &middot; Grounding</p>
-      <h2 id="chain-title">From a pixel to <em>a line of Rust</em></h2>
-      <p class="lede">Every preview frame comes with a map of its objects. A click finds the topmost one and the source anchor the code registered.</p>
-      <figure class="fig"><div class="scroll"><!-- fig:chain --><svg viewBox="0 0 812 140" role="img" aria-labelledby="fig-chain-t fig-chain-d" style="--min:640px"><title id="fig-chain-t">From a pixel to the Rust that drew it</title><desc id="fig-chain-d">Four cards in a row: the clicked pixel at frame 126, the object map the worker sends with the frame, the editor key the code registered, and the source file and function.</desc><rect x="20" y="30" width="168" height="84" class="t-paper f-line"/><text x="32" y="52" class="f-title">Pixel</text><text x="32" y="76" class="f-code">x 812  y 341</text><text x="32" y="92" class="f-code">frame 126</text><path d="M192 72 H 214 m-6 -4 l6 4 l-6 4" class="f-line"/><rect x="218" y="30" width="168" height="84" class="t-paper f-line"/><text x="230" y="52" class="f-title">Object map</text><text x="230" y="76" class="f-code">sent with the frame</text><text x="230" y="92" class="f-code">topmost hit wins</text><path d="M390 72 H 412 m-6 -4 l6 4 l-6 4" class="f-line"/><rect x="416" y="30" width="168" height="84" class="t-paper f-line"/><text x="428" y="52" class="f-title">Editor key</text><text x="428" y="76" class="f-code">intro / starter-title</text><text x="428" y="92" class="f-code">headline / primary</text><path d="M588 72 H 610 m-6 -4 l6 4 l-6 4" class="f-line"/><rect x="614" y="30" width="168" height="84" class="t-blue f-line"/><text x="626" y="52" class="f-title">Source</text><text x="626" y="76" class="f-code">src/lib.rs</text><text x="626" y="92" class="f-code">render_frame</text></svg><!-- /fig:chain --></div><figcaption>Selection grounding<span class="hint">Scroll sideways to see all of it</span></figcaption></figure>
-      <pre class="code" aria-label="Registering an editor object, from the Studio template"><code>let title_key = EditorObjectKey::new(key, "starter-title", "headline", "primary")
-    .and_then(|key| key.with_source_anchor("src/lib.rs", "render_frame", Some(..)));
-let title_id = title_key.render_id();
-// in render_frame
-&lt;g id={self.title_id.as_str()}&gt; … &lt;/g&gt;</code></pre>
-    </section>
-
-    <section class="block split split--flip" aria-labelledby="tools-title">
-      <div>
-        <p class="kicker">03 &middot; Tools</p>
-        <h2 id="tools-title">Nine tools, <em>all read-only</em></h2>
-        <p class="lede">The agent can look at the video it is changing. It cannot run a shell, write a file or export.</p>
+    </header>
+    <main id="main" class="container">
+      <section class="guide-hero" aria-labelledby="guide-title">
+        <div>
+          <p class="eyebrow">INSIDE FFRAMES STUDIO</p>
+          <h1 id="guide-title">An agent edits.<br /><em>Studio checks.</em></h1>
+          <p class="guide-intro">
+            A change starts as a draft. Follow the checks that stand between an
+            agent’s edit and the revision you see.
+          </p>
+          <a class="text-link" href="#transaction"
+            >Follow the draft <span aria-hidden="true">↓</span></a
+          >
+          <div class="motion-controls" data-motion-controls hidden>
+            <button type="button" aria-pressed="false">
+              Enable scroll motion</button
+            ><span role="status"></span>
+          </div>
+        </div>
+        <div class="hero-aside">
+          <span class="diagram-badge">THE OPERATING PRINCIPLE</span>
+          <p>
+            Your working preview stays available while Studio prepares the next
+            revision.
+          </p>
+          <div class="revision-key">
+            <span><i class="key-dot old"></i> Current revision</span
+            ><span><i class="key-dot candidate"></i> Candidate</span
+            ><span><i class="key-dot accepted"></i> Accepted</span>
+          </div>
+        </div>
+      </section>
+      <section class="process-section" aria-labelledby="process-title">
+        <div class="section-intro">
+          <div>
+            <p class="eyebrow">A CONNECTED WORKSPACE</p>
+            <h2 id="process-title">
+              Separate processes.<br /><span>Clear responsibilities.</span>
+            </h2>
+          </div>
+          <p>
+            The app coordinates the work. Your coding agent edits a draft in its
+            own process. Your video runs in a separate preview worker.
+          </p>
+        </div>
+        <figure class="technical-figure process-figure">
+          <div class="figure-heading">
+            <span class="eyebrow">PROCESS MAP</span
+            ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
+          </div>
+          <p class="diagram-hint">
+            Scroll the diagram sideways <span aria-hidden="true">↔</span>
+          </p>
+          <div
+            class="diagram-scroll"
+            tabindex="0"
+            role="region"
+            aria-label="Process map; scroll horizontally on small screens"
+          >
+            <!-- fig:proc --><svg
+              viewBox="0 0 880 450"
+              role="img"
+              aria-labelledby="fig-proc-t fig-proc-d"
+              style="--min: 640px"
+            >
+              <title id="fig-proc-t">Studio’s processes</title>
+              <desc id="fig-proc-d">
+                Inside the Studio process: the UI thread, the engine thread, the
+                agent workflow, the build service, the journal and the tool
+                broker. Outside: the coding agent, which edits a draft copy and
+                calls the tool broker, and the preview worker, your video
+                compiled as its own program.
+              </desc>
+              <rect x="20" y="24" width="470" height="380" class="f-faint" />
+              <text x="32" y="44" class="f-title">fframes-studio process</text>
+              <rect
+                x="40"
+                y="64"
+                width="200"
+                height="52"
+                class="t-blue f-line"
+              />
+              <text x="52" y="86" class="f-label">UI thread</text>
+              <text x="52" y="102" class="f-small">draws only</text>
+              <rect
+                x="270"
+                y="64"
+                width="200"
+                height="52"
+                class="t-paper f-line"
+              />
+              <text x="282" y="86" class="f-label">Engine thread</text>
+              <text x="282" y="102" class="f-small">one job at a time</text>
+              <rect
+                x="40"
+                y="176"
+                width="200"
+                height="52"
+                class="t-paper f-line"
+              />
+              <text x="52" y="198" class="f-label">Agent workflow</text>
+              <text x="52" y="214" class="f-small">task state machine</text>
+              <rect
+                x="270"
+                y="176"
+                width="200"
+                height="52"
+                class="t-paper f-line"
+              />
+              <text x="282" y="198" class="f-label">Build service</text>
+              <text x="282" y="214" class="f-small">one build per key</text>
+              <rect
+                x="40"
+                y="288"
+                width="200"
+                height="52"
+                class="t-paper f-line"
+              />
+              <text x="52" y="310" class="f-label">Journal + store</text>
+              <text x="52" y="326" class="f-small">history, recovery</text>
+              <rect
+                x="270"
+                y="288"
+                width="200"
+                height="52"
+                class="t-paper f-line"
+              />
+              <text x="282" y="310" class="f-label">Tool broker</text>
+              <text x="282" y="326" class="f-small">read-only tools</text>
+              <line x1="240" y1="90" x2="270" y2="90" class="f-line" />
+              <line x1="140" y1="116" x2="140" y2="176" class="f-line" />
+              <line x1="370" y1="116" x2="370" y2="176" class="f-line" />
+              <line x1="240" y1="202" x2="270" y2="202" class="f-line" />
+              <line x1="140" y1="228" x2="140" y2="288" class="f-line" />
+              <path d="M200 228 V258 H370 V288" class="f-line" />
+              <rect
+                x="560"
+                y="140"
+                width="300"
+                height="88"
+                class="t-dark f-line"
+              />
+              <text x="574" y="164" class="f-on-dark">Coding agent</text>
+              <text x="574" y="182" class="f-small-dark">
+                contained process
+              </text>
+              <text x="574" y="198" class="f-small-dark">
+                edits the draft copy
+              </text>
+              <rect
+                x="560"
+                y="30"
+                width="170"
+                height="52"
+                class="t-grey f-line"
+              />
+              <text x="572" y="52" class="f-label">Draft copy</text>
+              <text x="572" y="68" class="f-small">app data</text>
+              <line x1="645" y1="140" x2="645" y2="82" class="f-line" />
+              <path d="M200 176 V150 H560" class="f-line k-red" />
+              <text x="300" y="144" class="f-small c-red">
+                claude · codex · acp
+              </text>
+              <path d="M470 314 H620 V228" class="f-line" />
+              <text x="630" y="264" class="f-small">mcp / cli</text>
+              <rect
+                x="560"
+                y="330"
+                width="300"
+                height="88"
+                class="t-yellow f-line"
+              />
+              <text x="574" y="354" class="f-label">Preview worker</text>
+              <text x="574" y="372" class="f-small">your video, compiled</text>
+              <text x="574" y="388" class="f-small">
+                frames · timeline · audio
+              </text>
+              <path d="M470 90 H530 V374 H560" class="f-line k-blue" />
+              <text x="540" y="440" class="f-small c-blue">
+                preview protocol
+              </text></svg
+            ><!-- /fig:proc -->
+          </div>
+          <figcaption>
+            A video crash ends the preview worker, while the Studio app remains
+            a separate process.
+          </figcaption>
+        </figure>
+      </section>
+      <section
+        class="transaction"
+        id="transaction"
+        aria-labelledby="transaction-title"
+        data-transaction
+      >
+        <div class="transaction-rail">
+          <div class="transaction-intro">
+            <p class="eyebrow">01 / THE EDIT TRANSACTION</p>
+            <h2 id="transaction-title">
+              A draft goes in.<br /><span>A revision comes out.</span>
+            </h2>
+            <p>
+              Five stages on the successful path. Scroll to move the candidate
+              through them, or jump to a stage.
+            </p>
+          </div>
+          <article class="gate-step" id="capture" data-gate-step="0">
+            <span class="step-number">01 / CAPTURE</span>
+            <h3>
+              Freeze what<br />
+              will be checked.
+            </h3>
+            <p>
+              After the agent finishes and its writer is quiet, Studio captures
+              the draft twice. Both captures must match.
+            </p>
+            <p class="detail">
+              A changing working copy cannot become the candidate that passes
+              validation.
+            </p>
+          </article>
+          <article class="gate-step" id="build" data-gate-step="1">
+            <span class="step-number">02 / BUILD</span>
+            <h3>
+              Build the<br />
+              captured candidate.
+            </h3>
+            <p>
+              Studio compiles in an isolated copy bound to the project’s managed
+              SDK. The build must identify the candidate it actually compiled.
+            </p>
+            <p class="detail">
+              A cached compiler success alone is not an acceptance proof.
+            </p>
+          </article>
+          <article class="gate-step" id="inspect" data-gate-step="2">
+            <span class="step-number">03 / INSPECT</span>
+            <h3>
+              Check the result.<br />
+              Report the coverage.
+            </h3>
+            <p>
+              The worker supplies inspected and rendered frames, range
+              boundaries, and audio checks. Diagnostics and capability gaps stay
+              in the report.
+            </p>
+            <p class="detail">
+              A compile or validation failure can trigger at most one automatic
+              repair turn. Checks do not guarantee that every frame is correct.
+            </p>
+          </article>
+          <article class="gate-step" id="review" data-gate-step="3">
+            <span class="step-number">04 / REVIEW POLICY</span>
+            <h3>
+              Apply by policy.<br />
+              Review by choice.
+            </h3>
+            <p>
+              The default policy applies a validated candidate automatically.
+              Manual review waits for Apply; you can inspect diffs and keep a
+              subset of files.
+            </p>
+            <p class="detail">
+              A selected subset is validated again before it can be applied.
+            </p>
+          </article>
+          <article class="gate-step" id="apply" data-gate-step="4">
+            <span class="step-number">05 / ACCEPT</span>
+            <h3>
+              Write the revision.<br />
+              Keep a way back.
+            </h3>
+            <p>
+              A journaled file-set transaction publishes the accepted changes.
+              If an outside writer races with it, Studio preserves the variants
+              and stops with a conflict.
+            </p>
+            <p class="detail">
+              Undo and per-file revert pass validation too. Revert is refused if
+              the file changed since.
+            </p>
+          </article>
+        </div>
+        <figure
+          class="transaction-figure"
+          aria-labelledby="transaction-caption"
+        >
+          <div class="figure-heading">
+            <span class="eyebrow">THE CANDIDATE’S PATH</span
+            ><span class="illustration-label"
+              >ILLUSTRATION · SUCCESSFUL PATH</span
+            >
+          </div>
+          <!-- internals:gates -->
+          <svg
+            class="gate-diagram"
+            viewBox="0 0 700 620"
+            role="img"
+            aria-labelledby="gate-t gate-d"
+          >
+            <title id="gate-t">From captured draft to accepted revision</title>
+            <desc id="gate-d">
+              The candidate rises through capture, build, inspection, review
+              policy and acceptance. Manual review is optional. Failure retains
+              a draft; successful acceptance publishes a journaled file-set
+              transaction. This is an architecture illustration.
+            </desc>
+            <g class="gate-guides">
+              <path d="M175 175v300M305 250v300M435 175v300" />
+            </g>
+            <g class="check-layer" data-plane="0">
+              <g class="plane-highlight" data-highlight="0">
+                <path d="M175 410 305 335 435 410 305 485Z" />
+              </g>
+              <path
+                class="slab-side"
+                d="M175 410v7l130 75 130-75v-7l-130 75Z"
+              />
+              <path class="slab-top" d="M175 410 305 335 435 410 305 485Z" />
+              <path class="leader" d="M443 410h29" />
+              <text x="484" y="405" class="gate-title">01 / Capture twice</text>
+              <text x="484" y="423" class="gate-subtitle">
+                Matching, immutable bytes
+              </text>
+              <g class="gate-tick" data-tick="0">
+                <circle cx="305" cy="410" r="12" />
+                <path d="m299 410 4 4 9-10" />
+              </g>
+            </g>
+            <g class="check-layer" data-plane="1">
+              <g class="plane-highlight" data-highlight="1">
+                <path d="M175 343 305 268 435 343 305 418Z" />
+              </g>
+              <path
+                class="slab-side"
+                d="M175 343v7l130 75 130-75v-7l-130 75Z"
+              />
+              <path class="slab-top" d="M175 343 305 268 435 343 305 418Z" />
+              <path class="leader" d="M443 343h29" />
+              <text x="484" y="338" class="gate-title">02 / Build</text>
+              <text x="484" y="356" class="gate-subtitle">
+                Isolated copy · pinned SDK
+              </text>
+              <g class="gate-tick" data-tick="1">
+                <circle cx="305" cy="343" r="12" />
+                <path d="m299 343 4 4 9-10" />
+              </g>
+            </g>
+            <g class="check-layer" data-plane="2">
+              <g class="plane-highlight" data-highlight="2">
+                <path d="M175 276 305 201 435 276 305 351Z" />
+              </g>
+              <path
+                class="slab-side"
+                d="M175 276v7l130 75 130-75v-7l-130 75Z"
+              />
+              <path class="slab-top" d="M175 276 305 201 435 276 305 351Z" />
+              <path class="leader" d="M443 276h29" />
+              <text x="484" y="271" class="gate-title">03 / Inspect</text>
+              <text x="484" y="289" class="gate-subtitle">
+                Frames · boundaries · audio
+              </text>
+              <g class="gate-tick" data-tick="2">
+                <circle cx="305" cy="276" r="12" />
+                <path d="m299 276 4 4 9-10" />
+              </g>
+            </g>
+            <g class="check-layer" data-plane="3">
+              <g class="plane-highlight" data-highlight="3">
+                <path d="M175 209 305 134 435 209 305 284Z" />
+              </g>
+              <path
+                class="slab-side"
+                d="M175 209v7l130 75 130-75v-7l-130 75Z"
+              />
+              <path class="slab-top" d="M175 209 305 134 435 209 305 284Z" />
+              <path class="leader" d="M443 209h29" />
+              <text x="484" y="204" class="gate-title">04 / Review policy</text>
+              <text x="484" y="222" class="gate-subtitle">
+                Automatic, or manual Apply
+              </text>
+              <g class="gate-tick" data-tick="3">
+                <circle cx="305" cy="209" r="12" />
+                <path d="m299 209 4 4 9-10" />
+              </g>
+            </g>
+            <g class="check-layer" data-plane="4">
+              <g class="plane-highlight" data-highlight="4">
+                <path d="M175 142 305 67 435 142 305 217Z" />
+              </g>
+              <path
+                class="slab-side"
+                d="M175 142v7l130 75 130-75v-7l-130 75Z"
+              />
+              <path class="slab-top" d="M175 142 305 67 435 142 305 217Z" />
+              <path class="leader" d="M443 142h29" />
+              <text x="484" y="137" class="gate-title">05 / Accept</text>
+              <text x="484" y="155" class="gate-subtitle">
+                Journaled file-set transaction
+              </text>
+              <g class="gate-tick" data-tick="4">
+                <circle cx="305" cy="142" r="12" />
+                <path d="m299 142 4 4 9-10" />
+              </g>
+            </g>
+            <path class="candidate-track" d="M305 507V78" />
+            <g class="travelling-candidate">
+              <path d="M295 506v-37l-12 7 22-40 22 18-12 7v37Z" />
+              <path d="m300 472 5-3 5 3" fill="none" stroke="#407eaf" />
+            </g>
+            <g class="accepted-result">
+              <path d="M293 78 302 87 320 61" />
+              <text x="305" y="42" text-anchor="middle">ACCEPTED REVISION</text>
+            </g>
+            <text x="305" y="550" text-anchor="middle" class="gate-base-label">
+              CAPTURED AGENT DRAFT
+            </text>
+            <path d="M154 276H91" class="repair-leader" />
+            <text x="83" y="273" text-anchor="end" class="gate-subtitle">
+              Failure
+            </text>
+            <text x="83" y="290" text-anchor="end" class="gate-subtitle">
+              retains draft
+            </text>
+            <text x="305" y="595" text-anchor="middle" class="gate-subtitle">
+              STAGES, NOT ELAPSED TIME · REVIEW IS OPTIONAL
+            </text>
+          </svg>
+          <!-- /internals:gates -->
+          <div class="gate-readout" aria-hidden="true">
+            <span class="readout-index">01—05</span
+            ><span data-gate-label
+              >Capture → build → inspect → review → accept</span
+            >
+          </div>
+          <figcaption id="transaction-caption">
+            Each plane represents a stage, not a physical component or an
+            application screen. Manual review is optional.
+          </figcaption>
+          <nav class="gate-nav" aria-label="Jump to a transaction stage">
+            <a href="#capture">01 <span>Capture</span></a
+            ><a href="#build">02 <span>Build</span></a
+            ><a href="#inspect">03 <span>Inspect</span></a
+            ><a href="#review">04 <span>Review</span></a
+            ><a href="#apply">05 <span>Accept</span></a>
+          </nav>
+        </figure>
+      </section>
+      <section
+        class="guide-section"
+        id="grounding"
+        aria-labelledby="chain-title"
+      >
+        <div class="section-intro">
+          <div>
+            <p class="eyebrow">02 / GROUNDING</p>
+            <h2 id="chain-title">
+              From a visible object<br /><span>to useful context.</span>
+            </h2>
+          </div>
+          <div>
+            <p>
+              When the worker supports object selection, a click uses the object
+              map attached to that exact frame. Topmost paint order wins;
+              cycling reveals overlapping objects.
+            </p>
+            <p class="detail">
+              Stable editor keys identify objects. A source anchor is optional
+              and must be registered by the project; Studio does not infer an
+              exact source location for every pixel.
+            </p>
+          </div>
+        </div>
+        <figure class="technical-figure">
+          <p class="diagram-hint">
+            Scroll the diagram sideways <span aria-hidden="true">↔</span>
+          </p>
+          <div
+            class="diagram-scroll"
+            tabindex="0"
+            role="region"
+            aria-label="Selection context diagram; scroll horizontally on small screens"
+          >
+            <!-- fig:chain --><svg
+              viewBox="0 0 812 140"
+              role="img"
+              aria-labelledby="fig-chain-t fig-chain-d"
+              style="--min: 640px"
+            >
+              <title id="fig-chain-t">
+                Selection context with a registered source anchor
+              </title>
+              <desc id="fig-chain-d">
+                Example of a capable worker and an explicitly registered source
+                anchor: a clicked pixel, frame metadata, stable editor key, and
+                verified source hint. Anchors are optional.
+              </desc>
+              <rect
+                x="20"
+                y="30"
+                width="168"
+                height="84"
+                class="t-paper f-line"
+              />
+              <text x="32" y="52" class="f-title">Pixel</text>
+              <text x="32" y="76" class="f-code">x 812 y 341</text>
+              <text x="32" y="92" class="f-code">frame 126</text>
+              <path d="M192 72 H 214 m-6 -4 l6 4 l-6 4" class="f-line" />
+              <rect
+                x="218"
+                y="30"
+                width="168"
+                height="84"
+                class="t-paper f-line"
+              />
+              <text x="230" y="52" class="f-title">Object map</text>
+              <text x="230" y="76" class="f-code">sent with the frame</text>
+              <text x="230" y="92" class="f-code">topmost hit wins</text>
+              <path d="M390 72 H 412 m-6 -4 l6 4 l-6 4" class="f-line" />
+              <rect
+                x="416"
+                y="30"
+                width="168"
+                height="84"
+                class="t-paper f-line"
+              />
+              <text x="428" y="52" class="f-title">Editor key</text>
+              <text x="428" y="76" class="f-code">intro / starter-title</text>
+              <text x="428" y="92" class="f-code">headline / primary</text>
+              <path d="M588 72 H 610 m-6 -4 l6 4 l-6 4" class="f-line" />
+              <rect
+                x="614"
+                y="30"
+                width="168"
+                height="84"
+                class="t-blue f-line"
+              />
+              <text x="626" y="52" class="f-title">Source</text>
+              <text x="626" y="76" class="f-code">src/lib.rs</text>
+              <text x="626" y="92" class="f-code">render_frame</text></svg
+            ><!-- /fig:chain -->
+          </div>
+          <figcaption>
+            Example with a registered source anchor. Workers without object
+            metadata still provide image and audio preview.
+          </figcaption>
+        </figure>
+        <div class="code-example">
+          <div>
+            <span class="eyebrow">PROJECT-SUPPLIED IDENTITY</span>
+            <p>
+              The project registers a stable key and, optionally, an anchor.
+              This excerpt illustrates the API; it is not a complete video.
+            </p>
+          </div>
+          <pre
+            aria-label="Illustrative editor object registration"
+          ><code>let title_key = EditorObjectKey::new(
+    scene_key, "starter-title", "headline", "primary",
+)?.with_source_anchor(
+    "src/lib.rs", "render_frame", Some("title-marker"),
+)?;
+let title_id = title_key.render_id();</code></pre>
+        </div>
+      </section>
+      <section
+        class="guide-section tools-section"
+        id="tools"
+        aria-labelledby="tools-title"
+      >
+        <div>
+          <p class="eyebrow">03 / PROJECT TOOLS</p>
+          <h2 id="tools-title">
+            A way to look.<br /><span>Nine read-only tools.</span>
+          </h2>
+          <p>
+            Studio’s tool broker lets your agent inspect the project and
+            rendered output. These nine tools do not provide shell execution,
+            file writes, or export.
+          </p>
+          <p class="detail">
+            The agent’s own tools can still edit files or run commands, subject
+            to your permission policy. Read-only describes Studio’s broker, not
+            the entire agent.
+          </p>
+        </div>
+        <div>
+          <ul class="tool-list" aria-label="Studio’s nine read-only tools">
+            <li><code>project_context</code><span>Project facts</span></li>
+            <li>
+              <code>selection_context</code><span>Frozen task scope</span>
+            </li>
+            <li>
+              <code>source_lookup</code><span>Verified source snippets</span>
+            </li>
+            <li><code>timeline</code><span>Scene timing</span></li>
+            <li><code>render_frame</code><span>A rendered frame</span></li>
+            <li><code>render_strip</code><span>A frame contact sheet</span></li>
+            <li><code>inspect</code><span>Frame diagnostics</span></li>
+            <li><code>style_context</code><span>Style context</span></li>
+            <li><code>build_status</code><span>Build status</span></li>
+          </ul>
+          <p class="tool-boundary">
+            BROKER BOUNDARY &nbsp; / &nbsp; No shell · no writes · no export
+          </p>
+        </div>
+      </section>
+      <section
+        class="guide-section preview-section"
+        id="readiness"
+        aria-labelledby="swap-title"
+        data-readiness
+      >
+        <div class="section-intro">
+          <div>
+            <p class="eyebrow">04 / PREVIEW READINESS</p>
+            <h2 id="swap-title">
+              Prepare the whole revision.<br /><span>Then switch.</span>
+            </h2>
+          </div>
+          <div>
+            <p>
+              The current build keeps playing while the next one is prepared.
+              Worker, frame, and audio switch together at the playhead, once the
+              revision is ready.
+            </p>
+            <p class="detail">
+              Failed or cancelled builds keep the previous preview. The diagram
+              shows a successful preparation; its spacing does not represent
+              elapsed build time.
+            </p>
+          </div>
+        </div>
+        <figure
+          class="technical-figure readiness-figure"
+          tabindex="0"
+          role="region"
+          aria-label="Preview readiness diagram; scroll horizontally on small screens"
+        >
+          <div class="figure-heading">
+            <span class="eyebrow">ONE COORDINATED HANDOFF</span
+            ><span class="illustration-label"
+              >SCROLL TO FOLLOW · ILLUSTRATION</span
+            >
+          </div>
+          <!-- internals:readiness -->
+          <p class="diagram-hint">
+            Scroll the diagram sideways <span aria-hidden="true">↔</span>
+          </p>
+          <svg
+            class="readiness-diagram"
+            viewBox="0 0 900 280"
+            role="img"
+            aria-labelledby="ready-t ready-d"
+          >
+            <title id="ready-t">
+              Prepare a revision before switching the preview
+            </title>
+            <desc id="ready-d">
+              The current revision remains available while the candidate
+              compiles and prepares its worker, frame and audio. Only once ready
+              can the revision replace it at the playhead. Diagram spacing is
+              illustrative, not elapsed build time.
+            </desc>
+            <text x="20" y="64" class="lane-label">CURRENT</text>
+            <text x="20" y="158" class="lane-label">CANDIDATE</text>
+            <rect
+              x="152"
+              y="39"
+              width="712"
+              height="42"
+              rx="2"
+              class="old-lane"
+            />
+            <text x="170" y="65" class="lane-copy">
+              Working preview remains available
+            </text>
+            <path d="M152 133H864v42H152Z" class="candidate-outline" />
+            <g class="compile-lane">
+              <rect
+                x="152"
+                y="133"
+                width="233"
+                height="42"
+                class="compile-fill"
+              />
+            </g>
+            <text x="168" y="159" class="lane-copy">Compile</text>
+            <g class="prepare-lane">
+              <rect
+                x="385"
+                y="133"
+                width="255"
+                height="42"
+                class="prepare-fill"
+              />
+            </g>
+            <text x="401" y="159" class="lane-copy">
+              Prepare worker, frame, audio
+            </text>
+            <g class="ready-lane">
+              <rect
+                x="640"
+                y="133"
+                width="224"
+                height="42"
+                class="ready-fill"
+              />
+            </g>
+            <text x="660" y="159" class="lane-copy">Ready to replace</text>
+            <g class="readiness-marker">
+              <path d="M152 22V190" />
+              <path d="m146 22 6 8 6-8Z" />
+            </g>
+            <g class="handoff-marker">
+              <path d="M750 82v43m-6-7 6 7 6-7" />
+              <text x="750" y="222" text-anchor="middle" class="lane-label">
+                SWITCH AT THE PLAYHEAD
+              </text>
+              <text x="750" y="243" text-anchor="middle" class="gate-subtitle">
+                Worker · frame · audio together
+              </text>
+            </g>
+            <text x="152" y="243" class="gate-subtitle">
+              Compile alone is not readiness.
+            </text>
+          </svg>
+          <!-- /internals:readiness -->
+          <figcaption>
+            The old revision remains available through compile and preparation.
+            Readiness is more than a compiler success.
+          </figcaption>
+        </figure>
+      </section>
+      <section
+        class="guide-section"
+        id="containment"
+        aria-labelledby="fence-title"
+      >
+        <div class="section-intro">
+          <div>
+            <p class="eyebrow">05 / WRITER CONTAINMENT</p>
+            <h2 id="fence-title">
+              A process boundary.<br /><span>A condition for capture.</span>
+            </h2>
+          </div>
+          <div>
+            <p>
+              Windows uses a job object; Linux and macOS use a process group
+              with escape checks. If Studio observes a writer escape, its
+              candidate is refused.
+            </p>
+            <p class="detail">
+              Containment is not a general sandbox. Work performed by
+              pre-existing services on an agent’s behalf is outside the observed
+              process group or job.
+            </p>
+          </div>
+        </div>
+        <figure class="technical-figure">
+          <p class="diagram-hint">
+            Scroll the diagram sideways <span aria-hidden="true">↔</span>
+          </p>
+          <div
+            class="diagram-scroll"
+            tabindex="0"
+            role="region"
+            aria-label="Writer containment diagram; scroll horizontally on small screens"
+          >
+            <!-- fig:fence --><svg
+              viewBox="0 0 740 220"
+              role="img"
+              aria-labelledby="fig-fence-t fig-fence-d"
+              style="--min: 560px"
+            >
+              <title id="fig-fence-t">
+                Only a contained agent’s work is captured
+              </title>
+              <desc id="fig-fence-d">
+                The agent and its child processes sit inside a dashed fence, a
+                job object on Windows or a process group elsewhere. A child that
+                escapes the fence makes Studio refuse the candidate.
+              </desc>
+              <rect
+                x="40"
+                y="30"
+                width="420"
+                height="170"
+                rx="6"
+                class="f-line k-blue"
+                stroke-dasharray="5 4"
+              />
+              <text x="54" y="52" class="f-label c-blue">
+                job object · process group
+              </text>
+              <rect
+                x="70"
+                y="80"
+                width="140"
+                height="40"
+                class="t-dark f-line"
+              />
+              <text x="84" y="104" class="f-on-dark">agent</text>
+              <rect
+                x="260"
+                y="70"
+                width="110"
+                height="32"
+                class="t-paper f-line"
+              />
+              <text x="272" y="90" class="f-label">node</text>
+              <rect
+                x="260"
+                y="130"
+                width="110"
+                height="32"
+                class="t-paper f-line"
+              />
+              <text x="272" y="150" class="f-label">cargo</text>
+              <rect
+                x="120"
+                y="150"
+                width="110"
+                height="32"
+                class="t-paper f-line"
+              />
+              <text x="132" y="170" class="f-label">rustc</text>
+              <path d="M210 100 H260" class="f-line" />
+              <path d="M210 110 C 235 110, 240 146, 260 146" class="f-line" />
+              <path d="M140 120 V150" class="f-line" />
+              <rect
+                x="560"
+                y="90"
+                width="130"
+                height="32"
+                class="t-red f-line"
+              />
+              <text x="572" y="110" class="f-label">escaped child</text>
+              <path
+                d="M370 86 C 470 86, 480 106, 560 106"
+                class="f-lead k-red"
+              />
+              <text x="625" y="150" class="f-label c-red" text-anchor="middle">
+                candidate refused
+              </text></svg
+            ><!-- /fig:fence -->
+          </div>
+          <figcaption>
+            Illustrative processes. Only work from a writer whose containment is
+            verified may be captured.
+          </figcaption>
+        </figure>
+      </section>
+      <section
+        class="guide-section recovery-section"
+        id="recovery"
+        aria-labelledby="recover-title"
+      >
+        <div>
+          <p class="eyebrow">06 / RECOVERY</p>
+          <h2 id="recover-title">
+            Keep the accepted revision.<br /><span
+              >Retain the unfinished work.</span
+            >
+          </h2>
+        </div>
+        <div>
+          <p>
+            After a crash, Studio recovers to the last accepted revision, marks
+            unfinished work interrupted, and offers the retained draft. Process
+            exit is not proof of a successful build or apply.
+          </p>
+          <p class="detail">
+            An older Studio file format is refused and left unchanged. Studio
+            does not silently migrate it.
+          </p>
+          <a
+            class="text-link"
+            href="https://github.com/khanhthanhdev/fframes-desktop/blob/main/docs/desktop/architecture.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Read the architecture and source references
+            <span aria-hidden="true">↗</span></a
+          >
+        </div>
+      </section>
+      <aside class="guide-install" aria-labelledby="next-title">
+        <div>
+          <p class="eyebrow">TRY THE WORKFLOW</p>
+          <h2 id="next-title">Start with a real example.</h2>
+          <p>Install the Windows preview or run Studio from a checkout.</p>
+        </div>
+        <a class="button" href="index.html#install"
+          >Get fframes Studio <span aria-hidden="true">↗</span></a
+        >
+      </aside>
+    </main>
+    <footer>
+      <div class="container">
+        <div class="footer-top">
+          <a class="brand" href="index.html" aria-label="fframes Studio home"
+            ><img
+              src="wordmark.svg"
+              alt="fframes"
+              width="96"
+              height="24"
+            /><span>Studio</span></a
+          >
+          <ul class="footer-links">
+            <li><a href="../index.html">The library ↗</a></li>
+            <li><a href="index.html">Studio overview</a></li>
+            <li>
+              <a
+                href="https://github.com/khanhthanhdev/fframes-desktop"
+                target="_blank"
+                rel="noopener noreferrer"
+                >GitHub ↗</a
+              >
+            </li>
+            <li>
+              <a
+                href="https://discord.gg/5UaUVewRe"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Discord ↗</a
+              >
+            </li>
+          </ul>
+        </div>
+        <div class="footer-bottom">
+          <span>FROM SOURCE TO FRAME.</span
+          ><span>FFRAMES STUDIO · HOW IT WORKS</span>
+        </div>
       </div>
-      <ul class="chips" aria-label="Agent tools">
-        <li class="chip">project_context</li>
-        <li class="chip">selection_context</li>
-        <li class="chip">source_lookup</li>
-        <li class="chip">timeline</li>
-        <li class="chip">render_frame</li>
-        <li class="chip">render_strip</li>
-        <li class="chip">inspect</li>
-        <li class="chip">style_context</li>
-        <li class="chip">build_status</li>
-        <li class="chip locked">shell · write · export<small>not available</small></li>
-      </ul>
-    </section>
-
-    <section class="block" aria-labelledby="swap-title">
-      <p class="kicker">04 &middot; Preview</p>
-      <h2 id="swap-title">The preview swaps <em>only when it is whole</em></h2>
-      <p class="lede">The old build keeps playing while the new one is prepared. Worker, frame and audio switch together, at your playhead.</p>
-      <figure class="fig"><div class="scroll"><!-- fig:swap --><svg viewBox="0 0 800 190" role="img" aria-labelledby="fig-swap-t fig-swap-d" style="--min:640px"><title id="fig-swap-t">A new build replaces the old one only when it is ready</title><desc id="fig-swap-d">Two lanes. The old build keeps playing while the new one compiles, stages and becomes ready. At that moment both swap at the playhead, worker, frame and audio together.</desc><text x="20" y="54" class="f-label">old build</text><text x="20" y="114" class="f-label">new build</text><rect x="140" y="40" width="420" height="22" class="t-paper f-line"/><text x="150" y="55" class="f-small">playing</text><rect x="200" y="100" width="186" height="22" class="t-grey f-line"/><text x="208" y="115" class="f-small">compile</text><rect x="386" y="100" width="112" height="22" class="t-yellow f-line"/><text x="394" y="115" class="f-small">stage</text><rect x="498" y="100" width="62" height="22" class="t-green f-line"/><text x="506" y="115" class="f-small">ready</text><rect x="560" y="100" width="200" height="22" class="t-blue f-line"/><text x="570" y="115" class="f-small">playing</text><line x1="560" y1="24" x2="560" y2="140" class="f-line k-blue"/><text x="560" y="160" class="f-label c-blue" text-anchor="middle">swap at the playhead</text><text x="560" y="175" class="f-small" text-anchor="middle">worker · frame · audio together</text></svg><!-- /fig:swap --></div><figcaption>Preview install<span class="hint">Scroll sideways to see all of it</span></figcaption></figure>
-      <p class="note"><b>Renderer</b> &nbsp;Skia on the GPU when one works, the CPU renderer otherwise. The CPU renderer cannot run shaders, and Studio shows that as a warning.</p>
-    </section>
-
-    <section class="block split" aria-labelledby="fence-title">
-      <div>
-        <p class="kicker">05 &middot; Containment</p>
-        <h2 id="fence-title">A fence <em>around the agent</em></h2>
-        <p class="lede">A job object on Windows, a process group elsewhere. If Studio sees one of its processes escape, the agent&rsquo;s work is refused.</p>
-      </div>
-      <figure class="fig"><div class="scroll"><!-- fig:fence --><svg viewBox="0 0 740 220" role="img" aria-labelledby="fig-fence-t fig-fence-d" style="--min:560px"><title id="fig-fence-t">Only a contained agent’s work is captured</title><desc id="fig-fence-d">The agent and its child processes sit inside a dashed fence, a job object on Windows or a process group elsewhere. A child that escapes the fence makes Studio refuse the candidate.</desc><rect x="40" y="30" width="420" height="170" rx="6" class="f-line k-blue" stroke-dasharray="5 4"/><text x="54" y="52" class="f-label c-blue">job object · process group</text><rect x="70" y="80" width="140" height="40" class="t-dark f-line"/><text x="84" y="104" class="f-on-dark">agent</text><rect x="260" y="70" width="110" height="32" class="t-paper f-line"/><text x="272" y="90" class="f-label">node</text><rect x="260" y="130" width="110" height="32" class="t-paper f-line"/><text x="272" y="150" class="f-label">cargo</text><rect x="120" y="150" width="110" height="32" class="t-paper f-line"/><text x="132" y="170" class="f-label">rustc</text><path d="M210 100 H260" class="f-line"/><path d="M210 110 C 235 110, 240 146, 260 146" class="f-line"/><path d="M140 120 V150" class="f-line"/><rect x="560" y="90" width="130" height="32" class="t-red f-line"/><text x="572" y="110" class="f-label">escaped child</text><path d="M370 86 C 470 86, 480 106, 560 106" class="f-lead k-red"/><text x="625" y="150" class="f-label c-red" text-anchor="middle">candidate refused</text></svg><!-- /fig:fence --></div><figcaption>Writer containment<span class="hint">Scroll sideways to see all of it</span></figcaption></figure>
-    </section>
-
-    <section class="block" aria-labelledby="recover-title">
-      <p class="kicker">06 &middot; Recovery</p>
-      <h2 id="recover-title">Crashes recover, <em>old files stay put</em></h2>
-      <p class="lede">After a crash Studio returns to the last accepted revision and offers the draft. A file from an older Studio is refused and left byte for byte.</p>
-      <p class="note"><b>More</b> &nbsp;Every part, with its source file: <a href="https://github.com/khanhthanhdev/fframes-desktop/blob/main/docs/desktop/architecture.md" target="_blank" rel="noopener noreferrer">docs/desktop/architecture.md</a></p>
-    </section>
-
-    <aside class="next" aria-labelledby="next-title">
-      <div>
-        <h2 id="next-title">Try it on a real example</h2>
-        <p>Install the Windows preview or run Studio from a checkout.</p>
-      </div>
-      <a class="btn btn--large" href="index.html#install">Install Studio</a>
-    </aside>
-  </main>
-
-  <footer>
-    <div class="wrap">
-      <a href="../index.html" aria-label="fframes home"><img src="../brand/fframes-wordmark.svg" alt="fframes" width="87" height="22" /></a>
-      <ul class="footer-links">
-        <li><a href="../index.html">fframes library</a></li>
-        <li><a href="index.html">Studio overview</a></li>
-        <li><a href="https://github.com/khanhthanhdev/fframes-desktop" target="_blank" rel="noopener noreferrer">Studio on GitHub</a></li>
-        <li><a href="https://discord.gg/5UaUVewRe" target="_blank" rel="noopener noreferrer">Discord</a></li>
-      </ul>
-    </div>
-  </footer>
-  <script src="studio.js"></script>
-</body>
+    </footer>
+    <script src="scroll-motion.js"></script>
+    <script src="how-it-works.js"></script>
+  </body>
 </html>

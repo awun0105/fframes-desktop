@@ -9,3 +9,13 @@
   Content-Type: application/vnd.apple.mpegurl
 /hls/*.m4s
   Content-Type: video/mp4
+
+/studio/fonts/*.woff2
+  Content-Type: font/woff2
+  Cache-Control: public, max-age=31536000, immutable
+/studio/*.css
+  Cache-Control: public, max-age=0, must-revalidate
+/studio/*.js
+  Cache-Control: public, max-age=0, must-revalidate
+/studio/wordmark.svg
+  Cache-Control: public, max-age=0, must-revalidate

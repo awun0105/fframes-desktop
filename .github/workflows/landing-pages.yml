@@ -1,0 +1,43 @@
+name: Deploy landing pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "landing/**"
+      - "landing-worker/**"
+      - "examples/the-why/landing/**"
+      - "skills/**"
+      - "scripts/build-skills-index.mjs"
+      - "scripts/build-movie-landing.mjs"
+      - ".github/workflows/landing-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: landing-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build landing assets
+        run: npm run build:landing
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: landing
+      - uses: actions/deploy-pages@v4
+        id: deployment

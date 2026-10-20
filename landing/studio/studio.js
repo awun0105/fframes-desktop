@@ -1,27 +1,37 @@
 // Copy a command block without its prompt characters
 for (const button of document.querySelectorAll(".copy")) {
   button.addEventListener("click", async () => {
-    const text = button.previousElementSibling.textContent.replace(/^\$ /gm, "").replace(/^PS> /gm, "");
+    let feedback = button.closest(".card")?.querySelector(".copy-feedback");
+    if (!feedback && document.querySelector("[data-story]")) {
+      feedback = document.createElement("span");
+      feedback.className = "copy-feedback";
+      feedback.setAttribute("role", "status");
+      button.closest(".command").after(feedback);
+    }
+    const text = button.previousElementSibling.textContent
+      .replace(/^\$ /gm, "")
+      .replace(/^PS> /gm, "");
     try {
       await navigator.clipboard.writeText(text);
-      window.plausible?.("Copy command", { props: { page: location.pathname } });
+      window.plausible?.("Copy command", {
+        props: { page: location.pathname },
+      });
       button.classList.add("copied");
       button.setAttribute("aria-label", "Copied");
+      if (feedback) feedback.textContent = "Command copied.";
       setTimeout(() => {
         button.classList.remove("copied");
         button.setAttribute("aria-label", "Copy command");
+        if (feedback) feedback.textContent = "";
       }, 1600);
     } catch {
-      button.setAttribute("aria-label", "Copy failed, select the command instead");
+      button.setAttribute(
+        "aria-label",
+        "Copy failed, select the command instead"
+      );
+      if (feedback)
+        feedback.textContent =
+          "Copy unavailable. Select the command to copy it.";
     }
   });
 }
-
-// Show "scroll sideways" only under figures that are wider than their frame
-const markOverflow = () => {
-  for (const scroll of document.querySelectorAll(".fig .scroll")) {
-    scroll.closest(".fig").classList.toggle("overflows", scroll.scrollWidth > scroll.clientWidth + 1);
-  }
-};
-addEventListener("resize", markOverflow);
-markOverflow();
