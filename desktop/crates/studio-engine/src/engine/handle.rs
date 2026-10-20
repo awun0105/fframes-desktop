@@ -660,8 +660,11 @@ mod tests {
         assert!(session.is_some());
 
         engine.preview_news(PreviewNews::default());
-        let EngineEvent::PreviewGated(open) = next(&events) else {
-            panic!("a gated preview");
+        // Opening also queues status and presentation events; the answer may follow them.
+        let open = loop {
+            if let EngineEvent::PreviewGated(open) = next(&events) {
+                break open;
+            }
         };
         assert_eq!(open.session, session);
         assert!(open.state.is_some() && open.error.is_none() && open.presentation.is_some());
