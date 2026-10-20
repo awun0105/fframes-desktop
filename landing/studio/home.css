@@ -194,13 +194,13 @@ p {
 }
 .demonstration {
   display: grid;
-  grid-template-columns: 43% 57%;
+  grid-template-columns: 38% 62%;
   position: relative;
   gap: 0;
 }
 .story-rail {
   min-width: 0;
-  padding-bottom: 30vh;
+  padding-bottom: 42vh;
 }
 .intro {
   padding-top: 65px;
@@ -313,7 +313,7 @@ p {
 }
 .workflow-figure {
   position: sticky;
-  top: 104px;
+  top: 88px;
   align-self: start;
   margin: 56px 0 65px;
   min-width: 0;
@@ -339,7 +339,7 @@ p {
 .edit-diagram {
   display: block;
   width: 100%;
-  height: clamp(330px, calc(100svh - 355px), 650px);
+  height: clamp(330px, calc(100svh - 300px), 780px);
   overflow: visible;
 }
 .plane {
@@ -583,8 +583,8 @@ html:not(.story-motion) .result-packet {
   margin: 0;
 }
 .install-section {
-  padding: 75px 0 45px;
-  background: #eef1eb;
+  padding: 90px 0 45px;
+  background: #e8eee3;
   border-block: 1px solid #d9e0d7;
   scroll-margin-top: 75px;
 }
@@ -593,15 +593,59 @@ html:not(.story-motion) .result-packet {
   align-items: center;
   justify-content: space-between;
   gap: 30px;
-  margin-bottom: 36px;
+  margin-bottom: 44px;
 }
 .install-top .eyebrow {
   color: var(--muted);
   margin-bottom: 20px;
 }
 .install-top h2 {
-  font-size: 46px;
-  margin-bottom: 15px;
+  font-size: clamp(54px, 5.7vw, 82px);
+  letter-spacing: -3.5px;
+  line-height: 1.02;
+  margin-bottom: 26px;
+}
+.install-top h2 em {
+  color: var(--green);
+  font-style: normal;
+}
+.install-top .install-sequence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  font: 10px/1.8 var(--mono);
+}
+.download-panel {
+  padding: 20px 0;
+}
+.download-panel > .eyebrow {
+  display: block;
+  font-size: 9px;
+}
+.windows-download {
+  min-height: 62px;
+  padding: 0 26px;
+  gap: 18px;
+  font-size: 14px;
+  background: #245e45;
+}
+.windows-download svg {
+  width: 21px;
+  height: 21px;
+}
+.windows-download > span {
+  margin-left: 20px;
+  font-size: 23px;
+}
+.download-panel p {
+  margin: 14px 0 8px;
+  font-size: 11px;
+}
+.release-link {
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  color: var(--muted);
 }
 .install-top p:last-child {
   font-size: 13px;
@@ -609,7 +653,7 @@ html:not(.story-motion) .result-packet {
 }
 .cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.65fr 1fr;
   gap: 20px;
 }
 .card {
@@ -627,6 +671,69 @@ html:not(.story-motion) .result-packet {
 .card p {
   font-size: 12px;
   margin-bottom: 20px;
+}
+.install-primary {
+  background: #19372b;
+  border-color: #19372b;
+  padding: 28px 30px 32px;
+  color: #f5f8ef;
+}
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 27px;
+  font: 9px/1.5 var(--mono);
+  letter-spacing: 1px;
+  color: #b1c5b4;
+}
+.terminal-dots {
+  display: flex;
+  gap: 6px;
+}
+.terminal-dots i {
+  width: 6px;
+  height: 6px;
+  border: 1px solid #8fae98;
+  border-radius: 50%;
+}
+.install-primary h3 {
+  font-size: 24px;
+  letter-spacing: -0.7px;
+}
+.install-primary p {
+  color: #b8cabb;
+}
+.install-primary .command {
+  border-color: #486351;
+  padding-top: 24px;
+  gap: 18px;
+}
+.install-primary .command pre {
+  font-size: 14px;
+  line-height: 1.9;
+  color: #f0f5e9;
+}
+.install-primary .command-verb {
+  color: #9ce7b4;
+}
+.install-primary .prompt {
+  color: #88a891;
+}
+.install-primary .copy {
+  background: #2c4c3b;
+  border-color: #65846c;
+  color: #e1efdf;
+}
+.install-primary .copy:hover {
+  background: #3a5f46;
+}
+.install-primary .copy:focus-visible {
+  outline-color: #b2e9c3;
+}
+.install-primary .copy-feedback {
+  color: #b9efcc;
 }
 .command {
   display: flex;
@@ -725,6 +832,19 @@ footer {
     top: 110px;
   }
 }
+@media (min-width: 1101px) {
+  .demonstration.container {
+    width: min(1450px, calc(100% - 80px));
+  }
+  .workflow-figure figcaption {
+    max-width: none;
+    margin-top: 0;
+  }
+  .workflow-figure .step-nav {
+    margin-top: 10px;
+    padding-top: 8px;
+  }
+}
 @media (max-width: 1100px) {
   .container {
     width: calc(100% - 64px);
@@ -768,6 +888,14 @@ footer {
   }
   .principles {
     gap: 40px;
+  }
+}
+@media (min-width: 761px) and (max-width: 1100px) {
+  .demonstration {
+    grid-template-columns: 42% 58%;
+  }
+  .edit-diagram {
+    height: clamp(310px, calc(100svh - 385px), 650px);
   }
 }
 @media (max-width: 760px) {
@@ -874,8 +1002,9 @@ footer {
     border-bottom: 1px solid var(--line);
   }
   .story-motion .edit-diagram {
-    height: 28svh;
-    min-height: 170px;
+    height: 40svh;
+    min-height: 210px;
+    max-height: 370px;
     margin-block: 0;
   }
   .story-motion .figure-heading {
@@ -901,10 +1030,10 @@ footer {
   }
   .story-motion .story-step {
     min-height: 82svh;
-    scroll-margin-top: calc(28svh + 220px);
+    scroll-margin-top: calc(min(40svh, 370px) + 220px);
   }
   .story-motion .workflow-intro {
-    scroll-margin-top: calc(28svh + 220px);
+    scroll-margin-top: calc(min(40svh, 370px) + 220px);
   }
   .figure-readout {
     font-size: 11px;
@@ -993,7 +1122,8 @@ footer {
     display: block;
   }
   .install-top h2 {
-    font-size: 38px;
+    font-size: clamp(52px, 10vw, 68px);
+    letter-spacing: -2.7px;
   }
   .install-top > .button {
     margin-top: 25px;
@@ -1004,6 +1134,23 @@ footer {
   }
   .card {
     padding: 21px;
+  }
+  .download-panel {
+    padding: 28px 0 0;
+  }
+  .windows-download {
+    width: 100%;
+    padding-inline: 18px;
+    gap: 12px;
+  }
+  .windows-download > span {
+    margin-left: auto;
+  }
+  .install-primary .command pre {
+    font-size: 12px;
+  }
+  .install-primary h3 {
+    font-size: 22px;
   }
   .command pre {
     font-size: 10px;

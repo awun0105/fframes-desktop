@@ -475,24 +475,48 @@
           <div class="install-top">
             <div>
               <p class="eyebrow">START WITH AN EXAMPLE.</p>
-              <h2 id="install-title">Make your first move.</h2>
-              <p>Install Studio. Open an example. Make it yours.</p>
+              <h2 id="install-title">Make your<br /><em>first move.</em></h2>
+              <p class="install-sequence">
+                <span>01 &nbsp; Install Studio</span
+                ><span>02 &nbsp; Open an example</span
+                ><span>03 &nbsp; Make it yours</span>
+              </p>
             </div>
-            <a
-              class="button"
-              href="https://github.com/khanhthanhdev/fframes-desktop/releases/latest"
-              target="_blank"
-              rel="noopener noreferrer"
-              >Get the Windows preview
-              <span class="arrow" aria-hidden="true">↗</span></a
-            >
+            <div class="download-panel">
+              <span class="eyebrow">YOUR NEXT FRAME STARTS HERE</span>
+              <a
+                class="button windows-download"
+                href="https://github.com/khanhthanhdev/fframes-desktop/releases/latest/download/fframes-studio-x86_64-pc-windows-msvc-setup.exe"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                  <path
+                    d="M2 4.5 10.5 3.3v8H2Zm10-1.4L22 1.7v9.6H12ZM2 12.8h8.5v8L2 19.6Zm10 0h10v9.5L12 20.9Z"
+                  />
+                </svg>
+                Download for Windows <span aria-hidden="true">↓</span>
+              </a>
+              <p>Windows x64 · .exe installer</p>
+              <a
+                class="release-link"
+                href="https://github.com/khanhthanhdev/fframes-desktop/releases/latest"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Release notes &amp; other downloads ↗</a
+              >
+            </div>
           </div>
           <div class="cards">
-            <article class="card">
-              <h3>Windows preview</h3>
+            <article class="card install-primary">
+              <div class="terminal-bar">
+                <span class="terminal-dots" aria-hidden="true"
+                  ><i></i><i></i><i></i></span
+                ><span>INSTALL WITH POWERSHELL</span
+                ><span aria-hidden="true">↙</span>
+              </div>
+              <h3>One command. Your own Studio.</h3>
               <p>Per user, no administrator rights.</p>
               <div class="command">
-                <pre><code><span class="prompt">PS> </span>irm https://github.com/khanhthanhdev/fframes-desktop/releases/latest/download/install.ps1 | iex</code></pre>
+                <pre><code><span class="prompt">PS> </span><span class="command-verb">irm</span> https://github.com/khanhthanhdev/fframes-desktop/releases/latest/download/install.ps1 <span class="command-verb">| iex</span></code></pre>
                 <button class="copy" type="button" aria-label="Copy command">
                   <svg
                     class="idle"

@@ -9,6 +9,9 @@
   const label = figure.querySelector("[data-gate-label]");
   const index = figure.querySelector(".readout-index");
   const ready = document.querySelector("[data-readiness]");
+  const supporting = [...document.querySelectorAll("[data-scroll-figure]")].map(
+    element => ({ element, top: 0, height: 0, last: -1 })
+  );
   const motion = window.studioScrollMotion;
   const mobile = matchMedia("(max-width: 760px)");
   const clamp = x => Math.max(0, Math.min(1, x));
@@ -37,14 +40,38 @@
     positions = steps.map(
       s => s.getBoundingClientRect().top + scrollY - offset
     );
-    const bounds = ready.getBoundingClientRect();
+    const bounds = ready
+      .querySelector(".readiness-figure")
+      .getBoundingClientRect();
     readyTop = bounds.top + scrollY;
     readyHeight = bounds.height;
+    for (const item of supporting) {
+      const bounds = item.element.getBoundingClientRect();
+      item.top = bounds.top + scrollY;
+      item.height = bounds.height;
+    }
     schedule();
   }
   function draw() {
     frame = 0;
     if (!motion.enabled) return;
+    for (const item of supporting) {
+      const progress = clamp(
+        (scrollY + innerHeight * 0.88 - item.top) /
+          (item.height + innerHeight * 0.28)
+      );
+      if (progress === item.last) continue;
+      item.last = progress;
+      const a = ramp(progress, 0, 0.35),
+        b = ramp(progress, 0.2, 0.65),
+        c = ramp(progress, 0.5, 0.95);
+      item.element.style.setProperty("--support-b-y", `${30 * (1 - b)}px`);
+      item.element.style.setProperty("--support-c-y", `${48 * (1 - c)}px`);
+      item.element.style.setProperty("--support-travel", `${32 * b}px`);
+      item.element.style.setProperty("--support-line", a);
+      item.element.style.setProperty("--support-return", c);
+      item.element.style.setProperty("--support-packet", a * (1 - c));
+    }
     let p = 0;
     for (let i = 0; i < positions.length - 1; i++)
       if (scrollY >= positions[i])
@@ -89,7 +116,7 @@
     }
     const q = clamp(
       (scrollY + innerHeight * 0.8 - readyTop) /
-        (readyHeight + innerHeight * 0.15)
+        (readyHeight + innerHeight * 0.1)
     );
     if (q === lastReady) return;
     lastReady = q;
@@ -108,6 +135,10 @@
     last = -1;
     lastProgress = "";
     lastReady = -1;
+    for (const item of supporting) {
+      item.last = -1;
+      item.element.removeAttribute("style");
+    }
     document.documentElement.classList.toggle(
       "internals-motion",
       motion.enabled

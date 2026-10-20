@@ -195,12 +195,12 @@
 }
 .transaction {
   display: grid;
-  grid-template-columns: 43% 57%;
+  grid-template-columns: 38% 62%;
   padding-top: 90px;
   scroll-margin-top: 95px;
 }
 .transaction-rail {
-  padding-bottom: 28vh;
+  padding-bottom: 42vh;
   min-width: 0;
 }
 .transaction-intro {
@@ -245,7 +245,7 @@
 }
 .transaction-figure {
   position: sticky;
-  top: 104px;
+  top: 88px;
   align-self: start;
   min-width: 0;
   margin: 0 0 50px 0;
@@ -254,7 +254,7 @@
 .gate-diagram {
   display: block;
   width: 100%;
-  height: clamp(310px, calc(100svh - 345px), 620px);
+  height: clamp(310px, calc(100svh - 300px), 780px);
 }
 .gate-guides {
   fill: none;
@@ -525,6 +525,143 @@
   font-size: 13px;
   margin: 0;
 }
+.support-figure {
+  margin-top: 28px;
+}
+.support-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 8px;
+}
+.support-scroll:focus-visible {
+  outline: 3px solid #2764db;
+  outline-offset: 4px;
+}
+.support-scroll svg {
+  display: block;
+  width: 100%;
+  min-width: 680px;
+}
+.support-broker .support-scroll svg {
+  min-width: 0;
+}
+.support-broker .diagram-hint {
+  display: none;
+}
+.support-recovery {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.support-paper,
+.support-blue,
+.support-green {
+  stroke: #98a99b;
+  stroke-width: 1;
+}
+.support-paper {
+  fill: #fafbf8;
+}
+.support-blue {
+  fill: #e4eef8;
+}
+.support-green {
+  fill: #e4eddf;
+}
+.support-line {
+  stroke: #b2bcb2;
+  fill: none;
+  stroke-width: 1;
+}
+.support-guide {
+  stroke: #b8c4b8;
+  stroke-dasharray: 2 6;
+}
+.support-small {
+  font: 11px var(--mono);
+  letter-spacing: 0.4px;
+  fill: #536459;
+}
+.support-code {
+  font: 13px var(--mono);
+  fill: #344c3b;
+}
+.support-headline {
+  font:
+    44px "Geist",
+    Arial,
+    sans-serif;
+  letter-spacing: -2px;
+  fill: #2d4938;
+}
+.support-number {
+  font:
+    42px "Geist",
+    Arial,
+    sans-serif;
+  letter-spacing: -2px;
+  fill: #245e45;
+}
+.support-selection {
+  stroke: #cf7594;
+  fill: none;
+  stroke-width: 2;
+}
+.support-connector {
+  stroke: #9daea0;
+  stroke-width: 2;
+  fill: none;
+}
+.support-return {
+  stroke: #6c9d7b;
+  stroke-width: 1.5;
+  fill: none;
+}
+.support-check {
+  stroke: #43875c;
+  stroke-width: 2;
+  fill: none;
+}
+.support-pause {
+  fill: #b78192;
+}
+.support-pink {
+  fill: #e9a7be;
+  stroke: #c57894;
+}
+.support-packet {
+  display: none;
+}
+.internals-motion .support-b {
+  transform: translateY(var(--support-b-y, 0px));
+}
+.internals-motion .support-c {
+  transform: translateY(var(--support-c-y, 0px));
+}
+.internals-motion .support-connector {
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--support-line, 1));
+}
+.internals-motion .support-return {
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--support-return, 1));
+}
+.internals-motion .support-packet {
+  display: inline;
+  opacity: var(--support-packet, 0);
+  transform: translateX(var(--support-travel, 0px));
+}
+@media (min-width: 1101px) {
+  body:has(.transaction) main.container {
+    width: min(1450px, calc(100% - 80px));
+  }
+  .transaction-figure figcaption {
+    max-width: none;
+    margin-block: 0 8px;
+  }
+  .gate-nav {
+    padding-top: 8px;
+  }
+}
 /* Scroll is the only clock; no CSS animation playback or delayed transitions. */
 .internals-motion .travelling-candidate {
   transform: translateY(var(--candidate-y, 0px));
@@ -591,6 +728,14 @@ html:not(.internals-motion) .readiness-marker {
   }
   .gate-subtitle {
     font-size: 10px;
+  }
+}
+@media (min-width: 761px) and (max-width: 1100px) {
+  .transaction {
+    grid-template-columns: 42% 58%;
+  }
+  .gate-diagram {
+    height: clamp(310px, calc(100svh - 385px), 650px);
   }
 }
 @media (max-width: 760px) {
@@ -745,8 +890,9 @@ html:not(.internals-motion) .readiness-marker {
     padding-bottom: 8px;
   }
   .internals-motion .gate-diagram {
-    height: 28svh;
-    min-height: 170px;
+    height: 40svh;
+    min-height: 210px;
+    max-height: 370px;
   }
   .internals-motion .transaction-figure figcaption {
     position: absolute;
@@ -757,7 +903,7 @@ html:not(.internals-motion) .readiness-marker {
   }
   .internals-motion .gate-step {
     min-height: 82svh;
-    scroll-margin-top: calc(28svh + 225px);
+    scroll-margin-top: calc(min(40svh, 370px) + 225px);
   }
   .guide-section {
     padding-top: 40px;
