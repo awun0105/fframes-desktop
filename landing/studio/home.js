@@ -6,6 +6,9 @@
   const steps = [...story.querySelectorAll("[data-step]")];
   const links = [...story.querySelectorAll(".step-nav a")];
   const figure = story.querySelector(".workflow-figure");
+  const features = [...document.querySelectorAll("[data-product-figure]")].map(
+    element => ({ element, top: 0, height: 0, last: -1 })
+  );
   const label = story.querySelector("[data-state-label]");
   const index = story.querySelector(".readout-index");
   const motion = window.studioScrollMotion;
@@ -30,12 +33,48 @@
     positions = steps.map(
       step => step.getBoundingClientRect().top + scrollY - offset
     );
+    for (const item of features) {
+      const bounds = item.element.getBoundingClientRect();
+      item.top = bounds.top + scrollY;
+      item.height = bounds.height;
+    }
     schedule();
   }
   function draw() {
     frame = 0;
     if (!motion.enabled) return;
     const y = scrollY;
+    for (const item of features) {
+      const q = clamp(
+        (y + innerHeight * 0.88 - item.top) / (item.height + innerHeight * 0.18)
+      );
+      if (q === item.last) continue;
+      item.last = q;
+      const first = ramp(q, 0, 0.32),
+        middle = ramp(q, 0.22, 0.62),
+        end = ramp(q, 0.6, 0.95);
+      const reorder = ramp(q, 0.35, 0.78);
+      const values = {
+        "file-one": `${30 * (1 - first)}px`,
+        "file-two": `${24 * (1 - middle)}px`,
+        "file-three": `${18 * (1 - end)}px`,
+        packet: first * (1 - end),
+        travel: `${24 * middle}px`,
+        ready: 0.25 + 0.75 * end,
+        reorder: `${180 * reorder}px`,
+        "outro-x": `${-360 * reorder}px`,
+        "outro-y": `${-42 * 4 * reorder * (1 - reorder)}px`,
+        split: `${6 * ramp(q, 0.05, 0.3)}px`,
+        "split-alpha": ramp(q, 0.05, 0.3),
+        trim: end,
+        "trim-x": `${24 * end}px`,
+        "tool-one": `${25 * first}px`,
+        "tool-two": `${25 * middle}px`,
+        render: ramp(q, 0.1, 0.9),
+      };
+      for (const [key, value] of Object.entries(values))
+        item.element.style.setProperty(`--feature-${key}`, value);
+    }
     let p = 0;
     for (let i = 0; i < positions.length - 1; i++) {
       if (y >= positions[i])
@@ -97,6 +136,10 @@
     const enabled = motion.enabled;
     document.documentElement.classList.toggle("story-motion", enabled);
     figure.removeAttribute("style");
+    for (const item of features) {
+      item.last = -1;
+      item.element.removeAttribute("style");
+    }
     if (!enabled) {
       label.textContent = "Selection → draft → checks → preview";
       index.textContent = "01—04";

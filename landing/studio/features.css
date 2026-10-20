@@ -1,0 +1,308 @@
+/* Product chapters extend the existing ownership section; each figure explains
+   a different operation. Static, complete diagrams are the default. */
+.ownership {
+  display: block;
+}
+.ownership > div:first-child {
+  max-width: 760px;
+  margin-bottom: 55px;
+}
+.ownership h2 {
+  font-size: clamp(36px, 4vw, 56px);
+}
+.principles {
+  display: block;
+}
+.product-chapter {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: 64px;
+  padding: 64px 0;
+  border-top: 1px solid var(--line);
+}
+.product-chapter:nth-child(even) {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr);
+}
+.product-chapter:nth-child(even) .feature-copy {
+  order: 2;
+}
+.product-chapter .principle-number {
+  border: 0;
+  padding: 0;
+  margin-bottom: 22px;
+  color: var(--green);
+}
+.product-chapter h3 {
+  font-size: clamp(32px, 3vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -1.6px;
+  margin-bottom: 24px;
+}
+.product-chapter p {
+  font-size: 14px;
+  line-height: 1.8;
+  margin-bottom: 20px;
+}
+.product-chapter .feature-detail {
+  border-left: 1px solid #b6c6b8;
+  padding-left: 16px;
+  font-size: 12px;
+}
+.product-figure {
+  margin: 0;
+  min-width: 0;
+}
+.product-figure-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font: 9px/1.7 var(--mono);
+  color: var(--muted);
+  letter-spacing: 0.3px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--line);
+}
+.product-figure-heading span:last-child {
+  font-size: 8px;
+  text-align: right;
+}
+.product-figure-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-block: 18px;
+}
+.product-figure-scroll:focus-visible {
+  outline: 3px solid #2764db;
+  outline-offset: 4px;
+}
+.product-figure svg {
+  display: block;
+  width: 100%;
+  min-width: 540px;
+}
+.product-figure figcaption {
+  max-width: none;
+  font-size: 11px;
+  line-height: 1.7;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.product-figure-hint {
+  display: none;
+}
+.pf-paper,
+.pf-blue,
+.pf-green,
+.pf-pink {
+  stroke: #9cae9e;
+  stroke-width: 1;
+}
+.pf-paper {
+  fill: #fafbf8;
+}
+.pf-blue {
+  fill: #e3eefb;
+}
+.pf-green {
+  fill: #e4eddf;
+}
+.pf-pink {
+  fill: #f5cfde;
+}
+.pf-faint {
+  fill: #edf0e9;
+  stroke: #d9dfd6;
+}
+.pf-edge {
+  stroke: #9cae9e;
+  stroke-width: 1.2;
+  fill: none;
+}
+.pf-guide {
+  stroke: #b9c8bb;
+  stroke-dasharray: 2 6;
+  fill: none;
+}
+.pf-code {
+  font: 13px var(--mono);
+  fill: #334b3c;
+}
+.pf-micro {
+  font: 10px var(--mono);
+  letter-spacing: 0.3px;
+  fill: #5d6f61;
+}
+.pf-fill-ink {
+  fill: #36513f;
+}
+.pf-fill-green,
+.pf-render-bar {
+  fill: #467c58;
+}
+.pf-signal {
+  fill: #99bedc;
+  stroke: #5b8bae;
+}
+.pf-check {
+  stroke: #43875c;
+  stroke-width: 3;
+  fill: none;
+}
+.pf-trim-edge,
+.pf-split-mark {
+  stroke: #ad6b85;
+  stroke-width: 2;
+  fill: none;
+}
+.pf-flow {
+  opacity: 0;
+}
+.pf-unsplit-label {
+  opacity: 0;
+}
+/* The static timing state shows the completed reorder C → A → B. */
+.pf-clip-a,
+.pf-clip-b {
+  transform: translateX(180px);
+}
+.pf-clip-c {
+  transform: translateX(-360px);
+}
+.pf-split-half {
+  transform: translateX(6px);
+}
+.pf-trim-edge {
+  transform: translateX(24px);
+}
+.story-motion .pf-file-one {
+  transform: translateY(var(--feature-file-one, 0px));
+}
+.story-motion .pf-file-two {
+  transform: translateY(var(--feature-file-two, 0px));
+}
+.story-motion .pf-file-three {
+  transform: translateY(var(--feature-file-three, 0px));
+}
+.story-motion .pf-flow {
+  opacity: var(--feature-packet, 0);
+  transform: translateX(var(--feature-travel, 0px));
+}
+.story-motion .pf-output,
+.story-motion .pf-ready,
+.story-motion .pf-video-file {
+  opacity: var(--feature-ready, 1);
+}
+.story-motion .pf-clip-a,
+.story-motion .pf-clip-b {
+  transform: translateX(var(--feature-reorder, 180px));
+}
+.story-motion .pf-clip-c {
+  transform: translate(
+    var(--feature-outro-x, -360px),
+    var(--feature-outro-y, 0px)
+  );
+}
+.story-motion .pf-split-half {
+  transform: translateX(var(--feature-split, 6px));
+}
+.story-motion .pf-trim-mask {
+  opacity: var(--feature-trim, 1);
+}
+.story-motion .pf-trim-edge {
+  transform: translateX(var(--feature-trim-x, 24px));
+}
+.story-motion .pf-split-mark {
+  opacity: var(--feature-split-alpha, 1);
+}
+.story-motion .pf-unsplit-label {
+  opacity: calc(1 - var(--feature-split-alpha, 1));
+}
+.story-motion .pf-split-label {
+  opacity: var(--feature-split-alpha, 1);
+}
+.story-motion .pf-tool-one {
+  transform: translateY(var(--feature-tool-one, 0px));
+}
+.story-motion .pf-tool-two {
+  transform: translateY(var(--feature-tool-two, 0px));
+}
+.story-motion .pf-export-one {
+  transform: translateY(var(--feature-file-one, 0px));
+}
+.story-motion .pf-export-two {
+  transform: translateY(var(--feature-file-two, 0px));
+}
+.story-motion .pf-export-three {
+  transform: translateY(var(--feature-file-three, 0px));
+}
+.story-motion .pf-render-bar {
+  transform: scaleX(var(--feature-render, 1));
+  transform-origin: 32px 269px;
+}
+@media (max-width: 1100px) {
+  .product-chapter,
+  .product-chapter:nth-child(even) {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .product-chapter:nth-child(even) .feature-copy {
+    order: 0;
+  }
+  .product-chapter .feature-copy {
+    max-width: 620px;
+  }
+  .product-figure svg {
+    max-width: 850px;
+    margin-inline: auto;
+  }
+}
+@media (max-width: 760px) {
+  .ownership {
+    padding-block: 64px 30px;
+  }
+  .ownership > div:first-child {
+    margin-bottom: 32px;
+  }
+  .ownership h2 {
+    font-size: 36px;
+    padding-right: 0;
+  }
+  .product-chapter {
+    padding-block: 38px;
+    gap: 20px;
+  }
+  .product-chapter h3 {
+    font-size: 34px;
+  }
+  .product-chapter p {
+    font-size: 14px;
+  }
+  .product-chapter .product-figure-hint {
+    display: block;
+    font: 11px/1.7 var(--mono);
+    margin: 12px 0 0;
+  }
+  .product-figure-heading {
+    flex-direction: column;
+    gap: 3px;
+  }
+  .product-figure-heading span:last-child {
+    text-align: left;
+  }
+}
+@media print {
+  .product-chapter {
+    display: block;
+    break-inside: avoid;
+  }
+  .product-figure-scroll {
+    overflow: visible;
+  }
+  .product-figure svg {
+    min-width: 0;
+  }
+  .product-figure-hint {
+    display: none;
+  }
+}

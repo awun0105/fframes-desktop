@@ -3,13 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>fframes Studio — Point to a frame. Change the source.</title>
+    <title>fframes Studio — A video studio built around your code.</title>
     <meta
       name="description"
       content="fframes turns Rust into video. fframes Studio is the desktop app around it: a managed SDK, your coding agent on a draft copy, click-to-select, checked edits, live preview and timeline cuts. The video stays an ordinary Rust crate."
     />
     <meta name="color-scheme" content="light" />
     <link rel="stylesheet" href="home.css" />
+    <link rel="stylesheet" href="features.css" />
     <link rel="icon" href="../brand/favicon.ico" sizes="48x48" />
     <link rel="icon" href="../brand/fframes-mark.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="../brand/apple-touch-icon.png" />
@@ -20,11 +21,11 @@
     <meta property="og:site_name" content="fframes" />
     <meta
       property="og:title"
-      content="fframes Studio — Point to a frame. Change the source."
+      content="fframes Studio — A video studio built around your code."
     />
     <meta
       property="og:description"
-      content="Select an object, ask your coding agent for a change, and follow the draft through build and validation to an updated preview. Your video stays a Rust project."
+      content="Your code, your agent, your timeline. Work in an ordinary Rust project, preview checked changes, arrange scenes and export a video with fframes Studio."
     />
     <meta property="og:url" content="https://fframes.studio/studio/" />
     <meta
@@ -87,23 +88,25 @@
               ><span class="status-dot" aria-hidden="true"></span> Windows
               preview <span aria-hidden="true">↗</span></a
             >
-            <p class="eyebrow intro-label">THE VIDEO IS THE CODE.</p>
+            <p class="eyebrow intro-label">
+              YOUR CODE. YOUR AGENT. YOUR STUDIO.
+            </p>
             <h1 id="hero-title">
-              Point to a frame.<br /><em
-                >Change the<br class="desktop-break" />
-                source.</em
+              A video studio.<br /><em
+                >Built around<br class="desktop-break" />
+                your code.</em
               >
             </h1>
             <p class="hero-description">
-              A native video studio for working with your coding agent. Select
-              an object, describe a change, and see the result after Studio
-              builds and checks the draft.
+              Bring your coding agent, arrange scenes on a timeline, and preview
+              the result. Studio manages the SDK; your video stays a Rust
+              project.
             </p>
             <div class="hero-actions">
               <a class="button" href="#install"
                 >Get Studio <span aria-hidden="true">↗</span></a
-              ><a class="text-link" href="#workflow"
-                >Follow one edit <span aria-hidden="true">↓</span></a
+              ><a class="text-link" href="#studio-workspace"
+                >Explore the studio <span aria-hidden="true">↓</span></a
               >
             </div>
             <div class="motion-controls" data-motion-controls hidden>
@@ -114,7 +117,7 @@
             <p class="hero-note">Open source. Rust projects. Your agent.</p>
           </div>
           <div class="workflow-intro" id="workflow">
-            <p class="eyebrow">ONE TITLE. FOUR STEPS.</p>
+            <p class="eyebrow">ONE WAY TO WORK / THE AGENT LOOP</p>
             <h2>A small change.<br />A complete loop.</h2>
             <p>
               Follow “Hello.” from a selected title to an updated preview.
@@ -432,38 +435,546 @@
           </div>
         </div>
       </div>
-      <section class="ownership container" aria-labelledby="ownership-title">
+      <section
+        class="ownership container"
+        id="studio-workspace"
+        aria-labelledby="ownership-title"
+      >
         <div>
-          <p class="eyebrow">A STUDIO AROUND YOUR SOURCE</p>
+          <p class="eyebrow">THE REST OF YOUR WORKSPACE</p>
           <h2 id="ownership-title">
-            The video stays yours.<br /><span>Down to the last file.</span>
+            Your files. Your timeline.<br /><span
+              >A complete video workflow.</span
+            >
           </h2>
         </div>
         <div class="principles">
-          <article>
-            <span class="principle-number">01</span>
-            <h3>A real Rust project.</h3>
-            <p>
-              Source, media, and a timing document. Open the files, use Git, and
-              keep working with your own tools.
-            </p>
+          <!-- studio-features -->
+          <article class="product-chapter" id="studio-project">
+            <div class="feature-copy">
+              <span class="principle-number">01 / YOUR PROJECT</span>
+              <h3>Open files.<br />Keep control.</h3>
+              <p>
+                Your video is a Rust project: source, media and a timing
+                document. Open it in your editor, keep it in Git, and bring the
+                tools you already use.
+              </p>
+              <p class="feature-detail">
+                Studio adds a workspace around those files. The project remains
+                yours.
+              </p>
+            </div>
+            <figure class="product-figure" data-product-figure="project">
+              <div class="product-figure-heading">
+                <span>YOUR FILES, CONNECTED</span
+                ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
+              </div>
+              <p class="product-figure-hint">
+                Scroll the figure sideways to see every detail ↔
+              </p>
+              <div
+                class="product-figure-scroll"
+                tabindex="0"
+                role="region"
+                aria-label="YOUR FILES, CONNECTED; scroll horizontally on small screens"
+              >
+                <svg
+                  viewBox="0 0 640 360"
+                  role="img"
+                  aria-labelledby="product-project-t product-project-d"
+                >
+                  <title id="product-project-t">YOUR FILES, CONNECTED</title>
+                  <desc id="product-project-d">
+                    Rust source, media and timing remain ordinary project files.
+                    Studio uses them to build and prepare a video preview.
+                  </desc>
+                  <path d="M35 300H606" class="pf-guide" />
+                  <g class="pf-file pf-file-one">
+                    <path d="M40 66h80l13 14h155v52H40Z" class="pf-paper" />
+                    <text x="57" y="104" class="pf-code">src/lib.rs</text>
+                    <text x="223" y="104" class="pf-micro">RUST</text>
+                  </g>
+                  <g class="pf-file pf-file-two">
+                    <path d="M40 148h80l13 14h155v52H40Z" class="pf-blue" />
+                    <text x="57" y="186" class="pf-code">media/</text>
+                    <path
+                      d="M236 175h28v24h-28Zm4 19 8-10 6 6 5-4"
+                      class="pf-edge"
+                    />
+                  </g>
+                  <g class="pf-file pf-file-three">
+                    <path d="M40 230h80l13 14h155v52H40Z" class="pf-green" />
+                    <text x="57" y="268" class="pf-code">timeline.json</text>
+                  </g>
+                  <path
+                    d="M307 100h30v80h37m-67 3h67m-67 80h30v-83"
+                    class="pf-edge"
+                  />
+                  <g class="pf-flow">
+                    <path d="M340 174h12v12h-12Z" class="pf-signal" />
+                  </g>
+                  <g class="pf-output">
+                    <rect
+                      x="385"
+                      y="88"
+                      width="225"
+                      height="184"
+                      rx="4"
+                      class="pf-paper"
+                    />
+                    <path d="M385 119h225" class="pf-edge" />
+                    <text x="401" y="108" class="pf-micro">STUDIO PREVIEW</text>
+                    <rect
+                      x="401"
+                      y="134"
+                      width="193"
+                      height="99"
+                      class="pf-green"
+                    />
+                    <circle cx="498" cy="183" r="29" class="pf-pink" />
+                    <path d="m490 167 23 16-23 16Z" class="pf-fill-ink" />
+                    <path d="M403 252h170m-170 0h61" class="pf-edge" />
+                    <circle cx="467" cy="252" r="3" class="pf-fill-green" />
+                  </g>
+                  <text x="40" y="332" class="pf-micro">
+                    ORDINARY FILES. YOUR OWN TOOLS.
+                  </text>
+                  <text x="610" y="332" text-anchor="end" class="pf-micro">
+                    SOURCE → FRAME
+                  </text>
+                </svg>
+              </div>
+              <figcaption>
+                A project structure, not a hidden document format. The preview
+                requires a compatible project and a successful build.
+              </figcaption>
+            </figure>
           </article>
-          <article>
-            <span class="principle-number">02</span>
-            <h3>Timing on the timeline.</h3>
-            <p>
-              Trim, split, and reorder scenes. Timing edits update the preview
-              without rebuilding the Rust source.
-            </p>
+          <article class="product-chapter" id="studio-timing">
+            <div class="feature-copy">
+              <span class="principle-number">02 / THE TIMELINE</span>
+              <h3>Change the rhythm.<br />Keep the source.</h3>
+              <p>
+                Split a scene, move the outro, or trim a clip’s edge. Timing
+                edits write timeline.json and update the preview without
+                rebuilding Rust.
+              </p>
+              <p class="feature-detail">
+                Timing edits support undo and redo. Finish or cancel an agent
+                task before changing the timeline.
+              </p>
+            </div>
+            <figure class="product-figure" data-product-figure="timing">
+              <div class="product-figure-heading">
+                <span>CHANGE THE CUT, KEEP THE CODE</span
+                ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
+              </div>
+              <p class="product-figure-hint">
+                Scroll the figure sideways to see every detail ↔
+              </p>
+              <div
+                class="product-figure-scroll"
+                tabindex="0"
+                role="region"
+                aria-label="CHANGE THE CUT, KEEP THE CODE; scroll horizontally on small screens"
+              >
+                <svg
+                  viewBox="0 0 640 360"
+                  role="img"
+                  aria-labelledby="product-timing-t product-timing-d"
+                >
+                  <title id="product-timing-t">
+                    CHANGE THE CUT, KEEP THE CODE
+                  </title>
+                  <desc id="product-timing-d">
+                    A scene is split, the outro moves to the beginning and a
+                    clip edge is trimmed. Timing changes are written to
+                    timeline.json; Rust source stays unchanged.
+                  </desc>
+                  <text x="32" y="40" class="pf-micro">
+                    ORIGINAL SCENE ORDER
+                  </text>
+                  <path d="M32 54H608" class="pf-guide" />
+                  <rect
+                    x="32"
+                    y="69"
+                    width="168"
+                    height="35"
+                    class="pf-faint"
+                  />
+                  <text x="45" y="92" class="pf-micro">A / INTRO</text>
+                  <rect
+                    x="212"
+                    y="69"
+                    width="168"
+                    height="35"
+                    class="pf-faint"
+                  />
+                  <text x="225" y="92" class="pf-micro">B / MAIN</text>
+                  <rect
+                    x="392"
+                    y="69"
+                    width="168"
+                    height="35"
+                    class="pf-faint"
+                  />
+                  <text x="405" y="92" class="pf-micro">C / OUTRO</text>
+                  <text x="32" y="145" class="pf-micro">EDITED TIMELINE</text>
+                  <path d="M32 205H607" class="pf-edge" />
+                  <g class="pf-clip-a">
+                    <rect
+                      x="32"
+                      y="163"
+                      width="168"
+                      height="62"
+                      rx="2"
+                      class="pf-blue"
+                    />
+                    <rect
+                      class="pf-trim-mask"
+                      x="32"
+                      y="163"
+                      width="24"
+                      height="62"
+                      fill="#fafbf8"
+                    />
+                    <path class="pf-trim-edge" d="M32 160v68" />
+                    <text x="69" y="200" class="pf-code">A / INTRO</text>
+                  </g>
+                  <g class="pf-clip-b">
+                    <rect
+                      x="212"
+                      y="163"
+                      width="81"
+                      height="62"
+                      rx="2"
+                      class="pf-green"
+                    />
+                    <text x="225" y="200" class="pf-code pf-split-label">
+                      B₁
+                    </text>
+                    <g class="pf-split-half">
+                      <rect
+                        x="293"
+                        y="163"
+                        width="81"
+                        height="62"
+                        rx="2"
+                        class="pf-green"
+                      />
+                      <text x="309" y="200" class="pf-code pf-split-label">
+                        B₂
+                      </text>
+                    </g>
+                    <text x="225" y="200" class="pf-code pf-unsplit-label">
+                      B / MAIN
+                    </text>
+                    <path class="pf-split-mark" d="M293 150v87" />
+                  </g>
+                  <g class="pf-clip-c">
+                    <rect
+                      x="392"
+                      y="163"
+                      width="168"
+                      height="62"
+                      rx="2"
+                      class="pf-pink"
+                    />
+                    <text x="405" y="200" class="pf-code">C / OUTRO</text>
+                  </g>
+                  <path d="M300 243v20" class="pf-edge" />
+                  <rect
+                    x="32"
+                    y="276"
+                    width="270"
+                    height="53"
+                    rx="3"
+                    class="pf-green"
+                  />
+                  <text x="48" y="307" class="pf-code">
+                    timeline.json → written
+                  </text>
+                  <rect
+                    x="326"
+                    y="276"
+                    width="282"
+                    height="53"
+                    rx="3"
+                    class="pf-paper"
+                  />
+                  <text x="342" y="307" class="pf-code">
+                    Rust source → unchanged
+                  </text>
+                </svg>
+              </div>
+              <figcaption>
+                Illustrative split → reorder → trim. Timing-only edits do not
+                rebuild Rust. Timing changes are unavailable while an agent task
+                is running.
+              </figcaption>
+            </figure>
           </article>
-          <article>
-            <span class="principle-number">03</span>
-            <h3>A managed SDK.</h3>
-            <p>
-              Studio brings the build environment together. Install the SDK from
-              Setup, then open an example to get started.
-            </p>
+          <article class="product-chapter" id="studio-sdk">
+            <div class="feature-copy">
+              <span class="principle-number">03 / THE BUILD ENVIRONMENT</span>
+              <h3>An example in.<br />A preview out.</h3>
+              <p>
+                Install the managed SDK from Setup, then open an example. Studio
+                builds the project and prepares its worker, first frame and
+                audio.
+              </p>
+              <p class="feature-detail">
+                The current preview stays available while the next revision is
+                prepared.
+              </p>
+            </div>
+            <figure class="product-figure" data-product-figure="sdk">
+              <div class="product-figure-heading">
+                <span>FROM SETUP TO A WORKING PREVIEW</span
+                ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
+              </div>
+              <p class="product-figure-hint">
+                Scroll the figure sideways to see every detail ↔
+              </p>
+              <div
+                class="product-figure-scroll"
+                tabindex="0"
+                role="region"
+                aria-label="FROM SETUP TO A WORKING PREVIEW; scroll horizontally on small screens"
+              >
+                <svg
+                  viewBox="0 0 640 360"
+                  role="img"
+                  aria-labelledby="product-sdk-t product-sdk-d"
+                >
+                  <title id="product-sdk-t">
+                    FROM SETUP TO A WORKING PREVIEW
+                  </title>
+                  <desc id="product-sdk-d">
+                    Studio installs a managed SDK. A compatible example project
+                    builds with it and prepares a preview worker, frame and
+                    audio before replacing the preview.
+                  </desc>
+                  <path d="M45 291H605" class="pf-guide" />
+                  <g class="pf-sdk-case">
+                    <path d="m48 160 112-61 112 61-112 61Z" class="pf-green" />
+                    <path
+                      d="m48 160v30l112 61 112-61v-30l-112 61Z"
+                      class="pf-paper"
+                    />
+                    <text x="160" y="176" text-anchor="middle" class="pf-code">
+                      MANAGED SDK
+                    </text>
+                  </g>
+                  <g class="pf-tool pf-tool-one">
+                    <rect
+                      x="58"
+                      y="47"
+                      width="90"
+                      height="35"
+                      rx="3"
+                      class="pf-blue"
+                    />
+                    <text x="76" y="70" class="pf-code">Rust</text>
+                  </g>
+                  <g class="pf-tool pf-tool-two">
+                    <rect
+                      x="164"
+                      y="47"
+                      width="102"
+                      height="35"
+                      rx="3"
+                      class="pf-pink"
+                    />
+                    <text x="179" y="70" class="pf-code">fframes</text>
+                  </g>
+                  <path d="M284 174h51m-7-6 7 6-7 6" class="pf-edge" />
+                  <g class="pf-example">
+                    <rect
+                      x="344"
+                      y="103"
+                      width="112"
+                      height="147"
+                      rx="4"
+                      class="pf-paper"
+                    />
+                    <path d="M363 126h48l13 13v81h-61Z" class="pf-blue" />
+                    <text x="375" y="171" class="pf-code">&lt;/&gt;</text>
+                    <text x="400" y="236" text-anchor="middle" class="pf-micro">
+                      EXAMPLE
+                    </text>
+                  </g>
+                  <path d="M469 174h32m-7-6 7 6-7 6" class="pf-edge" />
+                  <g class="pf-ready">
+                    <rect
+                      x="512"
+                      y="123"
+                      width="95"
+                      height="104"
+                      rx="4"
+                      class="pf-green"
+                    />
+                    <path d="m535 162 14 14 25-31" class="pf-check" />
+                    <text x="560" y="209" text-anchor="middle" class="pf-micro">
+                      PREVIEW
+                    </text>
+                  </g>
+                  <text x="48" y="326" class="pf-micro">01 / INSTALL SDK</text>
+                  <text x="344" y="326" class="pf-micro">
+                    02 / BUILD EXAMPLE
+                  </text>
+                  <text x="607" y="350" text-anchor="end" class="pf-micro">
+                    03 / PREPARE WORKER, FRAME &amp; AUDIO
+                  </text>
+                </svg>
+              </div>
+              <figcaption>
+                A preparation sequence, not elapsed build time. Failed or
+                cancelled builds keep the previous preview.
+              </figcaption>
+            </figure>
           </article>
+          <article class="product-chapter" id="studio-export">
+            <div class="feature-copy">
+              <span class="principle-number">04 / THE FINISHED FILE</span>
+              <h3>Make the video.<br />Take it with you.</h3>
+              <p>
+                Choose an export format supported by your project’s worker, set
+                the size and frame rate, and render a video file. Follow
+                progress or cancel the export.
+              </p>
+              <p class="feature-detail">
+                From editable source to a file you can share. Export
+                capabilities depend on the project.
+              </p>
+            </div>
+            <figure class="product-figure" data-product-figure="export">
+              <div class="product-figure-heading">
+                <span>TURN THE PROJECT INTO A VIDEO</span
+                ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
+              </div>
+              <p class="product-figure-hint">
+                Scroll the figure sideways to see every detail ↔
+              </p>
+              <div
+                class="product-figure-scroll"
+                tabindex="0"
+                role="region"
+                aria-label="TURN THE PROJECT INTO A VIDEO; scroll horizontally on small screens"
+              >
+                <svg
+                  viewBox="0 0 640 360"
+                  role="img"
+                  aria-labelledby="product-export-t product-export-d"
+                >
+                  <title id="product-export-t">
+                    TURN THE PROJECT INTO A VIDEO
+                  </title>
+                  <desc id="product-export-d">
+                    The project's preview worker exposes its supported export
+                    formats. Studio renders the chosen output with progress and
+                    cancellation.
+                  </desc>
+                  <text x="32" y="46" class="pf-micro">
+                    YOUR VIDEO, FRAME BY FRAME
+                  </text>
+                  <g class="pf-export-frame pf-export-one">
+                    <rect
+                      x="32"
+                      y="80"
+                      width="110"
+                      height="130"
+                      rx="3"
+                      class="pf-paper"
+                    />
+                    <rect
+                      x="42"
+                      y="94"
+                      width="90"
+                      height="83"
+                      class="pf-blue"
+                    />
+                    <circle cx="72" cy="136" r="16" class="pf-pink" />
+                    <text x="43" y="197" class="pf-micro">FRAME 001</text>
+                  </g>
+                  <g class="pf-export-frame pf-export-two">
+                    <rect
+                      x="156"
+                      y="80"
+                      width="110"
+                      height="130"
+                      rx="3"
+                      class="pf-paper"
+                    />
+                    <rect
+                      x="166"
+                      y="94"
+                      width="90"
+                      height="83"
+                      class="pf-blue"
+                    />
+                    <circle cx="211" cy="136" r="16" class="pf-pink" />
+                    <text x="167" y="197" class="pf-micro">FRAME 002</text>
+                  </g>
+                  <g class="pf-export-frame pf-export-three">
+                    <rect
+                      x="280"
+                      y="80"
+                      width="110"
+                      height="130"
+                      rx="3"
+                      class="pf-paper"
+                    />
+                    <rect
+                      x="290"
+                      y="94"
+                      width="90"
+                      height="83"
+                      class="pf-blue"
+                    />
+                    <circle cx="353" cy="136" r="16" class="pf-pink" />
+                    <text x="291" y="197" class="pf-micro">FRAME 003</text>
+                  </g>
+                  <path d="M405 144h52m-8-6 8 6-8 6" class="pf-edge" />
+                  <g class="pf-video-file">
+                    <path d="M478 75h82l45 44v118H478Z" class="pf-green" />
+                    <path d="M560 75v44h45" class="pf-edge" />
+                    <path d="m523 146 30 18-30 18Z" class="pf-fill-green" />
+                    <text x="542" y="216" text-anchor="middle" class="pf-code">
+                      VIDEO FILE
+                    </text>
+                  </g>
+                  <rect
+                    x="32"
+                    y="265"
+                    width="573"
+                    height="8"
+                    rx="4"
+                    class="pf-faint"
+                  />
+                  <rect
+                    class="pf-render-bar"
+                    x="32"
+                    y="265"
+                    width="573"
+                    height="8"
+                    rx="4"
+                  />
+                  <text x="32" y="310" class="pf-micro">
+                    WORKER-SUPPORTED FORMAT
+                  </text>
+                  <text x="605" y="310" text-anchor="end" class="pf-micro">
+                    RENDER → SAVE
+                  </text>
+                </svg>
+              </div>
+              <figcaption>
+                Illustrative frames and render progress. Available formats, size
+                and frame rate come from the project’s worker.
+              </figcaption>
+            </figure>
+          </article>
+          <!-- /studio-features -->
         </div>
       </section>
       <section
