@@ -219,6 +219,15 @@ impl Shared {
                 .as_deref()
                 .unwrap_or("Tool permission"),
         );
+        let kind = request.tool_call.fields.kind.as_ref().map(enum_label);
+        let locations = request
+            .tool_call
+            .fields
+            .locations
+            .iter()
+            .flatten()
+            .map(|location| location.path.clone())
+            .collect();
         let mut taken = HashMap::new();
         let mut options = Vec::new();
         let mut choices = Vec::new();
@@ -242,6 +251,8 @@ impl Shared {
                     tool_call_id,
                     title,
                     options: choices,
+                    kind,
+                    locations,
                 }));
                 Ok(())
             }

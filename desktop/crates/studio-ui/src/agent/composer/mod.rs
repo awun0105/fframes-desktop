@@ -36,7 +36,9 @@ use gpui::{
 };
 use studio_theme::Theme;
 
-pub use attachments::{Attachment, AttachmentDraft, AttachmentId, AttachmentKind, Attachments};
+pub use attachments::{
+    Attachment, AttachmentDraft, AttachmentId, AttachmentKind, Attachments, ContextChip,
+};
 pub use input::{ComposerInput, ComposerInputEvent};
 pub use slash::SlashCommand;
 pub use steer::{SendAction, SteerMode};
@@ -113,6 +115,7 @@ pub struct Composer {
     commands: Vec<SlashCommand>,
     slash: SlashState,
     attachments: Attachments,
+    context: Option<ContextChip>,
     steer_mode: SteerMode,
     running: bool,
     /// Why each kind of attachment is off, when it is.
@@ -143,6 +146,7 @@ impl Composer {
             commands: Vec::new(),
             slash: SlashState::default(),
             attachments: Attachments::default(),
+            context: None,
             steer_mode: SteerMode::None,
             running: false,
             file_disabled: None,
@@ -216,6 +220,20 @@ impl Composer {
             }
         }
         cx.notify();
+    }
+
+    /// Shows the timeline selection that goes with the next message as the first chip,
+    /// or none.
+    pub fn set_context(&mut self, context: Option<ContextChip>, cx: &mut Context<Self>) {
+        if self.context != context {
+            self.context = context;
+            cx.notify();
+        }
+    }
+
+    /// The selection chip shown, if any.
+    pub fn context(&self) -> Option<&ContextChip> {
+        self.context.as_ref()
     }
 
     /// Shows a chip the owner accepted.
@@ -669,7 +687,12 @@ impl Render for Composer {
             .border_color(theme.gray(6))
             .bg(theme.gray(2))
             .children(self.slash_menu(cx))
-            .children(attachments::strip(&self.attachments, &theme, on_remove))
+            .children(attachments::strip(
+                &self.attachments,
+                self.context.as_ref(),
+                &theme,
+                on_remove,
+            ))
             .child(
                 div()
                     .relative()

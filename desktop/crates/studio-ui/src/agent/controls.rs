@@ -743,6 +743,7 @@ mod tests {
             image_limitation: None,
             draft: PathBuf::from("/data/projects/p/agent/draft"),
             review_policy: ReviewPolicy::AutoApply,
+            permission_policy: Default::default(),
             repair: RepairView {
                 used: 0,
                 max: 1,
@@ -1190,6 +1191,7 @@ mod tests {
                 kind: "allow_once".into(),
             }],
             state,
+            answered_by: None,
         }
     }
 

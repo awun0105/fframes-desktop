@@ -13,7 +13,6 @@ use studio_engine::presets::PresetCommand;
 use studio_engine::services::audio_service::OutputDevice;
 use studio_engine::timing::TimelineCommand;
 
-use super::left_column::LeftTab;
 use super::{Picker, StudioShell};
 use crate::actions;
 
@@ -116,10 +115,6 @@ impl StudioShell {
             }))
             .on_action(cx.listener(|s, _: &actions::OpenAgentSetup, _, cx| s.open_agent_setup(cx)))
             .on_action(cx.listener(|s, _: &actions::FocusPrompt, window, cx| {
-                if s.left_tab != LeftTab::Agent {
-                    s.left_tab = LeftTab::Agent;
-                    cx.notify();
-                }
                 s.panel
                     .update(cx, |panel, cx| panel.focus_prompt(window, cx))
             }))

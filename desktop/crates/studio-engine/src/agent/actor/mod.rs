@@ -125,6 +125,7 @@ pub(crate) enum Msg {
         path: String,
     },
     SetPolicy(ReviewPolicy),
+    SetPermissionPolicy(studio_proto::PermissionPolicy),
     PreviewDisplayed(String),
     HandoffResolved {
         published: String,
@@ -219,6 +220,8 @@ struct Active {
     phase: TaskPhase,
     /// Frozen when the task started.
     policy: ReviewPolicy,
+    /// Frozen when the task started.
+    permission_policy: studio_proto::PermissionPolicy,
     adapter: AdapterSettings,
     launch: AdapterLaunch,
     /// Cancels the job in flight; replaced for every job so a Stop that raced the end of
@@ -297,6 +300,8 @@ pub(crate) struct Actor {
     mcp_note: Option<String>,
     task: Option<TaskView>,
     policy: ReviewPolicy,
+    /// The user's permission policy, for the next task.
+    permission_policy: studio_proto::PermissionPolicy,
     undo_view: UndoView,
     recovery: RecoveryView,
     handoff: Option<HandoffView>,
@@ -499,6 +504,7 @@ impl Actor {
             mcp_note: None,
             task: None,
             policy: ReviewPolicy::default(),
+            permission_policy: studio_proto::PermissionPolicy::default(),
             undo_view: UndoView::Unavailable {
                 reason: "No agent edit has been accepted in this project yet".into(),
             },
@@ -722,6 +728,7 @@ impl Actor {
                 self.sync_registry(1);
             }
             Msg::SetPolicy(policy) => self.set_policy(policy),
+            Msg::SetPermissionPolicy(policy) => self.permission_policy = policy,
             Msg::PreviewDisplayed(revision) => self.preview_displayed(&revision),
             Msg::HandoffResolved { published, result } => self.handoff_resolved(&published, result),
             Msg::AcknowledgeWriterGone => self.acknowledge_writer_gone(),

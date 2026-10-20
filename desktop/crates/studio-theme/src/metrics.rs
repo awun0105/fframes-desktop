@@ -25,7 +25,17 @@ pub struct Metrics {
     pub toolbar_h: f32,
     pub transport_h: f32,
     pub gutter: f32,
-    pub left_column_w: f32,
+    /// The icon rail on the window's left edge.
+    pub rail_w: f32,
+    /// The Project, Assets or Style drawer beside the rail.
+    pub drawer_w: f32,
+    /// The agent column's default width, and the range its grip keeps it in.
+    pub agent_w: f32,
+    pub agent_min_w: f32,
+    pub agent_max_w: f32,
+    /// The player and timeline column never gets narrower than this while it fits.
+    pub editor_min_w: f32,
+    pub status_bar_h: f32,
     pub timeline_default_h: f32,
     pub timeline_min_h: f32,
     pub player_min_h: f32,
@@ -62,8 +72,13 @@ pub const METRICS: Metrics = Metrics {
     toolbar_h: 44.,
     transport_h: 48.,
     gutter: 8.,
-    // Cap's editor sidebar width; it also hosts the agent tab.
-    left_column_w: 416.,
+    rail_w: 56.,
+    drawer_w: 320.,
+    agent_w: 360.,
+    agent_min_w: 320.,
+    agent_max_w: 520.,
+    editor_min_w: 480.,
+    status_bar_h: 28.,
     timeline_default_h: 260.,
     timeline_min_h: 240.,
     player_min_h: 320.,
@@ -116,12 +131,23 @@ mod tests {
                 m.toolbar_h,
                 m.transport_h,
                 m.gutter,
-                m.left_column_w,
                 m.timeline_default_h,
                 m.timeline_min_h,
                 m.player_min_h
             ],
-            [52., 46., 44., 48., 8., 416., 260., 240., 320.]
+            [52., 46., 44., 48., 8., 260., 240., 320.]
+        );
+        assert_eq!(
+            [
+                m.rail_w,
+                m.drawer_w,
+                m.agent_w,
+                m.agent_min_w,
+                m.agent_max_w,
+                m.editor_min_w,
+                m.status_bar_h
+            ],
+            [56., 320., 360., 320., 520., 480., 28.]
         );
         assert_eq!(
             [m.ruler_h, m.track_h, m.track_gap, m.track_gutter_w],

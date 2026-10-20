@@ -86,6 +86,13 @@ pub struct PermissionPrompt {
     pub tool_call_id: String,
     pub title: String,
     pub options: Vec<PermissionChoice>,
+    /// The ACP tool kind of the call that asks (`read`, `edit`, `delete`, `move`, `search`,
+    /// `execute`, `think`, `fetch`, `other`), mapped from the tool name on the native wires.
+    /// `None` when the wire does not say.
+    pub kind: Option<String>,
+    /// The paths the call touches, as the agent reported them: absolute, or relative to its
+    /// working directory. Empty when the wire does not say.
+    pub locations: Vec<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

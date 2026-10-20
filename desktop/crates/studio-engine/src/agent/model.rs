@@ -190,6 +190,10 @@ pub struct PermissionCard {
     pub title: String,
     pub options: Vec<PermissionChoice>,
     pub state: PermissionState,
+    /// Studio answered this request itself under the user's permission policy (the
+    /// policy named here); `None` when the user answers it.
+    #[serde(default)]
+    pub answered_by: Option<studio_proto::PermissionPolicy>,
 }
 
 /// A failure with a user-facing next step. Every string is already redacted and bounded.
@@ -474,6 +478,9 @@ pub struct TaskView {
     pub draft: PathBuf,
     /// Review policy frozen when this task started; later changes affect later tasks only.
     pub review_policy: ReviewPolicy,
+    /// Permission policy frozen when this task started; later changes affect later tasks only.
+    #[serde(default)]
+    pub permission_policy: studio_proto::PermissionPolicy,
     pub repair: RepairView,
     pub turns: u32,
     pub writer: Option<WriterView>,
@@ -707,7 +714,12 @@ impl WorkflowSnapshot {
         self.rows
             .iter()
             .filter_map(|row| match &row.kind {
-                RowKind::Permission(card) if card.state == PermissionState::Open => Some(card),
+                // Studio's own answers are on their way: they are not open for the user.
+                RowKind::Permission(card)
+                    if card.state == PermissionState::Open && card.answered_by.is_none() =>
+                {
+                    Some(card)
+                }
                 _ => None,
             })
             .collect()

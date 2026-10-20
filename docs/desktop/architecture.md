@@ -25,7 +25,7 @@ Templates seed source, assets and editor metadata. They do not restrict the user
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-The layout follows Cap's editor ([`shell/layout.rs`](../../desktop/crates/studio-ui/src/shell/layout.rs)): the sidebar and the player sit above a full-width timeline, and the grip between them resizes the split. The sidebar's first tab is the agent panel. During a build, the preview keeps showing the last successful revision; a new candidate appears only once it is ready.
+The layout ([`shell/layout.rs`](../../desktop/crates/studio-ui/src/shell/layout.rs)) puts the preview first: an icon rail with the Project, Assets and Style drawers on the left, the player above the timeline in the middle (the grip between them resizes the split), the agent panel in a resizable column on the right, and a status bar at the window's foot. During a build, the preview keeps showing the last successful revision; a new candidate appears only once it is ready.
 
 ### Core workflows
 

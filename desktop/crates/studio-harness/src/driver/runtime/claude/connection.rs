@@ -434,6 +434,7 @@ impl Connection {
             Some(description) if !description.is_empty() => format!("{display}: {description}"),
             _ => display.to_owned(),
         };
+        let (kind, locations) = wire::tool_kind_and_paths(tool, &input);
         let sink = Box::new(ClaudeSink {
             request_id: request_id.clone(),
             input,
@@ -466,6 +467,8 @@ impl Connection {
                                 kind: "reject_once".to_owned(),
                             },
                         ],
+                        kind: Some(kind),
+                        locations,
                     }));
                 Ok(())
             }

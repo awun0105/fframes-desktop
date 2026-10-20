@@ -288,6 +288,7 @@ impl Actor {
             image_limitation: None,
             draft: context.draft.clone(),
             review_policy: policy,
+            permission_policy: self.permission_policy,
             repair: RepairView {
                 used: 0,
                 max: crate::MAX_AUTOMATIC_REPAIRS,
@@ -319,6 +320,7 @@ impl Actor {
             ctx: context,
             phase: TaskPhase::Starting,
             policy,
+            permission_policy: self.permission_policy,
             adapter,
             launch,
             gate: Gate::new(),

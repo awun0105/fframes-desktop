@@ -619,6 +619,8 @@ impl Connection {
     ) -> Result<(), AgentFailure> {
         let params = message.get("params").unwrap_or(&Value::Null);
         let item = str_at(params, "/itemId").to_owned();
+        let mut kind = "other";
+        let mut locations = Vec::new();
         let (title, answer, question) = match method.as_str() {
             "item/commandExecution/requestApproval" => {
                 let command = str_at(params, "/command");
@@ -627,6 +629,7 @@ impl Connection {
                 } else {
                     format!("Run: {command}")
                 };
+                kind = "execute";
                 (title, Answer::Decision, None)
             }
             "item/fileChange/requestApproval" => {
@@ -636,6 +639,8 @@ impl Connection {
                 } else {
                     format!("Edit: {}", paths.join(", "))
                 };
+                kind = "edit";
+                locations = paths.iter().map(std::path::PathBuf::from).collect();
                 (title, Answer::Decision, None)
             }
             "item/permissions/requestApproval" => {
@@ -731,6 +736,8 @@ impl Connection {
                         kind: "reject_once".to_owned(),
                     },
                 ],
+                kind: Some(kind.to_owned()),
+                locations,
             }),
         };
         self.shared.emit(event);

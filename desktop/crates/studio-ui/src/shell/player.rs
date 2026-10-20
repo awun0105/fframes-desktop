@@ -709,16 +709,24 @@ impl StudioShell {
             .child(
                 // Measures the card so the transport can pick its compact layout.
                 canvas(
-                    move |bounds, _, cx| {
+                    move |bounds, window, cx| {
                         let width = f32::from(bounds.size.width);
-                        entity.update(cx, |shell, cx| {
-                            if transport_mode(shell.player_width) != transport_mode(width)
-                                || show_total_time(shell.player_width) != show_total_time(width)
-                            {
+                        let relayout = entity.update(cx, |shell, cx| {
+                            let relayout = transport_mode(shell.player_width)
+                                != transport_mode(width)
+                                || show_total_time(shell.player_width) != show_total_time(width);
+                            if relayout {
                                 cx.notify();
                             }
                             shell.player_width = width;
+                            relayout
                         });
+                        // A notification during paint does not draw another frame by itself:
+                        // without this an idle window keeps the old layout after a drawer
+                        // opens until the next input.
+                        if relayout {
+                            window.request_animation_frame();
+                        }
                     },
                     |_, _, _, _| {},
                 )
@@ -767,10 +775,12 @@ impl StudioShell {
             .border_b_1()
             .border_color(palette.line)
             .overflow_hidden()
+            // The badge keeps one line; the audio note beside it truncates instead.
             .child(
                 div()
                     .min_w_0()
                     .overflow_hidden()
+                    .whitespace_nowrap()
                     .child(Badge::new(label).tone(tone)),
             )
             .child(with_tooltip(

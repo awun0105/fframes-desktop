@@ -5,6 +5,7 @@ mod keymap;
 mod layout;
 mod left_column;
 mod observation;
+mod onboarding;
 mod overflow;
 mod player;
 mod review;
@@ -94,7 +95,8 @@ pub struct StudioShell {
     in_flight: Option<(CommandId, bool)>,
     error: Option<String>,
     failed_open: Option<PathBuf>,
-    left_tab: LeftTab,
+    /// The rail item whose drawer is open; `None` gives the editor the width.
+    drawer: Option<LeftTab>,
     sdk_open: bool,
     recents_open: bool,
     status_open: bool,
@@ -150,10 +152,14 @@ pub struct StudioShell {
     editor_height: f32,
     /// The timeline height the grip asked for; `None` keeps the default.
     timeline_height: Option<f32>,
-    /// While the grip is dragged: the pointer's y and the timeline height at the press.
-    timeline_resize: Option<(f32, f32)>,
+    /// The grip being dragged, with the pointer and the size at the press.
+    resize: Option<layout::Resize>,
+    /// The agent column width its grip asked for; `None` keeps the default.
+    agent_width: Option<f32>,
     /// Where the grip was last painted, `[left, top, width, height]`.
     grip_bounds: Option<[f32; 4]>,
+    /// Where the agent column's grip was last painted.
+    agent_grip_bounds: Option<[f32; 4]>,
     /// The bounds each cached section was laid out in, for the qualification telemetry.
     section_bounds: HashMap<&'static str, [f32; 4]>,
     /// The window's viewport, measured each render.
@@ -162,6 +168,14 @@ pub struct StudioShell {
     settings_open: bool,
     settings_page: settings::SettingsPage,
     settings_writer: Arc<settings::SettingsWriter>,
+    /// The first-run setup, while it shows in place of the workspace.
+    onboarding: Option<onboarding::Onboarding>,
+    /// Whether the saved setup choices were read (once the app's storage is known).
+    setup_checked: bool,
+    /// Whether the setup was finished or skipped (`None`: never recorded).
+    onboarding_completed: Option<bool>,
+    /// How agent permission requests are answered, for every project.
+    permission_policy: studio_proto::PermissionPolicy,
     /// The appearance the cached header last rendered with, for the telemetry.
     header_appearance: std::cell::Cell<Option<studio_theme::Appearance>>,
     overflow_open: bool,
@@ -391,7 +405,7 @@ impl StudioShell {
             in_flight: None,
             error: None,
             failed_open: None,
-            left_tab: LeftTab::Agent,
+            drawer: None,
             sdk_open: true,
             recents_open: true,
             status_open: false,
@@ -453,13 +467,19 @@ impl StudioShell {
             player_width: f32::INFINITY,
             editor_height: 0.,
             timeline_height: None,
-            timeline_resize: None,
+            resize: None,
+            agent_width: None,
             grip_bounds: None,
+            agent_grip_bounds: None,
             section_bounds: HashMap::new(),
             viewport: [0., 0.],
             settings_open: false,
             settings_page: settings::SettingsPage::default(),
             settings_writer: Arc::default(),
+            onboarding: None,
+            setup_checked: false,
+            onboarding_completed: None,
+            permission_policy: studio_proto::PermissionPolicy::default(),
             header_appearance: std::cell::Cell::new(None),
             overflow_open: false,
             overflow_menu: MenuState::new(gpui::Point::default(), &[]),

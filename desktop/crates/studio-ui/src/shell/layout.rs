@@ -1,6 +1,6 @@
-//! The window's root layout, after Cap's editor: header, notices, then the editor column
-//! (the player beside the sidebar, whose Agent tab holds the agent panel, above the
-//! timeline and its resize grip).
+//! The window's root layout: header and notices, then the workspace row (the rail and its
+//! open drawer, the player above the timeline and its resize grip, the agent column with
+//! its own grip), then the status bar.
 
 use gpui::{
     Context, CursorStyle, DispatchPhase, InteractiveElement, IntoElement, MouseButton,
@@ -224,13 +224,32 @@ impl Render for StudioShell {
                 )
             });
         let notices = self.render_notices(cx);
-        let strip = self.render_status_strip(cx);
-        let sidebar = sections.sidebar.clone().cached(
+        let status_bar = self.render_status_strip(cx);
+        let rail_w = METRICS.rail_w
+            + if self.drawer.is_some() {
+                METRICS.gutter + METRICS.drawer_w
+            } else {
+                0.
+            };
+        let rail = sections.rail.clone().cached(
             StyleRefinement::default()
-                .w(px(METRICS.left_column_w))
+                .w(px(rail_w))
                 .flex_none()
                 .min_h_0(),
         );
+        let agent_w = self.agent_column_width();
+        let agent = div()
+            .relative()
+            .flex_none()
+            .w(px(agent_w))
+            .flex()
+            .child(
+                sections
+                    .agent
+                    .clone()
+                    .cached(StyleRefinement::default().flex_1().min_w_0().min_h_0()),
+            )
+            .child(self.render_agent_grip(agent_w, cx));
         let entity = cx.entity();
         // The editor column measures itself so the split can clamp against its height.
         let measure = canvas(
@@ -284,8 +303,6 @@ impl Render for StudioShell {
                         .flex_1()
                         .min_h(px(split.player_min_height))
                         .flex()
-                        .gap(gutter)
-                        .child(sidebar)
                         .child(player),
                 )
                 .child(
@@ -309,15 +326,7 @@ impl Render for StudioShell {
                         .child(self.render_resize_grip(split.timeline_height, cx)),
                 );
         } else {
-            editor = editor.child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .gap(gutter)
-                    .child(sidebar)
-                    .child(self.render_empty_state(cx)),
-            );
+            editor = editor.child(self.render_empty_state(cx));
         }
         Self::on_actions(div(), cx)
             .size_full()
@@ -334,10 +343,7 @@ impl Render for StudioShell {
                     cx.stop_propagation();
                 }
             }))
-            .children(
-                self.timeline_resize
-                    .map(|_| self.render_resize_tracking(cx)),
-            )
+            .children(self.resize.map(|_| self.render_resize_tracking(cx)))
             .child(self.render_edit_tracking())
             .bg(theme.editor.window)
             .text_color(theme.editor.text_1)
@@ -354,9 +360,12 @@ impl Render for StudioShell {
                     .pb(gutter)
                     .gap(gutter)
                     .children(notices)
-                    .children(strip)
+                    // Settings and export replace the whole row: the settings Agent page
+                    // draws the same panel entity, which renders once per frame.
                     .child(if self.settings_open {
                         self.render_settings(cx)
+                    } else if self.onboarding.is_some() {
+                        self.render_onboarding(cx)
                     } else if self.export_panel.open {
                         self.render_export(cx)
                     } else {
@@ -365,10 +374,13 @@ impl Render for StudioShell {
                             .min_h_0()
                             .flex()
                             .gap(gutter)
+                            .child(rail)
                             .child(editor)
+                            .child(agent)
                             .into_any_element()
                     }),
             )
+            .children(status_bar)
     }
 }
 
@@ -382,7 +394,21 @@ impl StudioShell {
         vertical_split(self.editor_height - METRICS.gutter, preferred)
     }
 
-    /// While the grip is held, follows the pointer through the whole window, including past
+    /// The agent column's width: the one its grip asked for, or the default, fitted to the
+    /// window.
+    pub(super) fn agent_column_width(&self) -> f32 {
+        self.agent_width_for(self.agent_width.unwrap_or(METRICS.agent_w))
+    }
+
+    fn agent_width_for(&self, preferred: f32) -> f32 {
+        agent_width(
+            self.viewport[0] - 2. * METRICS.gutter,
+            self.drawer.is_some(),
+            preferred,
+        )
+    }
+
+    /// While a grip is held, follows the pointer through the whole window, including past
     /// its edges, where element listeners stop firing.
     fn render_resize_tracking(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let entity = cx.entity();
@@ -398,15 +424,37 @@ impl StudioShell {
                         // A release outside the window never arrives; a move without the
                         // button ends the drag instead.
                         if event.pressed_button != Some(MouseButton::Left) {
-                            shell.timeline_resize = None;
+                            shell.resize = None;
                             cx.notify();
-                        } else if let Some((start_y, start_height)) = shell.timeline_resize {
-                            let preferred = start_height - (f32::from(event.position.y) - start_y);
-                            let height = shell.split_for(preferred).timeline_height;
-                            if shell.timeline_height != Some(height) {
-                                shell.timeline_height = Some(height);
-                                cx.notify();
+                            return;
+                        }
+                        match shell.resize {
+                            Some(Resize::Timeline {
+                                start_y,
+                                start_height,
+                            }) => {
+                                let preferred =
+                                    start_height - (f32::from(event.position.y) - start_y);
+                                let height = shell.split_for(preferred).timeline_height;
+                                if shell.timeline_height != Some(height) {
+                                    shell.timeline_height = Some(height);
+                                    cx.notify();
+                                }
                             }
+                            // The grip is on the column's left edge: moving left widens it.
+                            Some(Resize::Agent {
+                                start_x,
+                                start_width,
+                            }) => {
+                                let preferred =
+                                    start_width - (f32::from(event.position.x) - start_x);
+                                let width = shell.agent_width_for(preferred);
+                                if shell.agent_width != Some(width) {
+                                    shell.agent_width = Some(width);
+                                    cx.notify();
+                                }
+                            }
+                            None => {}
                         }
                     });
                 });
@@ -414,7 +462,7 @@ impl StudioShell {
                 window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
                     if phase == DispatchPhase::Capture && event.button == MouseButton::Left {
                         released.update(cx, |shell, cx| {
-                            shell.timeline_resize = None;
+                            shell.resize = None;
                             cx.notify();
                         });
                     }
@@ -426,9 +474,46 @@ impl StudioShell {
         .into_any_element()
     }
 
+    /// The handle on the agent column's left edge that drags its width.
+    fn render_agent_grip(&self, width: f32, cx: &mut Context<Self>) -> gpui::AnyElement {
+        div()
+            .id("agent-resize-handle")
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .left(px(-11.))
+            .w(px(14.))
+            .cursor(CursorStyle::ResizeColumn)
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |shell, event: &MouseDownEvent, _, cx| {
+                    shell.resize = Some(Resize::Agent {
+                        start_x: f32::from(event.position.x),
+                        start_width: width,
+                    });
+                    // Paints the tracker that listens for the release.
+                    cx.notify();
+                    cx.stop_propagation();
+                }),
+            )
+            .child(
+                div()
+                    .w(px(4.))
+                    .h(px(36.))
+                    .rounded(px(2.))
+                    .bg(self.theme.editor.line),
+            )
+            .child(grip_probe(cx, |shell, measured| {
+                shell.agent_grip_bounds = Some(measured)
+            }))
+            .into_any_element()
+    }
+
     /// The handle above the timeline that drags its height, as in Cap's editor.
     fn render_resize_grip(&self, timeline_height: f32, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let entity = cx.entity();
         div()
             .id("timeline-resize-handle")
             .absolute()
@@ -443,7 +528,10 @@ impl StudioShell {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |shell, event: &MouseDownEvent, _, cx| {
-                    shell.timeline_resize = Some((f32::from(event.position.y), timeline_height));
+                    shell.resize = Some(Resize::Timeline {
+                        start_y: f32::from(event.position.y),
+                        start_height: timeline_height,
+                    });
                     // Paints the tracker that listens for the release.
                     cx.notify();
                     cx.stop_propagation();
@@ -456,26 +544,60 @@ impl StudioShell {
                     .rounded(px(2.))
                     .bg(self.theme.editor.line),
             )
-            .child(
-                canvas(
-                    move |bounds, _, cx| {
-                        let measured = [
-                            f32::from(bounds.origin.x),
-                            f32::from(bounds.origin.y),
-                            f32::from(bounds.size.width),
-                            f32::from(bounds.size.height),
-                        ];
-                        entity.update(cx, |shell, _| shell.grip_bounds = Some(measured));
-                    },
-                    |_, _, _, _| {},
-                )
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full(),
-            )
+            .child(grip_probe(cx, |shell, measured| {
+                shell.grip_bounds = Some(measured)
+            }))
             .into_any_element()
     }
+}
+
+/// Records where a grip was painted, `[left, top, width, height]`, for the telemetry.
+fn grip_probe(
+    cx: &mut Context<StudioShell>,
+    store: impl Fn(&mut StudioShell, [f32; 4]) + 'static,
+) -> impl IntoElement {
+    let entity = cx.entity();
+    canvas(
+        move |bounds, _, cx| {
+            let measured = [
+                f32::from(bounds.origin.x),
+                f32::from(bounds.origin.y),
+                f32::from(bounds.size.width),
+                f32::from(bounds.size.height),
+            ];
+            entity.update(cx, |shell, _| store(shell, measured));
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+/// The grip being dragged and what it held at the press.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum Resize {
+    Timeline { start_y: f32, start_height: f32 },
+    Agent { start_x: f32, start_width: f32 },
+}
+
+/// The agent column's width in a workspace row `available` wide. The rail, the open
+/// drawer and the gaps take their fixed widths; the column takes `preferred`, at most
+/// `agent_max_w` and at least `agent_min_w`, and leaves the editor `editor_min_w`. When
+/// both minimums do not fit, they shrink in proportion, as the vertical split does.
+pub(super) fn agent_width(available: f32, drawer_open: bool, preferred: f32) -> f32 {
+    let mut fixed = METRICS.rail_w + 2. * METRICS.gutter;
+    if drawer_open {
+        fixed += METRICS.drawer_w + METRICS.gutter;
+    }
+    let space = (available - fixed).max(0.);
+    let scale = (space / (METRICS.agent_min_w + METRICS.editor_min_w)).min(1.);
+    let agent_min = METRICS.agent_min_w * scale;
+    let agent_max = (space - METRICS.editor_min_w * scale)
+        .min(METRICS.agent_max_w)
+        .max(agent_min);
+    preferred.clamp(agent_min, agent_max)
 }
 
 /// The player's height below which the timeline gives way, as in Cap's editor.
@@ -526,6 +648,38 @@ mod tests {
         let split = vertical_split(280., 260.);
         assert_eq!(split.player_min_height, 160.);
         assert_eq!(split.timeline_height, 120.);
+    }
+
+    /// The workspace row of a window `width` wide, inside the side gutters.
+    fn row(width: f32) -> f32 {
+        width - 2. * METRICS.gutter
+    }
+
+    #[test]
+    fn the_agent_column_keeps_its_default_in_common_windows() {
+        for width in [1280., 1536.] {
+            assert_eq!(agent_width(row(width), false, METRICS.agent_w), 360.);
+        }
+        assert_eq!(agent_width(row(1536.), true, METRICS.agent_w), 360.);
+    }
+
+    #[test]
+    fn the_agent_column_is_clamped_to_its_range_and_the_editor_minimum() {
+        assert_eq!(agent_width(row(1920.), false, 100.), 320.);
+        assert_eq!(agent_width(row(1920.), false, 900.), 520.);
+        // 1264 - 56 - 16 - 320 - 8 leaves 864: the editor keeps 480 of it.
+        assert_eq!(agent_width(row(1280.), true, 900.), 384.);
+    }
+
+    #[test]
+    fn narrow_windows_shrink_the_agent_and_editor_minimums_together() {
+        // 784 - 72 = 712 of 800: both minimums at 89 %.
+        let width = agent_width(row(800.), false, METRICS.agent_w);
+        assert!((width - 284.8).abs() < 0.01, "{width}");
+        // The open drawer leaves 384: both minimums at 48 %.
+        let width = agent_width(row(800.), true, METRICS.agent_w);
+        assert!((width - 153.6).abs() < 0.01, "{width}");
+        assert_eq!(agent_width(0., true, METRICS.agent_w), 0.);
     }
 
     #[test]

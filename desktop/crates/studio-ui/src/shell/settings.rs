@@ -5,7 +5,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use gpui::{Context, IntoElement, ParentElement, Styled};
+use gpui::{Context, IntoElement, ParentElement, Styled, div, px};
 use studio_engine::app_settings::AppSettings;
 use studio_proto::AppTheme;
 
@@ -52,6 +52,7 @@ impl SettingsPage {
 pub(super) struct SettingsWriter {
     latest: AtomicU64,
     latest_export: AtomicU64,
+    latest_setup: AtomicU64,
     write: parking_lot::Mutex<()>,
 }
 
@@ -81,7 +82,7 @@ impl StudioShell {
     pub(super) fn open_settings(&mut self, cx: &mut Context<Self>) {
         self.resume_install = false;
         self.pause_at_painted_frame(cx);
-        self.timeline_resize = None;
+        self.resize = None;
         self.overflow_open = false;
         self.export_panel.open = false;
         self.settings_open = true;
@@ -127,12 +128,86 @@ impl StudioShell {
         .detach();
     }
 
+    /// Saves the setup record and the permission policy in the background. Both fields are
+    /// written from the shell's current values, so the latest save carries every choice and
+    /// an overtaken one is skipped.
+    pub(super) fn save_setup_choices(&mut self, cx: &mut Context<Self>) {
+        let Some(paths) = self.presentation.paths.clone() else {
+            self.error = Some("Cannot save the setup: the app's storage is unavailable".into());
+            return;
+        };
+        let (completed, policy) = (self.onboarding_completed, self.permission_policy);
+        let writer = self.settings_writer.clone();
+        let generation = writer.latest_setup.fetch_add(1, Ordering::AcqRel) + 1;
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let _write = writer.write.lock();
+                    if writer.latest_setup.load(Ordering::Acquire) != generation {
+                        return Ok(());
+                    }
+                    let mut settings = AppSettings::load(&paths);
+                    settings.onboarding_completed = completed;
+                    settings.permission_policy = policy;
+                    settings.save(&paths)
+                })
+                .await;
+            if let Err(error) = result {
+                let _ = this.update(cx, |shell, cx| {
+                    shell.error = Some(error);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
     pub(super) fn render_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
         let entity = cx.entity();
         let page = match self.settings_page {
-            SettingsPage::Appearance => self.render_appearance(cx),
-            SettingsPage::Agent => self.setup_page.clone().into_any_element(),
+            SettingsPage::Appearance => div()
+                .flex()
+                .flex_col()
+                .gap(px(28.))
+                .child(self.render_appearance(cx))
+                .child(Section::settings(
+                    &theme,
+                    "Setup",
+                    Some("Walk through the theme, SDK, first video, agent and permissions again."),
+                    None,
+                    vec![
+                        self.action_button(
+                            "run-setup-again",
+                            "Run setup again",
+                            true,
+                            false,
+                            None,
+                            cx,
+                            |shell, cx| shell.run_setup_again(cx),
+                        )
+                        .into_any_element(),
+                    ],
+                ))
+                .into_any_element(),
+            SettingsPage::Agent => div()
+                .flex()
+                .flex_col()
+                .gap(px(28.))
+                .child(self.setup_page.clone())
+                .child(Section::settings(
+                    &theme,
+                    "Permissions",
+                    Some("How the agent's permission requests are answered. A running task keeps the choice it started with."),
+                    None,
+                    vec![self.permission_choice(
+                        self.permission_policy,
+                        |shell, policy, cx| shell.choose_permission_policy(policy, cx),
+                        cx,
+                    )],
+                ))
+                .into_any_element(),
         };
         let mut frame = SettingsFrame::settings(
             &theme,
@@ -172,7 +247,7 @@ impl StudioShell {
     }
 
     /// The Appearance page: the theme.
-    fn render_appearance(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn render_appearance(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
         let current = studio_theme::current_preference(cx);
         let entity = cx.entity();

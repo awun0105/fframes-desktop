@@ -347,14 +347,118 @@ impl ConversationPanel {
 
     // ---- what the panel shows above the composer ---------------------------------------------
 
-    /// The bottom of the chat tab: notes and cards the composer's state asks for, the plan
-    /// and the composer itself.
+    /// The bottom of the chat tab: the cards that wait for the user (questions, permission
+    /// requests, held and refused messages, the plan, the queue) in one scrolling area that
+    /// gives way to the transcript, then the composer and its toolbar.
     pub(super) fn composer_dock(
         &mut self,
         snapshot: &WorkflowSnapshot,
         controls: &Controls,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
+        let mut cards = div().flex().flex_col().gap(px(6.));
+        let mut has_cards = false;
+        let mut add = |cards: gpui::Div, card: AnyElement| {
+            has_cards = true;
+            cards.child(card)
+        };
+        if let Some(restore) = controls
+            .session_restore
+            .as_ref()
+            .filter(|r| !r.is_resumable)
+        {
+            cards = add(
+                cards,
+                Notice::new("agent-readonly-session", UiTone::Info, "Read-only conversation")
+                    .body(restore.notice.clone().unwrap_or_else(|| {
+                        "The provider cannot resume this session; its stored messages are shown as they were."
+                            .to_owned()
+                    }))
+                    .into_any_element(),
+            );
+        }
+        for (index, question) in snapshot.composer.questions.iter().enumerate() {
+            let card = self.question_card(index, question, cx);
+            cards = add(cards, card.into_any_element());
+        }
+        let requests: Vec<PermissionCard> = snapshot
+            .open_permissions()
+            .into_iter()
+            .filter(|card| !self.is_question(card))
+            .cloned()
+            .collect();
+        for card in &requests {
+            let request = self.permission_request(card, cx);
+            cards = add(cards, request.into_any_element());
+        }
+        if let Some(held) = snapshot.composer.held.clone() {
+            let notice = Notice::new("agent-held", UiTone::Info, "Waiting for the next step")
+                .body(held)
+                .action(self.action_button(
+                    "agent-held-cancel",
+                    "Cancel message",
+                    true,
+                    Tone::Normal,
+                    cx,
+                    |this, _, cx| {
+                        if let Some(workflow) = this.workflow().cloned() {
+                            let result = workflow.cancel_held();
+                            this.command(result, cx);
+                        }
+                    },
+                ));
+            cards = add(cards, notice.into_any_element());
+        }
+        if let Some(text) = self.host.refused.clone() {
+            let notice = Notice::new(
+                "agent-refused",
+                UiTone::Warning,
+                "The agent did not take this message",
+            )
+            .body(text)
+            .action(self.action_button(
+                "agent-refused-restore",
+                "Put back",
+                true,
+                Tone::Normal,
+                cx,
+                |this, _, cx| this.restore_refused(cx),
+            ))
+            .action(self.action_button(
+                "agent-refused-dismiss",
+                "Dismiss",
+                true,
+                Tone::Normal,
+                cx,
+                |this, _, cx| {
+                    this.host.refused = None;
+                    cx.notify();
+                },
+            ));
+            cards = add(cards, notice.into_any_element());
+        }
+        if let Some(card) = self.stage_card(cx) {
+            cards = add(cards, card);
+        }
+        if let Some(queue) = self.queue_section(snapshot, cx) {
+            cards = add(cards, queue.into_any_element());
+        }
+        if self.host.todo.read(cx).is_visible() {
+            cards = add(cards, self.host.todo.clone().into_any_element());
+        }
+        // Without a task there is no status strip to carry Stop (queued briefs).
+        if snapshot.task.is_none()
+            && !snapshot.composer.turn_live
+            && let Some(note) = controls.stop.clone()
+        {
+            let row = div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(self.stop_button(cx))
+                .child(div().flex_1().min_w_0().child(self.line(note)));
+            cards = add(cards, row.into_any_element());
+        }
         let mut dock = div()
             .flex()
             .flex_col()
@@ -363,112 +467,23 @@ impl ConversationPanel {
             .gap(px(6.))
             .px(px(12.))
             .pt(px(8.))
-            .pb(px(12.));
-        if let Some(restore) = controls
-            .session_restore
-            .as_ref()
-            .filter(|r| !r.is_resumable)
-        {
-            dock = dock.child(
-                Notice::new("agent-readonly-session", UiTone::Info, "Read-only conversation")
-                    .body(restore.notice.clone().unwrap_or_else(|| {
-                        "The provider cannot resume this session; its stored messages are shown as they were."
-                            .to_owned()
-                    })),
-            );
-        }
-        for (index, question) in snapshot.composer.questions.iter().enumerate() {
-            // In a window too short for the whole card it takes the leftover height and
-            // scrolls, instead of pushing the composer out of view.
+            .pb(px(10.));
+        if has_cards {
+            // A short window scrolls the cards; the choice stays reachable and the
+            // composer stays in view.
             dock = dock.child(
                 div()
-                    .id(("question-scroll", index))
+                    .id("agent-dock-scroll")
                     .flex_shrink(1.)
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(self.question_card(index, question, cx)),
-            );
-        }
-        if let Some(held) = snapshot.composer.held.clone() {
-            dock = dock.child(
-                Notice::new("agent-held", UiTone::Info, "Waiting for the next step")
-                    .body(held)
-                    .action(self.action_button(
-                        "agent-held-cancel",
-                        "Cancel message",
-                        true,
-                        Tone::Normal,
-                        cx,
-                        |this, _, cx| {
-                            if let Some(workflow) = this.workflow().cloned() {
-                                let result = workflow.cancel_held();
-                                this.command(result, cx);
-                            }
-                        },
-                    )),
-            );
-        }
-        if let Some(text) = self.host.refused.clone() {
-            dock = dock.child(
-                Notice::new(
-                    "agent-refused",
-                    UiTone::Warning,
-                    "The agent did not take this message",
-                )
-                .body(text)
-                .action(self.action_button(
-                    "agent-refused-restore",
-                    "Put back",
-                    true,
-                    Tone::Normal,
-                    cx,
-                    |this, _, cx| this.restore_refused(cx),
-                ))
-                .action(self.action_button(
-                    "agent-refused-dismiss",
-                    "Dismiss",
-                    true,
-                    Tone::Normal,
-                    cx,
-                    |this, _, cx| {
-                        this.host.refused = None;
-                        cx.notify();
-                    },
-                )),
-            );
-        }
-        if let Some(card) = self.stage_card(cx) {
-            dock = dock.child(card);
-        }
-        if self.host.todo.read(cx).is_visible() {
-            // Like a question card: scrolls in a short window rather than crowding out the
-            // task banner and the composer.
-            dock = dock.child(
-                div()
-                    .id("agent-todo-scroll")
-                    .flex_shrink(1.)
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .child(self.host.todo.clone()),
-            );
-        }
-        // The composer's own Stop covers a live turn; this one covers every other state a
-        // task can be in (waiting, reviewing, queued briefs).
-        if !snapshot.composer.turn_live
-            && let Some(note) = controls.stop.clone()
-        {
-            dock = dock.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(self.stop_button(cx))
-                    .child(div().flex_1().min_w_0().child(self.line(note))),
+                    .child(cards),
             );
         }
         dock = dock.child(
             div()
                 .id("agent-prompt")
+                .flex_none()
                 .on_key_down(cx.listener(|_, event: &KeyDownEvent, _, cx| {
                     let m = &event.keystroke.modifiers;
                     if event.keystroke.key == "escape" && !m.shift && !m.alt && !m.control {
@@ -478,10 +493,22 @@ impl ConversationPanel {
                 }))
                 .child(self.host.composer.clone()),
         );
-        if let Some(reason) = controls.submit.blocked.clone()
-            && !self.host.composer.read(cx).has_draft(cx)
-        {
-            dock = dock.child(self.line(reason));
+        let blocked = controls
+            .submit
+            .blocked
+            .clone()
+            .filter(|_| !self.host.composer.read(cx).has_draft(cx));
+        let options = self.options_bar(snapshot, controls, cx);
+        if options.is_some() || blocked.is_some() {
+            dock = dock.child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .children(options)
+                    .children(blocked.map(|reason| self.caption(&reason))),
+            );
         }
         dock
     }
@@ -522,6 +549,7 @@ impl ConversationPanel {
         json!({
             "text_chars": composer.text(cx).chars().count(),
             "chips": chip_kinds,
+            "context": composer.context().map(|chip| chip.label.as_ref()),
             "commands": self.host.last_commands.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
             "slash_rows": composer.slash_rows(),
             "images_off": composer.attach_disabled(AttachKind::Image),

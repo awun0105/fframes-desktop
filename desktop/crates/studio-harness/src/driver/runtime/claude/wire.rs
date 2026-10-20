@@ -137,6 +137,28 @@ pub(crate) fn answers_line(
     )
 }
 
+/// The ACP tool kind of a Claude Code tool, and the paths its input names. An unknown
+/// tool (a subagent `Task`, an MCP tool) is `other`, so a permission policy never mistakes
+/// it for an edit.
+pub(crate) fn tool_kind_and_paths(tool: &str, input: &Value) -> (String, Vec<std::path::PathBuf>) {
+    let kind = match tool {
+        "Read" | "NotebookRead" | "LS" => "read",
+        "Glob" | "Grep" => "search",
+        "Edit" | "MultiEdit" | "Write" | "NotebookEdit" => "edit",
+        "Bash" | "BashOutput" | "KillShell" => "execute",
+        "WebFetch" | "WebSearch" => "fetch",
+        "TodoWrite" | "ExitPlanMode" => "think",
+        _ => "other",
+    };
+    let paths = ["file_path", "notebook_path", "path"]
+        .iter()
+        .filter_map(|key| input.get(*key).and_then(Value::as_str))
+        .filter(|path| !path.is_empty())
+        .map(std::path::PathBuf::from)
+        .collect();
+    (kind.to_owned(), paths)
+}
+
 /// Why a question request cannot be answered, if it cannot: Claude reads the answers by
 /// question text, so an empty list, an empty text or a repeated text has no unambiguous
 /// answer.
@@ -293,5 +315,25 @@ mod tests {
         assert_eq!(allow["response"]["response"], json!({"behavior": "allow"}));
         let interrupt: Value = serde_json::from_str(&interrupt_line("i")).unwrap();
         assert_eq!(interrupt["request"]["cancel_queued"], true);
+    }
+
+    #[test]
+    fn tools_map_to_acp_kinds_and_the_paths_their_input_names() {
+        let (kind, paths) = tool_kind_and_paths("Write", &json!({"file_path": "src/lib.rs"}));
+        assert_eq!(kind, "edit");
+        assert_eq!(paths, [std::path::PathBuf::from("src/lib.rs")]);
+        let (kind, paths) = tool_kind_and_paths("Bash", &json!({"command": "cargo check"}));
+        assert_eq!((kind.as_str(), paths.len()), ("execute", 0));
+        assert_eq!(
+            tool_kind_and_paths("Grep", &json!({"path": "."})).0,
+            "search"
+        );
+        assert_eq!(tool_kind_and_paths("WebFetch", &json!({})).0, "fetch");
+        // A subagent or an MCP tool can do anything: never an edit.
+        assert_eq!(tool_kind_and_paths("Task", &json!({})).0, "other");
+        assert_eq!(
+            tool_kind_and_paths("mcp__x__write", &json!({"path": "a"})).0,
+            "other"
+        );
     }
 }

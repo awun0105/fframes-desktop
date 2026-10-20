@@ -13,6 +13,7 @@ mod canvas;
 mod checkpoints;
 mod composer;
 mod keyboard;
+mod onboarding;
 mod presets;
 mod services;
 mod settings;

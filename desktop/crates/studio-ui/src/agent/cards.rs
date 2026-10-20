@@ -12,19 +12,29 @@ impl ConversationPanel {
         let theme = self.theme;
         let palette = theme.editor;
         match &row.kind {
+            // The user's messages are bubbles on the right; the agent answers on the left
+            // without a frame, and its tool calls run as a log between them.
             RowKind::User { text, source } => Self::row_shell()
+                .pt(px(4.))
+                .flex()
+                .flex_col()
+                .items_end()
+                .gap(px(2.))
+                .children(match source {
+                    UserSource::Brief => None,
+                    UserSource::Clarification => Some(self.caption("Your answer")),
+                    UserSource::Followup => Some(self.caption("Follow-up")),
+                    UserSource::Repair => {
+                        Some(self.caption("Automatic repair context (sent by Studio)"))
+                    }
+                })
                 .child(
-                    Card::editor_nested(&self.theme)
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .p(px(10.))
-                        .child(self.caption(match source {
-                            UserSource::Brief => "You",
-                            UserSource::Clarification => "You (answer)",
-                            UserSource::Followup => "You (follow-up)",
-                            UserSource::Repair => "Automatic repair context (sent by Studio)",
-                        }))
+                    div()
+                        .max_w(gpui::relative(0.88))
+                        .rounded(px(12.))
+                        .bg(palette.ctl)
+                        .px(px(12.))
+                        .py(px(8.))
                         .child(
                             text_style(div(), TextStyle::Body)
                                 .text_color(palette.text_1)
@@ -32,23 +42,10 @@ impl ConversationPanel {
                         ),
                 )
                 .into_any_element(),
-            RowKind::Agent { streaming, .. } => Self::row_shell()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .px(px(2.))
-                        .child(self.caption(if *streaming {
-                            "Agent · writing…"
-                        } else {
-                            "Agent"
-                        }))
-                        .child(
-                            MarkdownRow::new(row, Voice::Answer)
-                                .project_root(self.project_root.clone()),
-                        ),
-                )
+            RowKind::Agent { .. } => Self::row_shell()
+                .child(div().px(px(2.)).child(
+                    MarkdownRow::new(row, Voice::Answer).project_root(self.project_root.clone()),
+                ))
                 .into_any_element(),
             RowKind::Thought { streaming, .. } => {
                 let id = row.id.0;
@@ -91,8 +88,8 @@ impl ConversationPanel {
                     )
                     .into_any_element()
             }
-            RowKind::Tool(card) => self.tool_card(card),
-            RowKind::Permission(card) => self.permission_card(card, cx),
+            RowKind::Tool(card) => self.tool_card(row, card),
+            RowKind::Permission(card) => self.permission_card(card),
             RowKind::Notice { level, text } => Self::row_shell()
                 .child(Notice::new(
                     Self::row_id(row),
@@ -115,9 +112,21 @@ impl ConversationPanel {
                 if card.draft_retained {
                     lines.push("The agent's working copy was kept.".to_owned());
                 }
-                Self::row_shell()
-                    .child(Notice::new(Self::row_id(row), tone, title).body(lines.join("\n")))
-                    .into_any_element()
+                // The end of a task is one line of the log; the status strip and the error
+                // card above it carry the detail.
+                let glyph = match tone {
+                    UiTone::Success => (Icon::CircleCheck, theme.green_11.into()),
+                    UiTone::Danger => (Icon::AlertTriangle, theme.red_11.into()),
+                    UiTone::Warning => (Icon::AlertTriangle, theme.amber_11.into()),
+                    _ => (Icon::Info, palette.text_3.into()),
+                };
+                self.activity_row(
+                    Self::row_id(row),
+                    glyph,
+                    title,
+                    lines.join(" "),
+                    div().into_any_element(),
+                )
             }
         }
     }
@@ -134,92 +143,181 @@ impl ConversationPanel {
         }
     }
 
-    pub(super) fn tool_card(&self, card: &ToolCard) -> AnyElement {
+    /// A tool call as one line of the activity log: what kind of step, on what, and how
+    /// it went. The full title is in the tooltip when the line truncates it.
+    pub(super) fn tool_card(&self, row: &Row, card: &ToolCard) -> AnyElement {
+        let theme = self.theme;
+        let (verb, glyph) = tool_verb(card.kind.as_deref());
+        let title = card.title.clone().unwrap_or_else(|| card.call_id.clone());
+        // Agents usually start the title with the verb ("Read src/main.rs"): then the
+        // title's own first word is the verb, not a repeat of it.
+        let (verb, title) = match title.split_once(' ') {
+            Some((first, rest)) if first.eq_ignore_ascii_case(verb) => {
+                (first.to_owned(), rest.to_owned())
+            }
+            _ => (verb.to_owned(), title),
+        };
+        let status = match card.status {
+            Some(ToolStatus::Completed) => {
+                icon(Icon::Check, 12., theme.green_11).into_any_element()
+            }
+            Some(ToolStatus::Failed) => {
+                Badge::new("failed").tone(UiTone::Danger).into_any_element()
+            }
+            other => text_style(div(), TextStyle::Small)
+                .text_color(theme.editor.text_3)
+                .child(tool_badge(other).0)
+                .into_any_element(),
+        };
+        self.activity_row(
+            ("agent-tool", row.id.0),
+            (glyph, theme.editor.text_3.into()),
+            verb,
+            title,
+            status,
+        )
+    }
+
+    /// One line of the activity log: a glyph, a verb, a truncated subject with its full
+    /// text in a tooltip, and a status at the end. Consecutive lines sit close together.
+    fn activity_row(
+        &self,
+        id: impl Into<ElementId>,
+        (glyph, tint): (Icon, gpui::Hsla),
+        verb: impl Into<SharedString>,
+        subject: impl Into<SharedString>,
+        status: AnyElement,
+    ) -> AnyElement {
         let theme = self.theme;
         let palette = theme.editor;
-        let (status, tone) = tool_badge(card.status);
-        Self::row_shell()
+        let verb: SharedString = verb.into();
+        let subject: SharedString = subject.into();
+        let tip: SharedString = format!("{verb} {subject}").into();
+        div()
+            .w_full()
+            .pb(px(2.))
             .child(
-                Card::editor_nested(&self.theme)
+                div()
+                    .id(id)
+                    .h(px(ACTIVITY_ROW_H))
                     .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .p(px(10.))
+                    .items_center()
+                    .gap(px(8.))
+                    .px(px(6.))
+                    .rounded(px(METRICS.radius_control))
+                    .hover(|style| style.bg(palette.ctl))
+                    .tooltip_show_delay(crate::kit::TOOLTIP_SHOW_DELAY)
+                    .tooltip(move |_, cx| crate::kit::Tooltip::new(&theme, tip.clone()).view(cx))
+                    .child(icon(glyph, 13., tint))
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(icon(Icon::Hammer, 14., palette.text_2))
-                            .child(
-                                label(
-                                    &self.theme,
-                                    format!("Tool · {}", card.kind.as_deref().unwrap_or("call")),
-                                )
-                                .flex_1()
-                                .min_w_0(),
-                            )
-                            .child(Badge::new(status).tone(tone)),
+                        text_style(div().flex_none(), TextStyle::Small)
+                            .text_color(palette.text_1)
+                            .child(verb),
                     )
                     .child(
-                        text_style(div(), TextStyle::Body)
+                        text_style(div().flex_1().min_w_0().truncate(), TextStyle::Small)
                             .text_color(palette.text_2)
-                            .child(selectable(
-                                card.title.clone().unwrap_or_else(|| card.call_id.clone()),
-                            )),
+                            .child(subject),
                     )
-                    .children(
-                        (card.updates > 1).then(|| self.line(format!("{} updates", card.updates))),
-                    ),
+                    .child(div().flex_none().child(status)),
             )
             .into_any_element()
     }
 
-    pub(super) fn permission_card(
-        &mut self,
-        card: &PermissionCard,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let pending = self.replies.is_pending(&card.reference);
-        // A question has its own card above the composer; this row only records it.
-        let is_question = self.snapshot.as_ref().is_some_and(|snapshot| {
+    /// Whether `card` is an agent question, which has its own card above the composer.
+    pub(super) fn is_question(&self, card: &PermissionCard) -> bool {
+        self.snapshot.as_ref().is_some_and(|snapshot| {
             snapshot
                 .composer
                 .questions
                 .iter()
                 .any(|question| question.reference == card.reference)
-        });
-        let open = card.state == PermissionState::Open && !pending && !is_question;
-        let state = match &card.state {
-            PermissionState::Open if is_question => "Answer in the question card".to_owned(),
-            PermissionState::Open if pending => "Answer sent…".to_owned(),
-            PermissionState::Open => "Waiting for your choice".to_owned(),
-            PermissionState::Selected { option_id } => format!(
-                "You chose {}",
-                card.options
-                    .iter()
-                    .find(|o| &o.option_id == option_id)
-                    .map_or(option_id.as_str(), |o| o.name.as_str())
-            ),
-            PermissionState::Cancelled => "Closed without an answer".to_owned(),
-        };
-        let key = format!(
+        })
+    }
+
+    fn permission_key(card: &PermissionCard) -> String {
+        format!(
             "{}-{}-{}",
             &card.reference.task.0[..card.reference.task.0.len().min(8)],
             card.reference.writer,
             card.reference.request
-        );
-        let mut notice = Notice::new(
-            format!("perm-notice-{key}"),
-            if card.state == PermissionState::Open {
-                UiTone::Warning
+        )
+    }
+
+    /// The transcript row of a permission request. An open request is answered in its
+    /// card above the composer ([`Self::permission_request`]); the row only records it.
+    pub(super) fn permission_card(&self, card: &PermissionCard) -> AnyElement {
+        let key = Self::permission_key(card);
+        if let Some(policy) = card.answered_by {
+            let state = if card.state == PermissionState::Cancelled {
+                "closed before the agent took it"
             } else {
-                UiTone::Neutral
-            },
+                policy.label()
+            };
+            return self.activity_row(
+                format!("perm-auto-{key}"),
+                (Icon::CircleCheck, self.theme.green_11.into()),
+                "Allowed",
+                card.title.clone(),
+                self.caption(state).into_any_element(),
+            );
+        }
+        let (glyph, state) = match &card.state {
+            PermissionState::Open if self.is_question(card) => {
+                (Icon::Info, "answer in the question card".to_owned())
+            }
+            // The pinned request shows the command; the row stays one line until answered.
+            PermissionState::Open => {
+                return self.activity_row(
+                    format!("perm-open-{key}"),
+                    (Icon::AlertTriangle, self.theme.amber_11.into()),
+                    "Permission",
+                    card.title.clone(),
+                    self.caption("answer below").into_any_element(),
+                );
+            }
+            PermissionState::Selected { option_id } => (
+                Icon::CircleCheck,
+                format!(
+                    "you chose {}",
+                    card.options
+                        .iter()
+                        .find(|o| &o.option_id == option_id)
+                        .map_or(option_id.as_str(), |o| o.name.as_str())
+                ),
+            ),
+            PermissionState::Cancelled => (Icon::X, "closed without an answer".to_owned()),
+        };
+        self.activity_row(
+            format!("perm-notice-{key}"),
+            (glyph, self.theme.editor.text_3.into()),
+            "Permission",
+            card.title.clone(),
+            self.caption(&state).into_any_element(),
+        )
+    }
+
+    /// The open permission request pinned above the composer, with the agent's options.
+    /// Decline (closes the request and ends the turn) is offered only when the agent gives
+    /// no way to refuse; otherwise it would sit next to the agent's own Reject.
+    pub(super) fn permission_request(
+        &mut self,
+        card: &PermissionCard,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let pending = self.replies.is_pending(&card.reference);
+        let key = Self::permission_key(card);
+        let mut notice = Notice::new(
+            format!("perm-request-{key}"),
+            UiTone::Warning,
             "Permission requested",
         )
-        .body(format!("{}\n{state}", card.title));
-        if open {
+        .body(if pending {
+            format!("{}\nAnswer sent…", card.title)
+        } else {
+            card.title.clone()
+        });
+        if !pending {
             for option in &card.options {
                 let reference = card.reference.clone();
                 let id = option.option_id.clone();
@@ -242,19 +340,21 @@ impl ConversationPanel {
                     },
                 ));
             }
-            let reference = card.reference.clone();
-            notice = notice.action(self.action_button(
-                format!("perm-{key}-decline"),
-                "Decline",
-                true,
-                Tone::Normal,
-                cx,
-                move |this, _, cx| {
-                    this.answer_permission(reference.clone(), PermissionAnswer::Cancel, cx)
-                },
-            ));
+            if !card.options.iter().any(|o| o.kind.starts_with("reject")) {
+                let reference = card.reference.clone();
+                notice = notice.action(self.action_button(
+                    format!("perm-{key}-decline"),
+                    "Decline",
+                    true,
+                    Tone::Normal,
+                    cx,
+                    move |this, _, cx| {
+                        this.answer_permission(reference.clone(), PermissionAnswer::Cancel, cx)
+                    },
+                ));
+            }
         }
-        Self::row_shell().child(notice).into_any_element()
+        div().child(notice)
     }
 
     pub(super) fn error_card(&self, row: &Row, error: &StructuredError) -> AnyElement {
@@ -414,75 +514,6 @@ impl ConversationPanel {
     }
 
     // ---- tabs ----------------------------------------------------------------------------------------
-
-    pub(super) fn banner(
-        &mut self,
-        snapshot: &WorkflowSnapshot,
-        controls: &Controls,
-        cx: &mut Context<Self>,
-    ) -> Option<gpui::Div> {
-        let task = snapshot.task.as_ref()?;
-        let tone = banner_tone(task.phase);
-        let id = task.id.0.as_str();
-        let mut lines = vec![format!(
-            "Task {} · generation {} · base {}",
-            &id[..id.len().min(8)],
-            task.generation,
-            task.source_base
-        )];
-        if !matches!(
-            task.phase,
-            TaskPhase::AwaitingReview | TaskPhase::AwaitingEvidence
-        ) {
-            lines.push(format!(
-                "{} · {} of {} automatic repairs",
-                match task.review_policy {
-                    ReviewPolicy::AutoApply => "Apply automatically",
-                    ReviewPolicy::ManualReview => "Manual review",
-                },
-                task.repair.used,
-                task.repair.max
-            ));
-        }
-        if let Some(reason) = &task.reason {
-            lines.push(reason.clone());
-        }
-        if let Some(note) = &controls.stop
-            && !task.phase.is_terminal()
-        {
-            lines.push(note.clone());
-        }
-        if let Some(note) = controls.review.as_ref().and_then(|r| r.apply_note.as_ref()) {
-            lines.push(format!(
-                "Apply is blocked: {note}. The candidate is kept; retry after fixing it."
-            ));
-        }
-        let mut notice = Notice::new(
-            "agent-banner",
-            tone,
-            format!(
-                "{}{}",
-                task.phase.label(),
-                if task.stop_requested {
-                    " · stopping"
-                } else {
-                    ""
-                }
-            ),
-        )
-        .body(lines.join("\n"));
-        if let Some(review) = &controls.review {
-            for button in self.review_buttons(review, cx) {
-                notice = notice.action(button);
-            }
-            notice = notice.action(self.banner_review_button(cx));
-        }
-        let mut banner = div().flex().flex_col().gap(px(8.)).child(notice);
-        if let Some(conflict) = &task.conflict {
-            banner = banner.child(self.conflict_block(conflict));
-        }
-        Some(banner)
-    }
 
     pub(super) fn review_buttons(
         &mut self,

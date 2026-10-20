@@ -55,6 +55,15 @@ impl AttachmentDraft {
     }
 }
 
+/// The timeline selection that goes with the next message. The owner sets it from the
+/// timeline; it is changed there, not removed from the strip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextChip {
+    pub label: SharedString,
+    /// The selection cannot be sent; the label says why.
+    pub problem: bool,
+}
+
 /// A chip: a draft with its id.
 #[derive(Clone)]
 pub struct Attachment {
@@ -119,10 +128,11 @@ pub type RemoveHandler = Rc<dyn Fn(AttachmentId, &mut Window, &mut App)>;
 /// The wrapping strip of chips, or nothing when there are none.
 pub fn strip(
     attachments: &Attachments,
+    context: Option<&ContextChip>,
     theme: &Theme,
     on_remove: RemoveHandler,
 ) -> Option<impl IntoElement> {
-    if attachments.is_empty() {
+    if attachments.is_empty() && context.is_none() {
         return None;
     }
     let chips = attachments
@@ -139,8 +149,41 @@ pub fn strip(
             .gap(px(STRIP_GAP))
             .pt(px(STRIP_PAD_TOP))
             .px(px(STRIP_PAD_X))
+            .children(context.map(|context| context_chip(context, theme)))
             .children(chips),
     )
+}
+
+fn context_chip(context: &ContextChip, theme: &Theme) -> impl IntoElement {
+    let (glyph, color) = if context.problem {
+        (Icon::AlertTriangle, theme.red_11)
+    } else {
+        (Icon::Layers, theme.editor.accent)
+    };
+    let (tip_theme, tip) = (*theme, context.label.clone());
+    div()
+        .id("composer-context")
+        .tooltip_show_delay(crate::kit::TOOLTIP_SHOW_DELAY)
+        .tooltip(move |_, cx| crate::kit::Tooltip::new(&tip_theme, tip.clone()).view(cx))
+        .flex_none()
+        .h(px(28.0))
+        .max_w(px(260.0))
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .px(px(8.0))
+        .rounded(px(8.0))
+        .border_1()
+        .border_color(theme.gray(6))
+        .bg(theme.gray(3))
+        .child(icon(glyph, 12.0, color))
+        .child(
+            div()
+                .text_size(px(12.0))
+                .text_color(theme.gray(12))
+                .truncate()
+                .child(context.label.clone()),
+        )
 }
 
 fn chip(attachment: &Attachment, theme: &Theme, on_remove: RemoveHandler) -> impl IntoElement {

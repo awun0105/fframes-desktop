@@ -152,6 +152,10 @@ use crate::probe::BoundsProbe;
 
 /// Height of a reasoning row's header, with or without the "Thinking…" badge.
 const THOUGHT_HEADER_H: f32 = 20.;
+/// The least the transcript is given, however many cards wait above the composer.
+const TRANSCRIPT_MIN_H: f32 = 140.;
+/// Height of a one-line activity row (tool call, automatic answer) in the transcript.
+const ACTIVITY_ROW_H: f32 = 24.;
 /// Height of the header bar holding the tabs.
 const HEADER_H: f32 = 46.;
 
@@ -300,8 +304,12 @@ pub struct ConversationPanel {
     replies: ReplyTracker,
     notice: Option<String>,
     sdk_ready: bool,
+    /// How permission requests are answered (shown in the header).
+    permission_policy: studio_proto::PermissionPolicy,
     task_scope: Option<TaskScope>,
     scope_error: Option<String>,
+    /// The status strip shows the task's ids, repairs, scope and evidence.
+    task_details_open: bool,
     /// Measured bounds of the buttons a native driver must click (qualification only).
     button_bounds: std::collections::HashMap<String, [f32; 4]>,
     /// Current-task thumbnails are local presentation state, never workflow snapshot data.
@@ -402,8 +410,10 @@ impl ConversationPanel {
             replies: ReplyTracker::default(),
             notice: None,
             sdk_ready: false,
+            permission_policy: studio_proto::PermissionPolicy::default(),
             task_scope: None,
             scope_error: None,
+            task_details_open: false,
             button_bounds: std::collections::HashMap::new(),
             evidence_images: HashMap::new(),
             retired_evidence_images: Vec::new(),
@@ -495,6 +505,17 @@ impl ConversationPanel {
         self.attached.as_ref().map(|a| a.serial)
     }
 
+    pub fn set_permission_policy(
+        &mut self,
+        policy: studio_proto::PermissionPolicy,
+        cx: &mut Context<Self>,
+    ) {
+        if self.permission_policy != policy {
+            self.permission_policy = policy;
+            cx.notify();
+        }
+    }
+
     pub fn set_sdk_ready(&mut self, ready: bool, cx: &mut Context<Self>) {
         if self.sdk_ready != ready {
             self.sdk_ready = ready;
@@ -514,6 +535,21 @@ impl ConversationPanel {
         };
         // Set again with every presented frame; only a change renders the panel.
         if self.task_scope != task_scope || self.scope_error != scope_error {
+            // The selection rides with the next message, so it shows as a chip in the composer.
+            let chip = match (&scope_error, &task_scope) {
+                (Some(error), _) => Some(composer::ContextChip {
+                    label: format!("Selection unavailable: {error}").into(),
+                    problem: true,
+                }),
+                (None, Some(scope)) => Some(composer::ContextChip {
+                    label: scope.label().into(),
+                    problem: false,
+                }),
+                (None, None) => None,
+            };
+            self.host
+                .composer
+                .update(cx, |composer, cx| composer.set_context(chip, cx));
             self.task_scope = task_scope;
             self.scope_error = scope_error;
             cx.notify();
@@ -756,6 +792,16 @@ fn probed_button(id: &ElementId) -> Option<&str> {
     }
 }
 
+/// The header's badge for the permission policy: allowing everything is a warning.
+fn policy_badge(policy: studio_proto::PermissionPolicy) -> Badge {
+    use studio_proto::PermissionPolicy::*;
+    match policy {
+        AskEveryTime => Badge::new("Asks every time"),
+        AllowInWorkingCopy => Badge::new("Auto: working copy").tone(UiTone::Info),
+        AllowEverything => Badge::new("Auto: everything").tone(UiTone::Warning),
+    }
+}
+
 fn banner_tone(phase: TaskPhase) -> UiTone {
     match phase {
         TaskPhase::Accepted => UiTone::Success,
@@ -789,6 +835,23 @@ fn tool_badge(status: Option<ToolStatus>) -> (&'static str, UiTone) {
         Some(ToolStatus::Completed) => ("done", UiTone::Success),
         Some(ToolStatus::Failed) => ("failed", UiTone::Danger),
         None => ("…", UiTone::Neutral),
+    }
+}
+
+/// The verb and glyph of a tool call in the activity log, from the ACP tool kind the
+/// drivers report (`read`, `edit`, `search`, `execute`, ...).
+fn tool_verb(kind: Option<&str>) -> (&'static str, Icon) {
+    match kind {
+        Some("read") => ("Read", Icon::Eye),
+        Some("edit") => ("Edit", Icon::File),
+        Some("delete") => ("Delete", Icon::Trash),
+        Some("move") => ("Move", Icon::File),
+        Some("search") => ("Search", Icon::Search),
+        Some("execute") => ("Run", Icon::Hammer),
+        Some("fetch") => ("Fetch", Icon::Download),
+        Some("think") => ("Think", Icon::Bot),
+        Some("switch_mode") => ("Mode", Icon::Settings),
+        _ => ("Tool", Icon::Package),
     }
 }
 
@@ -927,15 +990,22 @@ impl Render for ConversationPanel {
                     ),
             )
             .child(
-                text_style(div(), TextStyle::Small)
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
                     .px(px(12.))
                     .pb(px(8.))
-                    .text_color(if g.usable {
-                        theme.editor.text_2
-                    } else {
-                        theme.editor.accent
-                    })
-                    .child(g.headline.clone()),
+                    .child(
+                        text_style(div().flex_1().min_w_0(), TextStyle::Small)
+                            .text_color(if g.usable {
+                                theme.editor.text_2
+                            } else {
+                                theme.editor.accent
+                            })
+                            .child(g.headline.clone()),
+                    )
+                    .child(policy_badge(self.permission_policy)),
             );
         if let Some(notice) = self.notice.clone() {
             header = header.child(

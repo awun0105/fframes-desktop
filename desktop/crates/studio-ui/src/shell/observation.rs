@@ -258,8 +258,13 @@ impl StudioShell {
             "timeline_height": split.timeline_height,
             "player_min_height": split.player_min_height,
             "grip_bounds": self.grip_bounds,
-            "resizing": self.timeline_resize.is_some(),
+            "resizing": self.resize.is_some(),
         });
+        value["agent_column"] = serde_json::json!({
+            "width": self.agent_column_width(),
+            "grip_bounds": self.agent_grip_bounds,
+        });
+        value["drawer"] = serde_json::json!(self.drawer.map(|tab| format!("{tab:?}")));
         value["viewport"] = serde_json::json!(self.viewport);
         value["settings_open"] = self.settings_open.into();
         if let Some(review) = self.review_telemetry(cx) {
@@ -303,6 +308,8 @@ impl StudioShell {
         buttons["timeline-fit"] = thumbnails["fit_bounds"].clone();
         serde_json::json!({
             "pid": std::process::id(), "busy": self.busy,
+            "onboarding": self.onboarding.as_ref().map(|o| o.step.name()),
+            "permission_policy": self.permission_policy,
             "project_path": self.presentation.project.as_ref().map(|p| &p.root), "error": self.error,
             "current_source_revision": self.presentation.project.as_ref().map(|p| p.source.as_str()),
             "preview_status": format!("{:?}", self.preview_state.status),
@@ -350,6 +357,10 @@ impl StudioShell {
                             | "create"
                             | "settings"
                             | "settings-back"
+                            | "onboarding-skip"
+                            | "onboarding-back"
+                            | "onboarding-next"
+                            | "run-setup-again"
                     ) =>
             {
                 Some(name.to_string())

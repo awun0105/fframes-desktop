@@ -36,6 +36,46 @@ Source and copied assets travel with the folder; local history does not. A check
 
 **Projects made by an older Studio are refused.** There is no migration. A `studio.json` of an earlier schema or instruction version is refused with "made by an older Studio … The project is left as it is and cannot be opened" ([`manifest.rs`](../../desktop/crates/studio-project/src/manifest.rs)), and the same rule covers the history database, journals, checkpoint inventories, stored agent sessions and the provider registry: an old file is reported and left byte for byte, and nothing repairs or rewrites it. A file from a newer Studio asks you to update Studio. An `agent-adapter.json` or a single-session conversation log from an earlier build is simply ignored, and Setup is shown again.
 
+### Try real repository examples
+
+After installing the managed SDK in Setup, run this from the repository root (PowerShell):
+
+```powershell
+cargo run --locked --manifest-path desktop\Cargo.toml -p studio-engine --example prepare_examples -- --out "$HOME\fframes-studio-examples" --check
+```
+
+This creates independent, editable **Hello World**, **Motion Graphics**, **Signal Lab**
+and **fframes Studio Intro** projects. In Studio choose **Open project**, select one of the generated folders,
+then **Build preview**. Signal Lab has four scenes and a soundtrack for testing the
+timeline and audio; the others cover basic rendering and animation.
+
+To prepare only the full landscape Studio Intro video (including its shared soundtrack,
+sound effects, clips and component fonts), use:
+
+```powershell
+cargo run --locked --manifest-path desktop\Cargo.toml -p studio-engine --example prepare_examples -- --example fframes-studio-intro --out "$HOME\fframes-studio-examples" --check
+```
+
+The intro bundles `fframes-components` 0.1.2 from the local Cargo source cache with its
+license and credits. If it is not cached, run `cargo fetch --locked` from the repository
+first. Its seven scenes remain editable. **Studio's CPU preview and export omit the
+original Skia shader effects** (grain, contour and grid); the shader source is retained,
+and the generated project's `PREVIEW-NOTES.md` records this limitation. The repository's
+original Skia CLI is unchanged; the copy uses the generated CPU CLI/worker instead.
+
+The command copies the actual example source and media, adds the Studio preview/export
+worker and a CPU CLI, and pins each project to the installed SDK. `--check` builds and
+exercises the same managed preview worker used by the app (timeline, frame and audio).
+Omit it to only prepare the folders; `--sdk <installed-sdk-folder>` selects another SDK.
+On Unix, use `/` in paths and an output such as `"$HOME/fframes-studio-examples"`.
+
+Choose an output **outside the repository** so its inherited Cargo configuration and
+workspace dependencies do not interfere. Existing copies are never overwritten, and the
+original examples are unchanged. Edit the copied video under `examples/<name>/src` and
+its embedded assets under `examples/<name>/media`. The intro also keeps the runtime
+media in its original `examples/*/dynamic_media` folders. Other examples needing
+external footage or extra dependencies are not yet adapted by this command.
+
 ## Editing
 
 **Build preview** compiles the project in an isolated, SDK-bound copy and prepares the timeline, inspection, first frame and audio before replacing the displayed revision. Failed or cancelled builds keep the previous preview, and installing a preview never moves the saved checkpoint.
@@ -50,7 +90,7 @@ The **Style** tab applies a preset or edits token overrides through the same dur
 
 ## Agent panel
 
-The agent panel is the sidebar's first tab, **Agent**, next to Project, Assets and Style. It has three tabs: **Chat** (the conversation, the plan and the composer), **History** (stored sessions) and **Project** (review policy, Apply, Undo, accepted edits and recovery). The settings button in the panel header opens the **Agent** page of the settings frame.
+The agent panel is the column on the window's right and is always shown; drag the grip on its left edge to widen or narrow it (320 to 520 px, not saved between launches). The rail on the left opens **Project**, **Assets** and **Style** in a drawer beside it; pressing the open item again, or the drawer's close button, gives the width back to the preview. The panel has three tabs: **Chat** (the conversation, the plan and the composer), **History** (stored sessions) and **Project** (review policy, Apply, Undo, accepted edits and recovery). The settings button in the panel header opens the **Agent** page of the settings frame.
 
 ### Providers and wires
 
@@ -60,7 +100,13 @@ Studio has three agent wires, and the **Protocol** control on the Agent page cho
 - **Select** saves the adapter in `provider-registry.json` and runs one connection test. **Check adapter** tests again, for example after you sign in with the agent's own tool. **Install adapter** installs a pinned ACP adapter package from the lockfile Studio ships; **Install guide** opens the agent's official install page. Opening a project never launches an agent.
 - For an ACP profile, when the agent's CLI is found but its ACP adapter is not, the Agent page says so and offers **Install adapter** (and **Get Node.js** when Node is missing); an install stops after 15 minutes ([`adapter_install.rs`](../../desktop/crates/studio-harness/src/adapter_install.rs)).
 - Sign-in stays with each agent. The registry stores only the names of sign-in environment variables, never their values, and refuses a value pasted where a name belongs. `CLAUDECODE*` variables are never passed to an agent ([`discovery.rs`](../../desktop/crates/studio-harness/src/discovery.rs)).
-- A turn stops after 15 minutes without agent activity or 2 hours in total ([`runtime/mod.rs`](../../desktop/crates/studio-harness/src/driver/runtime/mod.rs)). Every permission request becomes a card with the agent's choices and **Decline**; Studio never answers one for you.
+- A turn stops after 15 minutes without agent activity or 2 hours in total ([`runtime/mod.rs`](../../desktop/crates/studio-harness/src/driver/runtime/mod.rs)). Every permission request becomes a card pinned above the prompt with the agent's choices, plus **Decline** when the agent offers no way to refuse; the transcript keeps a one-line record and, once answered, the choice. Studio answers a request itself only under the permission policy you chose (first-run setup, or **Settings → Agent → Permissions**; the agent header shows it):
+  - **Ask every time** (the default for installs from before the setup existed): every request is a card.
+  - **Allow in the working copy** (suggested by the setup): reads, searches, edits, deletes and moves whose every path is inside the task's working copy are allowed once; commands, network access, unknown tools and paths outside the working copy still ask.
+  - **Allow everything**: every request is allowed once, commands included. They run on this computer, not in a sandbox.
+
+  Studio always picks the agent's own `allow_once` option, never `allow_always`, never answers a question, and records each automatic answer in the transcript ("Allowed automatically · …"). A running task keeps the policy it started with ([`auto_answer.rs`](../../desktop/crates/studio-engine/src/agent/auto_answer.rs)).
+- On first launch, when the SDK or an agent is still missing, Studio opens a setup in place of the workspace: Appearance, SDK, first video, Agent and Permissions. Every step can be skipped; **Settings → Appearance → Run setup again** reopens it. The record lives in `app-settings.json` (`onboarding_completed`, `permission_policy`).
 - The Agent page shows the writer containment the last launch verified (a job object on Windows, a process group with an escape scan on Linux and macOS). A writer that is not contained cannot have its candidate captured.
 
 ### The composer

@@ -13,9 +13,11 @@ impl ConversationPanel {
             return controls
                 .options_note
                 .as_ref()
-                .map(|note| div().child(self.line(note.clone())));
+                .map(|note| div().child(self.caption(note)));
         }
-        let mut bar = div().flex().flex_col().items_start().gap(px(8.));
+        // One wrapping toolbar under the composer, like the mode and model pickers of other
+        // agent chats: it configures the next message, so it sits next to the prompt.
+        let mut bar = div().flex().flex_wrap().items_center().gap(px(6.));
         if controls.modes {
             let mut rail = self.segment_rail();
             for mode in &snapshot.options.modes {
@@ -23,11 +25,7 @@ impl ConversationPanel {
                 let id = mode.id.clone();
                 rail = rail.child(self.segment_item(
                     format!("mode-{}", mode.id),
-                    if selected {
-                        format!("● {}", mode.name)
-                    } else {
-                        mode.name.clone()
-                    },
+                    mode.name.clone(),
                     selected,
                     cx,
                     move |this, _, cx| {
@@ -38,15 +36,7 @@ impl ConversationPanel {
                     },
                 ));
             }
-            bar = bar.child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(8.))
-                    .items_center()
-                    .child(self.line("Mode"))
-                    .child(rail),
-            );
+            bar = bar.child(rail);
         }
         if controls.config_options {
             for option in &snapshot.options.config {
@@ -59,21 +49,26 @@ impl ConversationPanel {
                             format!("{}: {}", option.name, if *current { "on" } else { "off" });
                         let entity = cx.entity();
                         bar = bar.child(
-                            div().w_full().child(field_row(
-                                &self.theme,
-                                label.clone(),
-                                Toggle::plain(&self.theme, id, *current)
-                                    .label(label)
-                                    .on_change(move |_, _, app| {
-                                        entity.update(app, |this, cx| {
-                                            if let Some(w) = this.workflow().cloned() {
-                                                let r =
-                                                    w.set_config_option(&option_id, next.clone());
-                                                this.command(r, cx);
-                                            }
-                                        });
-                                    }),
-                            )),
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(4.))
+                                .child(self.caption(&option.name))
+                                .child(
+                                    Toggle::plain(&self.theme, id, *current)
+                                        .label(label)
+                                        .on_change(move |_, _, app| {
+                                            entity.update(app, |this, cx| {
+                                                if let Some(w) = this.workflow().cloned() {
+                                                    let r = w.set_config_option(
+                                                        &option_id,
+                                                        next.clone(),
+                                                    );
+                                                    this.command(r, cx);
+                                                }
+                                            });
+                                        }),
+                                ),
                         );
                     }
                     ConfigKind::Select { current, values } => {
@@ -83,21 +78,24 @@ impl ConversationPanel {
                             .map_or(current.as_str(), |v| v.name.as_str());
                         let entity = cx.entity();
                         bar = bar.child(
-                            div().w_full().child(field_row(
-                                &self.theme,
-                                option.name.clone(),
-                                div().min_w(px(160.)).child(
-                                    Select::plain(&self.theme, id, name.to_owned())
-                                        .stretch_label()
-                                        .on_open(move |bounds, window, app| {
-                                            entity.update(app, |this, cx| {
-                                                this.toggle_config_menu(
-                                                    &option_id, *bounds, window, cx,
-                                                );
-                                            });
-                                        }),
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(4.))
+                                .child(self.caption(&option.name))
+                                .child(
+                                    div().min_w(px(120.)).child(
+                                        Select::plain(&self.theme, id, name.to_owned())
+                                            .stretch_label()
+                                            .on_open(move |bounds, window, app| {
+                                                entity.update(app, |this, cx| {
+                                                    this.toggle_config_menu(
+                                                        &option_id, *bounds, window, cx,
+                                                    );
+                                                });
+                                            }),
+                                    ),
                                 ),
-                            )),
                         );
                     }
                 }
@@ -230,133 +228,41 @@ impl ConversationPanel {
         controls: &Controls,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        // Everything above the composer shrinks (the transcript first) and is clipped when
-        // the panel is short; the composer stays pinned at the bottom.
-        let mut column = div()
-            .flex_1()
-            .min_h_0()
-            .overflow_hidden()
+        // Top to bottom: the task in one line, the transcript, then the dock (cards that
+        // wait for an answer, the composer and its toolbar). The transcript keeps a minimum
+        // height; the dock's cards scroll instead of pushing it out of the panel.
+        let mut top = div()
+            .flex_none()
             .flex()
             .flex_col()
             .gap(px(8.))
             .px(px(12.))
-            .pt(px(12.));
-        let g = guidance(
-            &snapshot.adapter.readiness,
-            snapshot.adapter.provider.is_some(),
-        );
-        // While the banner offers Apply, Discard and Review changes it sits outside the clipped
-        // column and never shrinks, so the transcript and the dock give way instead; otherwise
-        // it is clipped with the rest of the column.
-        let mut pinned_banner = None;
-        if let Some(banner) = self.banner(&snapshot, controls, cx) {
-            if controls.review.is_some() {
-                pinned_banner = Some(banner);
-            } else {
-                column = column.child(banner);
-            }
-        } else if !g.usable || snapshot.rows.is_empty() {
-            column = column.child(
-                self.section(&g.headline)
-                    .children(g.steps.iter().take(3).map(|s| self.line(s.clone()))),
+            .pt(px(10.));
+        if let Some(strip) = self.status_strip(&snapshot, controls, cx) {
+            top = top.child(strip);
+        } else {
+            let g = guidance(
+                &snapshot.adapter.readiness,
+                snapshot.adapter.provider.is_some(),
             );
-        }
-        if let Some(bar) = self.options_bar(&snapshot, controls, cx) {
-            column = column.child(bar);
-        }
-        if let Some(error) = &self.scope_error {
-            column = column.child(self.line(format!("Timeline scope unavailable: {error}")));
-        } else if let Some(scope) = &self.task_scope {
-            let same_as_task = snapshot
-                .task
-                .as_ref()
-                .filter(|task| !task.phase.is_terminal())
-                .is_some_and(|task| task.scope.label() == scope.label());
-            if !same_as_task {
-                column = column.child(self.line(format!("Submit scope: {}", scope.label())));
+            if !g.usable || snapshot.rows.is_empty() {
+                top = top.child(
+                    self.section(&g.headline)
+                        .children(g.steps.iter().take(3).map(|s| self.line(s.clone()))),
+                );
             }
         }
-        if let Some(task) = &snapshot.task {
-            let label = if task.phase.is_terminal() {
-                "Last task scope"
-            } else {
-                "Frozen task scope"
-            };
-            column = column.child(self.line(format!("{label}: {}", task.scope.label())));
-        }
-        if let Some(task) = &snapshot.task {
-            let mut evidence_cards = div().flex().gap_1();
-            let mut has_evidence_card = false;
-            for (name, view) in [("Before", &task.before), ("After", &task.after)] {
-                if let Some(view) = view {
-                    let selected = view
-                        .artifacts
-                        .iter()
-                        .find(|artifact| artifact.label == "selected")
-                        .or_else(|| view.artifacts.first());
-                    let image = selected.and_then(|artifact| {
-                        self.evidence_images
-                            .get(&evidence_image_key(&task.id, &artifact.id))
-                            .map(|(_, image)| image)
-                    });
-                    if let (Some(artifact), Some(image)) = (selected, image) {
-                        has_evidence_card = true;
-                        let boundaries = view
-                            .artifacts
-                            .iter()
-                            .filter(|other| other.id != artifact.id)
-                            .flat_map(|other| other.frames.iter().copied())
-                            .map(|frame| frame.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        evidence_cards = evidence_cards.child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(label_text(format!("{name} · revision {}", view.revision)))
-                                .child(gpui::img(image.clone()).w(px(128.)).h(px(72.)))
-                                .child(
-                                    text_style(div(), TextStyle::Label)
-                                        .text_color(self.theme.editor.text_2)
-                                        .child(selectable(format!(
-                                            "{} · {} frames{}",
-                                            artifact.label,
-                                            artifact.frames.len(),
-                                            if boundaries.is_empty() {
-                                                String::new()
-                                            } else {
-                                                format!(" · edge {boundaries}")
-                                            }
-                                        ))),
-                                ),
-                        );
-                    } else {
-                        column = column.child(self.line(evidence_summary(name, view)));
-                    }
-                }
-            }
-            if has_evidence_card {
-                column = column.child(evidence_cards);
-            }
-            if let Some(limit) = task
-                .image_limitation
-                .as_ref()
-                .filter(|_| task.before.is_some())
-            {
-                let summary = if limit.contains("Text-only") {
-                    "Image context is text-only; the agent receives artifact references."
-                } else {
-                    limit
-                };
-                column = column.child(self.line(summary.to_owned()));
-            }
-        }
+        let mut transcript = div()
+            .flex_1()
+            .min_h(px(TRANSCRIPT_MIN_H))
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .px(px(12.))
+            .pt(px(8.));
         if self.log_has_older() {
             let loading = self.page.loading.load(Ordering::Acquire);
-            column = column.child(self.action_button(
+            transcript = transcript.child(div().flex_none().child(self.action_button(
                 "agent-load-earlier",
                 if loading {
                     "Loading earlier messages…"
@@ -373,7 +279,7 @@ impl ConversationPanel {
                         cx.notify();
                     }
                 },
-            ));
+            )));
         }
         let list = list(
             self.list.clone(),
@@ -385,17 +291,17 @@ impl ConversationPanel {
             ),
         )
         .size_full();
-        let mut transcript = div()
+        let mut rows = div()
             .id("agent-transcript")
             .role(gpui::Role::List)
             .aria_label("Agent conversation")
             .relative()
             .flex_1()
-            .min_h(px(80.))
+            .min_h_0()
             .child(list);
         if self.hidden_newer > 0 || !self.older.is_empty() {
-            // Floats above the composer while the reader is away from the newest rows.
-            transcript = transcript.child(
+            // Floats over the newest rows while the reader is away from them.
+            rows = rows.child(
                 div()
                     .absolute()
                     .bottom(px(8.))
@@ -425,60 +331,269 @@ impl ConversationPanel {
                     ),
             );
         }
-        column = column.child(transcript);
-        if !snapshot.queue.is_empty() {
-            let mut queue = self.section(&format!("Queued ({})", snapshot.queue.len()));
-            for item in &snapshot.queue {
-                let id = item.id;
-                queue = queue.child(
-                    div()
-                        .flex()
-                        .justify_between()
-                        .items_center()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .child(label_text(item.summary.clone()))
-                                .children(item.scope.as_ref().map(|scope| {
-                                    self.line(format!(
-                                        "{scope}{}",
-                                        if item.stale_scope {
-                                            " · stale — will be refused"
-                                        } else {
-                                            ""
-                                        }
-                                    ))
-                                })),
-                        )
-                        .child(self.icon_button(
-                            format!("queue-remove-{id}"),
-                            Icon::X,
-                            "Remove",
-                            Tone::Normal,
-                            cx,
-                            move |this, _, cx| {
-                                if let Some(w) = this.workflow().cloned() {
-                                    let r = w.cancel_queued(id);
-                                    this.command(r, cx);
-                                }
-                            },
-                        )),
-                );
-            }
-            column = column.child(queue);
-        }
+        transcript = transcript.child(rows);
         div()
             .flex_1()
             .min_h_0()
+            .overflow_hidden()
             .flex()
             .flex_col()
-            .child(column)
-            .children(
-                pinned_banner.map(|banner| div().flex_none().px(px(12.)).pt(px(8.)).child(banner)),
-            )
+            .child(top)
+            .child(transcript)
             .child(self.composer_dock(&snapshot, controls, cx))
             .into_any_element()
+    }
+
+    /// The task in one line: its phase, why it is there, Stop and a Details toggle. Review
+    /// actions and a conflict stay in view; ids, repairs, scope and evidence wait behind
+    /// Details, so the strip never crowds out the transcript.
+    pub(super) fn status_strip(
+        &mut self,
+        snapshot: &WorkflowSnapshot,
+        controls: &Controls,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::Div> {
+        let task = snapshot.task.as_ref()?;
+        let palette = self.theme.editor;
+        let open = self.task_details_open;
+        let phase = format!(
+            "{}{}",
+            task.phase.label(),
+            if task.stop_requested {
+                " · stopping"
+            } else {
+                ""
+            }
+        );
+        let summary = task.reason.clone().unwrap_or_else(|| task.scope.label());
+        let mut head = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .min_h(px(24.))
+            .child(Badge::new(phase).tone(banner_tone(task.phase)))
+            .child(
+                text_style(div().flex_1().min_w_0().truncate(), TextStyle::Small)
+                    .text_color(palette.text_2)
+                    .child(summary),
+            );
+        // The composer's own Stop covers a live turn; this one every other state a task
+        // can be in (waiting, reviewing, queued briefs).
+        if !snapshot.composer.turn_live && controls.stop.is_some() {
+            head = head.child(self.stop_button(cx));
+        }
+        head = head.child(self.icon_button(
+            "agent-task-details",
+            if open {
+                Icon::ChevronDown
+            } else {
+                Icon::ChevronRight
+            },
+            if open { "Hide details" } else { "Task details" },
+            Tone::Normal,
+            cx,
+            |this, _, cx| {
+                this.task_details_open = !this.task_details_open;
+                cx.notify();
+            },
+        ));
+        let mut strip = Card::editor_nested(&self.theme)
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .px(px(10.))
+            .py(px(6.))
+            .child(head);
+        if let Some(review) = &controls.review {
+            if let Some(note) = &review.apply_note {
+                strip = strip.child(self.line(format!(
+                    "Apply is blocked: {note}. The candidate is kept; retry after fixing it."
+                )));
+            }
+            let mut buttons = div().flex().flex_wrap().gap(px(6.));
+            for button in self.review_buttons(review, cx) {
+                buttons = buttons.child(button);
+            }
+            strip = strip.child(buttons.child(self.banner_review_button(cx)));
+        }
+        if let Some(conflict) = &task.conflict {
+            strip = strip.child(self.conflict_block(conflict));
+        }
+        if open {
+            strip = strip.child(self.task_details(snapshot, controls));
+        }
+        Some(strip)
+    }
+
+    /// What the status strip keeps behind Details: the task's identity, its repair budget,
+    /// what Stop does now, the frozen scope and the before/after evidence.
+    fn task_details(&self, snapshot: &WorkflowSnapshot, controls: &Controls) -> gpui::Div {
+        let mut details = div()
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .pt(px(6.))
+            .border_t_1()
+            .border_color(self.theme.editor.line);
+        let Some(task) = &snapshot.task else {
+            return details;
+        };
+        let id = task.id.0.as_str();
+        details = details.child(self.line(format!(
+            "Task {} · generation {} · base {}",
+            &id[..id.len().min(8)],
+            task.generation,
+            task.source_base
+        )));
+        if !matches!(
+            task.phase,
+            TaskPhase::AwaitingReview | TaskPhase::AwaitingEvidence
+        ) {
+            details = details.child(self.line(format!(
+                "{} · {} of {} automatic repairs",
+                match task.review_policy {
+                    ReviewPolicy::AutoApply => "Apply automatically",
+                    ReviewPolicy::ManualReview => "Manual review",
+                },
+                task.repair.used,
+                task.repair.max
+            )));
+        }
+        if let Some(note) = &controls.stop
+            && !task.phase.is_terminal()
+        {
+            details = details.child(self.line(note.clone()));
+        }
+        details = details.child(self.line(format!(
+            "{}: {}",
+            if task.phase.is_terminal() {
+                "Last task scope"
+            } else {
+                "Frozen task scope"
+            },
+            task.scope.label()
+        )));
+        let mut evidence_cards = div().flex().gap_1();
+        let mut has_evidence_card = false;
+        for (name, view) in [("Before", &task.before), ("After", &task.after)] {
+            let Some(view) = view else {
+                continue;
+            };
+            let selected = view
+                .artifacts
+                .iter()
+                .find(|artifact| artifact.label == "selected")
+                .or_else(|| view.artifacts.first());
+            let image = selected.and_then(|artifact| {
+                self.evidence_images
+                    .get(&evidence_image_key(&task.id, &artifact.id))
+                    .map(|(_, image)| image)
+            });
+            let (Some(artifact), Some(image)) = (selected, image) else {
+                details = details.child(self.line(evidence_summary(name, view)));
+                continue;
+            };
+            has_evidence_card = true;
+            let boundaries = view
+                .artifacts
+                .iter()
+                .filter(|other| other.id != artifact.id)
+                .flat_map(|other| other.frames.iter().copied())
+                .map(|frame| frame.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            evidence_cards = evidence_cards.child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(label_text(format!("{name} · revision {}", view.revision)))
+                    .child(gpui::img(image.clone()).w(px(128.)).h(px(72.)))
+                    .child(
+                        text_style(div(), TextStyle::Label)
+                            .text_color(self.theme.editor.text_2)
+                            .child(selectable(format!(
+                                "{} · {} frames{}",
+                                artifact.label,
+                                artifact.frames.len(),
+                                if boundaries.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" · edge {boundaries}")
+                                }
+                            ))),
+                    ),
+            );
+        }
+        if has_evidence_card {
+            details = details.child(evidence_cards);
+        }
+        if let Some(limit) = task
+            .image_limitation
+            .as_ref()
+            .filter(|_| task.before.is_some())
+        {
+            let summary = if limit.contains("Text-only") {
+                "Image context is text-only; the agent receives artifact references."
+            } else {
+                limit
+            };
+            details = details.child(self.line(summary.to_owned()));
+        }
+        details
+    }
+
+    /// Briefs waiting for the running task, each with a remove button.
+    pub(super) fn queue_section(
+        &mut self,
+        snapshot: &WorkflowSnapshot,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::Div> {
+        if snapshot.queue.is_empty() {
+            return None;
+        }
+        let mut queue = self.section(&format!("Queued ({})", snapshot.queue.len()));
+        for item in &snapshot.queue {
+            let id = item.id;
+            queue = queue.child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(label_text(item.summary.clone()))
+                            .children(item.scope.as_ref().map(|scope| {
+                                self.line(format!(
+                                    "{scope}{}",
+                                    if item.stale_scope {
+                                        " · stale — will be refused"
+                                    } else {
+                                        ""
+                                    }
+                                ))
+                            })),
+                    )
+                    .child(self.icon_button(
+                        format!("queue-remove-{id}"),
+                        Icon::X,
+                        "Remove",
+                        Tone::Normal,
+                        cx,
+                        move |this, _, cx| {
+                            if let Some(w) = this.workflow().cloned() {
+                                let r = w.cancel_queued(id);
+                                this.command(r, cx);
+                            }
+                        },
+                    )),
+            );
+        }
+        Some(queue)
     }
 
     pub(super) fn stop_button(&mut self, cx: &mut Context<Self>) -> IconButton {

@@ -48,16 +48,24 @@ impl Studio {
     /// [`Self::new`] with the fake worker configured by `config` (see
     /// `fake-preview-worker.py`).
     pub fn with_config(cx: &mut TestAppContext, config: &str) -> Self {
-        Self::build(cx, config, "active")
+        Self::build(cx, config, "active", true)
     }
 
     /// A window whose managed SDK home is empty: the fixture's SDK is installed in
     /// `<sdk_home>/elsewhere` ([`Self::sdk`]), for the user to select.
     pub fn without_managed_sdk(cx: &mut TestAppContext) -> Self {
-        Self::build(cx, FIXTURE_CONFIG, "elsewhere")
+        Self::build(cx, FIXTURE_CONFIG, "elsewhere", true)
     }
 
-    fn build(cx: &mut TestAppContext, config: &str, sdk_folder: &str) -> Self {
+    /// A first launch: nothing recorded in the app settings and no agent selected, so the
+    /// first-run setup opens (the fixture's SDK is installed).
+    pub fn first_run(cx: &mut TestAppContext) -> Self {
+        Self::build(cx, FIXTURE_CONFIG, "active", false)
+    }
+
+    /// `onboarded`: the app settings record the first-run setup as done, so the window
+    /// opens on the workspace like every test before onboarding existed.
+    fn build(cx: &mut TestAppContext, config: &str, sdk_folder: &str, onboarded: bool) -> Self {
         cx.executor().allow_parking();
         let temp = tempfile::tempdir().unwrap();
         let sdk_home = temp.path().join("sdk-home");
@@ -73,6 +81,14 @@ impl Studio {
         .unwrap();
         fs::write(project.join(FAKE_CONFIG), config).unwrap();
         let app_data = temp.path().join("data");
+        if onboarded {
+            fs::create_dir_all(&app_data).unwrap();
+            fs::write(
+                app_data.join("app-settings.json"),
+                r#"{"onboarding_completed":true}"#,
+            )
+            .unwrap();
+        }
         let compiler = FakeCompiler::new(true);
         let environment = StudioEnvironment {
             app_data: Some(app_data.clone()),

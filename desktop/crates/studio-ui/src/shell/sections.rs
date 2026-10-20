@@ -1,8 +1,8 @@
 //! Parts of the window that render as views of their own, after Cap's `EditorSectionView`.
 //!
 //! Each section renders the shell's own `render_*` method and re-renders whenever the shell
-//! notifies. The header and sidebar are mounted `.cached(..)`, so a new frame,
-//! which notifies only the player section, leaves them as they were.
+//! notifies. The header, the rail and the agent column are mounted `.cached(..)`, so a new
+//! frame, which notifies only the player section, leaves them as they were.
 
 use gpui::{
     AppContext, Context, Entity, IntoElement, Render, Styled, Subscription, WeakEntity, Window,
@@ -14,16 +14,18 @@ use super::StudioShell;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Section {
     Header,
-    Sidebar,
+    Rail,
     Player,
+    Agent,
 }
 
 impl Section {
     pub(super) fn name(self) -> &'static str {
         match self {
             Section::Header => "header",
-            Section::Sidebar => "sidebar",
+            Section::Rail => "rail",
             Section::Player => "player",
+            Section::Agent => "agent-column",
         }
     }
 }
@@ -56,8 +58,9 @@ impl Render for SectionView {
         let section = self.section;
         shell.update(cx, |shell, cx| match section {
             Section::Header => shell.render_header(cx),
-            Section::Sidebar => shell.render_left_column(cx),
+            Section::Rail => shell.render_left_column(cx),
             Section::Player => shell.render_player_area(cx),
+            Section::Agent => shell.render_agent_column(cx),
         })
     }
 }
@@ -101,8 +104,9 @@ pub(super) fn box_probe(
 #[derive(Clone)]
 pub(super) struct Sections {
     pub(super) header: Entity<SectionView>,
-    pub(super) sidebar: Entity<SectionView>,
+    pub(super) rail: Entity<SectionView>,
     pub(super) player: Entity<SectionView>,
+    pub(super) agent: Entity<SectionView>,
 }
 
 impl Sections {
@@ -111,12 +115,13 @@ impl Sections {
         let mut view = |section| cx.new(|cx| SectionView::new(&shell, section, cx));
         Self {
             header: view(Section::Header),
-            sidebar: view(Section::Sidebar),
+            rail: view(Section::Rail),
             player: view(Section::Player),
+            agent: view(Section::Agent),
         }
     }
 
-    pub(super) fn all(&self) -> [&Entity<SectionView>; 3] {
-        [&self.header, &self.sidebar, &self.player]
+    pub(super) fn all(&self) -> [&Entity<SectionView>; 4] {
+        [&self.header, &self.rail, &self.player, &self.agent]
     }
 }

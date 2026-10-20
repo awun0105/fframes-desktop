@@ -1,5 +1,5 @@
-//! The left column and the empty state: the Agent, Project, Assets and Style tabs and recent
-//! projects.
+//! The left rail with its Project, Assets and Style drawers, the agent column, and the empty
+//! state with recent projects.
 
 use std::path::PathBuf;
 
@@ -14,51 +14,85 @@ use super::sections::{Section, box_probe, section_probe};
 use super::{Picker, StudioShell};
 use crate::kit::{
     Badge, Card, CollapsibleSection, DISABLED_OPACITY, EditorButton, Handler, Icon, IconButton,
-    IconButtonSize, StatusDot, TabRail, TabRailItem, Tone, divider, focusable, heading, icon,
+    IconButtonSize, NavRail, NavRailItem, StatusDot, Tone, divider, focusable, heading, icon,
     muted, on_activate, section_title, selectable, with_tooltip,
 };
 
 impl StudioShell {
-    /// Tab rail and the open tab's content.
+    /// The rail and, while one of its items is open, the drawer beside it.
     pub(super) fn render_left_column(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
         let entity = cx.entity();
-        let rail = TabRail::editor(
+        let rail = NavRail::editor(
             &theme,
-            "left-tabs",
-            theme.editor.card.into(),
+            "rail",
             LeftTab::ALL
                 .iter()
                 .map(|tab| {
-                    TabRailItem::new(tab.icon().path(), tab.name(), *tab == self.left_tab, false)
+                    NavRailItem::new(tab.icon().path(), tab.name(), self.drawer == Some(*tab))
                 })
                 .collect(),
         )
         .on_select(move |index, _, cx| {
             entity.update(cx, |shell, cx| {
-                shell.left_tab = LeftTab::from_index(*index);
+                shell.drawer = toggle_drawer(shell.drawer, LeftTab::from_index(*index));
                 cx.notify();
             });
         });
-        let content = match left_tab_content(self.left_tab) {
-            LeftContent::Agent => self.render_agent_tab(cx),
-            LeftContent::Files => self.render_project_tab(cx),
-            LeftContent::Assets => self.render_assets_tab(cx),
-            LeftContent::Presets => self.render_style_tab(cx),
+        div()
+            .relative()
+            .h_full()
+            .flex()
+            .gap(px(METRICS.gutter))
+            .child(rail)
+            .children(self.drawer.map(|tab| self.render_drawer(tab, cx)))
+            .child(section_probe(Section::Rail, cx))
+            .into_any_element()
+    }
+
+    /// The open rail item's panel: its name and a close button above the content.
+    fn render_drawer(&self, tab: LeftTab, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
+        let entity = cx.entity();
+        let content = match tab {
+            LeftTab::Project => self.render_project_tab(cx),
+            LeftTab::Assets => self.render_assets_tab(cx),
+            LeftTab::Style => self.render_style_tab(cx),
         };
-        Card::editor(&self.theme)
-            .w(px(METRICS.left_column_w))
+        let header = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_between()
+            .child(
+                text_style(div(), TextStyle::Title)
+                    .text_color(theme.editor.text_1)
+                    .child(tab.name()),
+            )
+            .child(
+                IconButton::editor(&theme, "drawer-close", Icon::X.path())
+                    .editor_size(IconButtonSize::Small)
+                    .label(format!("Close {}", tab.name()))
+                    .tooltip(&theme, "Close")
+                    .on_click(move |_, _, cx| {
+                        entity.update(cx, |shell, cx| {
+                            shell.drawer = None;
+                            cx.notify();
+                        });
+                    }),
+            );
+        Card::editor(&theme)
+            .id("drawer")
+            .w(px(METRICS.drawer_w))
             .h_full()
             .flex_none()
             .min_h_0()
             .flex()
             .flex_col()
             .gap(px(METRICS.space_3))
-            .p(px(METRICS.space_4))
-            .relative()
-            .child(rail)
+            .p(px(METRICS.space_3))
+            .child(header)
             .child(content)
-            .child(section_probe(Section::Sidebar, cx))
             .into_any_element()
     }
 
@@ -149,7 +183,6 @@ impl StudioShell {
 
     fn render_project_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
-        let enabled = !self.busy;
         let project = self.presentation.project.clone();
         let mut title = section_title(&theme, "Files");
         if let Some(p) = &project {
@@ -185,65 +218,10 @@ impl StudioShell {
             );
         }
 
-        let sdk_ready = self.presentation.agent_sdk.is_some();
-        let status = if self.busy {
-            "Operation in progress…".to_owned()
-        } else {
-            self.presentation.sdk.clone()
-        };
         let entity = cx.entity();
         let sdk = CollapsibleSection::new("sdk-section", self.sdk_open)
             .header(section_title(&self.theme, "Managed SDK"))
-            .content(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(METRICS.space_2))
-                    .pt(px(METRICS.space_2))
-                    .child(
-                        div()
-                            .flex()
-                            .items_start()
-                            .gap(px(METRICS.space_2))
-                            .child(
-                                div()
-                                    .pt(px(5.))
-                                    .child(StatusDot::new(sdk_status_tone(self.busy, sdk_ready))),
-                            )
-                            .child(
-                                text_style(div().min_w_0().flex_1(), TextStyle::Small)
-                                    .text_color(theme.editor.text_2)
-                                    .child(selectable(status)),
-                            ),
-                    )
-                    .child(self.action_button(
-                        "install",
-                        "Install managed SDK",
-                        enabled,
-                        false,
-                        None,
-                        cx,
-                        |s, cx| s.dispatch(Command::InstallSdk, cx),
-                    ))
-                    .child(self.action_button(
-                        "import-sdk-bundle",
-                        "Import offline SDK bundle…",
-                        enabled,
-                        false,
-                        None,
-                        cx,
-                        |s, cx| s.pick(Picker::SdkBundle, cx),
-                    ))
-                    .child(self.action_button(
-                        "sdk",
-                        "Select installed SDK…",
-                        enabled && project.is_some(),
-                        false,
-                        None,
-                        cx,
-                        |s, cx| s.pick(Picker::Sdk, cx),
-                    )),
-            )
+            .content(self.sdk_controls(cx).pt(px(METRICS.space_2)))
             .on_toggle(move |open, _, cx| {
                 entity.update(cx, |shell, cx| {
                     shell.sdk_open = *open;
@@ -463,9 +441,70 @@ impl StudioShell {
         recents
     }
 
-    pub(super) fn render_empty_state(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    /// The managed SDK's status and its Install, Import and Select actions (the Project
+    /// drawer and the onboarding's SDK step).
+    pub(super) fn sdk_controls(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let theme = self.theme;
         let enabled = !self.busy;
-        let actions = div()
+        let sdk_ready = self.presentation.agent_sdk.is_some();
+        let status = if self.busy {
+            "Operation in progress…".to_owned()
+        } else {
+            self.presentation.sdk.clone()
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(METRICS.space_2))
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap(px(METRICS.space_2))
+                    .child(
+                        div()
+                            .pt(px(5.))
+                            .child(StatusDot::new(sdk_status_tone(self.busy, sdk_ready))),
+                    )
+                    .child(
+                        text_style(div().min_w_0().flex_1(), TextStyle::Small)
+                            .text_color(theme.editor.text_2)
+                            .child(selectable(status)),
+                    ),
+            )
+            .child(self.action_button(
+                "install",
+                "Install managed SDK",
+                enabled,
+                false,
+                None,
+                cx,
+                |s, cx| s.dispatch(Command::InstallSdk, cx),
+            ))
+            .child(self.action_button(
+                "import-sdk-bundle",
+                "Import offline SDK bundle…",
+                enabled,
+                false,
+                None,
+                cx,
+                |s, cx| s.pick(Picker::SdkBundle, cx),
+            ))
+            .child(self.action_button(
+                "sdk",
+                "Select installed SDK…",
+                enabled && self.presentation.project.is_some(),
+                false,
+                None,
+                cx,
+                |s, cx| s.pick(Picker::Sdk, cx),
+            ))
+    }
+
+    /// Create, Open and Import Rust (the empty state and the onboarding's Project step).
+    pub(super) fn project_actions(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let enabled = !self.busy;
+        div()
             .flex()
             .flex_wrap()
             .gap(px(METRICS.space_2))
@@ -495,7 +534,11 @@ impl StudioShell {
                 Some(Icon::Upload),
                 cx,
                 |s, cx| s.pick(Picker::Import, cx),
-            ));
+            ))
+    }
+
+    pub(super) fn render_empty_state(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let actions = self.project_actions(cx);
         div()
             .id("empty-state")
             .flex_1()
@@ -525,50 +568,46 @@ impl StudioShell {
             .into_any_element()
     }
 
-    /// The agent panel, filling the sidebar below the tab rail: transcript above, composer
-    /// pinned at the bottom.
-    fn render_agent_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        div()
+    /// The agent column on the window's right: transcript above, composer pinned at the
+    /// bottom.
+    pub(super) fn render_agent_column(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        // The panel pads its own rows and rules its header across the full width.
+        Card::editor(&self.theme)
             .relative()
-            .flex_1()
-            .min_h_0()
-            .w_full()
+            .size_full()
             .flex()
             .flex_col()
             .overflow_hidden()
-            .child(self.panel.clone())
-            .child(box_probe("agent", cx))
+            .child(section_probe(Section::Agent, cx))
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .overflow_hidden()
+                    .child(self.panel.clone())
+                    .child(box_probe("agent", cx)),
+            )
             .into_any_element()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LeftTab {
-    Agent,
     Project,
     Assets,
     Style,
 }
 
-/// What a left-column tab shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LeftContent {
-    Agent,
-    Files,
-    Assets,
-    Presets,
-}
-
 /// Height of a file or asset row.
 const LIST_ROW_H: f32 = 28.;
 
-fn left_tab_content(tab: LeftTab) -> LeftContent {
-    match tab {
-        LeftTab::Agent => LeftContent::Agent,
-        LeftTab::Project => LeftContent::Files,
-        LeftTab::Assets => LeftContent::Assets,
-        LeftTab::Style => LeftContent::Presets,
-    }
+/// The drawer after the rail's `pressed` item: pressing the open one closes it.
+fn toggle_drawer(open: Option<LeftTab>, pressed: LeftTab) -> Option<LeftTab> {
+    (open != Some(pressed)).then_some(pressed)
 }
 
 /// The actions of a recent-project row, as the id prefix of each button: a missing
@@ -593,17 +632,11 @@ fn sdk_status_tone(busy: bool, ready: bool) -> Tone {
 }
 
 impl LeftTab {
-    const ALL: [LeftTab; 4] = [
-        LeftTab::Agent,
-        LeftTab::Project,
-        LeftTab::Assets,
-        LeftTab::Style,
-    ];
+    const ALL: [LeftTab; 3] = [LeftTab::Project, LeftTab::Assets, LeftTab::Style];
 
-    /// Also the tab's element id.
+    /// Also the rail item's element id, `rail-{name}`.
     fn name(self) -> &'static str {
         match self {
-            LeftTab::Agent => "Agent",
             LeftTab::Project => "Project",
             LeftTab::Assets => "Assets",
             LeftTab::Style => "Style",
@@ -612,7 +645,6 @@ impl LeftTab {
 
     fn icon(self) -> Icon {
         match self {
-            LeftTab::Agent => Icon::Bot,
             LeftTab::Project => Icon::Folder,
             LeftTab::Assets => Icon::Image,
             LeftTab::Style => Icon::Palette,
@@ -620,7 +652,7 @@ impl LeftTab {
     }
 
     fn from_index(index: usize) -> Self {
-        Self::ALL.get(index).copied().unwrap_or(LeftTab::Agent)
+        Self::ALL.get(index).copied().unwrap_or(LeftTab::Project)
     }
 }
 
@@ -629,11 +661,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn left_tab_content_maps_each_tab() {
-        assert_eq!(left_tab_content(LeftTab::Agent), LeftContent::Agent);
-        assert_eq!(left_tab_content(LeftTab::Project), LeftContent::Files);
-        assert_eq!(left_tab_content(LeftTab::Assets), LeftContent::Assets);
-        assert_eq!(left_tab_content(LeftTab::Style), LeftContent::Presets);
+    fn pressing_the_open_item_closes_its_drawer() {
+        assert_eq!(toggle_drawer(None, LeftTab::Style), Some(LeftTab::Style));
+        assert_eq!(
+            toggle_drawer(Some(LeftTab::Project), LeftTab::Style),
+            Some(LeftTab::Style)
+        );
+        assert_eq!(toggle_drawer(Some(LeftTab::Style), LeftTab::Style), None);
     }
 
     #[test]
@@ -652,10 +686,10 @@ mod tests {
     #[test]
     fn left_tabs_keep_their_element_ids() {
         let names: Vec<_> = LeftTab::ALL.iter().map(|t| t.name()).collect();
-        assert_eq!(names, ["Agent", "Project", "Assets", "Style"]);
+        assert_eq!(names, ["Project", "Assets", "Style"]);
         for (index, tab) in LeftTab::ALL.into_iter().enumerate() {
             assert_eq!(LeftTab::from_index(index), tab);
         }
-        assert_eq!(LeftTab::from_index(9), LeftTab::Agent);
+        assert_eq!(LeftTab::from_index(9), LeftTab::Project);
     }
 }

@@ -39,9 +39,61 @@ pub enum AppTheme {
     Dark,
 }
 
+/// How agent permission requests are answered, chosen by the user (onboarding or Settings).
+/// Studio answers a request itself only when this policy covers it; everything else is a
+/// card the user answers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionPolicy {
+    /// Every request is a card (Studio never answers one).
+    #[default]
+    AskEveryTime,
+    /// Reads, searches and edits whose every location is inside the task's working copy
+    /// are allowed once; commands, network access and anything else ask.
+    AllowInWorkingCopy,
+    /// Every request is allowed once, commands and network access included.
+    AllowEverything,
+}
+
+impl PermissionPolicy {
+    pub const ALL: [PermissionPolicy; 3] = [
+        PermissionPolicy::AskEveryTime,
+        PermissionPolicy::AllowInWorkingCopy,
+        PermissionPolicy::AllowEverything,
+    ];
+
+    /// The short name the UI shows for the policy.
+    pub fn label(self) -> &'static str {
+        match self {
+            PermissionPolicy::AskEveryTime => "Ask every time",
+            PermissionPolicy::AllowInWorkingCopy => "Allow in the working copy",
+            PermissionPolicy::AllowEverything => "Allow everything",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn permission_policy_is_stored_by_snake_case_name() {
+        for (policy, name) in [
+            (PermissionPolicy::AskEveryTime, "\"ask_every_time\""),
+            (
+                PermissionPolicy::AllowInWorkingCopy,
+                "\"allow_in_working_copy\"",
+            ),
+            (PermissionPolicy::AllowEverything, "\"allow_everything\""),
+        ] {
+            assert_eq!(serde_json::to_string(&policy).unwrap(), name);
+            assert_eq!(
+                serde_json::from_str::<PermissionPolicy>(name).unwrap(),
+                policy
+            );
+        }
+        assert_eq!(PermissionPolicy::default(), PermissionPolicy::AskEveryTime);
+    }
 
     #[test]
     fn app_theme_is_stored_by_lowercase_name() {

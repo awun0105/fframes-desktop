@@ -1,12 +1,16 @@
-//! The notices under the header and the status strip: errors and the current job.
+//! The notices under the header and the status bar at the window's foot: errors and the
+//! current job.
 
-use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Styled, div, px};
+use gpui::{
+    Context, InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::FluentBuilder,
+    px,
+};
 use studio_engine::engine::backend::Command;
 use studio_engine::services::export_service::ExportProgress;
 use studio_theme::{METRICS, TextStyle, text_style};
 
 use super::StudioShell;
-use crate::kit::{Card, CollapsibleSection, Notice, StatusDot, Tone, selectable};
+use crate::kit::{EditorButton, Icon, Notice, StatusDot, Tone, selectable};
 
 impl StudioShell {
     /// Warning, error, export and recovery notices; empty when there is nothing to say.
@@ -111,7 +115,8 @@ impl StudioShell {
         notices
     }
 
-    /// Source, checkpoint and job on one line; the other status lines when expanded.
+    /// The status bar: source, checkpoint and job on one line, the other status lines above
+    /// it when expanded.
     pub(super) fn render_status_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let p = self.presentation.project.as_ref()?;
         let theme = self.theme;
@@ -132,12 +137,15 @@ impl StudioShell {
                 .text_color(theme.editor.text_2)
                 .child(selectable(text))
         };
-        // The summary heads a clickable row, so the full ids are repeated here to copy.
+        // The summary is shortened, so the full ids are repeated here to copy.
         let lines = div()
             .flex()
             .flex_col()
             .gap(px(METRICS.space_1))
-            .pt(px(METRICS.space_1))
+            .px(px(METRICS.space_4))
+            .py(px(METRICS.space_2))
+            .border_t_1()
+            .border_color(theme.editor.line)
             .child(line(format!("Source {}", p.source.as_str()).into()))
             .child(line(format!("Checkpoint {}", p.accepted.as_str()).into()))
             .child(line(
@@ -165,40 +173,55 @@ impl StudioShell {
                 .into(),
             ));
         let entity = cx.entity();
+        let toggle = EditorButton::plain(&theme, "status-details")
+            .label("Details")
+            .right_icon(
+                if expanded {
+                    Icon::ChevronDown
+                } else {
+                    Icon::ChevronRight
+                }
+                .path(),
+            )
+            .height(px(METRICS.status_bar_h - METRICS.space_1))
+            .pressed(expanded)
+            .on_click(move |_, _, cx| {
+                entity.update(cx, |shell, cx| {
+                    shell.status_open = !expanded;
+                    cx.notify();
+                });
+            });
         Some(
-            Card::editor(&self.theme)
-                .id("status-strip")
+            div()
                 .flex_none()
-                .px(px(METRICS.space_3))
-                .py(px(METRICS.space_2))
+                .flex()
+                .flex_col()
+                .bg(theme.editor.card)
+                .when(expanded, |bar| bar.child(lines))
                 .child(
-                    CollapsibleSection::new("status-details", expanded)
-                        .header(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(METRICS.space_2))
-                                .child(StatusDot::new(tone))
-                                .child(
-                                    text_style(div(), TextStyle::Small)
-                                        .text_color(theme.editor.text_2)
-                                        .child(summary),
-                                ),
+                    div()
+                        .id("status-strip")
+                        .flex()
+                        .items_center()
+                        .gap(px(METRICS.space_2))
+                        .h(px(METRICS.status_bar_h))
+                        .px(px(METRICS.space_4))
+                        .border_t_1()
+                        .border_color(theme.editor.line)
+                        .child(StatusDot::new(tone))
+                        .child(
+                            text_style(div().flex_1().min_w_0().truncate(), TextStyle::Small)
+                                .text_color(theme.editor.text_2)
+                                .child(selectable(summary)),
                         )
-                        .content(lines)
-                        .on_toggle(move |open, _, cx| {
-                            entity.update(cx, |shell, cx| {
-                                shell.status_open = *open;
-                                cx.notify();
-                            });
-                        }),
+                        .child(toggle),
                 )
                 .into_any_element(),
         )
     }
 }
 
-/// The status strip opens when asked to and on any error. A running job only shows in the
+/// The status details open when asked to and on any error. A running job only shows in the
 /// one-line summary: the detail lines say nothing about it.
 fn status_strip_expanded(has_error: bool, user_open: bool) -> bool {
     user_open || has_error

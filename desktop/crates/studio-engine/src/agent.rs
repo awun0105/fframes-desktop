@@ -27,6 +27,7 @@
 //! woken by the optional `notify` callback) and sends commands.
 mod actor;
 mod attachments;
+mod auto_answer;
 mod composer;
 mod composer_ops;
 pub mod evidence_preview;
@@ -47,6 +48,7 @@ pub use model::*;
 pub use studio_harness::driver::{
     CommandInfo, PlanEntry, PlanStatus, QuestionAnswer, QuestionItem, QuestionOption,
 };
+pub use studio_proto::PermissionPolicy;
 pub use tools::BuildSettings;
 
 use crate::{
@@ -883,6 +885,14 @@ impl AgentWorkflow {
     /// App-local review policy. The running task keeps the policy it started with.
     pub fn set_review_policy(&self, policy: ReviewPolicy) -> Result<(), WorkflowError> {
         self.send(Msg::SetPolicy(policy))
+    }
+
+    /// How permission requests are answered. The running task keeps the policy it started with.
+    pub fn set_permission_policy(
+        &self,
+        policy: studio_proto::PermissionPolicy,
+    ) -> Result<(), WorkflowError> {
+        self.send(Msg::SetPermissionPolicy(policy))
     }
 
     /// The preview now shows `revision` (clears the awaiting-preview label).

@@ -394,9 +394,16 @@ def request_permission(spec):
     pid = spec.get("id", "perm-1")
     request_id = pid
     awaiting[request_id] = pid
+    tool_call = {"toolCallId": spec.get("tool_id", f"call-{pid}"), "title": spec["title"]}
+    # Optional ACP `kind` and `locations` (paths as given: relative ones are relative to the
+    # draft, this process's cwd), for the permission-policy tests.
+    if "kind" in spec:
+        tool_call["kind"] = spec["kind"]
+    if "locations" in spec:
+        tool_call["locations"] = [{"path": path} for path in spec["locations"]]
     send({"id": request_id, "method": "session/request_permission", "params": {
         "sessionId": SESSION_ID,
-        "toolCall": {"toolCallId": spec.get("tool_id", f"call-{pid}"), "title": spec["title"]},
+        "toolCall": tool_call,
         "options": [
             {"optionId": "allow", "name": "Allow once", "kind": "allow_once"},
             {"optionId": "reject", "name": "Reject", "kind": "reject_once"},

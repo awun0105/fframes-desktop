@@ -568,6 +568,41 @@ impl Actor {
             writer,
             request: prompt.id.0,
         };
+        // A request the user's policy covers is answered here, through the driver like the
+        // user's own reply; the row records it. Questions are always the user's.
+        let auto = if active.open_questions.contains_key(&prompt.id.0) {
+            None
+        } else {
+            super::super::auto_answer::auto_answer(
+                active.permission_policy,
+                &prompt,
+                &active.ctx.draft,
+            )
+        };
+        if let Some(option) = auto {
+            let policy = active.permission_policy;
+            let delivered = active
+                .driver
+                .as_ref()
+                .map(|driver| driver.reply_permission(prompt.id, PermissionReply::Select(option)));
+            if matches!(delivered, Some(Ok(()))) {
+                let row = self.push_row(RowKind::Permission(PermissionCard {
+                    reference,
+                    turn: prompt.turn,
+                    tool_call_id: prompt.tool_call_id,
+                    title: present::message(&prompt.title),
+                    options: prompt.options,
+                    state: PermissionState::Open,
+                    answered_by: Some(policy),
+                }));
+                self.permission_rows.insert((writer, prompt.id.0), row);
+                return;
+            }
+            // Not delivered: the user answers it like any other request.
+        }
+        let Some(active) = &mut self.active else {
+            return;
+        };
         active.open_permissions.insert(prompt.id.0);
         let need_wait = !active.engine_waiting;
         active.engine_waiting = true;
@@ -584,6 +619,7 @@ impl Actor {
             title: present::message(&prompt.title),
             options: prompt.options,
             state: PermissionState::Open,
+            answered_by: None,
         }));
         self.permission_rows.insert((writer, prompt.id.0), row);
         if need_wait {
@@ -645,6 +681,8 @@ impl Actor {
             tool_call_id: String::new(),
             title,
             options,
+            kind: None,
+            locations: Vec::new(),
         });
     }
 

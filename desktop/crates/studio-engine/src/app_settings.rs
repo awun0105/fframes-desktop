@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use fframes_studio_protocol::export::ExportSettings;
 use serde::{Deserialize, Serialize};
-use studio_proto::AppTheme;
+use studio_proto::{AppTheme, PermissionPolicy};
 
 use crate::app_paths::AppPaths;
 
@@ -20,16 +20,36 @@ pub struct AppSettings {
     pub theme: AppTheme,
     /// The export panel's last choice, for every project. A value that no longer reads
     /// (a format this app dropped) is the default instead of discarding the other settings.
-    #[serde(deserialize_with = "lenient_export_settings")]
+    #[serde(deserialize_with = "lenient")]
     pub export: ExportSettings,
+    /// Whether the first-run setup was finished or skipped. `None`: never recorded (a first
+    /// launch, or settings written before onboarding existed); see [`needs_onboarding`].
+    #[serde(deserialize_with = "lenient")]
+    pub onboarding_completed: Option<bool>,
+    /// How agent permission requests are answered.
+    #[serde(deserialize_with = "lenient")]
+    pub permission_policy: PermissionPolicy,
 }
 
-fn lenient_export_settings<'de, D>(deserializer: D) -> Result<ExportSettings, D::Error>
+/// A value that no longer reads (for example one this app dropped) is the default, instead
+/// of discarding the other settings.
+fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// Whether the first-run setup should open. Once recorded, the record decides. Before that
+/// (a first launch, or an install from before onboarding existed) it opens only when the
+/// managed SDK or the agent is still missing, so a set-up install is never asked again.
+pub fn needs_onboarding(settings: &AppSettings, sdk_ready: bool, agent_selected: bool) -> bool {
+    match settings.onboarding_completed {
+        Some(completed) => !completed,
+        None => !(sdk_ready && agent_selected),
+    }
 }
 
 pub fn app_settings_path(paths: &AppPaths) -> PathBuf {
@@ -110,6 +130,7 @@ mod tests {
                 scale: 0.5,
                 ..ExportSettings::default()
             },
+            ..AppSettings::default()
         };
         settings.save(&paths).unwrap();
         assert_eq!(AppSettings::load(&paths), settings);
@@ -121,5 +142,58 @@ mod tests {
         let loaded = AppSettings::load(&paths);
         assert_eq!(loaded.theme, AppTheme::Dark);
         assert_eq!(loaded.export, ExportSettings::default());
+    }
+
+    #[test]
+    fn a_file_from_before_onboarding_has_no_record_and_asks_every_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::new(dir.path()).unwrap();
+        std::fs::write(app_settings_path(&paths), r#"{"theme":"dark"}"#).unwrap();
+        let loaded = AppSettings::load(&paths);
+        assert_eq!(loaded.theme, AppTheme::Dark);
+        assert_eq!(loaded.onboarding_completed, None);
+        assert_eq!(loaded.permission_policy, PermissionPolicy::AskEveryTime);
+    }
+
+    #[test]
+    fn an_unknown_policy_is_the_default_and_keeps_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::new(dir.path()).unwrap();
+        std::fs::write(
+            app_settings_path(&paths),
+            r#"{"theme":"light","onboarding_completed":true,"permission_policy":"yolo"}"#,
+        )
+        .unwrap();
+        let loaded = AppSettings::load(&paths);
+        assert_eq!(loaded.theme, AppTheme::Light);
+        assert_eq!(loaded.onboarding_completed, Some(true));
+        assert_eq!(loaded.permission_policy, PermissionPolicy::AskEveryTime);
+
+        let chosen = AppSettings {
+            onboarding_completed: Some(true),
+            permission_policy: PermissionPolicy::AllowInWorkingCopy,
+            ..AppSettings::default()
+        };
+        chosen.save(&paths).unwrap();
+        assert_eq!(AppSettings::load(&paths), chosen);
+    }
+
+    #[test]
+    fn onboarding_opens_until_recorded_unless_the_install_is_already_set_up() {
+        let unrecorded = AppSettings::default();
+        assert!(needs_onboarding(&unrecorded, false, false));
+        assert!(needs_onboarding(&unrecorded, true, false));
+        assert!(needs_onboarding(&unrecorded, false, true));
+        assert!(!needs_onboarding(&unrecorded, true, true));
+        let quit_midway = AppSettings {
+            onboarding_completed: Some(false),
+            ..AppSettings::default()
+        };
+        assert!(needs_onboarding(&quit_midway, true, true));
+        let done = AppSettings {
+            onboarding_completed: Some(true),
+            ..AppSettings::default()
+        };
+        assert!(!needs_onboarding(&done, false, false));
     }
 }

@@ -39,7 +39,7 @@ impl StudioShell {
             return;
         }
         self.pause_at_painted_frame(cx);
-        self.timeline_resize = None;
+        self.resize = None;
         self.overflow_open = false;
         self.settings_open = false;
         self.export_panel.open = true;

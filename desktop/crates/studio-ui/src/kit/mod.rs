@@ -39,6 +39,7 @@ mod icon;
 mod interact;
 mod kbd;
 mod menu;
+mod nav_rail;
 mod notice;
 mod number_field;
 mod progress;
@@ -75,6 +76,7 @@ pub use interact::{
 };
 pub use kbd::{KbdChip, KbdSize, kbd_symbol};
 pub use menu::{Menu, MenuItem, MenuKey, MenuState};
+pub use nav_rail::{NavRail, NavRailItem};
 pub use notice::{DETAILS_MAX_H, Notice, notice_surface, tone_icon};
 pub use number_field::{
     NumberChange, NumberField, NumberFieldState, NumberLimits, format_number, parse_number,

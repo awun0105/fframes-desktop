@@ -37,6 +37,11 @@ fn cycling_selects_the_scene_under_the_playhead(cx: &mut gpui::TestAppContext) {
     // The selection becomes the scope of the agent's next task.
     let scoped = studio.wait("scene scope", |t| !t["panel"]["submit_scope"].is_null());
     assert_eq!(scoped["panel"]["submit_scope"], "Scene s1 · [45..90)");
+    // It shows as a chip in the composer, the message it goes with.
+    assert_eq!(
+        scoped["panel"]["composer"]["context"],
+        "Scene s1 · [45..90)"
+    );
 }
 
 #[gpui::test]
@@ -130,7 +135,7 @@ fn the_grip_resizes_the_timeline_within_its_limits(cx: &mut gpui::TestAppContext
     drag_grip(&mut studio, -5000.);
     // The player row keeps its minimum: a taller timeline never pushes the column.
     studio.wait("the tallest timeline", |t| {
-        let player_row = t["sections"]["sidebar"][3].as_f64().unwrap_or(0.) + 2.;
+        let player_row = t["sections"]["player"][3].as_f64().unwrap_or(0.) + 2.;
         (timeline_height(t) - timeline_max(t)).abs() < 0.5
             && (player_row - t["split"]["player_min_height"].as_f64().unwrap()).abs() < 0.5
     });

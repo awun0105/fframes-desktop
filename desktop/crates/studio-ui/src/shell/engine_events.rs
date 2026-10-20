@@ -266,6 +266,7 @@ impl StudioShell {
                         self.discard_install(cx);
                     }
                     self.presentation = presentation;
+                    self.check_onboarding(cx);
                     self.sync_agent(cx);
                     self.push_presentation_views(cx);
                 }
@@ -648,6 +649,7 @@ impl StudioShell {
             .as_ref()
             .map(|preview| preview.identity().clone());
         let _ = workflow.set_displayed_preview_identity(preview_identity);
+        let _ = workflow.set_permission_policy(self.permission_policy);
         self.agent.workflow = Some(workflow.clone());
         self.agent.attached = Some(opened.serial);
         self.agent.playhead = usize::MAX;

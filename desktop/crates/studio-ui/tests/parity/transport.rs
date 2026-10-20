@@ -42,7 +42,7 @@ fn playback_renders_the_player_and_leaves_the_other_sections(cx: &mut gpui::Test
         before["timeline"]["selection"]["position"],
         after["timeline"]["selection"]["position"]
     );
-    for section in ["header", "sidebar", "timeline"] {
+    for section in ["header", "rail", "agent-column", "timeline"] {
         assert!(
             grew(section) <= 1,
             "{section}: {:#} -> {:#}",
