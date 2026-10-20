@@ -1,12 +1,15 @@
 use std::{
-    fs,
+    collections::BTreeMap,
+    fs, io,
     io::{Read, Write},
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 use studio_project::{
-    OpenProject, ProjectError, ProjectPath, SourceInventory, lifecycle::read_cargo,
-    revision::TIMING_FILE,
+    OpenProject, ProjectError, ProjectPath, SourceInventory,
+    lifecycle::read_cargo,
+    revision::{FileKind, SourceFile, TIMING_FILE},
 };
 use studio_sdk::{
     CompatibilityManifest, environment::SdkEnvironment, manifest::FRAMEWORK_REL_PATH,
@@ -69,6 +72,128 @@ pub fn target_dir(app_builds: &Path, compatibility: &CompatibilityManifest) -> P
         .join("targets")
         .join(compatibility.digest())
         .join(&compatibility.target_triple)
+}
+
+/// The sources the last successful build in a shared target compiled, and when that build
+/// started. Lives in the target and exists only between builds.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct BuiltSources {
+    started: SystemTime,
+    /// Inventory path to SHA-256 of every copied source.
+    files: BTreeMap<String, String>,
+    /// Cargo's fingerprint entries of the package after that build. A build outside this
+    /// record (a manual `cargo` run in the target) changes them, and nothing is reused.
+    fingerprints: BTreeMap<String, SystemTime>,
+}
+
+const BUILT_SOURCES: &str = "studio-built-sources.json";
+
+fn package_fingerprints(build: &MaterializedBuild) -> io::Result<BTreeMap<String, SystemTime>> {
+    let mut entries = BTreeMap::new();
+    let dir = build
+        .environment
+        .target_dir
+        .join("debug")
+        .join(".fingerprint");
+    let prefix = format!("{}-", build.package);
+    let Ok(read) = fs::read_dir(&dir) else {
+        return Ok(entries);
+    };
+    for entry in read {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        for file in fs::read_dir(entry.path())? {
+            let file = file?;
+            entries.insert(
+                format!("{name}/{}", file.file_name().to_string_lossy()),
+                file.metadata()?.modified()?,
+            );
+        }
+    }
+    Ok(entries)
+}
+
+/// What [`reuse_unchanged_sources`] found before a build, for [`record_built_sources`].
+pub struct SourceReuse {
+    started: SystemTime,
+    /// The time given to unchanged sources, when the record allowed reuse.
+    reused: Option<SystemTime>,
+    fingerprints: BTreeMap<String, SystemTime>,
+}
+
+/// Every copy is a new file, so Cargo would recompile the project's crates even when no
+/// source changed. Gives each copied source that is byte-identical to what the last
+/// successful build in this target compiled a time older than the outputs compiled from
+/// it and newer than every output an earlier build left. Cargo then reuses exactly the
+/// crates whose sources did not change, and rebuilds the rest.
+///
+/// Call with the target lock held, right before Cargo runs. The record is removed first, so
+/// a build that fails or is killed leaves nothing to reuse. Pass the result to
+/// [`record_built_sources`] after the build succeeds.
+pub fn reuse_unchanged_sources(
+    build: &MaterializedBuild,
+    files: &[SourceFile],
+) -> io::Result<SourceReuse> {
+    let path = build.environment.target_dir.join(BUILT_SOURCES);
+    let record = fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<BuiltSources>(&bytes).ok());
+    match fs::remove_file(&path) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+        _ => {}
+    }
+    let mut reuse = SourceReuse {
+        started: SystemTime::now(),
+        reused: None,
+        fingerprints: package_fingerprints(build)?,
+    };
+    let Some(record) = record.filter(|record| record.fingerprints == reuse.fingerprints) else {
+        return Ok(reuse);
+    };
+    for file in files {
+        // Cargo manifests are rewritten for the SDK, and Cargo does not track their times.
+        if file.kind == FileKind::Cargo || file.path.as_str() == TIMING_FILE {
+            continue;
+        }
+        if record.files.get(file.path.as_str()) == Some(&file.sha256) {
+            fs::File::options()
+                .write(true)
+                .open(build.root.join(file.path.as_str()))?
+                .set_modified(record.started)?;
+        }
+    }
+    reuse.reused = Some(record.started);
+    Ok(reuse)
+}
+
+/// Records what a successful build compiled for the next [`reuse_unchanged_sources`].
+pub fn record_built_sources(
+    build: &MaterializedBuild,
+    files: &[SourceFile],
+    reuse: SourceReuse,
+) -> io::Result<()> {
+    let fingerprints = package_fingerprints(build)?;
+    // When Cargo compiled nothing of the package, its outputs are still the ones the
+    // reused time is older than; this build's start is not.
+    let started = match reuse.reused {
+        Some(reused) if fingerprints == reuse.fingerprints => reused,
+        _ => reuse.started,
+    };
+    let record = BuiltSources {
+        started,
+        files: files
+            .iter()
+            .map(|file| (file.path.as_str().to_owned(), file.sha256.clone()))
+            .collect(),
+        fingerprints,
+    };
+    fs::write(
+        build.environment.target_dir.join(BUILT_SOURCES),
+        serde_json::to_vec(&record).map_err(io::Error::other)?,
+    )
 }
 
 pub fn materialize_with_cancel(
@@ -220,8 +345,10 @@ pub fn materialize_in_environment(
         return Err(error(&vendor, "SDK vendor directory missing".into()));
     }
     let cargo_config_path = root.join(".cargo/config.toml");
+    // Line tables keep file and line in backtraces; full debug info only made each preview
+    // build link (and write the PDB) about two seconds longer.
     let cargo_config = format!(
-        "[source.crates-io]\nreplace-with = \"studio-vendor\"\n[source.studio-vendor]\ndirectory = {}\n",
+        "[source.crates-io]\nreplace-with = \"studio-vendor\"\n[source.studio-vendor]\ndirectory = {}\n[profile.dev]\ndebug = \"line-tables-only\"\n",
         toml::Value::String(vendor.to_string_lossy().into_owned())
     );
     // This file is also inside the private staging tree; a failed write discards that tree.

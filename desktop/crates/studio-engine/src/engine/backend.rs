@@ -313,7 +313,7 @@ impl Backend {
                 self.check_sdk();
             }
             Command::InstallSdk => {
-                if let Err(error) = crate::sdk_setup::install_sdk(
+                let sdk = match crate::sdk_setup::install_sdk(
                     self.compatibility
                         .as_ref()
                         .ok_or_else(|| self.compatibility_error.clone())?,
@@ -321,21 +321,40 @@ impl Backend {
                     &self.processes,
                     self.app_version,
                 ) {
-                    self.sdk = "Failed · repair the reported installation error and retry".into();
-                    return Err(error);
-                }
+                    Ok(sdk) => sdk,
+                    Err(error) => {
+                        self.sdk =
+                            "Failed · repair the reported installation error and retry".into();
+                        return Err(error);
+                    }
+                };
+                // Without the warm cache the first preview compiles the framework itself.
+                let _ = crate::services::worker_project::warm_build_cache(
+                    &sdk,
+                    &paths.builds(),
+                    &self.processes,
+                );
                 self.refresh_compatibility();
             }
             Command::ImportSdkBundle(bundle) => {
-                if let Err(error) = crate::sdk_setup::install_sdk_from_bundle(
+                let sdk = match crate::sdk_setup::install_sdk_from_bundle(
                     &bundle,
                     self.sdk_home.as_deref().ok_or("SDK home unavailable")?,
                     &self.processes,
                     self.app_version,
                 ) {
-                    self.sdk = "Failed · repair the reported installation error and retry".into();
-                    return Err(error);
-                }
+                    Ok(sdk) => sdk,
+                    Err(error) => {
+                        self.sdk =
+                            "Failed · repair the reported installation error and retry".into();
+                        return Err(error);
+                    }
+                };
+                let _ = crate::services::worker_project::warm_build_cache(
+                    &sdk,
+                    &paths.builds(),
+                    &self.processes,
+                );
                 // An imported SDK may be the first manifest this host has.
                 self.refresh_compatibility();
             }

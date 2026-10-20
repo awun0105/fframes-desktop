@@ -232,6 +232,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:AUDIO_PREVIEW_EVIDENCE = "$env:RUNNER_TEMP\m2-parity.json"
           cargo test --locked --manifest-path desktop/Cargo.toml -p fframes-studio --test audio_preview real_sdk_frame_audio_and_retained_source -- --ignored
+      - name: Preview latency budgets (install, cold, warm, edit)
+        if: inputs.full
+        run: |
+          $env:SDK_BUNDLE = "$env:RUNNER_TEMP\studio-sdk"
+          $env:PREVIEW_LATENCY_EVIDENCE = "$env:RUNNER_TEMP\preview-latency.json"
+          cargo test --locked --manifest-path desktop/Cargo.toml -p studio-engine --test preview_latency -- --ignored --nocapture
       # Test builds are named studio-test-*: the release workflow collects only the
       # fframes-studio-* packages its own jobs build.
       - name: Package native app and SDK test build
@@ -250,6 +256,7 @@ jobs:
             ${{ runner.temp }}/studio-test-x86_64-pc-windows-msvc.zip
             ${{ runner.temp }}/worker-frame/*.png
             ${{ runner.temp }}/m2-parity.json
+            ${{ runner.temp }}/preview-latency.json
           if-no-files-found: warn
           retention-days: 14
       - name: Show how to download the test build

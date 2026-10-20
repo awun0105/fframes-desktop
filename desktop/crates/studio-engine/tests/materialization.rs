@@ -250,3 +250,96 @@ fn projects_bind_to_the_framework_of_the_sdk_they_are_pinned_to() {
     let error = fframes_path(&project).unwrap_err().to_string();
     assert!(error.contains("SDK pin mismatch"), "{error}");
 }
+
+/// Studio copies a project before every build. Unchanged sources must reuse the shared
+/// target's compiled crates, and no build may ever run a binary compiled from other sources.
+#[test]
+fn unchanged_sources_reuse_the_build_and_changed_sources_never_run_a_stale_binary() {
+    use studio_engine::build_materialization::{record_built_sources, reuse_unchanged_sources};
+    let temp = tempfile::tempdir().unwrap();
+    let sdk = temp.path().join("sdk");
+    fs::create_dir_all(sdk.join("framework/vendor")).unwrap();
+    let builds = temp.path().join("builds");
+    let compatibility = CompatibilityManifest::default_linux_x64();
+    let create = |name: &str| {
+        let root = temp.path().join(name);
+        studio_project::create(
+            &root,
+            "Video",
+            sdk_pin(&compatibility),
+            &compatibility.fframes_version,
+            &compatibility.runtime_version,
+        )
+        .unwrap();
+        // The starter project without the framework, so the host Cargo can build it.
+        fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"studio-video\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[workspace]\n",
+        )
+        .unwrap();
+        fs::write(root.join("src/main.rs"), "fn main() {}\n").unwrap();
+        fs::write(
+            root.join("src/bin/studio_worker.rs"),
+            "fn main() { print!(\"{}\", studio_video::text()); }\n",
+        )
+        .unwrap();
+        root
+    };
+    let write_text = |root: &std::path::Path, text: &str| {
+        fs::write(
+            root.join("src/lib.rs"),
+            format!("pub fn text() -> &'static str {{ \"{text}\" }}\n"),
+        )
+        .unwrap();
+    };
+    // One Studio build: copy, reuse, cargo, record. Returns what the worker printed and
+    // whether Cargo compiled the project.
+    let build = |root: &std::path::Path| {
+        let project = studio_project::open(root).unwrap();
+        let build = materialize(&project, &sdk, compatibility.clone(), &builds).unwrap();
+        let reuse = reuse_unchanged_sources(&build, &project.inventory.files).unwrap();
+        let output = std::process::Command::new(env!("CARGO"))
+            .args([
+                "build",
+                "--offline",
+                "--bin",
+                "studio_worker",
+                "--manifest-path",
+            ])
+            .arg(&build.manifest)
+            .env("CARGO_TARGET_DIR", &build.environment.target_dir)
+            .output()
+            .unwrap();
+        let log = String::from_utf8_lossy(&output.stderr).into_owned();
+        assert!(output.status.success(), "{log}");
+        record_built_sources(&build, &project.inventory.files, reuse).unwrap();
+        let worker = build
+            .environment
+            .target_dir
+            .join("debug")
+            .join(format!("studio_worker{}", std::env::consts::EXE_SUFFIX));
+        let printed = std::process::Command::new(worker).output().unwrap().stdout;
+        (
+            String::from_utf8(printed).unwrap(),
+            log.contains("Compiling studio-video"),
+        )
+    };
+
+    let first = create("first");
+    write_text(&first, "A");
+    assert_eq!(build(&first), ("A".into(), true));
+    // Reopening, repeatedly: a build that compiled nothing must keep the next one fresh.
+    assert_eq!(build(&first), ("A".into(), false));
+    assert_eq!(build(&first), ("A".into(), false));
+    write_text(&first, "B");
+    assert_eq!(build(&first), ("B".into(), true));
+    // Back to sources an earlier build compiled: the target holds B's crates now.
+    write_text(&first, "A");
+    assert_eq!(build(&first), ("A".into(), true));
+    // Another project with the same package shares the target's crates.
+    let second = create("second");
+    write_text(&second, "C");
+    assert_eq!(build(&second), ("C".into(), true));
+    assert_eq!(build(&first), ("A".into(), true));
+    assert_eq!(build(&first), ("A".into(), false));
+}

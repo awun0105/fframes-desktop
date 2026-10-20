@@ -179,6 +179,35 @@ pub fn compile_portable_worker(
     )
 }
 
+/// Compiles a throwaway Studio starter project against the installed `sdk` into the shared
+/// target under `builds`, so the first preview reuses the framework instead of compiling
+/// it. The installer's probes cannot: they build the staged SDK, and Cargo's artifacts are
+/// bound to the SDK's path.
+pub fn warm_build_cache(
+    sdk: &Path,
+    builds: &Path,
+    manager: &ProcessTreeManager,
+) -> Result<(), String> {
+    let manifest = &std::fs::read_to_string(sdk.join("compatibility.json"))
+        .map_err(|e| e.to_string())
+        .and_then(|json| CompatibilityManifest::from_json_str(&json).map_err(|e| e.to_string()))?;
+    std::fs::create_dir_all(builds).map_err(|e| e.to_string())?;
+    let scratch = tempfile::Builder::new()
+        .prefix("warm-")
+        .tempdir_in(builds)
+        .map_err(|e| e.to_string())?;
+    let project = studio_project::create(
+        &scratch.path().join("project"),
+        "Studio build cache",
+        crate::build_materialization::sdk_pin(manifest),
+        &manifest.fframes_version,
+        &manifest.runtime_version,
+    )
+    .map_err(|e| e.to_string())?;
+    let environment = CompileEnvironment::resolve(sdk, manifest, builds)?;
+    compile_with_cargo(&project, &environment, manager).map(drop)
+}
+
 fn compile_with_cargo(
     project: &studio_project::OpenProject,
     environment: &CompileEnvironment,
@@ -197,6 +226,9 @@ fn compile_with_cargo(
 
     ProjectManager::ensure_lockfile(&build.root, &build.environment, manager)
         .map_err(|e| e.to_string())?;
+    let files = &project.inventory.files;
+    let reuse = crate::build_materialization::reuse_unchanged_sources(&build, files)
+        .map_err(|e| e.to_string())?;
     ProjectManager::build_worker_target(
         &build.root,
         &build.manifest,
@@ -206,6 +238,8 @@ fn compile_with_cargo(
         manager,
     )
     .map_err(|e| e.to_string())?;
+    crate::build_materialization::record_built_sources(&build, files, reuse)
+        .map_err(|e| e.to_string())?;
     if studio_project::SourceInventory::scan_with_cancel(&project.root, &|| manager.is_shutdown())
         .map_err(|e| e.to_string())?
         .build_revision()
