@@ -17,3 +17,7 @@ python scripts/prepare-studio-web-logo.py
 ```
 
 Generated logo assets are committed, so deployment does not need Python or Pillow. The optimizer crops transparent padding, preserves transparency, and produces the normal and high-density variants. Keep the image dimensions and responsive `sizes` attributes aligned with the logo's CSS layout boxes.
+
+Social previews use `brand/studio-social-blue-v1.png`, an opaque 1200 × 630 card with the approved blue logo. Open Graph and Twitter tags are present in the HTML for crawlers without JavaScript. Their absolute image and canonical URLs use the current GitHub Pages deployment; update both pages if the public domain changes. Use a new image filename when changing the card so social caches can discover it.
+
+To regenerate the card with Chrome running on debugging port 9226, run `node scripts/prepare-studio-social.mjs` (or set `CHROME_DEBUG_URL`). The script composes SVG geometry, type, and the existing logo, then exports a PNG. The generated PNG is committed, so deployment does not require Chrome. Existing Facebook shares may need a new scrape through the [Sharing Debugger](https://developers.facebook.com/tools/debug/).
