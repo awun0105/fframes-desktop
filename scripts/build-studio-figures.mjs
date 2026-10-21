@@ -23,6 +23,21 @@ const text = (x, y, s, cls = 'f-label', anchor = 'start') =>
   `<text x="${r(x)}" y="${r(y)}" class="${cls}"${anchor === 'start' ? '' : ` text-anchor="${anchor}"`}>${esc(s)}</text>`;
 const rect = (x, y, w, h, cls) => `<rect x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" class="${cls}"/>`;
 
+/**
+ * Scroll animation: wraps markup in a group that animates FROM a start state to the drawing
+ * as it stands, so the drawing is always the last frame. `kind` is one of the a-* animations
+ * in studio.css; `s`..`e` is its window on the figure's 0..100 clock; `vars` sets --dx/--dy.
+ * A drawn line or path gets pathLength="1" so the dash animation needs no measuring.
+ */
+function anim(kind, s, e, inner, vars = {}) {
+  const style = Object.entries({ s, e, ...vars }).map(([k, v]) => `--${k}:${r(v)}`).join(';');
+  const body = kind === 'draw' ? inner.replace(/^<(path|line) /, '<$1 pathLength="1" ') : inner;
+  return `<g class="a a-${kind}" style="${style}">${body}</g>`;
+}
+
+/** A playhead that is not part of the drawing: it sweeps on [s, e] from dx, then fades out. */
+const playhead = (x, y1, y2, [s, e], dx, out) => anim('out', out, out + 6, anim('move', s, e, line(x, y1, x, y2, 'playhead'), { dx }));
+
 /** A slab of width w (x), depth d (y) and thickness t whose bottom sits at z. */
 function slab(P, x, y, z, w, d, t, tone, extra = '') {
   const top = [P(x, y, z + t), P(x + w, y, z + t), P(x + w, y + d, z + t), P(x, y + d, z + t)];
@@ -59,8 +74,11 @@ const STUDIO = [
   { key: 'window', label: 'Studio window', sub: 'preview · timeline · chat', tone: 'blue' },
 ];
 
-/** An exploded stack of layers, bottom first. `focus` dims every other layer. */
-function stack(P, layers, { size = 150, t = 9, gap = 30, side = 'right', labelX, focus, muteLibrary = false }) {
+/**
+ * An exploded stack of layers, bottom first. `focus` dims every other layer. `motion(i)` may
+ * return `[kind, s, e, vars]` to animate layer i, slab and label together.
+ */
+function stack(P, layers, { size = 150, t = 9, gap = 30, side = 'right', labelX, focus, muteLibrary = false, motion }) {
   const out = [];
   const zTop = (layers.length - 1) * (t + gap);
   for (const [cx, cy] of [[0, size], [size, size], [size, 0]]) {
@@ -71,10 +89,13 @@ function stack(P, layers, { size = 150, t = 9, gap = 30, side = 'right', labelX,
   layers.forEach((layer, i) => {
     const z = i * (t + gap);
     const dim = (focus && layer.key !== focus) || (muteLibrary && !layer.key) ? 'muted' : '';
-    out.push(slab(P, 0, 0, z, size, size, t, focus && layer.key === focus ? 'blue' : layer.tone, dim));
     const [ax, ay] = side === 'right' ? P(size, 0, z + t) : P(0, size, z + t);
     const [lx] = [labelX];
-    out.push(`<g${dim ? ' class="muted"' : ''}>${leader(ax + (side === 'right' ? 6 : -6), ay, lx, layer.label, layer.sub, side)}</g>`);
+    const body =
+      slab(P, 0, 0, z, size, size, t, focus && layer.key === focus ? 'blue' : layer.tone, dim) +
+      `<g${dim ? ' class="muted"' : ''}>${leader(ax + (side === 'right' ? 6 : -6), ay, lx, layer.label, layer.sub, side)}</g>`;
+    const m = motion?.(i);
+    out.push(m ? anim(m[0], m[1], m[2], body, m[3]) : body);
   });
   return out.join('');
 }
@@ -84,7 +105,8 @@ function heroStacks() {
   const right = iso(720, 310);
   const body =
     stack(left, LIBRARY, { side: 'left', labelX: 180 }) +
-    stack(right, STUDIO, { side: 'right', labelX: 880, muteLibrary: true }) +
+    // Studio's five layers settle onto the library's three from faint ghosts above
+    stack(right, STUDIO, { side: 'right', labelX: 880, muteLibrary: true, motion: (i) => i >= 3 && ['ghost', (i - 3) * 16, (i - 3) * 16 + 24, { dy: -36 }] }) +
     text(330, 500, 'fframes library', 'f-title', 'middle') +
     text(720, 500, 'fframes Studio', 'f-title', 'middle');
   return svg('fig-hero', 1100, 520, 'The fframes library and the Studio stack',
@@ -102,40 +124,39 @@ function focusStack(name, key, caption) {
 function selection() {
   const P = iso(260, 150);
   const W = 220, D = 124, t = 4, gap = 46;
+  // in motion: the planes start flat and separate, the pointer clicks the title, then the lead
+  // line carries it to the card and the rows fill in
   const parts = [];
   parts.push(slab(P, 0, 0, 0, W, D, t, 'grey'));
-  parts.push(slab(P, 0, 0, t + gap, W, D, t, 'paper'));
   // shapes on the middle plane
   const z1 = t + gap + t;
-  parts.push(poly([P(30, 70, z1), P(90, 70, z1), P(90, 110, z1), P(30, 110, z1)], 't-green f-line'));
-  parts.push(poly([P(140, 20, z1), P(200, 20, z1), P(200, 60, z1), P(140, 60, z1)], 't-red f-line'));
-  parts.push(slab(P, 0, 0, 2 * (t + gap), W, D, t, 'paper'));
+  parts.push(anim('move', 0, 40,
+    slab(P, 0, 0, t + gap, W, D, t, 'paper') +
+    poly([P(30, 70, z1), P(90, 70, z1), P(90, 110, z1), P(30, 110, z1)], 't-green f-line') +
+    poly([P(140, 20, z1), P(200, 20, z1), P(200, 60, z1), P(140, 60, z1)], 't-red f-line'), { dy: t + gap }));
   const z2 = 2 * (t + gap) + t;
   const title = [P(40, 30, z2), P(170, 30, z2), P(170, 52, z2), P(40, 52, z2)];
-  parts.push(poly(title, 't-blue f-line k-blue'));
-  for (const [cx, cy] of [[0, D], [W, D], [W, 0]]) {
+  parts.push(anim('move', 0, 40, slab(P, 0, 0, 2 * (t + gap), W, D, t, 'paper') + poly(title, 't-blue f-line k-blue'), { dy: 2 * (t + gap) }));
+  const guides = [[0, D], [W, D], [W, 0]].map(([cx, cy]) => {
     const [x1, y1] = P(cx, cy, t);
     const [, y2] = P(cx, cy, z2);
-    parts.push(line(x1, y1, x1, y2, 'f-faint'));
-  }
+    return line(x1, y1, x1, y2, 'f-faint');
+  });
+  parts.push(anim('fade', 25, 45, guides.join('')));
   // labels on the left
   const lab = (z, label, sub) => { const [x, y] = P(0, D, z); return leader(x - 6, y, 130, label, sub, 'left'); };
-  parts.push(lab(t, 'Background', ''));
-  parts.push(lab(t + gap + t, 'Shapes', ''));
-  parts.push(lab(z2, 'Title', 'id intro.title'));
+  parts.push(anim('fade', 25, 45, lab(t, 'Background', '') + lab(t + gap + t, 'Shapes', '') + lab(z2, 'Title', 'id intro.title')));
   // the pointer, on the title
   const [px, py] = P(105, 41, z2);
-  parts.push(`<path d="M${px} ${py} l0 16 l4 -4 l3 7 l3 -1 l-3 -7 l6 0 z" class="t-dark f-line"/>`);
+  parts.push(anim('pop', 42, 50, `<path d="M${px} ${py} l0 16 l4 -4 l3 7 l3 -1 l-3 -7 l6 0 z" class="t-dark f-line"/>`));
   // packet card
   const cx = 520, cy = 92;
-  parts.push(rect(cx, cy, 250, 150, 't-paper f-line'));
-  parts.push(text(cx + 14, cy + 22, 'Task context', 'f-title'));
+  parts.push(anim('fade', 52, 62, rect(cx, cy, 250, 150, 't-paper f-line') + text(cx + 14, cy + 22, 'Task context', 'f-title')));
   const rows = [['element', 'intro.title'], ['frame', '126 @ 30 fps'], ['bounds', '160 220 1200 180'], ['source', 'src/lib.rs'], ['symbol', 'render_frame'], ['request', 'slide it in from the left']];
   rows.forEach(([k, v], i) => {
-    parts.push(text(cx + 14, cy + 46 + i * 17, k, 'f-small'));
-    parts.push(text(cx + 86, cy + 46 + i * 17, v, 'f-code'));
+    parts.push(anim('move-fade', 60 + i * 6, 70 + i * 6, text(cx + 14, cy + 46 + i * 17, k, 'f-small') + text(cx + 86, cy + 46 + i * 17, v, 'f-code'), { dx: -8 }));
   });
-  parts.push(path(`M${px + 14} ${py - 6} C ${px + 120} ${py - 40}, ${cx - 80} ${cy + 40}, ${cx} ${cy + 40}`, 'f-lead k-blue'));
+  parts.push(anim('draw', 50, 70, path(`M${px + 14} ${py - 6} C ${px + 120} ${py - 40}, ${cx - 80} ${cy + 40}, ${cx} ${cy + 40}`, 'f-lead k-blue')));
   return svg('fig-select', 800, 350, 'A click on the preview becomes task context',
     'A frame exploded into three planes, background, shapes and a title. A pointer clicks the title, and a line leads to a card listing the element id, the frame, its bounds, the source file, the symbol and the request.', parts.join(''), 600);
 }
@@ -145,22 +166,20 @@ function selection() {
 function loop() {
   const steps = [['Brief', 'or selection'], ['Ground', 'freeze context'], ['Edit', 'draft copy'], ['Build', 'pinned SDK'], ['Inspect', 'frames, audio'], ['Preview', 'at playhead'], ['Accept', 'atomic write'], ['Export', 'accepted only']];
   const x0 = 46, dx = 106, y = 70;
-  const parts = [line(x0, y, x0 + dx * 7, y)];
+  // in motion the line draws on 0..70 and step i lights up as it passes, at 10 * i
+  const parts = [anim('draw', 0, 70, line(x0, y, x0 + dx * 7, y))];
   steps.forEach(([a, b], i) => {
     const x = x0 + dx * i;
     const tone = i === 2 ? 't-red' : i >= 6 ? 't-blue' : 't-paper';
-    parts.push(`<circle cx="${x}" cy="${y}" r="9" class="${tone} f-line"/>`);
-    parts.push(text(x, y + 32, a, 'f-label', 'middle'));
-    parts.push(text(x, y + 47, b, 'f-small', 'middle'));
+    parts.push(anim('pop', i * 10, i * 10 + 6, `<circle cx="${x}" cy="${y}" r="9" class="${tone} f-line"/>`));
+    parts.push(anim('fade', i * 10, i * 10 + 8, text(x, y + 32, a, 'f-label', 'middle') + text(x, y + 47, b, 'f-small', 'middle')));
   });
   // where the agent stops vs where the video is ready
-  parts.push(path(`M${x0 + dx * 2} ${y - 14} V ${y - 34}`, 'f-lead k-red'));
-  parts.push(text(x0 + dx * 2, y - 40, 'agent finished', 'f-label c-red', 'middle'));
-  parts.push(path(`M${x0 + dx * 5} ${y - 14} V ${y - 34}`, 'f-lead k-blue'));
-  parts.push(text(x0 + dx * 5, y - 40, 'video ready', 'f-label c-blue', 'middle'));
-  // the one repair turn
-  parts.push(path(`M${x0 + dx * 4} ${y + 58} C ${x0 + dx * 4} ${y + 92}, ${x0 + dx * 2} ${y + 92}, ${x0 + dx * 2} ${y + 58}`, 'f-lead k-red'));
-  parts.push(text(x0 + dx * 3, y + 104, 'fails: one repair turn', 'f-small', 'middle'));
+  parts.push(anim('move-fade', 22, 30, path(`M${x0 + dx * 2} ${y - 14} V ${y - 34}`, 'f-lead k-red') + text(x0 + dx * 2, y - 40, 'agent finished', 'f-label c-red', 'middle'), { dy: 8 }));
+  parts.push(anim('move-fade', 52, 60, path(`M${x0 + dx * 5} ${y - 14} V ${y - 34}`, 'f-lead k-blue') + text(x0 + dx * 5, y - 40, 'video ready', 'f-label c-blue', 'middle'), { dy: 8 }));
+  // the one repair turn: inspect fails, the arc goes back to edit before the line moves on
+  parts.push(anim('draw', 42, 52, path(`M${x0 + dx * 4} ${y + 58} C ${x0 + dx * 4} ${y + 92}, ${x0 + dx * 2} ${y + 92}, ${x0 + dx * 2} ${y + 58}`, 'f-lead k-red')));
+  parts.push(anim('fade', 48, 56, text(x0 + dx * 3, y + 104, 'fails: one repair turn', 'f-small', 'middle')));
   return svg('fig-loop', 836, 190, 'From a request to an exported video',
     'Eight steps on a line: brief, ground, edit, build, inspect, preview, accept, export. The agent is finished after edit; the video is ready only after preview. A failed inspection loops back to edit once.', parts.join(''), 640);
 }
@@ -170,26 +189,26 @@ function loop() {
 function timing() {
   const parts = [];
   const x0 = 40, y0 = 40, w = 460;
-  parts.push(line(x0, y0, x0 + w, y0));
-  for (let i = 0; i <= 23; i++) parts.push(line(x0 + i * 20, y0, x0 + i * 20, y0 + (i % 5 === 0 ? 8 : 4), 'f-lead'));
+  // in motion a playhead sweeps the timeline on 10..70; `at` is when it reaches an x
+  const at = (x) => 10 + 60 * ((x - x0) / w);
+  const ruler = [line(x0, y0, x0 + w, y0)];
+  for (let i = 0; i <= 23; i++) ruler.push(line(x0 + i * 20, y0, x0 + i * 20, y0 + (i % 5 === 0 ? 8 : 4), 'f-lead'));
+  parts.push(anim('fade', 0, 12, ruler.join('')));
   const clips = [['Intro', 0, 130, 't-blue'], ['Main', 130, 170, 't-paper'], ['Main #2', 300, 90, 't-paper'], ['Outro', 390, 70, 't-paper']];
   for (const [label, x, cw, tone] of clips) {
-    parts.push(rect(x0 + x + 2, y0 + 20, cw - 4, 34, `${tone} f-line`));
-    parts.push(text(x0 + x + 10, y0 + 41, label, 'f-label'));
+    parts.push(anim('dim', at(x0 + x + 2), at(x0 + x + 2) + 6, rect(x0 + x + 2, y0 + 20, cw - 4, 34, `${tone} f-line`) + text(x0 + x + 10, y0 + 41, label, 'f-label')));
   }
   // split and trim marks
-  parts.push(line(x0 + 300, y0 + 10, x0 + 300, y0 + 70, 'f-lead k-red'));
-  parts.push(text(x0 + 300, y0 + 84, 'split', 'f-small c-red', 'middle'));
-  parts.push(path(`M${x0 + 128} ${y0 + 26} v22`, 'f-line k-blue'));
-  parts.push(text(x0 + 128, y0 + 84, 'trim', 'f-small c-blue', 'middle'));
+  parts.push(anim('pop', at(x0 + 300), at(x0 + 300) + 5, line(x0 + 300, y0 + 10, x0 + 300, y0 + 70, 'f-lead k-red') + text(x0 + 300, y0 + 84, 'split', 'f-small c-red', 'middle')));
+  parts.push(anim('pop', at(x0 + 128), at(x0 + 128) + 5, path(`M${x0 + 128} ${y0 + 26} v22`, 'f-line k-blue') + text(x0 + 128, y0 + 84, 'trim', 'f-small c-blue', 'middle')));
   // what changes
-  parts.push(path(`M${x0 + w + 10} ${y0 + 37} H 560`, 'f-lead'));
-  parts.push(rect(560, 22, 170, 34, 't-blue f-line'));
-  parts.push(text(574, 43, 'timeline.json', 'f-label'));
-  parts.push(text(745, 43, 'written', 'f-small'));
+  parts.push(anim('draw', 72, 80, path(`M${x0 + w + 10} ${y0 + 37} H 560`, 'f-lead')));
+  parts.push(anim('dim', 78, 88, rect(560, 22, 170, 34, 't-blue f-line') + text(574, 43, 'timeline.json', 'f-label')));
+  parts.push(anim('fade', 82, 90, text(745, 43, 'written', 'f-small')));
   parts.push(rect(560, 72, 170, 34, 't-grey f-line'));
   parts.push(text(574, 93, 'build', 'f-label'));
-  parts.push(text(745, 93, 'untouched', 'f-small'));
+  parts.push(anim('fade', 88, 96, text(745, 93, 'untouched', 'f-small')));
+  parts.push(playhead(x0 + w, y0 - 10, y0 + 64, [10, 70], -w, 90));
   return svg('fig-timing', 820, 140, 'Timing edits write timeline.json, not a new build',
     'A timeline with four clips, a split and a trimmed edge. An arrow points to timeline.json, which is written, and to the build, which is untouched.', parts.join(''), 640);
 }
@@ -244,25 +263,25 @@ function filters() {
     const [, y2] = P(cx, cy, zTop + t);
     parts.push(line(x1, y1, x1, y2, 'f-faint'));
   }
+  // in motion the draft bar grows on 0..86 and plane i lights up as it reaches it
   layers.forEach(([label, sub, tone], i) => {
     const z = i * (t + gap);
-    parts.push(slab(P, 0, 0, z, size, size, t, tone, 'see-through'));
     const [ax, ay] = P(size, 0, z + t);
-    parts.push(leader(ax + 6, ay, 520, label, sub, 'right'));
+    parts.push(anim('dim', 7 + i * 13, 13 + i * 13, slab(P, 0, 0, z, size, size, t, tone, 'see-through') + leader(ax + 6, ay, 520, label, sub, 'right')));
   });
   // the draft, travelling up through every plane
   const [bx, yStart] = P(size / 2, size / 2, -36);
   const [, yEnd] = P(size / 2, size / 2, zTop + 92);
-  parts.push(`<rect x="${bx - 6}" y="${yEnd}" width="12" height="${r(yStart - yEnd)}" class="c-blue" opacity=".45"/>`);
-  parts.push(`<path d="M${bx - 13} ${r(yEnd + 12)} L${bx} ${r(yEnd - 4)} L${bx + 13} ${r(yEnd + 12)}" class="f-line k-blue"/>`);
-  parts.push(text(bx, yEnd - 14, 'accepted revision', 'f-label c-blue', 'middle'));
+  parts.push(anim('grow-y', 0, 86, `<rect x="${bx - 6}" y="${yEnd}" width="12" height="${r(yStart - yEnd)}" class="c-blue" opacity=".45"/>`));
+  parts.push(anim('move-fade', 84, 96,
+    `<path d="M${bx - 13} ${r(yEnd + 12)} L${bx} ${r(yEnd - 4)} L${bx + 13} ${r(yEnd + 12)}" class="f-line k-blue"/>` +
+    text(bx, yEnd - 14, 'accepted revision', 'f-label c-blue', 'middle'), { dy: 10 }));
   const [, yBottom] = P(size, size, 0);
   parts.push(text(bx, yBottom + 24, 'agent draft', 'f-label', 'middle'));
-  // the failure path, out of inspect
+  // the failure path, out of inspect, when the bar passes it
   const [fx, fy] = P(0, size, 2 * (t + gap) + t);
-  parts.push(path(`M${fx - 6} ${fy} H 160`, 'f-lead k-red'));
-  parts.push(text(152, fy + 4, 'fail', 'f-label c-red', 'end'));
-  parts.push(text(152, fy + 18, 'one repair turn', 'f-small', 'end'));
+  parts.push(anim('draw', 36, 46, path(`M${fx - 6} ${fy} H 160`, 'f-lead k-red')));
+  parts.push(anim('fade', 40, 50, text(152, fy + 4, 'fail', 'f-label c-red', 'end') + text(152, fy + 18, 'one repair turn', 'f-small', 'end')));
   return svg('fig-filters', 760, 480, 'Every edit passes five filters',
     'The agent’s draft travels up through five planes: capture twice, build, inspect, optional review and publish. It comes out on top as the accepted revision. A failure at inspect goes back for one repair turn.', parts.join(''), 600);
 }
@@ -298,14 +317,22 @@ function swap() {
   p.push(text(20, 114, 'new build', 'f-label'));
   p.push(rect(x0, 40, swapX - x0, 22, 't-paper f-line'));
   p.push(text(x0 + 10, 55, 'playing', 'f-small'));
+  // in motion a playhead runs to the swap on 0..70 while the new build fills in under it
+  const at = (px) => 70 * ((px - x0) / (swapX - x0));
   const phases = [['compile', 186, 't-grey'], ['stage', 112, 't-yellow'], ['ready', 62, 't-green']];
   let x = x0 + 60;
-  for (const [label, w, tone] of phases) { p.push(rect(x, 100, w, 22, `${tone} f-line`)); p.push(text(x + 8, 115, label, 'f-small')); x += w; }
-  p.push(rect(swapX, 100, x1 - swapX, 22, 't-blue f-line'));
-  p.push(text(swapX + 10, 115, 'playing', 'f-small'));
-  p.push(line(swapX, 24, swapX, 140, 'f-line k-blue'));
-  p.push(text(swapX, 160, 'swap at the playhead', 'f-label c-blue', 'middle'));
-  p.push(text(swapX, 175, 'worker · frame · audio together', 'f-small', 'middle'));
+  for (const [label, w, tone] of phases) {
+    p.push(anim('grow-x', at(x), at(x + w), rect(x, 100, w, 22, `${tone} f-line`)));
+    p.push(anim('fade', at(x + w) - 2, at(x + w) + 4, text(x + 8, 115, label, 'f-small')));
+    x += w;
+  }
+  p.push(anim('grow-x', 72, 90, rect(swapX, 100, x1 - swapX, 22, 't-blue f-line')));
+  p.push(anim('fade', 88, 94, text(swapX + 10, 115, 'playing', 'f-small')));
+  p.push(anim('fade', 68, 78,
+    line(swapX, 24, swapX, 140, 'f-line k-blue') +
+    text(swapX, 160, 'swap at the playhead', 'f-label c-blue', 'middle') +
+    text(swapX, 175, 'worker · frame · audio together', 'f-small', 'middle')));
+  p.push(playhead(swapX, 24, 140, [0, 70], x0 - swapX, 74));
   return svg('fig-swap', 800, 190, 'A new build replaces the old one only when it is ready',
     'Two lanes. The old build keeps playing while the new one compiles, stages and becomes ready. At that moment both swap at the playhead, worker, frame and audio together.', p.join(''), 640);
 }
