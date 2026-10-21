@@ -9,6 +9,22 @@
       content="Follow a Studio draft through capture, build, inspection, review and acceptance. See how selection, read-only project tools and preview readiness connect."
     />
     <meta name="color-scheme" content="light" />
+    <!-- studio:fonts -->
+    <link
+      rel="preload"
+      href="fonts/geist-latin-v5.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="fonts/geist-mono-latin-v6.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <!-- /studio:fonts -->
     <!-- studio:bootstrap -->
     <!-- prettier-ignore -->
     <script data-studio-bootstrap>(()=>{const root=document.documentElement;root.classList.add("js-enabled");let choice=null;try{choice=localStorage.getItem("fframes-studio-scroll-motion")}catch{}if(choice==="on"||(choice!=="off"&&!matchMedia("(prefers-reduced-motion: reduce)").matches))root.classList.add("internals-motion")})()</script>
@@ -3954,7 +3970,7 @@ display: none;
               Failure
             </text>
             <text x="83" y="290" text-anchor="end" class="gate-subtitle">
-              retains draft
+              keeps draft
             </text>
             <text x="305" y="595" text-anchor="middle" class="gate-subtitle">
               STAGES, NOT ELAPSED TIME · REVIEW IS OPTIONAL
@@ -4073,7 +4089,7 @@ display: none;
                   rx="4"
                   class="ex-paper"
                 />
-                <text x="43" y="155" class="ex-title">Writer quiescent</text>
+                <text x="43" y="155" class="ex-title">Writer ready</text>
                 <text x="43" y="180" class="ex-copy">Draft is ready</text>
                 <text x="43" y="200" class="ex-copy">for capture</text>
               </g>
@@ -4136,7 +4152,7 @@ display: none;
                 />
                 <text x="568" y="165" class="ex-title">Same bytes?</text>
                 <text x="568" y="190" class="ex-copy">Yes → validate</text>
-                <text x="568" y="210" class="ex-copy">No → refuse capture</text>
+                <text x="568" y="210" class="ex-copy">No → refuse</text>
               </g>
               <text x="25" y="370" class="ex-label">
                 A CHANGING DRAFT DOES NOT PROCEED
@@ -4230,7 +4246,7 @@ display: none;
                   rx="4"
                   class="ex-blue"
                 />
-                <text x="43" y="165" class="ex-title">Validated candidate</text>
+                <text x="43" y="165" class="ex-title">Valid candidate</text>
                 <text x="43" y="190" class="ex-copy">Checks completed</text>
                 <text x="43" y="210" class="ex-copy">for this candidate</text>
               </g>
@@ -5280,9 +5296,7 @@ let title_id = title_key.render_id();</code></pre>
                   class="support-blue"
                 />
                 <text x="655" y="96" class="support-small">RETAINED DRAFT</text>
-                <text x="655" y="143" class="support-code">
-                  Unfinished work remains.
-                </text>
+                <text x="655" y="143" class="support-code">Draft remains.</text>
                 <text x="655" y="181" class="support-small">
                   Available after recovery
                 </text>
@@ -5420,11 +5434,9 @@ let title_id = title_key.render_id();</code></pre>
                   class="ex-green"
                 />
                 <text x="308" y="145" class="ex-title">timeline.json</text>
-                <text x="308" y="170" class="ex-copy">
-                  Order · splits · trims
-                </text>
-                <text x="308" y="190" class="ex-copy">Separate timing</text>
-                <text x="308" y="210" class="ex-copy">revision</text>
+                <text x="308" y="170" class="ex-copy">Order · splits</text>
+                <text x="308" y="190" class="ex-copy">Trims · separate</text>
+                <text x="308" y="210" class="ex-copy">timing revision</text>
               </g>
               <path
                 class="ex-path ex-step-c"
@@ -5542,7 +5554,7 @@ let title_id = title_key.render_id();</code></pre>
                   rx="4"
                   class="ex-blue"
                 />
-                <text x="43" y="60" class="ex-title">Worker capabilities</text>
+                <text x="43" y="60" class="ex-title">Worker formats</text>
                 <text x="43" y="85" class="ex-copy">Supported formats</text>
               </g>
               <path
@@ -5579,12 +5591,8 @@ let title_id = title_key.render_id();</code></pre>
                   class="ex-paper"
                 />
                 <text x="43" y="250" class="ex-title">Frozen project</text>
-                <text x="43" y="275" class="ex-copy">
-                  Selected code revision
-                </text>
-                <text x="43" y="295" class="ex-copy">
-                  Immutable render input
-                </text>
+                <text x="43" y="275" class="ex-copy">Code revision</text>
+                <text x="43" y="295" class="ex-copy">Immutable input</text>
               </g>
               <path
                 class="ex-path ex-step-b"
@@ -5788,7 +5796,235 @@ let title_id = title_key.render_id();</code></pre>
         </div>
       </div>
     </footer>
-    <script src="scroll-motion.js"></script>
-    <script src="how-it-works.js?v=diagrams-2"></script>
+    <!-- studio:scripts -->
+    <!-- prettier-ignore -->
+    <script data-studio-scripts>
+// Follow the OS by default; a deliberate visitor choice overrides it on both pages.
+(() => {
+  const preference = matchMedia("(prefers-reduced-motion: reduce)");
+  const key = "fframes-studio-scroll-motion";
+  const listeners = new Set();
+  let choice = null;
+  try {
+    choice = localStorage.getItem(key);
+  } catch {
+    /* Storage is optional. */
+  }
+  const enabled = () =>
+    choice === "on" || (choice !== "off" && !preference.matches);
+  function update() {
+    for (const controls of document.querySelectorAll(
+      "[data-motion-controls]"
+    )) {
+      controls.hidden = false;
+      const button = controls.querySelector("button");
+      button.textContent = enabled()
+        ? "Pause scroll motion"
+        : "Enable scroll motion";
+      button.setAttribute("aria-pressed", String(enabled()));
+      controls.querySelector("[role=status]").textContent = enabled()
+        ? "Scroll to move the diagram."
+        : choice === "off"
+          ? "Scroll motion is paused."
+          : "Your system has reduced motion enabled.";
+    }
+    for (const listener of listeners) listener();
+  }
+  window.studioScrollMotion = {
+    get enabled() {
+      return enabled();
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+    },
+  };
+  for (const button of document.querySelectorAll(
+    "[data-motion-controls] button"
+  )) {
+    button.addEventListener("click", () => {
+      choice = enabled() ? "off" : "on";
+      try {
+        localStorage.setItem(key, choice);
+      } catch {
+        /* The current tab still works. */
+      }
+      update();
+    });
+  }
+  preference.addEventListener("change", update);
+  addEventListener("storage", event => {
+    if (event.key === key) {
+      choice = event.newValue;
+      update();
+    }
+  });
+  update();
+})();
+;
+// Scroll-derived state, independent of animation-timeline support. No play-once motion.
+(() => {
+  const transaction = document.querySelector("[data-transaction]");
+  if (!transaction) return;
+  const figure = transaction.querySelector(".transaction-figure");
+  const steps = [...transaction.querySelectorAll("[data-gate-step]")];
+  const planes = [...figure.querySelectorAll("[data-plane]")];
+  const links = [...figure.querySelectorAll(".gate-nav a")];
+  const label = figure.querySelector("[data-gate-label]");
+  const index = figure.querySelector(".readout-index");
+  const ready = document.querySelector("[data-readiness]");
+  const supporting = [
+    ...document.querySelectorAll("[data-scroll-figure], [data-explanation]"),
+  ].map(element => ({ element, top: 0, height: 0, last: -1 }));
+  const motion = window.studioScrollMotion;
+  const mobile = matchMedia("(max-width: 760px)");
+  const clamp = x => Math.max(0, Math.min(1, x));
+  const ramp = (p, a, b) => {
+    const t = clamp((p - a) / (b - a));
+    return t * t * (3 - 2 * t);
+  };
+  const labels = [
+    "Capture twice. Both copies must match.",
+    "Build the captured candidate with its SDK.",
+    "Inspect frames and audio; report coverage gaps.",
+    "Automatic apply, or wait for manual review.",
+    "Publish the accepted file set.",
+  ];
+  let positions = [],
+    transactionTop = 0,
+    readyTop = 0,
+    readyHeight = 0,
+    frame = 0,
+    last = -1;
+  let lastProgress = "",
+    lastReady = -1;
+  function measure() {
+    const offset = mobile.matches ? figure.offsetHeight + 90 : 120;
+    transactionTop = transaction.getBoundingClientRect().top + scrollY;
+    positions = steps.map(
+      s => s.getBoundingClientRect().top + scrollY - offset
+    );
+    const bounds = ready
+      .querySelector(".readiness-figure")
+      .getBoundingClientRect();
+    readyTop = bounds.top + scrollY;
+    readyHeight = bounds.height;
+    for (const item of supporting) {
+      const bounds = item.element.getBoundingClientRect();
+      item.top = bounds.top + scrollY;
+      item.height = bounds.height;
+    }
+    schedule();
+  }
+  function draw() {
+    frame = 0;
+    if (!motion.enabled) return;
+    for (const item of supporting) {
+      const progress = clamp(
+        (scrollY + innerHeight * 0.88 - item.top) /
+          (item.height + innerHeight * 0.28)
+      );
+      if (progress === item.last) continue;
+      item.last = progress;
+      const a = ramp(progress, 0, 0.35),
+        b = ramp(progress, 0.2, 0.65),
+        c = ramp(progress, 0.5, 0.95);
+      // Nodes and connector endpoints share fixed geometry; move the signal,
+      // not a connected card independently of its line.
+      item.element.style.setProperty("--support-travel", `${24 * b}px`);
+      item.element.style.setProperty("--support-line", a);
+      item.element.style.setProperty("--support-middle", b);
+      item.element.style.setProperty("--support-return", c);
+      item.element.style.setProperty("--support-packet", a * (1 - c));
+    }
+    let p = 0;
+    for (let i = 0; i < positions.length - 1; i++)
+      if (scrollY >= positions[i])
+        p =
+          i +
+          clamp((scrollY - positions[i]) / (positions[i + 1] - positions[i]));
+    const opened = ramp(
+      scrollY + innerHeight * 0.85,
+      transactionTop,
+      transactionTop + innerHeight * 0.5
+    );
+    // The two diagrams have independent ranges. Do not invalidate an entire SVG
+    // while the reader is scrolling a different section.
+    const progress = `${p}:${opened}`;
+    if (progress !== lastProgress) {
+      lastProgress = progress;
+      figure.style.setProperty("--candidate-y", `${-26 - 67 * p}px`);
+      figure.style.setProperty("--candidate-alpha", 1 - ramp(p, 3.8, 4));
+      figure.style.setProperty("--accepted-alpha", ramp(p, 3.7, 4));
+      planes.forEach((plane, i) => {
+        const passed = ramp(p, Math.max(0, i - 0.18), i === 4 ? 4 : i + 0.15);
+        plane.style.setProperty("--passed", passed);
+        plane.style.setProperty("--plane-alpha", 0.12 + 0.64 * passed);
+        plane.style.setProperty(
+          "--plane-y",
+          `${(i - 2) * 42 * (1 - opened)}px`
+        );
+        plane.style.setProperty("--plane-x", "0px");
+      });
+      const current = Math.min(4, Math.floor(p + 0.12));
+      if (current !== last) {
+        label.textContent = labels[current];
+        index.textContent = `0${current + 1} / 05`;
+        links.forEach((a, i) =>
+          i === current
+            ? a.setAttribute("aria-current", "step")
+            : a.removeAttribute("aria-current")
+        );
+        last = current;
+      }
+    }
+    const q = clamp(
+      (scrollY + innerHeight * 0.8 - readyTop) /
+        (readyHeight + innerHeight * 0.1)
+    );
+    if (q === lastReady) return;
+    lastReady = q;
+    ready.style.setProperty("--compile", ramp(q, 0, 0.32));
+    ready.style.setProperty("--prepare", ramp(q, 0.32, 0.66));
+    ready.style.setProperty("--ready", ramp(q, 0.66, 0.87));
+    ready.style.setProperty("--handoff", ramp(q, 0.87, 1));
+    ready.style.setProperty("--marker-x", `${712 * q}px`);
+  }
+  function schedule() {
+    if (!frame && motion.enabled) frame = requestAnimationFrame(draw);
+  }
+  function configure() {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    last = -1;
+    lastProgress = "";
+    lastReady = -1;
+    for (const item of supporting) {
+      item.last = -1;
+      item.element.removeAttribute("style");
+    }
+    document.documentElement.classList.toggle(
+      "internals-motion",
+      motion.enabled
+    );
+    figure.removeAttribute("style");
+    ready.removeAttribute("style");
+    planes.forEach(p => p.removeAttribute("style"));
+    if (!motion.enabled) {
+      label.textContent = "Capture → build → inspect → review → accept";
+      index.textContent = "01—05";
+      links.forEach(a => a.removeAttribute("aria-current"));
+    }
+    measure();
+  }
+  addEventListener("scroll", schedule, { passive: true });
+  addEventListener("resize", measure);
+  addEventListener("pageshow", measure);
+  motion.subscribe(configure);
+  mobile.addEventListener("change", configure);
+  document.fonts?.ready.then(measure);
+  configure();
+})();
+</script>
+    <!-- /studio:scripts -->
   </body>
 </html>

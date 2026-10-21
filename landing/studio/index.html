@@ -9,6 +9,22 @@
       content="fframes turns Rust into video. fframes Studio is the desktop app around it: a managed SDK, your coding agent on a draft copy, click-to-select, checked edits, live preview and timeline cuts. The video stays an ordinary Rust crate."
     />
     <meta name="color-scheme" content="light" />
+    <!-- studio:fonts -->
+    <link
+      rel="preload"
+      href="fonts/geist-latin-v5.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="fonts/geist-mono-latin-v6.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <!-- /studio:fonts -->
     <!-- studio:bootstrap -->
     <!-- prettier-ignore -->
     <script data-studio-bootstrap>(()=>{const root=document.documentElement;root.classList.add("js-enabled");let choice=null;try{choice=localStorage.getItem("fframes-studio-scroll-motion")}catch{}if(choice==="on"||(choice!=="off"&&!matchMedia("(prefers-reduced-motion: reduce)").matches))root.classList.add("story-motion")})()</script>
@@ -3937,8 +3953,267 @@ display: none;
         </div>
       </div>
     </footer>
-    <script src="studio.js"></script>
-    <script src="scroll-motion.js"></script>
-    <script src="home.js"></script>
+    <!-- studio:scripts -->
+    <!-- prettier-ignore -->
+    <script data-studio-scripts>
+// Copy a command block without its prompt characters
+for (const button of document.querySelectorAll(".copy")) {
+  button.addEventListener("click", async () => {
+    let feedback = button.closest(".card")?.querySelector(".copy-feedback");
+    if (!feedback && document.querySelector("[data-story]")) {
+      feedback = document.createElement("span");
+      feedback.className = "copy-feedback";
+      feedback.setAttribute("role", "status");
+      button.closest(".command").after(feedback);
+    }
+    const text = button.previousElementSibling.textContent
+      .replace(/^\$ /gm, "")
+      .replace(/^PS> /gm, "");
+    try {
+      await navigator.clipboard.writeText(text);
+      window.plausible?.("Copy command", {
+        props: { page: location.pathname },
+      });
+      button.classList.add("copied");
+      button.setAttribute("aria-label", "Copied");
+      if (feedback) feedback.textContent = "Command copied.";
+      setTimeout(() => {
+        button.classList.remove("copied");
+        button.setAttribute("aria-label", "Copy command");
+        if (feedback) feedback.textContent = "";
+      }, 1600);
+    } catch {
+      button.setAttribute(
+        "aria-label",
+        "Copy failed, select the command instead"
+      );
+      if (feedback)
+        feedback.textContent =
+          "Copy unavailable. Select the command to copy it.";
+    }
+  });
+}
+;
+// Follow the OS by default; a deliberate visitor choice overrides it on both pages.
+(() => {
+  const preference = matchMedia("(prefers-reduced-motion: reduce)");
+  const key = "fframes-studio-scroll-motion";
+  const listeners = new Set();
+  let choice = null;
+  try {
+    choice = localStorage.getItem(key);
+  } catch {
+    /* Storage is optional. */
+  }
+  const enabled = () =>
+    choice === "on" || (choice !== "off" && !preference.matches);
+  function update() {
+    for (const controls of document.querySelectorAll(
+      "[data-motion-controls]"
+    )) {
+      controls.hidden = false;
+      const button = controls.querySelector("button");
+      button.textContent = enabled()
+        ? "Pause scroll motion"
+        : "Enable scroll motion";
+      button.setAttribute("aria-pressed", String(enabled()));
+      controls.querySelector("[role=status]").textContent = enabled()
+        ? "Scroll to move the diagram."
+        : choice === "off"
+          ? "Scroll motion is paused."
+          : "Your system has reduced motion enabled.";
+    }
+    for (const listener of listeners) listener();
+  }
+  window.studioScrollMotion = {
+    get enabled() {
+      return enabled();
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+    },
+  };
+  for (const button of document.querySelectorAll(
+    "[data-motion-controls] button"
+  )) {
+    button.addEventListener("click", () => {
+      choice = enabled() ? "off" : "on";
+      try {
+        localStorage.setItem(key, choice);
+      } catch {
+        /* The current tab still works. */
+      }
+      update();
+    });
+  }
+  preference.addEventListener("change", update);
+  addEventListener("storage", event => {
+    if (event.key === key) {
+      choice = event.newValue;
+      update();
+    }
+  });
+  update();
+})();
+;
+// Every figure property is derived from document position. There is no playback clock.
+(() => {
+  document.documentElement.classList.add("js-enabled");
+  const story = document.querySelector("[data-story]");
+  if (!story) return;
+  const steps = [...story.querySelectorAll("[data-step]")];
+  const links = [...story.querySelectorAll(".step-nav a")];
+  const figure = story.querySelector(".workflow-figure");
+  const features = [...document.querySelectorAll("[data-product-figure]")].map(
+    element => ({ element, top: 0, height: 0, last: -1 })
+  );
+  const label = story.querySelector("[data-state-label]");
+  const index = story.querySelector(".readout-index");
+  const motion = window.studioScrollMotion;
+  const narrow = matchMedia("(max-width: 760px)");
+  const clamp = x => Math.min(1, Math.max(0, x));
+  const ramp = (p, a, b) => {
+    const t = clamp((p - a) / (b - a));
+    return t * t * (3 - 2 * t);
+  };
+  let frame = 0;
+  let positions = [];
+  let last = -1;
+  let lastProgress = "";
+  const labels = [
+    "Select the title. The source stays unchanged.",
+    "The agent edits a draft. Preview stays on Hello.",
+    "Build first. Then validate the candidate.",
+    "Accepted edit → updated preview.",
+  ];
+  function measure() {
+    const offset = narrow.matches ? figure.offsetHeight + 90 : 120;
+    positions = steps.map(
+      step => step.getBoundingClientRect().top + scrollY - offset
+    );
+    for (const item of features) {
+      const bounds = item.element.getBoundingClientRect();
+      item.top = bounds.top + scrollY;
+      item.height = bounds.height;
+    }
+    schedule();
+  }
+  function draw() {
+    frame = 0;
+    if (!motion.enabled) return;
+    const y = scrollY;
+    for (const item of features) {
+      const q = clamp(
+        (y + innerHeight * 0.88 - item.top) / (item.height + innerHeight * 0.18)
+      );
+      if (q === item.last) continue;
+      item.last = q;
+      const first = ramp(q, 0, 0.32),
+        middle = ramp(q, 0.22, 0.62),
+        end = ramp(q, 0.6, 0.95);
+      const reorder = ramp(q, 0.35, 0.78);
+      const values = {
+        "file-one": `${30 * (1 - first)}px`,
+        "file-two": `${24 * (1 - middle)}px`,
+        "file-three": `${18 * (1 - end)}px`,
+        packet: first * (1 - end),
+        travel: `${24 * middle}px`,
+        ready: 0.25 + 0.75 * end,
+        reorder: `${180 * reorder}px`,
+        "outro-x": `${-360 * reorder}px`,
+        "outro-y": `${-42 * 4 * reorder * (1 - reorder)}px`,
+        split: `${6 * ramp(q, 0.05, 0.3)}px`,
+        "split-alpha": ramp(q, 0.05, 0.3),
+        trim: end,
+        "trim-x": `${24 * end}px`,
+        "tool-one": `${25 * first}px`,
+        "tool-two": `${25 * middle}px`,
+        render: ramp(q, 0.1, 0.9),
+      };
+      for (const [key, value] of Object.entries(values))
+        item.element.style.setProperty(`--feature-${key}`, value);
+    }
+    let p = 0;
+    for (let i = 0; i < positions.length - 1; i++) {
+      if (y >= positions[i])
+        p = i + clamp((y - positions[i]) / (positions[i + 1] - positions[i]));
+    }
+    const edit = ramp(p, 0.65, 1);
+    const arrival = ramp(y, 0, Math.max(1, positions[0]));
+    // Once the story is settled, scrolling the remaining page needs no SVG work.
+    const progress = `${p}:${arrival}`;
+    if (progress === lastProgress) return;
+    lastProgress = progress;
+    const build = ramp(p, 1.35, 1.7);
+    const inspect = ramp(p, 1.8, 2.15);
+    const after = ramp(p, 2.9, 3);
+    const settle = ramp(p, 2.7, 3);
+    const values = {
+      "preview-y": `${-32 * arrival - 18 * edit + 12 * settle}px`,
+      "draft-x": `${-16 * edit + 16 * settle}px`,
+      "draft-y": `${10 * arrival + 8 * edit - 8 * settle}px`,
+      "check-y": `${16 * arrival + 8 * edit - 8 * settle}px`,
+      selection: 1 - ramp(p, 0.35, 0.9),
+      "selection-x": `${8 * (1 - ramp(p, 0, 0.35))}px`,
+      "context-opacity": ramp(p, 0.1, 0.3) * (1 - ramp(p, 0.85, 1)),
+      "context-y": `${80 * ramp(p, 0.1, 0.9)}px`,
+      edit,
+      prompt: edit,
+      "prompt-x": `${-12 * (1 - edit)}px`,
+      "candidate-opacity": ramp(p, 1.05, 1.2) * (1 - ramp(p, 1.8, 2)),
+      "candidate-y": `${60 * ramp(p, 1.1, 1.9)}px`,
+      build,
+      inspect,
+      "result-opacity": ramp(p, 2.15, 2.3) * (1 - after),
+      "result-y": `${210 * (1 - ramp(p, 2.25, 2.9))}px`,
+      before: 1 - after,
+      after,
+    };
+    for (const [key, value] of Object.entries(values))
+      figure.style.setProperty(`--${key}`, value);
+    const current = p < 0.65 ? 0 : p < 1.35 ? 1 : p < 2.95 ? 2 : 3;
+    if (current !== last) {
+      label.textContent = labels[current];
+      index.textContent = `0${current + 1} / 04`;
+      links.forEach((link, i) =>
+        i === current
+          ? link.setAttribute("aria-current", "step")
+          : link.removeAttribute("aria-current")
+      );
+      last = current;
+    }
+  }
+  function schedule() {
+    if (!frame && motion.enabled) frame = requestAnimationFrame(draw);
+  }
+  function configure() {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    last = -1;
+    lastProgress = "";
+    const enabled = motion.enabled;
+    document.documentElement.classList.toggle("story-motion", enabled);
+    figure.removeAttribute("style");
+    for (const item of features) {
+      item.last = -1;
+      item.element.removeAttribute("style");
+    }
+    if (!enabled) {
+      label.textContent = "Selection → draft → checks → preview";
+      index.textContent = "01—04";
+      links.forEach(link => link.removeAttribute("aria-current"));
+    }
+    measure();
+  }
+  addEventListener("scroll", schedule, { passive: true });
+  addEventListener("resize", measure);
+  addEventListener("pageshow", measure);
+  motion.subscribe(configure);
+  narrow.addEventListener("change", configure);
+  document.fonts?.ready.then(measure);
+  configure();
+})();
+</script>
+    <!-- /studio:scripts -->
   </body>
 </html>
