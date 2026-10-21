@@ -265,7 +265,7 @@ jobs:
         env:
           RUSTFLAGS: --cfg fframes_docsrs
           RUSTDOCFLAGS: --cfg docsrs -D warnings
-        run: cargo doc --no-deps -p fframes-media -p fframes --features fframes/cli,fframes/compile-time-svgtree,fframes/exif
+        run: cargo doc --no-deps -p fframes-media -p fframes --features fframes/cli,fframes/compile-time-svgtree,fframes/exif,fframes/3d
 
   release:
     # Forks build from source and must not publish the upstream crates or npm package.
