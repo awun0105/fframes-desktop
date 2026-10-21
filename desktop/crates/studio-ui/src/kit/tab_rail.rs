@@ -33,6 +33,10 @@ pub struct TabRailItem {
     pub label: SharedString,
     pub selected: bool,
     pub disabled: bool,
+    /// The tab's element id; `{rail id}-{index}` when `None`.
+    pub id: Option<SharedString>,
+    /// A small accent dot on the tab: something behind it waits for the user.
+    pub dot: bool,
 }
 
 impl TabRailItem {
@@ -47,9 +51,24 @@ impl TabRailItem {
             label: label.into(),
             selected,
             disabled,
+            id: None,
+            dot: false,
         }
     }
+
+    pub fn id(mut self, id: impl Into<SharedString>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    pub fn dot(mut self, dot: bool) -> Self {
+        self.dot = dot;
+        self
+    }
 }
+
+/// Diameter of a tab's attention dot.
+const DOT: f32 = 6.;
 
 /// The tab a Left or Right key moves to: one step, no wrap, skipping disabled
 /// tabs.
@@ -172,57 +191,69 @@ impl RenderOnce for TabRail {
                 let selected = item.selected;
                 let disabled = item.disabled;
                 let label = item.label.clone();
+                let item_id = item
+                    .id
+                    .clone()
+                    .unwrap_or_else(|| SharedString::from(format!("{prefix}-{index}")));
 
-                focusable(
-                    div().id(SharedString::from(format!("{prefix}-{index}"))),
-                    &theme,
-                    disabled,
-                )
-                .role(Role::Tab)
-                .aria_selected(selected)
-                .aria_label(item.label.clone())
-                .flex()
-                .flex_none()
-                .items_center()
-                .justify_center()
-                .h(box_size)
-                .w(box_width)
-                .rounded(px(9.))
-                .when(disabled, |this| this.opacity(0.6))
-                .when(selected, |this| this.bg(indicator))
-                .when(!selected && !disabled, |this| {
-                    this.cursor_pointer().hover(move |style| style.bg(hover))
-                })
-                .tooltip_show_delay(crate::kit::TOOLTIP_SHOW_DELAY)
-                .tooltip(move |_, cx| crate::kit::Tooltip::new(&theme, label.clone()).view(cx))
-                .child(
-                    svg()
-                        .path(item.icon)
-                        .size(icon_size)
-                        .text_color(if selected { selected_icon } else { idle_icon }),
-                )
-                .when_some(handler.filter(|_| !disabled), |this, handler| {
-                    let keys = handler.clone();
-                    this.on_click(move |_, window, cx| handler(&index, window, cx))
-                        .on_key_down(move |event, window, cx| {
-                            let Some(key @ (Nav::Left | Nav::Right)) =
-                                nav_key(event.keystroke.key.as_str())
-                            else {
-                                return;
-                            };
-                            // Every enabled item is a tab stop, so the key belongs to the
-                            // focused one, which need not be the selected one.
-                            if let Some(target) = tab_target(index, key, &keyed) {
-                                keys(&target, window, cx);
-                                if key == Nav::Left {
-                                    window.focus_prev(cx);
-                                } else {
-                                    window.focus_next(cx);
+                focusable(div().id(item_id), &theme, disabled)
+                    .role(Role::Tab)
+                    .aria_selected(selected)
+                    .aria_label(item.label.clone())
+                    .relative()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .h(box_size)
+                    .w(box_width)
+                    .rounded(px(9.))
+                    .when(disabled, |this| this.opacity(0.6))
+                    .when(selected, |this| this.bg(indicator))
+                    .when(!selected && !disabled, |this| {
+                        this.cursor_pointer().hover(move |style| style.bg(hover))
+                    })
+                    .tooltip_show_delay(crate::kit::TOOLTIP_SHOW_DELAY)
+                    .tooltip(move |_, cx| crate::kit::Tooltip::new(&theme, label.clone()).view(cx))
+                    .child(
+                        svg()
+                            .path(item.icon)
+                            .size(icon_size)
+                            .text_color(if selected { selected_icon } else { idle_icon }),
+                    )
+                    .when(item.dot, |this| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .top(px(4.))
+                                .right(px(8.))
+                                .size(px(DOT))
+                                .rounded_full()
+                                .bg(theme.editor.accent),
+                        )
+                    })
+                    .when_some(handler.filter(|_| !disabled), |this, handler| {
+                        let keys = handler.clone();
+                        this.on_click(move |_, window, cx| handler(&index, window, cx))
+                            .on_key_down(move |event, window, cx| {
+                                let Some(key @ (Nav::Left | Nav::Right)) =
+                                    nav_key(event.keystroke.key.as_str())
+                                else {
+                                    return;
+                                };
+                                // Every enabled item is a tab stop, so the key belongs to the
+                                // focused one, which need not be the selected one.
+                                if let Some(target) = tab_target(index, key, &keyed) {
+                                    keys(&target, window, cx);
+                                    if key == Nav::Left {
+                                        window.focus_prev(cx);
+                                    } else {
+                                        window.focus_next(cx);
+                                    }
+                                    cx.stop_propagation();
                                 }
-                                cx.stop_propagation();
-                            }
-                        })
-                })
+                            })
+                    })
             }))
     }
 }

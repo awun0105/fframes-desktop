@@ -42,7 +42,8 @@ pub(super) fn row_top(row: usize) -> f32 {
     row as f32 * (METRICS.track_h + METRICS.track_gap)
 }
 
-/// A track row: gutter with icon and name, then the clipped band for segments.
+/// A track row: the gutter with the lane's tile and name, then the clipped band for
+/// segments.
 pub(super) fn track_row(
     theme: &Theme,
     top: f32,
@@ -67,10 +68,20 @@ pub(super) fn track_row(
                 .flex_none()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(px(metrics.space_2))
                 .overflow_hidden()
                 .text_color(theme.editor.text_2)
-                .child(icon(glyph, metrics.icon_sm, theme.editor.text_2))
+                .child(
+                    div()
+                        .size(px(metrics.track_tile))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(6.))
+                        .bg(theme.editor.ctl)
+                        .child(icon(glyph, metrics.icon_sm, theme.editor.text_2)),
+                )
                 .child(
                     div()
                         .min_w_0()
@@ -93,7 +104,9 @@ pub(super) fn track_row(
         )
 }
 
-/// Segment box with its accent bar and clipped label. The caller adds ids and handlers.
+/// Segment box with its accent bar and clipped label, `detail` (the length) after the
+/// label in `text-3`. The caller adds ids and handlers.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn segment(
     theme: &Theme,
     kind: TrackKind,
@@ -102,6 +115,7 @@ pub(super) fn segment(
     width: f32,
     view_width: f32,
     label: String,
+    detail: String,
 ) -> gpui::Div {
     let metrics = METRICS;
     let colors = segment_colors_for(theme.appearance, kind, selected);
@@ -115,7 +129,12 @@ pub(super) fn segment(
         .overflow_hidden()
         .rounded(px(metrics.radius_segment))
         .border_1()
-        .border_color(colors.border)
+        // Selected: the track colour itself, over the fill that is already stronger.
+        .border_color(if selected {
+            track_color(kind)
+        } else {
+            colors.border
+        })
         .bg(colors.fill)
         .child(
             div()
@@ -135,11 +154,24 @@ pub(super) fn segment(
                 .w(px(slice.width))
                 .flex()
                 .items_center()
+                .gap(px(6.))
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .text_ellipsis()
-                .text_color(colors.label)
-                .child(label),
+                .child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(colors.label)
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(theme.editor.text_3)
+                        .child(detail),
+                ),
         )
 }
 

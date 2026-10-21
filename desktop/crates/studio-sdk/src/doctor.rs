@@ -96,14 +96,26 @@ fn probe_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
 
 pub fn install_hint(packages: &[String]) -> String {
     if cfg!(windows) {
+        // The Build Tools command also adds Visual Studio's clang, which carries libclang, so
+        // one command covers both prerequisites; LLVM alone is needed when MSVC is present.
+        let command = if packages.iter().any(|p| p == WINDOWS_MSVC_PACKAGE) {
+            WINDOWS_BUILD_TOOLS_COMMAND
+        } else {
+            WINDOWS_LLVM_COMMAND
+        };
         format!(
-            "Install with the Visual Studio Installer or LLVM setup: {}",
+            "Run in PowerShell: {command}\n(or install with the Visual Studio Installer or LLVM setup: {})",
             packages.join(", ")
         )
+    } else if cfg!(target_os = "macos") {
+        "Run in Terminal: xcode-select --install".into()
     } else {
         format!("sudo apt-get install -y {}", packages.join(" "))
     }
 }
+
+const WINDOWS_BUILD_TOOLS_COMMAND: &str = "winget install -e --id Microsoft.VisualStudio.BuildTools --override \"--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --includeRecommended\"";
+const WINDOWS_LLVM_COMMAND: &str = "winget install -e --id LLVM.LLVM";
 
 const WINDOWS_MSVC_PACKAGE: &str =
     "Visual Studio Build Tools with the \"Desktop development with C++\" workload";
@@ -133,13 +145,35 @@ fn windows_msvc_installation() -> Option<String> {
     (output.status.success() && !path.is_empty()).then_some(path)
 }
 
-/// libclang for bindgen, resolved the same way `SdkEnvironment` does on Windows.
-fn windows_libclang() -> Option<String> {
-    std::env::var("LIBCLANG_PATH")
-        .ok()
+/// The folder holding `libclang.dll` for bindgen, which `SdkEnvironment` passes to builds as
+/// `LIBCLANG_PATH`: that variable, the LLVM installer's folder, a Scoop install, then the
+/// LLVM that Visual Studio's "C++ Clang tools" component installs.
+pub fn windows_libclang() -> Option<String> {
+    let mut candidates: Vec<std::path::PathBuf> = std::env::var_os("LIBCLANG_PATH")
+        .map(Into::into)
         .into_iter()
-        .chain([r"C:\Program Files\LLVM\bin".to_owned()])
-        .find(|dir| Path::new(dir).join("libclang.dll").is_file())
+        .collect();
+    for root in ["ProgramFiles", "ProgramW6432"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+    {
+        candidates.push(Path::new(&root).join(r"LLVM\bin"));
+    }
+    let scoop = std::env::var_os("SCOOP")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(|p| Path::new(&p).join("scoop")));
+    candidates.extend(scoop.map(|s| s.join(r"apps\llvm\current\bin")));
+    let has_libclang = |dir: &std::path::PathBuf| dir.join("libclang.dll").is_file();
+    candidates
+        .into_iter()
+        .find(has_libclang)
+        // vswhere is a process start: asked only when nothing above has libclang.
+        .or_else(|| {
+            windows_msvc_installation()
+                .map(|vs| Path::new(&vs).join(r"VC\Tools\Llvm\x64\bin"))
+                .filter(has_libclang)
+        })
+        .map(|dir| dir.to_string_lossy().into_owned())
 }
 
 fn found_or_missing(
@@ -627,6 +661,13 @@ mod tests {
         if cfg!(windows) {
             assert!(!hint.contains("apt-get"), "{hint}");
             assert!(hint.contains("Visual Studio Installer"), "{hint}");
+            // Only libclang missing: LLVM, not the multi-gigabyte Build Tools.
+            let llvm = install_hint(&[WINDOWS_LLVM_PACKAGE.into()]);
+            assert!(llvm.contains(WINDOWS_LLVM_COMMAND), "{llvm}");
+            let both = install_hint(&[WINDOWS_MSVC_PACKAGE.into(), WINDOWS_LLVM_PACKAGE.into()]);
+            assert!(both.contains(WINDOWS_BUILD_TOOLS_COMMAND), "{both}");
+        } else if cfg!(target_os = "macos") {
+            assert_eq!(hint, "Run in Terminal: xcode-select --install");
         } else {
             assert_eq!(hint, "sudo apt-get install -y a b");
         }

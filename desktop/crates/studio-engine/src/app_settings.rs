@@ -29,6 +29,9 @@ pub struct AppSettings {
     /// How agent permission requests are answered.
     #[serde(deserialize_with = "lenient")]
     pub permission_policy: PermissionPolicy,
+    /// Whether the check for a newer Studio at launch is turned off (it is on by default).
+    #[serde(deserialize_with = "lenient")]
+    pub update_check_disabled: bool,
 }
 
 /// A value that no longer reads (for example one this app dropped) is the default, instead

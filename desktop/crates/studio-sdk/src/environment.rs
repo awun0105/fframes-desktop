@@ -136,11 +136,9 @@ impl SdkEnvironment {
 
             #[cfg(windows)]
             {
-                for candidate in [r"C:\Program Files\LLVM\bin", r"C:\Program Files\LLVM\lib"] {
-                    if Path::new(candidate).exists() {
-                        env.set("LIBCLANG_PATH", candidate);
-                        break;
-                    }
+                // The folder the doctor found, so what passed the check is what builds use.
+                if let Some(dir) = crate::doctor::windows_libclang() {
+                    env.set("LIBCLANG_PATH", dir);
                 }
             }
         }

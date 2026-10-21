@@ -177,6 +177,7 @@ impl EngineHandle {
             sdk_home: None,
             sdk: "Checking SDK…".into(),
             agent_sdk: None,
+            sdk_repin: None,
             selected_sdk: None,
             closed: closed.clone(),
             processes: processes.clone(),

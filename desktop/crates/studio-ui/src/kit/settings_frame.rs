@@ -50,6 +50,8 @@ impl SettingsNavItem {
 }
 
 type SelectHandler = Rc<dyn Fn(&usize, &mut Window, &mut App)>;
+/// Receives a nav row's index and its bounds on every prepaint.
+type ItemBoundsHandler = Rc<dyn Fn(usize, gpui::Bounds<gpui::Pixels>, &mut App)>;
 
 #[derive(IntoElement)]
 pub struct SettingsFrame {
@@ -59,6 +61,8 @@ pub struct SettingsFrame {
     on_select: Option<SelectHandler>,
     back: Option<Handler>,
     back_bounds: Option<BoundsHandler>,
+    item_bounds: Option<ItemBoundsHandler>,
+    nav_header: Option<AnyElement>,
     content: Vec<AnyElement>,
 }
 
@@ -71,8 +75,16 @@ impl SettingsFrame {
             on_select: None,
             back: None,
             back_bounds: None,
+            item_bounds: None,
+            nav_header: None,
             content: Vec::new(),
         }
+    }
+
+    /// An element above the nav rows, such as the strip a window's title bar buttons sit in.
+    pub fn nav_header(mut self, header: Option<AnyElement>) -> Self {
+        self.nav_header = header;
+        self
     }
 
     pub fn on_select(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
@@ -92,6 +104,15 @@ impl SettingsFrame {
         report: impl Fn(gpui::Bounds<gpui::Pixels>, &mut App) + 'static,
     ) -> Self {
         self.back_bounds = Some(Rc::new(report));
+        self
+    }
+
+    /// Reports where each nav row was painted, by its index.
+    pub fn on_item_bounds(
+        mut self,
+        report: impl Fn(usize, gpui::Bounds<gpui::Pixels>, &mut App) + 'static,
+    ) -> Self {
+        self.item_bounds = Some(Rc::new(report));
         self
     }
 
@@ -160,6 +181,8 @@ impl RenderOnce for SettingsFrame {
             on_select,
             back,
             back_bounds,
+            item_bounds,
+            nav_header,
             content,
         } = self;
 
@@ -177,7 +200,13 @@ impl RenderOnce for SettingsFrame {
         });
         let rows = items.into_iter().enumerate().map(|(index, item)| {
             let handler = on_select.clone();
+            let report = item_bounds.clone();
             nav_row(&theme, item.id, item.label, item.icon, item.selected)
+                .children(report.map(|report| {
+                    bounds_probe(Rc::new(move |bounds, cx: &mut App| {
+                        report(index, bounds, cx)
+                    }))
+                }))
                 .when_some(handler, |row, handler| {
                     row.on_click(move |_, window, cx| handler(&index, window, cx))
                 })
@@ -203,6 +232,7 @@ impl RenderOnce for SettingsFrame {
                     .gap(px(2.))
                     .overflow_y_scroll()
                     .bg(theme.settings_sidebar_bg())
+                    .children(nav_header)
                     .children(back)
                     .children(rows),
             )

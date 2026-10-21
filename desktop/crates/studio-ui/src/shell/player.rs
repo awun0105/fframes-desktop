@@ -542,6 +542,30 @@ impl StudioShell {
         self.change_output(next, cx);
     }
 
+    /// The output device and its clock, or why there is no audio: the player toolbar and
+    /// Settings → General show it.
+    pub(super) fn audio_status(&self) -> String {
+        self.output.as_ref().map_or_else(
+            || self.audio_note.clone(),
+            |output| {
+                let metrics = output.metrics();
+                format!(
+                    "{} · {} Hz · predicted output clock{}{} · latency {:.1}ms · underruns {}",
+                    output.device,
+                    output.sample_rate,
+                    if self.muted { " · muted" } else { "" },
+                    if metrics.invalid_timestamps > 0 {
+                        " (latency estimate)"
+                    } else {
+                        ""
+                    },
+                    metrics.predicted_latency_ms,
+                    metrics.underrun_frames
+                )
+            },
+        )
+    }
+
     fn poll_audio(&mut self, cx: &mut Context<Self>) {
         match self.audio.event() {
             Some(AudioEvent::Staged {
@@ -699,7 +723,7 @@ impl StudioShell {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .child(self.render_player_toolbar(cx))
+            .child(self.render_player_toolbar())
             .child(self.render_stage(cx))
             .child(self.render_transport(cx))
             .child(super::sections::section_probe(
@@ -741,30 +765,11 @@ impl StudioShell {
         player.into_any_element()
     }
 
-    fn render_player_toolbar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_player_toolbar(&self) -> gpui::AnyElement {
         let theme = self.theme;
         let palette = theme.editor;
         let (label, tone) = preview_badge(&self.preview_state.status, self.displayed.is_some());
-        let audio_label = self.output.as_ref().map_or_else(
-            || self.audio_note.clone(),
-            |output| {
-                let metrics = output.metrics();
-                format!(
-                    "{} · {} Hz · predicted output clock{}{} · latency {:.1}ms · underruns {}",
-                    output.device,
-                    output.sample_rate,
-                    if self.muted { " · muted" } else { "" },
-                    if metrics.invalid_timestamps > 0 {
-                        " (latency estimate)"
-                    } else {
-                        ""
-                    },
-                    metrics.predicted_latency_ms,
-                    metrics.underrun_frames
-                )
-            },
-        );
-        let audio_ready = self.displayed.is_some();
+        let audio_label = self.audio_status();
         div()
             .flex()
             .flex_none()
@@ -801,33 +806,6 @@ impl StudioShell {
                     .text_color(palette.text_2)
                     .child(selectable(audio_label)),
             )
-            .child(self.action_button(
-                "next-audio-output",
-                "Next output",
-                audio_ready,
-                false,
-                None,
-                cx,
-                |s, cx| s.cycle_output(cx),
-            ))
-            .child(self.action_button(
-                "retry-audio-output",
-                "Retry audio",
-                audio_ready,
-                false,
-                None,
-                cx,
-                |s, cx| s.change_output(OutputDevice::Default, cx),
-            ))
-            .child(self.action_button(
-                "no-audio-output",
-                "No audio",
-                audio_ready,
-                false,
-                None,
-                cx,
-                |s, cx| s.change_output(OutputDevice::Unavailable, cx),
-            ))
             .into_any_element()
     }
 

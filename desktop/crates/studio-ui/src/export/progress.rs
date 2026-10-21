@@ -79,7 +79,10 @@ impl ExportPhase {
             Self::Preparing => "Preparing the export".into(),
             Self::Rendering { done, total } => format!("Rendering · {done}/{total} frames"),
             Self::Finishing => "Writing and verifying the file".into(),
-            Self::Complete { destination } => format!("Exported {}", destination.display()),
+            Self::Complete { destination } => format!(
+                "Exported {}",
+                studio_bootstrap::external_path(destination).display()
+            ),
             Self::Failed(reason) => format!("Export failed · {reason}"),
             Self::Cancelled => "Export cancelled · partial output removed".into(),
         })

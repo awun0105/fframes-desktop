@@ -1,98 +1,97 @@
-//! The left rail with its Project, Assets and Style drawers, the agent column, and the empty
+//! The tabbed sidebar right of the player (Agent, Project, Assets and Style), and the empty
 //! state with recent projects.
 
 use std::path::PathBuf;
 
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
-    div, px,
+    div, prelude::FluentBuilder, px,
 };
 use studio_engine::engine::backend::Command;
 use studio_theme::{METRICS, TextStyle, text_style};
 
 use super::sections::{Section, box_probe, section_probe};
+use super::settings::SettingsPage;
 use super::{Picker, StudioShell};
 use crate::kit::{
     Badge, Card, CollapsibleSection, DISABLED_OPACITY, EditorButton, Handler, Icon, IconButton,
-    IconButtonSize, NavRail, NavRailItem, StatusDot, Tone, divider, focusable, heading, icon,
+    IconButtonSize, StatusDot, TabRail, TabRailItem, Tone, divider, focusable, heading, icon,
     muted, on_activate, section_title, selectable, with_tooltip,
 };
 
 impl StudioShell {
-    /// The rail and, while one of its items is open, the drawer beside it.
-    pub(super) fn render_left_column(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    /// The sidebar card right of the player, after Cap's config sidebar: the tab rail
+    /// above the selected tab's body. It is not cached itself; the agent panel and the
+    /// drawer contents are separate cached sections, and only the selected one is drawn.
+    pub(super) fn render_sidebar(
+        &self,
+        sections: &super::sections::Sections,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let theme = self.theme;
         let entity = cx.entity();
-        let rail = NavRail::editor(
+        let selected = self.sidebar_tab;
+        let attention = self.agent_attention.waiting && selected != SidebarTab::Agent;
+        let rail = TabRail::editor(
             &theme,
-            "rail",
-            LeftTab::ALL
+            "sidebar-tabs",
+            theme.editor.card.into(),
+            SidebarTab::ALL
                 .iter()
                 .map(|tab| {
-                    NavRailItem::new(tab.icon().path(), tab.name(), self.drawer == Some(*tab))
+                    TabRailItem::new(tab.icon().path(), tab.name(), selected == *tab, false)
+                        .id(format!("sidebar-tab-{}", tab.name()))
+                        .dot(*tab == SidebarTab::Agent && attention)
                 })
                 .collect(),
         )
+        .height(px(METRICS.tab_bar_h))
         .on_select(move |index, _, cx| {
             entity.update(cx, |shell, cx| {
-                shell.drawer = toggle_drawer(shell.drawer, LeftTab::from_index(*index));
-                cx.notify();
+                shell.select_sidebar_tab(SidebarTab::from_index(*index), cx)
             });
         });
-        div()
+        let body = match selected {
+            SidebarTab::Agent => sections.agent.clone(),
+            _ => sections.drawer.clone(),
+        };
+        Card::editor(&theme)
             .relative()
-            .h_full()
+            .size_full()
             .flex()
-            .gap(px(METRICS.gutter))
+            .flex_col()
+            .overflow_hidden()
+            .child(box_probe("agent-column", cx))
             .child(rail)
-            .children(self.drawer.map(|tab| self.render_drawer(tab, cx)))
-            .child(section_probe(Section::Rail, cx))
+            .child(body.cached(gpui::StyleRefinement::default().flex_1().min_h_0().w_full()))
             .into_any_element()
     }
 
-    /// The open rail item's panel: its name and a close button above the content.
-    fn render_drawer(&self, tab: LeftTab, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme = self.theme;
-        let entity = cx.entity();
-        let content = match tab {
-            LeftTab::Project => self.render_project_tab(cx),
-            LeftTab::Assets => self.render_assets_tab(cx),
-            LeftTab::Style => self.render_style_tab(cx),
+    pub(super) fn select_sidebar_tab(&mut self, tab: SidebarTab, cx: &mut Context<Self>) {
+        if self.sidebar_tab != tab {
+            self.sidebar_tab = tab;
+            cx.notify();
+        }
+    }
+
+    /// The selected Project, Assets or Style tab's contents (a cached section).
+    pub(super) fn render_drawer(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let content = match self.sidebar_tab {
+            SidebarTab::Assets => self.render_assets_tab(cx),
+            SidebarTab::Style => self.render_style_tab(cx),
+            // The Agent tab draws the agent section instead; this one is not in the tree.
+            SidebarTab::Project | SidebarTab::Agent => self.render_project_tab(cx),
         };
-        let header = div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_between()
-            .child(
-                text_style(div(), TextStyle::Title)
-                    .text_color(theme.editor.text_1)
-                    .child(tab.name()),
-            )
-            .child(
-                IconButton::editor(&theme, "drawer-close", Icon::X.path())
-                    .editor_size(IconButtonSize::Small)
-                    .label(format!("Close {}", tab.name()))
-                    .tooltip(&theme, "Close")
-                    .on_click(move |_, _, cx| {
-                        entity.update(cx, |shell, cx| {
-                            shell.drawer = None;
-                            cx.notify();
-                        });
-                    }),
-            );
-        Card::editor(&theme)
+        div()
             .id("drawer")
-            .w(px(METRICS.drawer_w))
-            .h_full()
-            .flex_none()
+            .relative()
+            .size_full()
             .min_h_0()
             .flex()
             .flex_col()
-            .gap(px(METRICS.space_3))
-            .p(px(METRICS.space_3))
-            .child(header)
+            .p(px(METRICS.space_4))
             .child(content)
+            .child(section_probe(Section::Drawer, cx))
             .into_any_element()
     }
 
@@ -218,41 +217,31 @@ impl StudioShell {
             );
         }
 
-        let entity = cx.entity();
-        let sdk = CollapsibleSection::new("sdk-section", self.sdk_open)
-            .header(section_title(&self.theme, "Managed SDK"))
-            .content(self.sdk_controls(cx).pt(px(METRICS.space_2)))
-            .on_toggle(move |open, _, cx| {
-                entity.update(cx, |shell, cx| {
-                    shell.sdk_open = *open;
-                    cx.notify();
-                });
-            });
-        let mut library = div()
-            .id("left-library")
-            .flex_none()
-            .max_h(px(360.))
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap(px(METRICS.space_3))
-            .child(divider(&self.theme))
-            .child(sdk);
         if project.is_some() {
             let entity = cx.entity();
-            library = library.child(
-                CollapsibleSection::new("recents-section", self.recents_open)
-                    .header(section_title(&self.theme, "Recent projects"))
-                    .content(div().pt(px(METRICS.space_2)).child(self.render_recents(cx)))
-                    .on_toggle(move |open, _, cx| {
-                        entity.update(cx, |shell, cx| {
-                            shell.recents_open = *open;
-                            cx.notify();
-                        });
-                    }),
-            );
+            let library = div()
+                .id("left-library")
+                .flex_none()
+                .max_h(px(360.))
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .gap(px(METRICS.space_3))
+                .child(divider(&self.theme))
+                .child(
+                    CollapsibleSection::new("recents-section", self.recents_open)
+                        .header(section_title(&self.theme, "Recent projects"))
+                        .content(div().pt(px(METRICS.space_2)).child(self.render_recents(cx)))
+                        .on_toggle(move |open, _, cx| {
+                            entity.update(cx, |shell, cx| {
+                                shell.recents_open = *open;
+                                cx.notify();
+                            });
+                        }),
+                );
+            tab = tab.child(library);
         }
-        tab.child(library).into_any_element()
+        tab.into_any_element()
     }
 
     fn render_assets_tab(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -311,14 +300,16 @@ impl StudioShell {
                 ));
             }
         }
-        tab.child(
-            div()
-                .id("preset-scroll")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .child(self.preset_panel.clone()),
-        )
+        // The presets themselves are chosen in Settings → Presets.
+        tab.child(self.action_button(
+            "open-presets",
+            "Style presets…",
+            true,
+            false,
+            Some(Icon::Palette),
+            cx,
+            |s, cx| s.open_settings_page(SettingsPage::Presets, cx),
+        ))
         .into_any_element()
     }
 
@@ -379,7 +370,11 @@ impl StudioShell {
                 .child(
                     text_style(div().truncate(), TextStyle::Small)
                         .text_color(theme.editor.text_3)
-                        .child(recent.path.display().to_string()),
+                        .child(
+                            studio_bootstrap::external_path(&recent.path)
+                                .display()
+                                .to_string(),
+                        ),
                 );
             let main = if open_enabled {
                 main.hover(move |style| style.bg(theme.editor.ctl_hover))
@@ -392,7 +387,16 @@ impl StudioShell {
                 !open_enabled,
                 Some(open),
             );
-            let main = with_tooltip(main, &theme, Some(recent.path.display().to_string().into()));
+            let main = with_tooltip(
+                main,
+                &theme,
+                Some(
+                    studio_bootstrap::external_path(&recent.path)
+                        .display()
+                        .to_string()
+                        .into(),
+                ),
+            );
 
             // Row actions appear on pointer hover and while keyboard focus is inside.
             let mut actions = div()
@@ -441,8 +445,8 @@ impl StudioShell {
         recents
     }
 
-    /// The managed SDK's status and its Install, Import and Select actions (the Project
-    /// drawer and the onboarding's SDK step).
+    /// The managed SDK's status and its Install, Import and Select actions (Settings → SDK
+    /// and the onboarding's SDK step).
     pub(super) fn sdk_controls(&self, cx: &mut Context<Self>) -> gpui::Div {
         let theme = self.theme;
         let enabled = !self.busy;
@@ -490,6 +494,17 @@ impl StudioShell {
                 cx,
                 |s, cx| s.pick(Picker::SdkBundle, cx),
             ))
+            .when(self.presentation.sdk_repin.is_some(), |controls| {
+                controls.child(self.action_button(
+                    "use-installed-sdk",
+                    "Use installed SDK",
+                    enabled,
+                    false,
+                    None,
+                    cx,
+                    |s, cx| s.dispatch(Command::UseInstalledSdk, cx),
+                ))
+            })
             .child(self.action_button(
                 "sdk",
                 "Select installed SDK…",
@@ -568,35 +583,26 @@ impl StudioShell {
             .into_any_element()
     }
 
-    /// The agent column on the window's right: transcript above, composer pinned at the
-    /// bottom.
+    /// The sidebar's Agent tab: the panel, which pads its own rows (a cached section).
     pub(super) fn render_agent_column(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        // The panel pads its own rows and rules its header across the full width.
-        Card::editor(&self.theme)
+        div()
             .relative()
             .size_full()
+            .min_h_0()
             .flex()
             .flex_col()
             .overflow_hidden()
-            .child(section_probe(Section::Agent, cx))
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .min_h_0()
-                    .w_full()
-                    .flex()
-                    .flex_col()
-                    .overflow_hidden()
-                    .child(self.panel.clone())
-                    .child(box_probe("agent", cx)),
-            )
+            .child(self.panel.clone())
+            .child(box_probe("agent", cx))
             .into_any_element()
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum LeftTab {
+/// The sidebar's tabs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum SidebarTab {
+    #[default]
+    Agent,
     Project,
     Assets,
     Style,
@@ -604,11 +610,6 @@ pub(super) enum LeftTab {
 
 /// Height of a file or asset row.
 const LIST_ROW_H: f32 = 28.;
-
-/// The drawer after the rail's `pressed` item: pressing the open one closes it.
-fn toggle_drawer(open: Option<LeftTab>, pressed: LeftTab) -> Option<LeftTab> {
-    (open != Some(pressed)).then_some(pressed)
-}
 
 /// The actions of a recent-project row, as the id prefix of each button: a missing
 /// project can be located, every project can be removed.
@@ -631,44 +632,41 @@ fn sdk_status_tone(busy: bool, ready: bool) -> Tone {
     }
 }
 
-impl LeftTab {
-    const ALL: [LeftTab; 3] = [LeftTab::Project, LeftTab::Assets, LeftTab::Style];
+impl SidebarTab {
+    const ALL: [SidebarTab; 4] = [
+        SidebarTab::Agent,
+        SidebarTab::Project,
+        SidebarTab::Assets,
+        SidebarTab::Style,
+    ];
 
-    /// Also the rail item's element id, `rail-{name}`.
-    fn name(self) -> &'static str {
+    /// Also the tab's element id, `sidebar-tab-{name}`.
+    pub(super) fn name(self) -> &'static str {
         match self {
-            LeftTab::Project => "Project",
-            LeftTab::Assets => "Assets",
-            LeftTab::Style => "Style",
+            SidebarTab::Agent => "Agent",
+            SidebarTab::Project => "Project",
+            SidebarTab::Assets => "Assets",
+            SidebarTab::Style => "Style",
         }
     }
 
     fn icon(self) -> Icon {
         match self {
-            LeftTab::Project => Icon::Folder,
-            LeftTab::Assets => Icon::Image,
-            LeftTab::Style => Icon::Palette,
+            SidebarTab::Agent => Icon::Bot,
+            SidebarTab::Project => Icon::Folder,
+            SidebarTab::Assets => Icon::Image,
+            SidebarTab::Style => Icon::Palette,
         }
     }
 
     fn from_index(index: usize) -> Self {
-        Self::ALL.get(index).copied().unwrap_or(LeftTab::Project)
+        Self::ALL.get(index).copied().unwrap_or_default()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn pressing_the_open_item_closes_its_drawer() {
-        assert_eq!(toggle_drawer(None, LeftTab::Style), Some(LeftTab::Style));
-        assert_eq!(
-            toggle_drawer(Some(LeftTab::Project), LeftTab::Style),
-            Some(LeftTab::Style)
-        );
-        assert_eq!(toggle_drawer(Some(LeftTab::Style), LeftTab::Style), None);
-    }
 
     #[test]
     fn recent_rows_offer_locate_only_when_missing() {
@@ -684,12 +682,12 @@ mod tests {
     }
 
     #[test]
-    fn left_tabs_keep_their_element_ids() {
-        let names: Vec<_> = LeftTab::ALL.iter().map(|t| t.name()).collect();
-        assert_eq!(names, ["Project", "Assets", "Style"]);
-        for (index, tab) in LeftTab::ALL.into_iter().enumerate() {
-            assert_eq!(LeftTab::from_index(index), tab);
+    fn sidebar_tabs_keep_their_element_ids() {
+        let names: Vec<_> = SidebarTab::ALL.iter().map(|t| t.name()).collect();
+        assert_eq!(names, ["Agent", "Project", "Assets", "Style"]);
+        for (index, tab) in SidebarTab::ALL.into_iter().enumerate() {
+            assert_eq!(SidebarTab::from_index(index), tab);
         }
-        assert_eq!(LeftTab::from_index(9), LeftTab::Project);
+        assert_eq!(SidebarTab::from_index(9), SidebarTab::Agent);
     }
 }

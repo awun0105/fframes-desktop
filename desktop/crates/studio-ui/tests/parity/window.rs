@@ -6,9 +6,8 @@ const HEADER_H: f64 = 52.;
 const CAPTION_BUTTON_W: f64 = 46.;
 const STATUS_BAR_H: f64 = 28.;
 const GUTTER: f64 = 8.;
-const RAIL_W: f64 = 56.;
-const DRAWER_W: f64 = 320.;
-const AGENT_W: f64 = 360.;
+const SIDEBAR_W: f64 = 416.;
+const TAB_BAR_H: f64 = 46.;
 /// A card's probe fills it inside its 1 px border.
 const BORDERS: f64 = 2.;
 
@@ -55,9 +54,10 @@ fn bounds(t: &Value, section: &str) -> [f64; 4] {
 fn the_sections_fill_their_boxes(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed(cx);
     let t = studio.wait("every section measured", |t| {
-        ["header", "rail", "player", "agent-column", "agent"]
+        ["header", "player", "agent-column", "agent"]
             .iter()
             .all(|section| t["sections"][section].is_array())
+            && t["split"]["grip_bounds"].is_array()
     });
     let viewport_width = t["viewport"][0].as_f64().unwrap();
     let available = t["split"]["available"].as_f64().unwrap();
@@ -91,88 +91,112 @@ fn the_sections_fill_their_boxes(cx: &mut gpui::TestAppContext) {
     } else {
         assert!(t["sections"]["caption"].is_null());
     }
-    // The workspace row runs from the gutter under the header to the gutter above the
-    // status bar: the rail on its left, the agent column on its right, the player and the
-    // timeline between them.
+    // The workspace runs from the gutter under the header to the gutter above the status
+    // bar: the player and the sidebar side by side, the timeline across both below them.
     let viewport_height = t["viewport"][1].as_f64().unwrap();
     let row_top = HEADER_H;
-    let row_height = viewport_height - HEADER_H - GUTTER - STATUS_BAR_H;
-    let rail = bounds(&t, "rail");
+    let workspace_height = viewport_height - HEADER_H - GUTTER - STATUS_BAR_H;
     assert!(
-        close(rail[0], GUTTER)
-            && close(rail[1], row_top)
-            && close(rail[2], RAIL_W)
-            && close(rail[3], row_height)
-            && close(rail[3], available + GUTTER),
-        "rail {rail:?}, row {row_height} high, {available} available"
+        close(available + GUTTER, workspace_height),
+        "{available} available in a workspace {workspace_height} high"
     );
+    let row_height = workspace_height - GUTTER - timeline;
     let column = bounds(&t, "agent-column");
     assert!(
         close(
             column[0] + column[2] + BORDERS / 2.,
             viewport_width - GUTTER
-        ) && close(column[2] + BORDERS, AGENT_W)
+        ) && close(column[2] + BORDERS, SIDEBAR_W)
             && close(column[1] - BORDERS / 2., row_top)
             && close(column[3] + BORDERS, row_height),
-        "agent column {column:?} in a {viewport_width} wide window, row {row_height} high"
+        "sidebar {column:?} in a {viewport_width} wide window, row {row_height} high"
     );
     let player = bounds(&t, "player");
     assert!(
-        close(player[0] - BORDERS / 2., rail[0] + rail[2] + GUTTER)
+        close(player[0] - BORDERS / 2., GUTTER)
             && close(
                 player[0] + player[2] + BORDERS / 2.,
                 column[0] - BORDERS / 2. - GUTTER
             )
             && close(player[1] - BORDERS / 2., row_top)
-            && close(player[3] + BORDERS + GUTTER + timeline, row_height),
-        "player {player:?} between the rail {rail:?} and the agent column {column:?}"
+            && close(player[3] + BORDERS, row_height),
+        "player {player:?} left of the sidebar {column:?}, row {row_height} high"
     );
-    // The agent panel fills the column; it pads its own rows.
+    // The timeline's grip spans the timeline card, which spans the whole workspace.
+    let grip = &t["split"]["grip_bounds"];
+    let at = |i: usize| grip[i].as_f64().unwrap();
+    assert!(
+        close(at(0), GUTTER)
+            && close(at(2), viewport_width - 2. * GUTTER)
+            // 11 px above the card, which starts a gutter below the row.
+            && close(at(1), row_top + row_height + GUTTER - 11.),
+        "timeline grip {grip} under a row {row_height} high"
+    );
+    // The agent panel fills the sidebar under its tab rail; it pads its own rows.
+    assert_eq!(t["drawer"], "Agent");
     let agent = bounds(&t, "agent");
     assert!(
         close(agent[0], column[0])
             && close(agent[2], column[2])
-            && close(agent[1], column[1])
-            && close(agent[3], column[3]),
-        "agent {agent:?} in the column {column:?}"
+            && close(agent[1], column[1] + TAB_BAR_H)
+            && close(agent[1] + agent[3], column[1] + column[3]),
+        "agent {agent:?} in the sidebar {column:?}"
     );
 }
 
-/// The centre of the first rail item: 46 x 48 px, centred in the rail, 8 px below its top.
-fn first_rail_item(t: &Value) -> (f32, f32) {
-    let rail = bounds(t, "rail");
-    ((rail[0] + RAIL_W / 2.) as f32, (rail[1] + 8. + 24.) as f32)
+/// The centre of sidebar tab `index` (Agent, Project, Assets, Style): the rail spreads
+/// its four 40 px boxes evenly inside 10 px of padding, 46 px high at the card's top.
+fn sidebar_tab(t: &Value, index: usize) -> (f32, f32) {
+    let column = bounds(t, "agent-column");
+    let slot = (column[2] - 20.) / 4.;
+    (
+        (column[0] + 10. + slot * (index as f64 + 0.5)) as f32,
+        (column[1] + TAB_BAR_H / 2.) as f32,
+    )
 }
 
-/// The rail's Project item opens its drawer beside the rail, which pushes the player
-/// right; pressing the item again closes it.
+/// The sidebar's tabs swap the agent panel for the Project, Assets or Style contents in
+/// the same card; the player keeps its place.
 #[gpui::test]
-fn the_rail_opens_and_closes_its_drawer(cx: &mut gpui::TestAppContext) {
+fn the_sidebar_tabs_switch_its_body(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed(cx);
-    let closed = studio.wait("the rail measured", |t| {
-        t["sections"]["rail"].is_array() && t["sections"]["player"].is_array()
+    let start = studio.wait("the sidebar measured", |t| {
+        t["sections"]["agent-column"].is_array() && t["sections"]["player"].is_array()
     });
-    assert_eq!(closed["drawer"], Value::Null);
-    let player_x = bounds(&closed, "player")[0];
-    let item = first_rail_item(&closed);
+    assert_eq!(start["drawer"], "Agent");
+    let player = bounds(&start, "player");
+    let column = bounds(&start, "agent-column");
 
-    studio.click(item);
-    let open = studio.wait("the Project drawer", |t| {
-        t["drawer"] == "Project"
-            && t["sections"]["rail"][2].as_f64() == Some(RAIL_W + GUTTER + DRAWER_W)
+    studio.click(sidebar_tab(&start, 1));
+    let project = studio.wait("the Project tab", |t| {
+        t["drawer"] == "Project" && t["sections"]["drawer"].is_array()
     });
-    let pushed = bounds(&open, "player")[0];
+    let drawer = bounds(&project, "drawer");
     assert!(
-        (pushed - player_x - GUTTER - DRAWER_W).abs() < 0.5,
-        "player at {pushed}, was {player_x}"
+        (drawer[0] - column[0]).abs() < 0.5
+            && (drawer[2] - column[2]).abs() < 0.5
+            && (drawer[1] - column[1] - TAB_BAR_H).abs() < 0.5,
+        "drawer {drawer:?} in the sidebar {column:?}"
     );
-    // The column keeps its width: the editor gives up the drawer's.
-    assert_eq!(open["agent_column"]["width"].as_f64(), Some(AGENT_W));
+    assert_eq!(bounds(&project, "player"), player);
 
-    studio.click(item);
-    studio.wait("the drawer closed", |t| {
-        t["drawer"].is_null() && t["sections"]["rail"][2].as_f64() == Some(RAIL_W)
+    studio.click(sidebar_tab(&project, 3));
+    studio.wait("the Style tab", |t| t["drawer"] == "Style");
+    studio.click(sidebar_tab(&project, 0));
+    studio.wait("the Agent tab again", |t| t["drawer"] == "Agent");
+}
+
+/// Focusing the prompt from another tab brings the Agent tab forward first.
+#[gpui::test]
+fn focusing_the_prompt_selects_the_agent_tab(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::with_agent(cx);
+    let start = studio.wait("the sidebar measured", |t| {
+        t["sections"]["agent-column"].is_array()
     });
+    studio.click(sidebar_tab(&start, 2));
+    studio.wait("the Assets tab", |t| t["drawer"] == "Assets");
+    studio.focus_prompt();
+    assert_eq!(studio.telemetry()["drawer"], "Agent");
 }
 
 fn agent_grip_centre(t: &Value) -> (f32, f32) {
@@ -185,21 +209,21 @@ fn agent_width(t: &Value) -> f64 {
     t["agent_column"]["width"].as_f64().unwrap()
 }
 
-/// The grip on the agent column's left edge widens it to the left and narrows it to the
-/// right, within its limits.
+/// The grip on the sidebar's left edge widens it to the left and narrows it to the right,
+/// within its limits.
 #[gpui::test]
 fn the_agent_grip_resizes_the_column_within_its_limits(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::displayed(cx);
     let start = studio.wait("the agent grip painted", |t| {
         t["agent_column"]["grip_bounds"].is_array()
     });
-    assert_eq!(agent_width(&start), AGENT_W);
+    assert_eq!(agent_width(&start), SIDEBAR_W);
 
     let (x, y) = agent_grip_centre(&start);
     studio.drag((x, y), (x - 60., y));
-    let wider = studio.wait("a wider column", |t| agent_width(t) != AGENT_W);
+    let wider = studio.wait("a wider column", |t| agent_width(t) != SIDEBAR_W);
     assert!(
-        (agent_width(&wider) - (AGENT_W + 60.)).abs() < 0.5,
+        (agent_width(&wider) - (SIDEBAR_W + 60.)).abs() < 0.5,
         "{:#}",
         wider["agent_column"]
     );
@@ -228,7 +252,7 @@ fn inside(t: &Value, area: &[f64; 4], control: &Value) -> bool {
 }
 
 /// In a 1280x800 window the agent column is short: its tabs, the pinned composer and the
-/// review policy control still lie inside it.
+/// Project tab's Undo still lie inside it.
 #[gpui::test]
 fn the_agent_tab_keeps_its_controls_in_a_short_window(cx: &mut gpui::TestAppContext) {
     let mut studio = Studio::with_agent(cx);
@@ -254,12 +278,33 @@ fn the_agent_tab_keeps_its_controls_in_a_short_window(cx: &mut gpui::TestAppCont
     let at = |i: usize| tab[i].as_f64().unwrap() as f32;
     studio.click((at(0) + at(2) / 2., at(1) + at(3) / 2.));
     let t = studio.wait("the Project tab", |t| {
-        t["panel"]["buttons"]["agent-policy"].is_array()
+        t["panel"]["buttons"]["agent-undo"].is_array()
     });
-    let policy = &t["panel"]["buttons"]["agent-policy"];
+    let undo = &t["panel"]["buttons"]["agent-undo"];
     assert!(
-        inside(&t, &agent, policy),
-        "{policy} outside the agent tab {agent:?}"
+        inside(&t, &agent, undo),
+        "{undo} outside the agent tab {agent:?}"
+    );
+    // The review policy is read here and chosen in Settings → Agent.
+    assert!(t["panel"]["buttons"]["agent-policy"].is_null());
+}
+
+/// Before the first message the setup guidance fills the transcript; with a preview shown
+/// the composer adds its scope chip. In a 1280x720 window Send still lies inside the
+/// sidebar.
+#[gpui::test]
+fn send_stays_in_a_short_sidebar_while_the_guidance_shows(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::with_agent(cx).display();
+    studio.resize(1280., 720.);
+    studio.report_button_bounds();
+    let t = studio.wait("the composer measured", |t| {
+        t["panel"]["buttons"]["composer-send"].is_array() && t["viewport"][1].as_f64() == Some(720.)
+    });
+    let agent = bounds(&t, "agent");
+    let send = &t["panel"]["buttons"]["composer-send"];
+    assert!(
+        inside(&t, &agent, send),
+        "{send} outside the agent tab {agent:?}"
     );
 }
 

@@ -11,4 +11,4 @@ mod view;
 mod waveform;
 
 pub use playhead::{PlayheadGeometry, playhead_overlay};
-pub use view::{KEY_CONTEXT, TimelineEvent, TimelineView};
+pub use view::{KEY_CONTEXT, TimelineControls, TimelineEvent, TimelineView};

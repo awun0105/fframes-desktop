@@ -13,6 +13,7 @@ use studio_engine::presets::PresetCommand;
 use studio_engine::services::audio_service::OutputDevice;
 use studio_engine::timing::TimelineCommand;
 
+use super::left_column::SidebarTab;
 use super::{Picker, StudioShell};
 use crate::actions;
 
@@ -115,6 +116,7 @@ impl StudioShell {
             }))
             .on_action(cx.listener(|s, _: &actions::OpenAgentSetup, _, cx| s.open_agent_setup(cx)))
             .on_action(cx.listener(|s, _: &actions::FocusPrompt, window, cx| {
+                s.select_sidebar_tab(SidebarTab::Agent, cx);
                 s.panel
                     .update(cx, |panel, cx| panel.focus_prompt(window, cx))
             }))

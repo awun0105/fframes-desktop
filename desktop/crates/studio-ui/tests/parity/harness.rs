@@ -2,7 +2,7 @@
 //! preview worker compiled by a fake compiler, and app data, SDK home and writer ownership
 //! of the test's own. Tests drive it with actions and read its telemetry; this file is the
 //! only one that knows the window's root view.
-use gpui::{Action, AppContext, TestAppContext, WindowHandle};
+use gpui::{Action, AnyWindowHandle, AppContext, TestAppContext, WindowHandle};
 use serde_json::Value;
 use std::{
     fs,
@@ -32,6 +32,8 @@ const CLOCK_STEP: Duration = Duration::from_millis(16);
 pub struct Studio {
     pub cx: TestAppContext,
     window: WindowHandle<StudioShell>,
+    /// The window that clicks, keys and text go to: the main window or the settings window.
+    target: AnyWindowHandle,
     pub compiler: Arc<FakeCompiler>,
     pub project: PathBuf,
     pub app_data: PathBuf,
@@ -121,6 +123,7 @@ impl Studio {
         let mut studio = Self {
             cx: cx.clone(),
             window,
+            target: window.into(),
             compiler,
             project,
             app_data,
@@ -295,7 +298,7 @@ impl Studio {
         }
     }
 
-    fn display(self) -> Self {
+    pub fn display(self) -> Self {
         let mut studio = self.open_project();
         studio.build_preview();
         studio.wait("preview displayed", |t| {
@@ -371,7 +374,7 @@ impl Studio {
 
     /// Types `text` into the focused field.
     pub fn type_text(&mut self, text: &str) {
-        self.cx.simulate_input(self.window.into(), text);
+        self.cx.simulate_input(self.target, text);
     }
 
     /// The names of the actions `keystroke` is bound to for the focused element, from the
@@ -394,7 +397,7 @@ impl Studio {
     /// Presses real keys (`"enter"`, `"space"`, `"shift-tab"`) on the focused element,
     /// through the keymap like a keyboard does.
     pub fn press(&mut self, keystrokes: &str) {
-        self.cx.simulate_keystrokes(self.window.into(), keystrokes);
+        self.cx.simulate_keystrokes(self.target, keystrokes);
     }
 
     /// Turns the mouse wheel by `delta_y` pixels at window point (`x`, `y`), with Ctrl (Cmd
@@ -405,7 +408,7 @@ impl Studio {
             platform: zoom && cfg!(target_os = "macos"),
             ..Default::default()
         };
-        gpui::VisualTestContext::from_window(self.window.into(), &self.cx).simulate_event(
+        gpui::VisualTestContext::from_window(self.target, &self.cx).simulate_event(
             gpui::ScrollWheelEvent {
                 position: gpui::point(gpui::px(x), gpui::px(y)),
                 delta: gpui::ScrollDelta::Pixels(gpui::point(gpui::px(0.), gpui::px(delta_y))),
@@ -413,6 +416,32 @@ impl Studio {
                 touch_phase: gpui::TouchPhase::Moved,
             },
         );
+    }
+
+    /// The settings window, while it is open.
+    pub fn settings_window(&mut self) -> Option<AnyWindowHandle> {
+        self.window
+            .read_with(&self.cx, |shell, _| shell.settings_window())
+            .unwrap()
+    }
+
+    /// Sends the next clicks, keys and text to the settings window, which must be open.
+    pub fn in_settings_window(&mut self) {
+        self.target = self.settings_window().expect("the settings window is open");
+    }
+
+    /// The height of the window that clicks, keys and text go to.
+    pub fn target_height(&mut self) -> f32 {
+        self.target
+            .update(&mut self.cx, |_, window, _| {
+                f32::from(window.viewport_size().height)
+            })
+            .expect("the window is open")
+    }
+
+    /// Sends the next clicks, keys and text to the main window again.
+    pub fn in_main_window(&mut self) {
+        self.target = self.window.into();
     }
 
     /// Makes the shell report the measured buttons' bounds under `buttons` in the telemetry.
@@ -430,7 +459,7 @@ impl Studio {
 
     /// Moves the pointer to window point `at` with no button held.
     pub fn hover(&mut self, (x, y): (f32, f32)) {
-        let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);
+        let mut window = gpui::VisualTestContext::from_window(self.target, &self.cx);
         window.simulate_mouse_move(
             gpui::point(gpui::px(x), gpui::px(y)),
             None,
@@ -441,7 +470,7 @@ impl Studio {
     /// Presses the left button at window point `at` and holds it, then lets a frame paint,
     /// as one always does between real input events.
     pub fn mouse_down(&mut self, (x, y): (f32, f32)) {
-        let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);
+        let mut window = gpui::VisualTestContext::from_window(self.target, &self.cx);
         let at = gpui::point(gpui::px(x), gpui::px(y));
         window.simulate_mouse_down(at, gpui::MouseButton::Left, gpui::Modifiers::default());
         self.settle(Duration::from_millis(32));
@@ -450,7 +479,7 @@ impl Studio {
     /// Presses and releases the left button at window point `at` without moving.
     pub fn click(&mut self, (x, y): (f32, f32)) {
         self.mouse_down((x, y));
-        let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);
+        let mut window = gpui::VisualTestContext::from_window(self.target, &self.cx);
         let at = gpui::point(gpui::px(x), gpui::px(y));
         window.simulate_mouse_up(at, gpui::MouseButton::Left, gpui::Modifiers::default());
     }
@@ -459,7 +488,7 @@ impl Studio {
     pub fn drag(&mut self, from: (f32, f32), to: (f32, f32)) {
         self.hover(from);
         self.mouse_down(from);
-        let mut window = gpui::VisualTestContext::from_window(self.window.into(), &self.cx);
+        let mut window = gpui::VisualTestContext::from_window(self.target, &self.cx);
         let point = |(x, y): (f32, f32)| gpui::point(gpui::px(x), gpui::px(y));
         let left = gpui::MouseButton::Left;
         window.simulate_mouse_move(point(to), left, gpui::Modifiers::default());

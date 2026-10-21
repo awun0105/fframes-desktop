@@ -43,6 +43,8 @@ pub struct Presentation {
     /// The installed SDK agent tasks compile and preview against (set only while it
     /// verifies and supports the preview contract). Separate from agent readiness.
     pub agent_sdk: Option<AgentSdk>,
+    /// See [`Backend::sdk_repin`].
+    pub sdk_repin: Option<String>,
     /// Style-preset controls state of the open project (`None` when none is open).
     pub preset: Option<PresetView>,
     /// The open project's timing document, its clips and what can be edited now.
@@ -69,6 +71,8 @@ pub enum Command {
     Close,
     RemoveRecent(ProjectId),
     SelectSdk(PathBuf),
+    /// Pins the open project to the active installed SDK (its own is not installed).
+    UseInstalledSdk,
     InstallSdk,
     ImportSdkBundle(PathBuf),
     Restore(PathBuf, studio_project::SourceRevision),
@@ -93,6 +97,9 @@ pub struct Backend {
     pub sdk_home: Option<PathBuf>,
     pub sdk: String,
     pub agent_sdk: Option<AgentSdk>,
+    /// The installed SDK the open project can be moved to with
+    /// [`Command::UseInstalledSdk`]; set while the SDK it is pinned to is not installed.
+    pub sdk_repin: Option<String>,
     /// The manifest of the SDK the open project builds with (the project's selection or
     /// the active installation), whether or not it verified.
     pub selected_sdk: Option<CompatibilityManifest>,
@@ -239,14 +246,11 @@ impl Backend {
                 .map_err(|e| e.to_string())?,
             Command::Build => {
                 let builds = paths.builds();
-                let fallback = self.sdk_home.as_ref().map(|h| h.join("active"));
                 let controller = self.current()?;
-                let mut controller = controller.lock();
-                let sdk = controller
-                    .sdk_path()
-                    .map(PathBuf::from)
-                    .or(fallback)
+                let sdk = self
+                    .project_sdk()
                     .ok_or("Select an installed SDK before building preview")?;
+                let mut controller = controller.lock();
                 let manifest_path = sdk.join("compatibility.json");
                 let compatibility = CompatibilityManifest::from_json_str(
                     &std::fs::read_to_string(&manifest_path).map_err(|e| {
@@ -309,6 +313,18 @@ impl Backend {
                 self.current()?
                     .lock()
                     .select_sdk(path)
+                    .map_err(|e| e.to_string())?;
+                self.check_sdk();
+            }
+            Command::UseInstalledSdk => {
+                let home = self.sdk_home.as_deref().ok_or("SDK home unavailable")?;
+                let (_, active) = crate::sdk_setup::installed_sdks(home)
+                    .into_iter()
+                    .next()
+                    .ok_or("No SDK is installed; install the managed SDK first")?;
+                self.current()?
+                    .lock()
+                    .repin_sdk(sdk_pin(&active))
                     .map_err(|e| e.to_string())?;
                 self.check_sdk();
             }
@@ -439,15 +455,28 @@ impl Backend {
         }
         self.check_sdk();
     }
+    /// The SDK the open project builds with: the one selected for it while that folder
+    /// exists, else the installed SDK it is pinned to, else the active installation.
+    fn project_sdk(&self) -> Option<PathBuf> {
+        let home = self.sdk_home.as_deref();
+        let for_project = self.controller.as_ref().and_then(|c| {
+            let c = c.lock();
+            c.sdk_path()
+                .filter(|path| path.exists())
+                .map(PathBuf::from)
+                .or_else(|| {
+                    home.and_then(|h| crate::sdk_setup::installed_sdk_for(&c.project.manifest, h))
+                })
+        });
+        for_project
+            .or_else(|| home.map(|h| h.join("active")))
+            .filter(|path| path.exists())
+    }
     pub fn check_sdk(&mut self) {
         self.agent_sdk = None;
         self.selected_sdk = None;
-        let sdk = self
-            .controller
-            .as_ref()
-            .and_then(|c| c.lock().sdk_path().map(PathBuf::from))
-            .or_else(|| self.sdk_home.as_ref().map(|h| h.join("active")))
-            .filter(|path| path.exists());
+        self.sdk_repin = None;
+        let sdk = self.project_sdk();
         // Host prerequisites come from the SDK that is actually selected, which may be the
         // only manifest this host has; the app default stands in while none is installed.
         let selected = sdk.as_ref().map(|path| {
@@ -482,12 +511,30 @@ impl Backend {
                         return;
                     }
                 };
-                if self
+                let pin = self
                     .controller
                     .as_ref()
-                    .is_some_and(|c| framework_for(&c.lock().project.manifest, &selected).is_none())
-                {
-                    self.sdk = "Incompatible SDK pin; select the project's compatible SDK".into();
+                    .map(|c| c.lock().project.manifest.clone())
+                    .filter(|project| framework_for(project, &selected).is_none())
+                    .map(|project| project.sdk);
+                if let Some(pin) = pin {
+                    // No installed SDK matches the project's pin (`project_sdk` looked).
+                    self.sdk = if self
+                        .compatibility
+                        .as_ref()
+                        .is_some_and(|available| sdk_pin(available) == pin)
+                    {
+                        format!(
+                            "This project uses SDK {}, which is not installed yet · Install managed SDK",
+                            pin.release
+                        )
+                    } else {
+                        self.sdk_repin = Some(selected.sdk_id.clone());
+                        format!(
+                            "This project is pinned to SDK {}, which is not installed · Use installed SDK {} (rewrites studio.json's SDK pin) or import the project's SDK bundle",
+                            pin.release, selected.sdk_id
+                        )
+                    };
                     return;
                 }
                 let report = Doctor::verify_candidate_sdk_with_processes(
@@ -507,7 +554,23 @@ impl Backend {
                             compatibility: selected.clone(),
                         });
                     }
-                    format!("Available · {}", path.display())
+                    // The app ships a different SDK than the installed one (an app update
+                    // brought a newer bundle): installing it keeps this one as `previous`,
+                    // so projects pinned to it keep building.
+                    let active = self.sdk_home.as_ref().map(|home| home.join("active"));
+                    match &self.compatibility {
+                        Some(available)
+                            if active.as_ref() == Some(&path)
+                                && available.digest() != selected.digest() =>
+                        {
+                            format!(
+                                "Available · {} · SDK update {} available · Install managed SDK",
+                                path.display(),
+                                available.sdk_id
+                            )
+                        }
+                        _ => format!("Available · {}", path.display()),
+                    }
                 } else {
                     format!(
                         "SDK failed verification: {}; select/reinstall compatible SDK",
@@ -557,6 +620,7 @@ impl Backend {
             owner: open.map(|(_, _, owner, ..)| owner),
             paths: self.paths.clone(),
             agent_sdk: self.agent_sdk.clone(),
+            sdk_repin: self.sdk_repin.clone(),
         })
     }
 }
@@ -600,6 +664,64 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn use_installed_sdk_repins_a_project_whose_sdk_is_not_installed() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("video");
+        let paths = AppPaths::new(temp.path().join("history")).unwrap();
+        let mut old = CompatibilityManifest::default_linux_x64();
+        old.sdk_id = "studio-sdk-old".into();
+        studio_project::create(
+            &root,
+            "Video",
+            sdk_pin(&old),
+            &old.fframes_version,
+            &old.runtime_version,
+        )
+        .unwrap();
+        let sdk_home = temp.path().join("sdk");
+        let mut installed = CompatibilityManifest::default_linux_x64();
+        installed.target_triple = CompatibilityManifest::host_target().unwrap().into();
+        fs::create_dir_all(sdk_home.join("active")).unwrap();
+        fs::write(
+            sdk_home.join("active/compatibility.json"),
+            serde_json::to_string(&installed).unwrap(),
+        )
+        .unwrap();
+        let controller = Controller::open(&root, &paths).unwrap();
+        let mut backend = Backend {
+            paths: Some(paths),
+            controller: Some(Arc::new(Mutex::new(controller))),
+            session: Some(SessionId(1)),
+            sessions: 1,
+            compatibility: None,
+            compatibility_error: "SDK manifest unavailable".into(),
+            sdk_home: Some(sdk_home),
+            sdk: String::new(),
+            agent_sdk: None,
+            sdk_repin: None,
+            selected_sdk: None,
+            closed: Arc::new(AtomicBool::new(false)),
+            processes: studio_bootstrap::ProcessTreeManager::new(),
+            build_spec: None,
+            catalog: Catalog::default(),
+            preset_report: None,
+            environment: StudioEnvironment::system(),
+            app_version: "0.0.0",
+        };
+        let source = fs::read(root.join("src/lib.rs")).unwrap();
+
+        backend.command(Command::UseInstalledSdk).unwrap();
+
+        let reopened = studio_project::open(&root).unwrap().manifest;
+        assert_eq!(reopened.sdk, sdk_pin(&installed));
+        assert_eq!(fs::read(root.join("src/lib.rs")).unwrap(), source);
+        assert_eq!(
+            crate::sdk_setup::installed_sdk_for(&reopened, backend.sdk_home.as_ref().unwrap()),
+            backend.sdk_home.as_ref().map(|home| home.join("active"))
+        );
+    }
+
+    #[test]
     fn restore_command_exports_selected_checkpoint_without_requiring_healthy_source() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("video");
@@ -630,6 +752,7 @@ mod tests {
             sdk_home: None,
             sdk: String::new(),
             agent_sdk: None,
+            sdk_repin: None,
             selected_sdk: None,
             closed: Arc::new(AtomicBool::new(false)),
             processes: studio_bootstrap::ProcessTreeManager::new(),

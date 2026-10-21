@@ -185,8 +185,13 @@ impl ConversationPanel {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let active = self.tab == tab;
+        // The Changes tab keeps the id it had as "Project".
+        let id = match tab {
+            Tab::Project => "Project",
+            _ => label,
+        };
         self.segment_item(
-            format!("agent-tab-{label}"),
+            format!("agent-tab-{id}"),
             label,
             active,
             cx,

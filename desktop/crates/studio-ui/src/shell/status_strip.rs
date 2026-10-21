@@ -44,6 +44,30 @@ impl StudioShell {
             }
             notices.push(notice.into_any_element());
         }
+        if let super::settings::UpdateCheck::Available(update) = &self.update
+            && !self.update_dismissed
+        {
+            let entity = cx.entity();
+            notices.push(
+                Notice::new(
+                    "update",
+                    Tone::Info,
+                    format!("fframes Studio {} is available", update.version),
+                )
+                .body(format!(
+                    "You have {}. The release page has the installer and the notes.",
+                    self.app_version
+                ))
+                .action(self.download_update_button(update.url.clone(), cx))
+                .on_dismiss(move |_, cx| {
+                    entity.update(cx, |shell, cx| {
+                        shell.update_dismissed = true;
+                        cx.notify();
+                    })
+                })
+                .into_any_element(),
+            );
+        }
         let Some(p) = &self.presentation.project else {
             return notices;
         };
@@ -69,7 +93,11 @@ impl StudioShell {
                     revision,
                 } => (
                     Tone::Success,
-                    format!("Exported {} · revision {}", destination.display(), revision),
+                    format!(
+                        "Exported {} · revision {}",
+                        studio_bootstrap::external_path(destination).display(),
+                        revision
+                    ),
                 ),
                 ExportProgress::Failed(message) => {
                     (Tone::Danger, format!("Export failed · {message}"))

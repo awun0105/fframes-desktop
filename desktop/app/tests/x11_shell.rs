@@ -221,11 +221,16 @@ impl Screen {
     }
 
     fn window(&self) -> String {
+        self.window_named("fframes Studio")
+    }
+
+    /// The first window whose title matches the `name` pattern.
+    fn window_named(&self, name: &str) -> String {
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             let output = Command::new("xdotool")
                 .env("DISPLAY", &self.display)
-                .args(["search", "--name", "fframes Studio"])
+                .args(["search", "--name", name])
                 .stderr(Stdio::null())
                 .output()
                 .expect("xdotool");
@@ -384,6 +389,27 @@ fn click_panel_button(screen: &Screen, window: &str, telemetry: &Telemetry, name
         ]);
     }
     panic!("the {name} button never scrolled into the agent tab");
+}
+
+/// Chooses the review policy `want` (`AutoApply` or `ManualReview`) on the settings
+/// window's Agent page, opened from the panel's settings button, and closes the window.
+fn choose_review_policy(screen: &Screen, window: &str, telemetry: &Telemetry, want: &str) {
+    click_panel_button(screen, window, telemetry, "agent-open-setup");
+    let settings = screen.window_named("^fframes Studio Settings$");
+    let option = if want == "ManualReview" {
+        "review-policy-1"
+    } else {
+        "review-policy-0"
+    };
+    let measured = telemetry.settled("the review-policy choice", |v| v["buttons"][option].clone());
+    screen.click(&settings, button_centre(&measured, option));
+    telemetry.wait(&format!("{want} to be selected"), |v| {
+        v["panel"]["review_policy"] == want
+    });
+    screen.xdotool(&["key", "--window", &settings, "ctrl+w"]);
+    telemetry.wait("the settings window to close", |v| {
+        v["settings_open"] == false
+    });
 }
 
 fn click_prompt(screen: &Screen, window: &str, telemetry: &Telemetry) {
@@ -801,14 +827,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     });
     let scene_label = scene["panel"]["submit_scope"].as_str().unwrap().to_owned();
     // Validated changes wait for the user: the review shows before and after evidence.
-    click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
-    let policy = telemetry.settled("the review-policy button", |v| {
-        v["panel"]["buttons"]["agent-policy"].clone()
-    });
-    screen.click(&window, button_centre(&policy["panel"], "agent-policy"));
-    telemetry.wait("manual review to be selected", |v| {
-        v["panel"]["review_policy"] == "ManualReview"
-    });
+    choose_review_policy(&screen, &window, &telemetry, "ManualReview");
     click_panel_button(&screen, &window, &telemetry, "agent-tab-Chat");
 
     click_prompt(&screen, &window, &telemetry);
@@ -885,14 +904,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     // The range task uses the default AutoApply policy. Its terminal task snapshot must
     // already have both evidence images, not merely artifact references that were just
     // released during finalization.
-    click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
-    let policy = telemetry.settled("the review-policy button", |v| {
-        v["panel"]["buttons"]["agent-policy"].clone()
-    });
-    screen.click(&window, button_centre(&policy["panel"], "agent-policy"));
-    telemetry.wait("AutoApply to be selected", |v| {
-        v["panel"]["review_policy"] == "AutoApply"
-    });
+    choose_review_policy(&screen, &window, &telemetry, "AutoApply");
     click_panel_button(&screen, &window, &telemetry, "agent-tab-Chat");
 
     // A frame range from the playhead with the timeline's own bracket keys. The layout
@@ -969,14 +981,7 @@ fn the_native_shell_freezes_scene_and_range_scope_and_shows_before_and_after_evi
     assert!(project.join("notes2.txt").is_file());
 
     // The stale-scope case needs a candidate that waits for an explicit review action.
-    click_panel_button(&screen, &window, &telemetry, "agent-tab-Project");
-    let policy = telemetry.settled("the review-policy button", |v| {
-        v["panel"]["buttons"]["agent-policy"].clone()
-    });
-    screen.click(&window, button_centre(&policy["panel"], "agent-policy"));
-    telemetry.wait("ManualReview to be selected", |v| {
-        v["panel"]["review_policy"] == "ManualReview"
-    });
+    choose_review_policy(&screen, &window, &telemetry, "ManualReview");
     click_panel_button(&screen, &window, &telemetry, "agent-tab-Chat");
 
     // Stale queued scope: a held task runs, a scoped brief queues behind it, the displayed

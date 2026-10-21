@@ -28,6 +28,7 @@ pub mod store;
 pub mod task_scope;
 pub mod timeline;
 pub mod timing;
+pub mod updates;
 pub mod waveform;
 pub use agent_task::{
     AgentTask, AgentTaskContext, AgentTaskId, AgentTaskManager, CandidateRevision, CaptureTicket,

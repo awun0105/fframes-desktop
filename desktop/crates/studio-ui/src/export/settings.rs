@@ -112,11 +112,15 @@ mod tests {
     }
 
     #[test]
-    fn a_saved_choice_the_worker_lacks_falls_back_to_the_default() {
+    fn a_saved_format_the_worker_lacks_falls_back_to_the_default_format() {
         assert_eq!(ready(&FORMATS).settings_for(webm()), webm());
         assert_eq!(
             ready(&[FORMATS[0]]).settings_for(webm()),
-            ExportSettings::default()
+            ExportSettings {
+                scale: 0.5,
+                fps: Some(30),
+                ..ExportSettings::default()
+            }
         );
     }
 }

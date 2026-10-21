@@ -230,36 +230,69 @@ impl ConversationPanel {
     ) -> AnyElement {
         // Top to bottom: the task in one line, the transcript, then the dock (cards that
         // wait for an answer, the composer and its toolbar). The transcript keeps a minimum
-        // height; the dock's cards scroll instead of pushing it out of the panel.
+        // height; the dock's cards scroll instead of pushing it out of the panel. The setup
+        // guidance opens the transcript area, where it scrolls in a short sidebar.
+        let theme = self.theme;
+        let g = guidance(
+            &snapshot.adapter.readiness,
+            snapshot.adapter.provider.is_some(),
+        );
         let mut top = div()
             .flex_none()
             .flex()
             .flex_col()
             .gap(px(8.))
             .px(px(12.))
-            .pt(px(10.));
-        if let Some(strip) = self.status_strip(&snapshot, controls, cx) {
-            top = top.child(strip);
-        } else {
-            let g = guidance(
-                &snapshot.adapter.readiness,
-                snapshot.adapter.provider.is_some(),
+            .pt(px(10.))
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(
+                        text_style(div().flex_1().min_w_0(), TextStyle::Small)
+                            .text_color(if g.usable {
+                                theme.editor.text_2
+                            } else {
+                                theme.editor.accent
+                            })
+                            .child(g.headline.clone()),
+                    )
+                    .child(super::policy_badge(self.permission_policy)),
             );
-            if !g.usable || snapshot.rows.is_empty() {
-                top = top.child(
-                    self.section(&g.headline)
-                        .children(g.steps.iter().take(3).map(|s| self.line(s.clone()))),
-                );
-            }
-        }
+        let strip = self.status_strip(&snapshot, controls, cx);
+        let show_guidance = strip.is_none() && (!g.usable || snapshot.rows.is_empty());
+        top = top.children(strip);
+        let answering =
+            !snapshot.composer.questions.is_empty() || snapshot.resources.open_permissions > 0;
+        // An empty transcript (the setup guidance scrolls) needs no more room than one
+        // that gives way to an open question.
         let mut transcript = div()
             .flex_1()
-            .min_h(px(TRANSCRIPT_MIN_H))
+            .min_h(px(if answering || snapshot.rows.is_empty() {
+                TRANSCRIPT_MIN_ANSWERING_H
+            } else {
+                TRANSCRIPT_MIN_H
+            }))
             .flex()
             .flex_col()
             .gap(px(8.))
             .px(px(12.))
             .pt(px(8.));
+        if show_guidance {
+            transcript = transcript.child(
+                div()
+                    .id("agent-guidance")
+                    .flex_shrink(1.)
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(
+                        self.section(&g.headline)
+                            .children(g.steps.iter().take(3).map(|s| self.line(s.clone()))),
+                    ),
+            );
+        }
         if self.log_has_older() {
             let loading = self.page.loading.load(Ordering::Acquire);
             transcript = transcript.child(div().flex_none().child(self.action_button(
@@ -332,10 +365,13 @@ impl ConversationPanel {
             );
         }
         transcript = transcript.child(rows);
+        // A sidebar shorter than the transcript's minimum and the composer scrolls rather
+        // than cutting off Send.
         div()
+            .id("agent-chat")
             .flex_1()
             .min_h_0()
-            .overflow_hidden()
+            .overflow_y_scroll()
             .flex()
             .flex_col()
             .child(top)

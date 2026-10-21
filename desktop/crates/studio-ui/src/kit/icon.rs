@@ -49,6 +49,9 @@ pub enum Icon {
     ArrowLeft,
     Search,
     Trash,
+    Undo,
+    Redo,
+    Scissors,
     /// Windows caption glyphs, from Cap.
     CaptionMinimize,
     CaptionMaximize,
@@ -57,7 +60,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 46] = [
+    pub const ALL: [Icon; 49] = [
         Icon::Play,
         Icon::Pause,
         Icon::SkipBack,
@@ -100,6 +103,9 @@ impl Icon {
         Icon::ArrowLeft,
         Icon::Search,
         Icon::Trash,
+        Icon::Undo,
+        Icon::Redo,
+        Icon::Scissors,
         Icon::CaptionMinimize,
         Icon::CaptionMaximize,
         Icon::CaptionRestore,
@@ -151,6 +157,9 @@ impl Icon {
             Icon::ArrowLeft => "icons/arrow-left.svg",
             Icon::Search => "icons/search.svg",
             Icon::Trash => "icons/trash.svg",
+            Icon::Undo => "icons/undo-2.svg",
+            Icon::Redo => "icons/redo-2.svg",
+            Icon::Scissors => "icons/scissors.svg",
             Icon::CaptionMinimize => "icons/caption-minimize-windows.svg",
             Icon::CaptionMaximize => "icons/caption-maximize-windows.svg",
             Icon::CaptionRestore => "icons/caption-restore-windows.svg",

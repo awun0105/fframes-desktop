@@ -261,12 +261,14 @@ impl StudioShell {
             "resizing": self.resize.is_some(),
         });
         value["agent_column"] = serde_json::json!({
-            "width": self.agent_column_width(),
+            "width": self.sidebar_column_width(),
             "grip_bounds": self.agent_grip_bounds,
         });
-        value["drawer"] = serde_json::json!(self.drawer.map(|tab| format!("{tab:?}")));
+        // The selected sidebar tab.
+        value["drawer"] = self.sidebar_tab.name().into();
         value["viewport"] = serde_json::json!(self.viewport);
-        value["settings_open"] = self.settings_open.into();
+        value["settings_open"] = self.settings_window.is_some().into();
+        value["settings_page"] = format!("{:?}", self.settings_page).into();
         if let Some(review) = self.review_telemetry(cx) {
             value["review"] = review;
         }
@@ -304,8 +306,7 @@ impl StudioShell {
 
     fn snapshot(&self, cx: &gpui::App) -> serde_json::Value {
         let thumbnails = self.timeline.read(cx).qualification_metrics();
-        let mut buttons = serde_json::to_value(&self.button_bounds).expect("finite geometry");
-        buttons["timeline-fit"] = thumbnails["fit_bounds"].clone();
+        let buttons = serde_json::to_value(&self.button_bounds).expect("finite geometry");
         serde_json::json!({
             "pid": std::process::id(), "busy": self.busy,
             "onboarding": self.onboarding.as_ref().map(|o| o.step.name()),
@@ -361,6 +362,16 @@ impl StudioShell {
                             | "onboarding-back"
                             | "onboarding-next"
                             | "run-setup-again"
+                            | "open-presets"
+                            | "install"
+                            | "export"
+                            | "timeline-undo"
+                            | "timeline-redo"
+                            | "timeline-split"
+                            | "timeline-cycle"
+                            | "timeline-zoom-in"
+                            | "timeline-zoom-out"
+                            | "timeline-fit"
                     ) =>
             {
                 Some(name.to_string())

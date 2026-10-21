@@ -1,4 +1,5 @@
-//! The Project tab: review policy, Apply, Undo, accepted edits and recovery.
+//! The Project tab: the review policy (chosen in Settings → Agent), Apply, Undo, accepted
+//! edits and recovery.
 
 use super::*;
 
@@ -19,21 +20,13 @@ impl ConversationPanel {
             .gap(px(8.))
             .p(px(12.));
 
-        // Review policy: app-local, affects subsequent tasks only.
-        let policy = snapshot.review_policy;
-        let next = match policy {
-            ReviewPolicy::AutoApply => ReviewPolicy::ManualReview,
-            ReviewPolicy::ManualReview => ReviewPolicy::AutoApply,
-        };
-        let mut review = self.section("Review")
-            .child(label_text(match policy {
+        // Review policy: read here, chosen in Settings → Agent.
+        let mut review = self
+            .section("Review")
+            .child(label_text(match snapshot.review_policy {
                 ReviewPolicy::AutoApply => "Validated changes are applied automatically.",
                 ReviewPolicy::ManualReview => "Validated changes wait for your Apply or Discard.",
-            }))
-            .child(self.line(WorkflowSnapshot::REVIEW_POLICY_NOTICE))
-            .child(self.line(
-                "A change affects tasks started afterwards; a running task keeps the policy it started with.",
-            ));
+            }));
         if let Some(task) = snapshot.task.as_ref().filter(|t| !t.phase.is_terminal()) {
             review = review.child(self.line(format!(
                 "The running task uses: {}",
@@ -43,21 +36,7 @@ impl ConversationPanel {
                 }
             )));
         }
-        review = review.child(field_row(
-            &self.theme,
-            "Later tasks",
-            self.action_button(
-                "agent-policy",
-                match next {
-                    ReviewPolicy::AutoApply => "Apply automatically (later tasks)",
-                    ReviewPolicy::ManualReview => "Review before Apply (later tasks)",
-                },
-                true,
-                Tone::Normal,
-                cx,
-                |this, _, cx| this.toggle_review_policy(cx),
-            ),
-        ));
+        review = review.child(self.line("Change it in Settings → Agent."));
         column = column.child(review);
 
         // Undo and the accepted-awaiting-preview state.
@@ -158,7 +137,13 @@ impl ConversationPanel {
                     ),
                     _ => "The agent's working copy is retained.".to_owned(),
                 }));
-                section = section.child(self.line(draft.draft.display().to_string()));
+                section = section.child(
+                    self.line(
+                        studio_bootstrap::external_path(&draft.draft)
+                            .display()
+                            .to_string(),
+                    ),
+                );
                 if controls.acknowledge_writer_gone {
                     section = section
                         .child(self.line(

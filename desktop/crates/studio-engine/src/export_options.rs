@@ -85,12 +85,32 @@ pub fn estimate_bytes(
     (bits_per_second as f64 * seconds.max(0.) / 8.).round() as u64
 }
 
-/// `settings` when this worker can write them, the default otherwise: a saved choice may
-/// name a format a different SDK does not have.
+/// `settings` with what this worker or video cannot take replaced by the default, one
+/// choice at a time: a saved default may name a format a different SDK does not have, or a
+/// frame rate this video's does not divide into.
 pub fn usable_settings(
     settings: ExportSettings,
     capabilities: &ExportCapabilities,
 ) -> ExportSettings {
+    let default = ExportSettings::default();
+    let format = ExportFormat {
+        container: settings.container,
+        codec: settings.codec,
+    };
+    let (container, codec) = if capabilities.formats.contains(&format) {
+        (settings.container, settings.codec)
+    } else {
+        (default.container, default.codec)
+    };
+    let fps = settings
+        .fps
+        .filter(|fps| fps_options(capabilities.fps).contains(&Some(*fps)));
+    let settings = ExportSettings {
+        container,
+        codec,
+        fps,
+        ..settings
+    };
     if capabilities.accepts(&settings).is_ok() {
         settings
     } else {
@@ -211,6 +231,29 @@ mod tests {
             ..ExportSettings::default()
         };
         assert_eq!(usable_settings(half, &caps), half);
+    }
+
+    #[test]
+    fn each_choice_the_worker_or_video_cannot_take_falls_back_on_its_own() {
+        let saved = ExportSettings {
+            container: ExportContainer::Webm,
+            codec: ExportCodec::Vp9,
+            scale: 0.5,
+            fps: Some(30),
+        };
+        // No VP9 here and 25 fps does not divide into 30: the half size stays.
+        let usable = usable_settings(saved, &capabilities(25, &[FORMATS[0]]));
+        assert_eq!(
+            usable,
+            ExportSettings {
+                scale: 0.5,
+                ..ExportSettings::default()
+            }
+        );
+        // A 30 fps video already runs at 30: its own rate is the one offered.
+        let usable = usable_settings(saved, &capabilities(30, &FORMATS));
+        assert_eq!(usable, ExportSettings { fps: None, ..saved });
+        assert_eq!(usable_settings(saved, &capabilities(60, &FORMATS)), saved);
     }
 
     #[test]

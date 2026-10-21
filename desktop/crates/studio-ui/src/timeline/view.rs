@@ -27,11 +27,7 @@ use super::ruler::render_ruler;
 use super::segment::{lane_name, row_top, segment, track_row};
 use super::waveform::waveform_path;
 use crate::frame_image::create_render_image;
-use crate::kit::{
-    EditorButton, Icon, IconButton, IconButtonSize, Slider, SliderTrack, focus_ring, section_title,
-    selectable,
-};
-use crate::probe::BoundsProbe;
+use crate::kit::{Icon, focus_ring, selectable};
 
 /// The tracks' key context: the shell binds the timeline's keys in it.
 pub const KEY_CONTEXT: &str = "Timeline";
@@ -47,6 +43,22 @@ pub enum TimelineEvent {
     /// The thumbnails the visible track wants changed: scrolled, zoomed, resized, replaced
     /// or one arrived.
     ThumbnailsWanted,
+    /// What the timeline's controls in the transport and the header show changed.
+    Controls(TimelineControls),
+}
+
+/// The state of the timeline's controls, which the shell draws: zoom, Fit, Split and Cycle
+/// in the transport, undo and redo in the header.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TimelineControls {
+    /// A timeline with frames is shown: zoom, Fit and Cycle work.
+    pub enabled: bool,
+    /// The zoom as the slider's 0..=1 fraction, Fit to the closest zoom.
+    pub zoom_fraction: f32,
+    /// The timing document can be edited: Split works.
+    pub editable: bool,
+    pub can_undo: bool,
+    pub can_redo: bool,
 }
 
 pub struct TimelineView {
@@ -67,8 +79,8 @@ pub struct TimelineView {
     anchor: Instant,
     focus: FocusHandle,
     bounds: Option<Bounds<Pixels>>,
-    /// `[left, top, width, height]` of the Fit button, reported by its probe.
-    fit_bounds: Option<[f32; 4]>,
+    /// The controls state last reported with `TimelineEvent::Controls`.
+    controls: TimelineControls,
     minimap_bounds: Option<Bounds<Pixels>>,
     minimap_drag: Option<MinimapDrag>,
     drag: Option<(usize, bool)>,
@@ -100,7 +112,7 @@ impl TimelineView {
             anchor: Instant::now(),
             focus: cx.focus_handle().tab_stop(true),
             bounds: None,
-            fit_bounds: None,
+            controls: TimelineControls::default(),
             minimap_bounds: None,
             minimap_drag: None,
             drag: None,
@@ -287,7 +299,6 @@ impl TimelineView {
                 "total_frames": self.model.as_ref().map(|m| m.report().total_frames),
             },
             "ruler_bounds": self.bounds.map(ruler),
-            "fit_bounds": self.fit_bounds,
             "minimap_bounds": self.minimap_bounds.map(rect),
             "edit": self.edit_metrics(),
         })
@@ -484,33 +495,8 @@ impl TimelineView {
             cx.notify();
         }
     }
-    fn action(
-        entity: &gpui::Entity<Self>,
-        run: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static {
-        let entity = entity.clone();
-        move |_, _, cx| entity.update(cx, |view, cx| run(view, cx))
-    }
-
-    /// A small toolbar icon button: `label` names it, `tooltip` explains it.
-    fn icon_button(
-        theme: &Theme,
-        id: &'static str,
-        glyph: Icon,
-        label: &'static str,
-        tooltip: &'static str,
-        enabled: bool,
-        on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
-    ) -> IconButton {
-        IconButton::editor(theme, id, glyph.path())
-            .editor_size(IconButtonSize::Small)
-            .label(label)
-            .tooltip(theme, tooltip)
-            .disabled(!enabled)
-            .on_click(on_click)
-    }
     /// Zoom to the slider `fraction`, keeping the playhead where it is on screen.
-    fn set_zoom_fraction(&mut self, fraction: f32, cx: &mut Context<Self>) {
+    pub fn set_zoom_fraction(&mut self, fraction: f32, cx: &mut Context<Self>) {
         let target = fraction_to_zoom(fraction, self.fit_pixels_per_second());
         self.zoom(target / self.viewport.pixels_per_second(), cx);
     }
@@ -762,13 +748,6 @@ impl TimelineView {
         }
     }
 
-    /// Asks the engine to undo (`Undo`) or redo (`Redo`) the last timeline edit.
-    fn history(&mut self, command: TimelineCommand, cx: &mut Context<Self>) {
-        if self.edit.is_none() {
-            cx.emit(TimelineEvent::Edit(command));
-        }
-    }
-
     /// The edit state for the telemetry, with the window bounds of every clip's box.
     fn edit_metrics(&self) -> serde_json::Value {
         let state = self.edit_state();
@@ -821,6 +800,10 @@ impl TimelineView {
             .w(px(TRIM_HANDLE_W))
             .when(start, |handle| handle.left_0())
             .when(!start, |handle| handle.right_0())
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(div().w(px(2.)).h(px(16.)).rounded(px(1.)).bg(accent))
             .cursor(gpui::CursorStyle::ResizeLeftRight)
             .hover(move |handle| handle.bg(accent))
             .on_mouse_down(
@@ -833,21 +816,6 @@ impl TimelineView {
                 }),
             )
     }
-
-    /// A text button of the toolbar.
-    fn text_button(
-        theme: &Theme,
-        entity: &gpui::Entity<Self>,
-        id: &'static str,
-        label: &'static str,
-        enabled: bool,
-        run: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> EditorButton {
-        EditorButton::plain(theme, id)
-            .label(label)
-            .disabled(!enabled)
-            .on_click(Self::action(entity, run))
-    }
 }
 
 fn thumbnail_scale(model: &TimelineModel) -> f64 {
@@ -858,11 +826,6 @@ fn thumbnail_scale(model: &TimelineModel) -> f64 {
 
 /// The closest zoom (pixels per second); the transform clamps to it.
 const ZOOM_MAX: f64 = studio_engine::MAX_PIXELS_PER_SECOND;
-const ZOOM_SLIDER_W: f32 = 72.;
-const ZOOM_TRACK_H: f32 = 3.;
-const ZOOM_THUMB: f32 = 14.;
-const CARD_PAD: f32 = 11.;
-const CARD_PAD_TOP: f32 = 9.;
 /// The mix waveform keeps this much of its row free at the top.
 const WAVEFORM_PAD: f32 = 6.;
 /// Width of a clip's trim handles.
@@ -919,157 +882,67 @@ impl Render for TimelineView {
         let theme = Theme::for_window(window, cx);
         let colors = theme.editor;
         let metrics = METRICS;
-        let enabled = self
-            .model
-            .as_ref()
-            .is_some_and(|m| m.report().total_frames > 0);
-        let entity = cx.entity();
-        let zoom_fraction = zoom_to_fraction(
-            self.viewport.pixels_per_second(),
-            self.fit_pixels_per_second(),
-        );
-        let editable = self.edit_state().is_ok();
         let (can_undo, can_redo) = self
             .snapshot
             .as_ref()
             .map_or((false, false), |s| (s.can_undo, s.can_redo));
-        let mut controls = div().flex().items_center().gap(px(metrics.space_1));
-        if let Some(model) = &self.model {
+        let controls = TimelineControls {
+            enabled: self
+                .model
+                .as_ref()
+                .is_some_and(|m| m.report().total_frames > 0),
+            zoom_fraction: zoom_to_fraction(
+                self.viewport.pixels_per_second(),
+                self.fit_pixels_per_second(),
+            ),
+            editable: self.edit_state().is_ok(),
+            can_undo,
+            can_redo,
+        };
+        if controls != self.controls {
+            self.controls = controls;
+            cx.emit(TimelineEvent::Controls(controls));
+        }
+        let editable = controls.editable;
+        // The minimap sits at the end of the status line, under the tracks.
+        let minimap = self.model.as_ref().map(|model| {
             let weak = cx.entity().downgrade();
             let fps = model.report().fps as f64;
             let boundaries = self.clips.iter().map(|clip| clip.start as f64 / fps);
             let interactive = zoomed_in(&self.viewport, model);
-            controls = controls.child(
-                render_minimap(&theme, &self.viewport, model, boundaries, MINIMAP_MAX_WIDTH)
-                    .id("timeline-minimap")
-                    .relative()
-                    .mr(px(metrics.space_1))
-                    // It takes presses only while part of the video is hidden.
-                    .when(interactive, |minimap| {
-                        minimap.cursor(gpui::CursorStyle::OpenHand).on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|v, e, _, cx| v.minimap_down(e, cx)),
-                        )
-                    })
-                    .child(
-                        canvas(
-                            move |bounds, _, cx| {
-                                let _ =
-                                    weak.update(cx, |view, _| view.minimap_bounds = Some(bounds));
-                            },
-                            |_, _, _, _| {},
-                        )
-                        .absolute()
-                        .size_full(),
-                    ),
-            );
-        }
-        let toolbar = section_title(&theme, "Timeline").child(
-            controls
-                .child(Self::icon_button(
-                    &theme,
-                    "timeline-zoom-out",
-                    Icon::ZoomOut,
-                    "−",
-                    "Zoom out",
-                    enabled,
-                    Self::action(&entity, |v, cx| v.zoom(0.5, cx)),
-                ))
+            render_minimap(&theme, &self.viewport, model, boundaries, MINIMAP_MAX_WIDTH)
+                .id("timeline-minimap")
+                .relative()
+                .flex_none()
+                // It takes presses only while part of the video is hidden.
+                .when(interactive, |minimap| {
+                    minimap.cursor(gpui::CursorStyle::OpenHand).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|v, e, _, cx| v.minimap_down(e, cx)),
+                    )
+                })
                 .child(
-                    // The old slider's half-thumb inset, so the knob stays inside the 72px.
-                    div()
-                        .flex()
-                        .w(px(ZOOM_SLIDER_W))
-                        .px(px(ZOOM_THUMB / 2.))
-                        .child(
-                            Slider::new(
-                                "timeline-zoom-slider",
-                                zoom_fraction,
-                                SliderTrack::default(),
-                            )
-                            .flex()
-                            .track(px(ZOOM_TRACK_H), colors.ctl_active.into())
-                            .fill(colors.accent.into())
-                            .thumb(px(ZOOM_THUMB), colors.thumb.into(), None)
-                            .thumb_shadow()
-                            .label("Timeline zoom")
-                            .disabled(!enabled)
-                            .on_change(0., {
-                                let entity = entity.clone();
-                                move |fraction, _, cx| {
-                                    entity.update(cx, |v, cx| v.set_zoom_fraction(*fraction, cx));
-                                }
-                            }),
-                        ),
+                    canvas(
+                        move |bounds, _, cx| {
+                            let _ = weak.update(cx, |view, _| view.minimap_bounds = Some(bounds));
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
                 )
-                .child(Self::icon_button(
-                    &theme,
-                    "timeline-zoom-in",
-                    Icon::ZoomIn,
-                    "+",
-                    "Zoom in",
-                    enabled,
-                    Self::action(&entity, |v, cx| v.zoom(2., cx)),
-                ))
-                .child(
-                    EditorButton::plain(&theme, "timeline-fit")
-                        .label("Fit")
-                        .filled(&theme)
-                        .disabled(!enabled)
-                        .on_bounds(
-                            BoundsProbe::new({
-                                let entity = entity.clone();
-                                move |rect, cx| entity.update(cx, |v, _| v.fit_bounds = Some(rect))
-                            })
-                            .into_bounds_handler(),
-                        )
-                        .on_click(Self::action(&entity, |v, cx| v.fit(cx))),
-                )
-                .child(Self::text_button(
-                    &theme,
-                    &entity,
-                    "timeline-split",
-                    "Split",
-                    editable,
-                    |v, cx| v.split_at_playhead(cx),
-                ))
-                .child(Self::text_button(
-                    &theme,
-                    &entity,
-                    "timeline-undo",
-                    "Undo",
-                    editable && can_undo,
-                    |v, cx| v.history(TimelineCommand::Undo, cx),
-                ))
-                .child(Self::text_button(
-                    &theme,
-                    &entity,
-                    "timeline-redo",
-                    "Redo",
-                    editable && can_redo,
-                    |v, cx| v.history(TimelineCommand::Redo, cx),
-                ))
-                .child(Self::icon_button(
-                    &theme,
-                    "timeline-cycle",
-                    Icon::Layers,
-                    "Cycle scene (S)",
-                    "Cycle scene (S)",
-                    enabled,
-                    Self::action(&entity, |v, cx| v.cycle_scene(cx)),
-                )),
-        );
+        });
         let root = div()
             .flex()
             .flex_col()
-            .gap(px(metrics.space_1 + 2.))
+            .gap(px(metrics.track_gap))
             .min_w_0()
             .flex_shrink_0()
             .size_full()
-            .pl(px(CARD_PAD))
-            .pr(px(CARD_PAD))
-            .pt(px(CARD_PAD_TOP))
-            .pb(px(CARD_PAD))
+            .pl(px(metrics.timeline_pad_x))
+            .pr(px(metrics.timeline_pad_x))
+            .pt(px(metrics.timeline_pad_top))
+            .pb(px(metrics.timeline_pad_bottom))
             .on_mouse_move(cx.listener(|v, e, _, cx| v.minimap_move(e, cx)))
             .on_mouse_up(
                 MouseButton::Left,
@@ -1078,8 +951,7 @@ impl Render for TimelineView {
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|v, _, _, _| v.minimap_drag = None),
-            )
-            .child(toolbar);
+            );
         let Some(model) = &self.model else {
             self.painted_segments = 0;
             return root.child(
@@ -1199,6 +1071,7 @@ impl Render for TimelineView {
                 ((end - start) * pixels_per_second).max(1.) as f32,
                 view_width,
                 clip.label.clone(),
+                format!("{:.1}s", end - start),
             )
             .when(dragged.is_some() && dragged == clip.clip, |element| {
                 element.opacity(0.7)
@@ -1239,7 +1112,8 @@ impl Render for TimelineView {
                     rect.x as f32,
                     rect.width.max(1.) as f32,
                     view_width,
-                    format!("♫ {} · {:.3}s", audio.file, audio.start_seconds),
+                    audio.file.clone(),
+                    format!("at {:.3}s", audio.start_seconds),
                 )
                 .into_any_element(),
             );
@@ -1384,23 +1258,32 @@ impl Render for TimelineView {
                         .map_or(String::new(), |_| " · scene selected".into())
                 )
             });
+        let status = text_style(div(), TextStyle::Small)
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .text_color(colors.text_3)
+            .child(selectable(format!(
+                "{selected} · {}",
+                match (
+                    self.edit_state(),
+                    self.snapshot.as_ref().and_then(|s| s.notice.as_ref())
+                ) {
+                    (Err(reason), _) => reason,
+                    (Ok(_), Some(notice)) => notice.clone(),
+                    (Ok(_), None) =>
+                        "drag edges to trim, clips to reorder · C splits · Shift-drag for range"
+                            .into(),
+                }
+            )));
         root.child(tracks).child(thumbs).child(
-            text_style(div(), TextStyle::Small)
+            div()
+                .flex()
                 .flex_none()
-                .text_color(colors.text_3)
-                .child(selectable(format!(
-                    "{selected} · {}",
-                    match (
-                        self.edit_state(),
-                        self.snapshot.as_ref().and_then(|s| s.notice.as_ref())
-                    ) {
-                        (Err(reason), _) => reason,
-                        (Ok(_), Some(notice)) => notice.clone(),
-                        (Ok(_), None) =>
-                            "drag edges to trim, clips to reorder · C splits · Shift-drag for range"
-                                .into(),
-                    }
-                ))),
+                .items_center()
+                .gap(px(metrics.space_2))
+                .child(status)
+                .children(minimap),
         )
     }
 }

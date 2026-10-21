@@ -154,6 +154,8 @@ use crate::probe::BoundsProbe;
 const THOUGHT_HEADER_H: f32 = 20.;
 /// The least the transcript is given, however many cards wait above the composer.
 const TRANSCRIPT_MIN_H: f32 = 140.;
+/// The least while a question or permission card waits: the card needs the room more.
+const TRANSCRIPT_MIN_ANSWERING_H: f32 = 72.;
 /// Height of a one-line activity row (tool call, automatic answer) in the transcript.
 const ACTIVITY_ROW_H: f32 = 24.;
 /// Height of the header bar holding the tabs.
@@ -166,6 +168,33 @@ pub enum PanelEvent {
     Leave,
     /// The settings button: the shell opens the settings frame's Agent page.
     OpenSetup,
+    /// What waits for the user changed; the sidebar marks its Agent tab with it.
+    Attention(Attention),
+}
+
+/// What waits for the user in the panel, for the sidebar's Agent tab while another tab is
+/// selected.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Attention {
+    /// Permission cards that wait for an answer.
+    pub permissions: usize,
+    /// A permission card or a question waits, or a turn is running.
+    pub waiting: bool,
+}
+
+impl Attention {
+    fn of(snapshot: Option<&WorkflowSnapshot>) -> Self {
+        let Some(snapshot) = snapshot else {
+            return Self::default();
+        };
+        let permissions = snapshot.resources.open_permissions;
+        let running = snapshot.composer.turn_live
+            || snapshot.task.as_ref().is_some_and(|t| t.phase.stoppable());
+        Self {
+            permissions,
+            waiting: permissions > 0 || !snapshot.composer.questions.is_empty() || running,
+        }
+    }
 }
 
 impl EventEmitter<PanelEvent> for ConversationPanel {}
@@ -272,6 +301,8 @@ struct SetupForm {
 pub struct ConversationPanel {
     attached: Option<Attached>,
     snapshot: Option<Arc<WorkflowSnapshot>>,
+    /// The attention last reported to the shell.
+    attention: Attention,
     tab: Tab,
     /// The composer, the plan list and the session list.
     host: composer_host::ComposerHost,
@@ -380,6 +411,7 @@ impl ConversationPanel {
         Self {
             attached: None,
             snapshot: None,
+            attention: Attention::default(),
             tab: Tab::Chat,
             host: composer_host::ComposerHost::new(window, theme, sink, cx),
             theme,
@@ -470,7 +502,17 @@ impl ConversationPanel {
         self.saves.cancel();
         // Stops a running install and drops every in-flight scan, install and turn-on.
         self.agent_setup.reset();
+        self.report_attention(cx);
         cx.notify();
+    }
+
+    /// Tells the shell when what waits for the user changed.
+    fn report_attention(&mut self, cx: &mut Context<Self>) {
+        let attention = Attention::of(self.snapshot.as_deref());
+        if attention != self.attention {
+            self.attention = attention;
+            cx.emit(PanelEvent::Attention(attention));
+        }
     }
 
     /// Forgets every shown and paged-in row and the state keyed by their ids.
@@ -661,6 +703,7 @@ impl ConversationPanel {
             }
             self.snapshot = Some(snapshot);
             self.after_snapshot(cx);
+            self.report_attention(cx);
             changed = true;
         }
         changed |= self.sync_evidence_images();
@@ -767,8 +810,7 @@ fn probed_button(id: &ElementId) -> Option<&str> {
         ElementId::Name(name)
             if matches!(
                 name.as_ref(),
-                "agent-policy"
-                    | "agent-apply"
+                "agent-apply"
                     | "agent-undo"
                     | "agent-review-candidate"
                     | "agent-review-banner"
@@ -926,16 +968,12 @@ impl Render for ConversationPanel {
                 .into_any_element();
         };
         let controls = derive_controls(&snapshot, self.prompt_is_empty(cx), self.sdk_ready);
-        let g = guidance(
-            &snapshot.adapter.readiness,
-            snapshot.adapter.provider.is_some(),
-        );
         self.sync_config_menu();
         let rail = self
             .segment_rail()
             .child(self.tab_item(Tab::Chat, "Chat", cx))
             .child(self.tab_item(Tab::History, "History", cx))
-            .child(self.tab_item(Tab::Project, "Project", cx));
+            .child(self.tab_item(Tab::Project, "Changes", cx));
         let open_setup = self.icon_button(
             "agent-open-setup",
             Icon::Settings,
@@ -973,39 +1011,19 @@ impl Render for ConversationPanel {
                     .flex()
                     .items_center()
                     .justify_between()
+                    .gap(px(4.))
                     .px(px(12.))
-                    .child(
-                        text_style(div(), TextStyle::Title)
-                            .text_color(theme.editor.text_1)
-                            .child(selectable("Agent")),
-                    )
+                    // The sidebar's Agent tab names the panel, so the row holds the
+                    // sub-tabs and the panel's own buttons.
+                    .child(rail)
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(4.))
                             .child(new_chat)
-                            .child(open_setup)
-                            .child(rail),
+                            .child(open_setup),
                     ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .px(px(12.))
-                    .pb(px(8.))
-                    .child(
-                        text_style(div().flex_1().min_w_0(), TextStyle::Small)
-                            .text_color(if g.usable {
-                                theme.editor.text_2
-                            } else {
-                                theme.editor.accent
-                            })
-                            .child(g.headline.clone()),
-                    )
-                    .child(policy_badge(self.permission_policy)),
             );
         if let Some(notice) = self.notice.clone() {
             header = header.child(
@@ -1050,9 +1068,9 @@ mod presentation_tests {
     use super::*;
 
     #[test]
-    fn only_policy_and_apply_report_bounds() {
+    fn only_the_listed_buttons_report_bounds() {
         assert_eq!(probed_button(&"agent-apply".into()), Some("agent-apply"));
-        assert_eq!(probed_button(&"agent-policy".into()), Some("agent-policy"));
+        assert_eq!(probed_button(&"agent-policy".into()), None);
         assert_eq!(probed_button(&"agent-undo".into()), Some("agent-undo"));
         assert_eq!(
             probed_button(&"agent-tab-Project".into()),

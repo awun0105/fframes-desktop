@@ -601,6 +601,18 @@ impl IconButton {
         self
     }
 
+    /// The transport's play button: a `card` glyph on a `text-1` disc.
+    pub fn inverted(mut self, theme: &Theme) -> Self {
+        let glyph = Hsla::from(theme.editor.card);
+        self.bg = Some(Hsla::from(theme.editor.text_1));
+        self.hover_bg = Some(Hsla::from(theme.editor.text_2));
+        self.active_bg = None;
+        self.idle = glyph;
+        self.active_color = glyph;
+        self.hover_color = Some(glyph);
+        self
+    }
+
     /// A neutral control with the subtle `ctl` fill at rest.
     pub fn ctl_fill(mut self, theme: &Theme) -> Self {
         self.bg = Some(Hsla::from(theme.editor.ctl));

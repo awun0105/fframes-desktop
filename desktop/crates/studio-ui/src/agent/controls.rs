@@ -487,7 +487,12 @@ pub fn identity_lines(task: &TaskView) -> Vec<(&'static str, String)> {
             ),
         ),
         ("Base", task.source_base.clone()),
-        ("Working copy", task.draft.display().to_string()),
+        (
+            "Working copy",
+            studio_bootstrap::external_path(&task.draft)
+                .display()
+                .to_string(),
+        ),
         (
             "Review",
             match task.review_policy {

@@ -13,7 +13,7 @@ pub const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 
 /// Corrective diagnostics retain a native filename and a portable field name.
 #[derive(Debug, thiserror::Error)]
-#[error("{file}: {field}: {reason}; {action}")]
+#[error("{}: {field}: {reason}; {action}", studio_bootstrap::external_path(.file).display())]
 pub struct ProjectError {
     pub file: PathBuf,
     pub field: String,

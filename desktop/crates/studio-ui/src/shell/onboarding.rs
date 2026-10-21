@@ -104,6 +104,7 @@ impl StudioShell {
         let settings = AppSettings::load(&paths);
         self.permission_policy = settings.permission_policy;
         self.onboarding_completed = settings.onboarding_completed;
+        self.update_check_disabled = settings.update_check_disabled;
         let agent_selected = studio_engine::providers::host::load_settings(&paths)
             .ok()
             .flatten()
@@ -323,7 +324,7 @@ impl StudioShell {
                         muted(
                             &theme,
                             "Without the SDK, Studio cannot build previews or export. You can \
-                             install it later from Project → Managed SDK.",
+                             install it later from Settings → SDK.",
                         )
                         .into_any_element(),
                     );
@@ -342,7 +343,11 @@ impl StudioShell {
                         0,
                         muted(
                             &theme,
-                            format!("Open: {} · {}", project.name, project.root.display()),
+                            format!(
+                                "Open: {} · {}",
+                                project.name,
+                                studio_bootstrap::external_path(&project.root).display()
+                            ),
                         )
                         .into_any_element(),
                     );

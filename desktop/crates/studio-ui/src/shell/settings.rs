@@ -1,20 +1,38 @@
-//! The settings frame, shown in the window in place of the editor (Cap opens a second
-//! window). The header's Settings button opens it and its Back row returns to the editor.
-//! The Appearance page picks the theme and saves it with the app's settings; the Agent
-//! page is the agent panel's adapter setup.
+//! The settings frame, shown in a window of its own as in Cap
+//! ([`SettingsWindow`](super::settings_window::SettingsWindow)) while the editor stays as it
+//! was. The header's Settings button opens the window or brings it to the front. The
+//! General page holds the theme, the audio output, setup again and updates; the Agent page
+//! the review policy, the permissions and the agent panel's adapter setup; the SDK page the
+//! managed SDK; the Presets page the project's style presets; the Export page the defaults
+//! every export starts from.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use gpui::{Context, IntoElement, ParentElement, Styled, div, px};
-use studio_engine::app_settings::AppSettings;
+use fframes_studio_protocol::export::ExportSettings;
+use gpui::{Context, IntoElement, ParentElement, SharedString, Styled, div, px};
+use studio_engine::export_options::{FORMATS, REDUCED_FPS, SCALES, format_label};
+use studio_engine::services::audio_service::OutputDevice;
+use studio_engine::{ReviewPolicy, app_settings::AppSettings, updates::AvailableUpdate};
 use studio_proto::AppTheme;
+use studio_theme::Theme;
 
 use super::StudioShell;
 use super::sections::box_probe;
+use super::settings_window::{self, SettingsWindow};
 use crate::kit::{
     Card, Icon, Section, SegmentOption, SegmentedControl, SettingRow, SettingsFrame,
-    SettingsNavItem,
+    SettingsNavItem, Toggle,
 };
+
+/// The check for a newer Studio release.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum UpdateCheck {
+    NotChecked,
+    Checking,
+    UpToDate,
+    Available(AvailableUpdate),
+    Failed(String),
+}
 
 /// The choices in the order the control shows them; option `i` is `theme-i`.
 const THEMES: [(AppTheme, &str); 3] = [
@@ -27,24 +45,38 @@ const THEMES: [(AppTheme, &str); 3] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(super) enum SettingsPage {
     #[default]
-    Appearance,
+    General,
     Agent,
+    Sdk,
+    Presets,
+    Export,
 }
 
 impl SettingsPage {
-    const ALL: [SettingsPage; 2] = [SettingsPage::Appearance, SettingsPage::Agent];
+    const ALL: [SettingsPage; 5] = [
+        SettingsPage::General,
+        SettingsPage::Agent,
+        SettingsPage::Sdk,
+        SettingsPage::Presets,
+        SettingsPage::Export,
+    ];
 
     fn nav_item(self, selected: bool) -> SettingsNavItem {
-        match self {
-            SettingsPage::Appearance => {
-                SettingsNavItem::new("settings-appearance", "Appearance", Icon::Palette, selected)
-            }
-            SettingsPage::Agent => {
-                SettingsNavItem::new("settings-agent", "Agent", Icon::Bot, selected)
-            }
-        }
+        let (id, label, icon) = match self {
+            SettingsPage::General => ("settings-general", "General", Icon::Settings),
+            SettingsPage::Agent => ("settings-agent", "Agent", Icon::Bot),
+            SettingsPage::Sdk => ("settings-sdk", "SDK", Icon::Package),
+            SettingsPage::Presets => ("settings-presets", "Presets", Icon::Palette),
+            SettingsPage::Export => ("settings-export", "Export", Icon::Download),
+        };
+        SettingsNavItem::new(id, label, icon, selected)
     }
 }
+
+/// The frame rates Settings → Export offers as the default: the video's own, or 30 where
+/// it divides the video's.
+const DEFAULT_FPS: [(Option<u32>, &str); 2] =
+    [(None, "The video's own"), (Some(REDUCED_FPS), "30 fps")];
 
 /// Saves the theme choices one at a time, in the order they were made: a save that a
 /// later choice overtook is skipped.
@@ -53,6 +85,7 @@ pub(super) struct SettingsWriter {
     latest: AtomicU64,
     latest_export: AtomicU64,
     latest_setup: AtomicU64,
+    latest_update_check: AtomicU64,
     write: parking_lot::Mutex<()>,
 }
 
@@ -77,27 +110,60 @@ impl SettingsWriter {
 }
 
 impl StudioShell {
-    /// Shows the settings frame. The editor is out of view while it shows, so playback
-    /// stops and a timeline resize in progress ends.
+    /// Opens the settings window, or brings it to the front when it is open. Not while the
+    /// setup shows: it draws the Agent page's panel too.
     pub(super) fn open_settings(&mut self, cx: &mut Context<Self>) {
-        self.resume_install = false;
-        self.pause_at_painted_frame(cx);
-        self.resize = None;
+        if self.onboarding.is_some() {
+            return;
+        }
         self.overflow_open = false;
-        self.export_panel.open = false;
-        self.settings_open = true;
+        // The Export page shows them; a render cannot read the file.
+        self.export_defaults();
+        if let Some(window) = self.settings_window {
+            // After this update too: activating fires the platform's focus callbacks.
+            cx.defer(move |cx| settings_window::activate(window.into(), cx));
+            cx.notify();
+            return;
+        }
+        // After this update: a new window draws at once, and its pages update the shell.
+        let shell = cx.entity();
+        cx.defer(move |cx| {
+            if shell.read(cx).settings_window.is_some() {
+                return;
+            }
+            let window = SettingsWindow::open(shell.clone(), cx);
+            shell.update(cx, |shell, cx| {
+                if window.is_none() {
+                    shell.error = Some("Cannot open the settings window".into());
+                }
+                shell.settings_window = window;
+                cx.notify();
+            });
+        });
         cx.notify();
     }
 
-    /// Opens the settings frame on the Agent page.
-    pub(super) fn open_agent_setup(&mut self, cx: &mut Context<Self>) {
-        self.settings_page = SettingsPage::Agent;
+    /// Opens the settings window on `page`.
+    pub(super) fn open_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {
+        self.settings_page = page;
         self.open_settings(cx);
     }
 
+    /// Opens the settings window on the Agent page.
+    pub(super) fn open_agent_setup(&mut self, cx: &mut Context<Self>) {
+        self.open_settings_page(SettingsPage::Agent, cx);
+    }
+
     pub(super) fn close_settings(&mut self, cx: &mut Context<Self>) {
-        self.settings_open = false;
+        if let Some(window) = self.settings_window.take() {
+            settings_window::close(window.into(), cx);
+        }
         cx.notify();
+    }
+
+    /// The settings window, while it is open.
+    pub fn settings_window(&self) -> Option<gpui::AnyWindowHandle> {
+        self.settings_window.map(Into::into)
     }
 
     /// Applies `choice` to every window and saves it in the background.
@@ -163,15 +229,156 @@ impl StudioShell {
         .detach();
     }
 
-    pub(super) fn render_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    /// Asks GitHub for a newer Studio in the background; the answer shows on the
+    /// General page and, when there is one, as a notice under the header.
+    pub fn check_for_update(&mut self, cx: &mut Context<Self>) {
+        if self.update == UpdateCheck::Checking {
+            return;
+        }
+        self.update = UpdateCheck::Checking;
+        self.update_dismissed = false;
+        cx.notify();
+        let version = self.app_version;
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { studio_engine::updates::check_for_update(version) })
+                .await;
+            let _ = this.update(cx, |shell, cx| {
+                shell.update = match result {
+                    Ok(Some(update)) => UpdateCheck::Available(update),
+                    Ok(None) => UpdateCheck::UpToDate,
+                    Err(error) => UpdateCheck::Failed(error),
+                };
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Turns the launch check on or off and saves it in the background.
+    fn set_update_check(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.update_check_disabled = !enabled;
+        cx.notify();
+        let Some(paths) = self.presentation.paths.clone() else {
+            self.error = Some("Cannot save the setting: the app's storage is unavailable".into());
+            return;
+        };
+        let disabled = self.update_check_disabled;
+        let writer = self.settings_writer.clone();
+        let generation = writer.latest_update_check.fetch_add(1, Ordering::AcqRel) + 1;
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let _write = writer.write.lock();
+                    if writer.latest_update_check.load(Ordering::Acquire) != generation {
+                        return Ok(());
+                    }
+                    let mut settings = AppSettings::load(&paths);
+                    settings.update_check_disabled = disabled;
+                    settings.save(&paths)
+                })
+                .await;
+            if let Err(error) = result {
+                let _ = this.update(cx, |shell, cx| {
+                    shell.error = Some(error);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// The Updates section: the launch check, its answer, Check now and Download.
+    fn render_updates(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
+        let entity = cx.entity();
+        let toggle = Toggle::settings(&theme, "update-check", !self.update_check_disabled)
+            .label("Check for updates at launch")
+            .on_change(move |enabled, _, cx| {
+                entity.update(cx, |shell, cx| shell.set_update_check(enabled, cx))
+            });
+        let status = match &self.update {
+            UpdateCheck::NotChecked => "Not checked yet".to_owned(),
+            UpdateCheck::Checking => "Checking…".to_owned(),
+            UpdateCheck::UpToDate => format!("fframes Studio {} is the latest", self.app_version),
+            UpdateCheck::Available(update) => format!(
+                "fframes Studio {} is available (this is {})",
+                update.version, self.app_version
+            ),
+            UpdateCheck::Failed(error) => error.clone(),
+        };
+        let mut actions = div().flex().gap(px(8.)).child(self.action_button(
+            "check-update",
+            "Check now",
+            self.update != UpdateCheck::Checking,
+            false,
+            None,
+            cx,
+            |shell, cx| shell.check_for_update(cx),
+        ));
+        if let UpdateCheck::Available(update) = &self.update {
+            actions = actions.child(self.download_update_button(update.url.clone(), cx));
+        }
+        Section::settings(
+            &theme,
+            "Updates",
+            Some("Studio asks GitHub for a newer release. Nothing is downloaded or installed without you."),
+            None,
+            vec![
+                Card::settings_rows(
+                    &theme,
+                    vec![
+                        SettingRow::settings(
+                            &theme,
+                            "Check for updates at launch",
+                            None,
+                            toggle.into_any_element(),
+                        )
+                        .into_any_element(),
+                        SettingRow::settings(&theme, status, None, actions.into_any_element())
+                            .into_any_element(),
+                    ],
+                )
+                .into_any_element(),
+            ],
+        )
+        .into_any_element()
+    }
+
+    /// Opens the release page of `url`, where the installer and the notes are.
+    pub(super) fn download_update_button(
+        &self,
+        url: String,
+        cx: &mut Context<Self>,
+    ) -> crate::kit::EditorButton {
+        self.action_button(
+            "download-update",
+            "Download…",
+            true,
+            true,
+            None,
+            cx,
+            move |_, cx| cx.open_url(&url),
+        )
+    }
+
+    /// The settings window's frame, with `nav_header` above the nav rows.
+    pub(super) fn render_settings(
+        &self,
+        nav_header: Option<gpui::AnyElement>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let theme = self.theme;
         let entity = cx.entity();
         let page = match self.settings_page {
-            SettingsPage::Appearance => div()
+            SettingsPage::General => div()
                 .flex()
                 .flex_col()
                 .gap(px(28.))
                 .child(self.render_appearance(cx))
+                .child(self.render_audio_output(cx))
                 .child(Section::settings(
                     &theme,
                     "Setup",
@@ -190,12 +397,14 @@ impl StudioShell {
                         .into_any_element(),
                     ],
                 ))
+                .child(self.render_updates(cx))
                 .into_any_element(),
+            // The two short choices first: the provider setup below them runs long.
             SettingsPage::Agent => div()
                 .flex()
                 .flex_col()
                 .gap(px(28.))
-                .child(self.setup_page.clone())
+                .child(self.render_review_policy(cx))
                 .child(Section::settings(
                     &theme,
                     "Permissions",
@@ -207,9 +416,20 @@ impl StudioShell {
                         cx,
                     )],
                 ))
+                .child(self.setup_page.clone())
                 .into_any_element(),
+            SettingsPage::Sdk => Section::settings(
+                &theme,
+                "Managed SDK",
+                Some("Studio builds previews and exports with this SDK. Selecting an installed one applies to the open project."),
+                None,
+                vec![self.sdk_controls(cx).into_any_element()],
+            )
+            .into_any_element(),
+            SettingsPage::Presets => self.preset_panel.clone().into_any_element(),
+            SettingsPage::Export => self.render_export_defaults(cx),
         };
-        let mut frame = SettingsFrame::settings(
+        let frame = SettingsFrame::settings(
             &theme,
             "settings",
             SettingsPage::ALL
@@ -228,52 +448,315 @@ impl StudioShell {
                 }
             }
         })
-        .on_back({
-            let entity = entity.clone();
-            move |_, cx| entity.update(cx, |shell, cx| shell.close_settings(cx))
-        })
+        .nav_header(nav_header)
         .children([page]);
-        if let Some(probe) = self.bounds_probe(&gpui::ElementId::Name("settings-back".into()), cx) {
-            frame = frame.on_back_bounds(probe.into_bounds_handler());
-        }
-        Card::editor(&theme)
+        let frame = if self.qualifying {
+            frame.on_item_bounds(move |index, bounds, cx| {
+                if let Some(page) = SettingsPage::ALL.get(index) {
+                    entity.update(cx, |shell, _| {
+                        shell.button_bounds.insert(
+                            page.nav_item(false).id.to_string(),
+                            crate::probe::bounds_to_record(bounds),
+                        );
+                    });
+                }
+            })
+        } else {
+            frame
+        };
+        div()
             .relative()
-            .flex_1()
-            .min_h_0()
-            .overflow_hidden()
+            .size_full()
             .child(frame)
             .child(box_probe("settings", cx))
             .into_any_element()
     }
 
-    /// The Appearance page: the theme.
-    pub(super) fn render_appearance(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme = self.theme;
-        let current = studio_theme::current_preference(cx);
+    /// A settings segmented control whose option `i` reports its bounds as `{id}-{i}`, and
+    /// whose clicks call `on_select` with the option's index.
+    fn settings_segments(
+        &self,
+        id: &'static str,
+        options: Vec<SegmentOption>,
+        on_select: impl Fn(&mut Self, usize, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let entity = cx.entity();
-        let options = THEMES
-            .iter()
-            .map(|(value, label)| SegmentOption::new(*label, *value == current))
-            .collect();
-        let mut control = SegmentedControl::settings(&theme, "theme", options).on_select({
+        let mut control = SegmentedControl::settings(&self.theme, id, options).on_select({
             let entity = entity.clone();
-            move |index, _, cx| {
-                if let Some((choice, _)) = THEMES.get(*index) {
-                    entity.update(cx, |shell, cx| shell.choose_theme(*choice, cx));
-                }
-            }
+            move |index, _, cx| entity.update(cx, |shell, cx| on_select(shell, *index, cx))
         });
         if self.qualifying {
-            let shell = entity.clone();
             control = control.on_option_bounds(move |index, bounds, cx| {
-                shell.update(cx, |shell, _| {
+                entity.update(cx, |shell, _| {
                     shell.button_bounds.insert(
-                        format!("theme-{index}"),
+                        format!("{id}-{index}"),
                         crate::probe::bounds_to_record(bounds),
                     );
                 });
             });
         }
+        control.into_any_element()
+    }
+
+    /// The General page's Audio output: the device the preview plays on and the choice of
+    /// another, of the default again, or of none.
+    fn render_audio_output(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
+        // The device opens with the preview's audio.
+        let ready = self.displayed.is_some();
+        let actions = div()
+            .flex()
+            .flex_wrap()
+            .gap(px(8.))
+            .child(self.action_button(
+                "next-audio-output",
+                "Next output",
+                ready,
+                false,
+                None,
+                cx,
+                |s, cx| s.cycle_output(cx),
+            ))
+            .child(self.action_button(
+                "retry-audio-output",
+                "Retry audio",
+                ready,
+                false,
+                None,
+                cx,
+                |s, cx| s.change_output(OutputDevice::Default, cx),
+            ))
+            .child(self.action_button(
+                "no-audio-output",
+                "No audio",
+                ready,
+                false,
+                None,
+                cx,
+                |s, cx| s.change_output(OutputDevice::Unavailable, cx),
+            ));
+        Section::settings(
+            &theme,
+            "Audio output",
+            Some("Where the preview plays its sound. Retry audio goes back to the system's default device."),
+            None,
+            vec![
+                Card::settings_rows(
+                    &theme,
+                    vec![
+                        SettingRow::settings(
+                            &theme,
+                            if ready {
+                                self.audio_status()
+                            } else {
+                                "Open a preview to choose its output".to_owned()
+                            },
+                            None,
+                            actions.into_any_element(),
+                        )
+                        .into_any_element(),
+                    ],
+                )
+                .into_any_element(),
+            ],
+        )
+        .into_any_element()
+    }
+
+    /// The Agent page's Review: whether later tasks apply validated changes themselves or
+    /// wait for Apply.
+    fn render_review_policy(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
+        let mut children = Vec::new();
+        match self.panel.read(cx).review_policy() {
+            None => children.push(
+                settings_note(
+                    &theme,
+                    "Open a project to choose how its agent's changes are applied.",
+                )
+                .into_any_element(),
+            ),
+            Some((current, running)) => {
+                let options = REVIEW_POLICIES
+                    .iter()
+                    .map(|(policy, label)| SegmentOption::new(*label, *policy == current))
+                    .collect();
+                let control = self.settings_segments(
+                    "review-policy",
+                    options,
+                    |shell, index, cx| {
+                        if let Some((policy, _)) = REVIEW_POLICIES.get(index) {
+                            shell
+                                .panel
+                                .update(cx, |panel, cx| panel.set_review_policy(*policy, cx));
+                        }
+                    },
+                    cx,
+                );
+                let mut rows = vec![
+                    SettingRow::settings(
+                        &theme,
+                        "Validated changes",
+                        Some(ReviewPolicy::SCOPE_NOTICE),
+                        control,
+                    )
+                    .into_any_element(),
+                ];
+                if let Some(running) = running {
+                    rows.push(
+                        SettingRow::settings(
+                            &theme,
+                            "The running task keeps",
+                            None,
+                            settings_note(&theme, review_label(running)).into_any_element(),
+                        )
+                        .into_any_element(),
+                    );
+                }
+                children.push(Card::settings_rows(&theme, rows).into_any_element());
+            }
+        }
+        Section::settings(
+            &theme,
+            "Review",
+            Some("A change applies to tasks started afterwards."),
+            None,
+            children,
+        )
+        .into_any_element()
+    }
+
+    /// The Export page: the format, size and frame rate every export starts from. The
+    /// export panel can change them for one export; what a project's SDK or video cannot
+    /// take falls back to the default there.
+    fn render_export_defaults(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
+        let defaults = self.export_panel.saved.unwrap_or_default();
+        let format = self.settings_segments(
+            "default-format",
+            FORMATS
+                .iter()
+                .map(|format| {
+                    SegmentOption::new(
+                        format_label(*format),
+                        format.container == defaults.container && format.codec == defaults.codec,
+                    )
+                })
+                .collect(),
+            move |shell, index, cx| {
+                if let Some(format) = FORMATS.get(index) {
+                    shell.choose_export_defaults(
+                        ExportSettings {
+                            container: format.container,
+                            codec: format.codec,
+                            ..defaults
+                        },
+                        cx,
+                    );
+                }
+            },
+            cx,
+        );
+        let size = self.settings_segments(
+            "default-scale",
+            SCALES
+                .iter()
+                .map(|scale| {
+                    SegmentOption::new(
+                        format!("{}%", (scale * 100.).round() as u32),
+                        defaults.scale == *scale,
+                    )
+                })
+                .collect(),
+            move |shell, index, cx| {
+                if let Some(scale) = SCALES.get(index) {
+                    shell.choose_export_defaults(
+                        ExportSettings {
+                            scale: *scale,
+                            ..defaults
+                        },
+                        cx,
+                    );
+                }
+            },
+            cx,
+        );
+        let fps = self.settings_segments(
+            "default-fps",
+            DEFAULT_FPS
+                .iter()
+                .map(|(fps, label)| SegmentOption::new(*label, defaults.fps == *fps))
+                .collect(),
+            move |shell, index, cx| {
+                if let Some((fps, _)) = DEFAULT_FPS.get(index) {
+                    shell.choose_export_defaults(
+                        ExportSettings {
+                            fps: *fps,
+                            ..defaults
+                        },
+                        cx,
+                    );
+                }
+            },
+            cx,
+        );
+        Section::settings(
+            &theme,
+            "Export defaults",
+            Some("Every export starts with these. The export panel changes them for that export only."),
+            None,
+            vec![
+                Card::settings_rows(
+                    &theme,
+                    vec![
+                        SettingRow::settings(
+                            &theme,
+                            "Format",
+                            Some("When the project's SDK lacks it, MP4 · MPEG-4 is used."),
+                            format,
+                        )
+                        .into_any_element(),
+                        SettingRow::settings(
+                            &theme,
+                            "Size",
+                            Some("Half size renders faster and makes a smaller file."),
+                            size,
+                        )
+                        .into_any_element(),
+                        SettingRow::settings(
+                            &theme,
+                            "Frame rate",
+                            Some("30 fps applies where it divides the video's rate."),
+                            fps,
+                        )
+                        .into_any_element(),
+                    ],
+                )
+                .into_any_element(),
+            ],
+        )
+        .into_any_element()
+    }
+
+    /// The General page's Appearance: the theme.
+    pub(super) fn render_appearance(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
+        let current = studio_theme::current_preference(cx);
+        let options = THEMES
+            .iter()
+            .map(|(value, label)| SegmentOption::new(*label, *value == current))
+            .collect();
+        let control = self.settings_segments(
+            "theme",
+            options,
+            |shell, index, cx| {
+                if let Some((choice, _)) = THEMES.get(index) {
+                    shell.choose_theme(*choice, cx);
+                }
+            },
+            cx,
+        );
         Section::settings(
             &theme,
             "Appearance",
@@ -292,6 +775,27 @@ impl StudioShell {
         )
         .into_any_element()
     }
+}
+
+/// The review policies in the order the control shows them.
+const REVIEW_POLICIES: [(ReviewPolicy, &str); 2] = [
+    (ReviewPolicy::AutoApply, "Apply automatically"),
+    (ReviewPolicy::ManualReview, "Review before Apply"),
+];
+
+fn review_label(policy: ReviewPolicy) -> &'static str {
+    match policy {
+        ReviewPolicy::AutoApply => "Automatic Apply",
+        ReviewPolicy::ManualReview => "Review before Apply",
+    }
+}
+
+/// A line of the settings window's muted text.
+fn settings_note(theme: &Theme, text: impl Into<SharedString>) -> gpui::Div {
+    div()
+        .text_size(px(13.))
+        .text_color(theme.settings_muted())
+        .child(text.into())
 }
 
 /// Writes `choice` into the app's settings unless a later choice was made meanwhile.
@@ -326,13 +830,22 @@ mod tests {
     }
 
     #[test]
-    fn the_pages_are_appearance_then_agent() {
+    fn the_pages_are_general_agent_sdk_presets_and_export() {
         let ids: Vec<_> = SettingsPage::ALL
             .iter()
             .map(|page| page.nav_item(false).id)
             .collect();
-        assert_eq!(ids, ["settings-appearance", "settings-agent"]);
-        assert_eq!(SettingsPage::default(), SettingsPage::Appearance);
+        assert_eq!(
+            ids,
+            [
+                "settings-general",
+                "settings-agent",
+                "settings-sdk",
+                "settings-presets",
+                "settings-export"
+            ]
+        );
+        assert_eq!(SettingsPage::default(), SettingsPage::General);
     }
 
     #[test]

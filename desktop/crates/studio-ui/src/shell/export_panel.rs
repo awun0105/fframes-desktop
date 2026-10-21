@@ -1,5 +1,6 @@
 //! The export panel in the shell: opening it, asking the open project's worker what it can
-//! export, keeping the user's choice and starting the export with it.
+//! export, starting from the defaults of Settings → Export, and starting the export with
+//! the choice made for it.
 
 use std::sync::atomic::Ordering;
 
@@ -17,8 +18,10 @@ use crate::export::settings::ExportSupport;
 #[derive(Default)]
 pub(super) struct ExportPanelState {
     pub open: bool,
-    /// The saved choice, read when the panel first opens.
+    /// The defaults saved in Settings → Export, read when first needed.
     pub saved: Option<ExportSettings>,
+    /// This export's choice: the defaults each time the panel opens.
+    pub choice: Option<ExportSettings>,
     pub support: ExportSupport,
     /// The session and accepted revision `support` answers for.
     probe_key: Option<(u64, String)>,
@@ -41,18 +44,8 @@ impl StudioShell {
         self.pause_at_painted_frame(cx);
         self.resize = None;
         self.overflow_open = false;
-        self.settings_open = false;
         self.export_panel.open = true;
-        if self.export_panel.saved.is_none() {
-            self.export_panel.saved = Some(
-                self.presentation
-                    .paths
-                    .as_ref()
-                    .map(AppSettings::load)
-                    .unwrap_or_default()
-                    .export,
-            );
-        }
+        self.export_panel.choice = Some(self.export_defaults());
         self.sync_export_support(cx);
         cx.notify();
     }
@@ -66,7 +59,7 @@ impl StudioShell {
     pub(super) fn export_settings(&self) -> ExportSettings {
         self.export_panel
             .support
-            .settings_for(self.export_panel.saved.unwrap_or_default())
+            .settings_for(self.export_panel.choice.unwrap_or_default())
     }
 
     /// Asks for the destination of an export with the panel's settings, once the options
@@ -145,8 +138,30 @@ impl StudioShell {
         .detach();
     }
 
-    /// Keeps `settings` as the choice for every project and saves it in the background.
+    /// The export defaults, loaded from the app's settings the first time.
+    pub(super) fn export_defaults(&mut self) -> ExportSettings {
+        *self.export_panel.saved.get_or_insert_with(|| {
+            self.presentation
+                .paths
+                .as_ref()
+                .map(AppSettings::load)
+                .unwrap_or_default()
+                .export
+        })
+    }
+
+    /// Keeps `settings` for this export only.
     fn choose_export_settings(&mut self, settings: ExportSettings, cx: &mut Context<Self>) {
+        self.export_panel.choice = Some(settings);
+        cx.notify();
+    }
+
+    /// Keeps `settings` as the default of every export and saves it in the background.
+    pub(super) fn choose_export_defaults(
+        &mut self,
+        settings: ExportSettings,
+        cx: &mut Context<Self>,
+    ) {
         if self.export_panel.saved == Some(settings) {
             return;
         }
@@ -154,7 +169,7 @@ impl StudioShell {
         cx.notify();
         let Some(paths) = self.presentation.paths.clone() else {
             self.error =
-                Some("Cannot save the export choice: the app's storage is unavailable".into());
+                Some("Cannot save the export defaults: the app's storage is unavailable".into());
             return;
         };
         let writer = self.settings_writer.clone();

@@ -519,6 +519,28 @@ impl Controller {
         record.sdk_path = Some(path);
         self.persist(record)
     }
+    /// Pins the project to another SDK by rewriting `studio.json`'s SDK pin, the way the
+    /// preset reference is written. The project then builds against that SDK's framework
+    /// crates; source that does not compile with them reports it at the next build. A
+    /// manual SDK selection is dropped, so the build picks the installed SDK of the pin.
+    pub fn repin_sdk(&mut self, sdk: studio_project::manifest::SdkPin) -> Result<(), EngineError> {
+        self.ensure_mutable()?;
+        if self.state().active_tag().is_some() {
+            return Err(EngineError::Diagnostic(
+                "Wait for the running build or export to finish before changing the SDK".into(),
+            ));
+        }
+        self.reconcile()?;
+        if self.project.manifest.sdk != sdk {
+            let mut next = self.project.manifest.clone();
+            next.sdk = sdk;
+            studio_project::lifecycle::write_manifest(&self.project.root, &next)?;
+            self.reconcile()?;
+        }
+        let mut record = self.record.clone();
+        record.sdk_path = None;
+        self.persist(record)
+    }
     pub fn changed_hint(&self) -> bool {
         self.dirty.load(Ordering::Acquire)
     }

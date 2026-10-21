@@ -80,14 +80,42 @@ impl ConversationPanel {
 
     /// Switches later tasks between automatic Apply and review before Apply.
     pub fn toggle_review_policy(&mut self, cx: &mut Context<Self>) {
-        let (Some(workflow), Some(snapshot)) = (self.workflow().cloned(), &self.snapshot) else {
+        let Some((policy, _)) = self.review_policy() else {
             return;
         };
-        let next = match snapshot.review_policy {
-            ReviewPolicy::AutoApply => ReviewPolicy::ManualReview,
-            ReviewPolicy::ManualReview => ReviewPolicy::AutoApply,
+        self.set_review_policy(
+            match policy {
+                ReviewPolicy::AutoApply => ReviewPolicy::ManualReview,
+                ReviewPolicy::ManualReview => ReviewPolicy::AutoApply,
+            },
+            cx,
+        );
+    }
+
+    /// The policy later tasks start with and, while a task runs, the one it started with.
+    /// `None` without an open project.
+    pub fn review_policy(&self) -> Option<(ReviewPolicy, Option<ReviewPolicy>)> {
+        let snapshot = self.snapshot.as_ref()?;
+        let running = snapshot
+            .task
+            .as_ref()
+            .filter(|task| !task.phase.is_terminal())
+            .map(|task| task.review_policy);
+        Some((snapshot.review_policy, running))
+    }
+
+    /// Sets the policy later tasks start with.
+    pub fn set_review_policy(&mut self, policy: ReviewPolicy, cx: &mut Context<Self>) {
+        let Some(workflow) = self.workflow().cloned() else {
+            return;
         };
-        let result = workflow.set_review_policy(next);
+        if self
+            .review_policy()
+            .is_some_and(|(current, _)| current == policy)
+        {
+            return;
+        }
+        let result = workflow.set_review_policy(policy);
         self.command(result, cx);
     }
 
@@ -295,7 +323,7 @@ impl ConversationPanel {
                         Export::Draft => workflow.export_draft(&path),
                     };
                     if panel.command(sent, cx).is_some() {
-                        panel.say(format!("Exporting to {}…", path.display()), cx);
+                        panel.say(format!("Exporting to {}…", studio_bootstrap::external_path(&path).display()), cx);
                     }
                 }
                 Ok(Ok(None)) => (),

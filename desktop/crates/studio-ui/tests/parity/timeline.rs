@@ -270,3 +270,49 @@ fn a_split_then_a_seek_does_not_present_frames_out_of_order(cx: &mut gpui::TestA
     assert_eq!(after["image_metrics"]["out_of_order"], 0, "{after:#}");
     assert!(after["error"].is_null(), "{:#}", after["error"]);
 }
+
+/// The center of a shell button the telemetry measured.
+fn button(t: &Value, id: &str) -> Option<(f32, f32)> {
+    let b = t["buttons"][id].as_array()?;
+    let at = |i: usize| b[i].as_f64().map(|v| v as f32);
+    Some((at(0)? + at(2)? / 2., at(1)? + at(3)? / 2.))
+}
+
+/// Split and zoom in the transport and undo and redo in the header do what their
+/// shortcuts do; undo and redo only answer once the timeline reports a step to take.
+#[gpui::test]
+fn the_transport_and_header_buttons_edit_the_timeline(cx: &mut gpui::TestAppContext) {
+    let mut studio = Studio::displayed_with(
+        cx,
+        r#"{"frames":90,"fps":30,"scenes":[[0,45],[45,90]],"tracks":[[0.0,1.0]],"audio":"tone","timing":true}"#,
+    );
+    studio.report_button_bounds();
+    let clips = |t: &Value| t["timeline"]["edit"]["clips"].as_array().map(Vec::len);
+    let ready = studio.wait("editing is enabled and the buttons measured", |t| {
+        t["timeline"]["edit"]["enabled"] == true
+            && [
+                "timeline-split",
+                "timeline-undo",
+                "timeline-redo",
+                "timeline-zoom-in",
+            ]
+            .iter()
+            .all(|id| button(t, id).is_some())
+    });
+    let before = clips(&ready).unwrap();
+    let fitted = ready["timeline"]["pixels_per_second"].as_f64().unwrap();
+    studio.dispatch(Seek { frame: 20 });
+    studio.wait("frame 20 shown", |t| t["paint_frame"] == 20);
+
+    studio.click(button(&ready, "timeline-split").unwrap());
+    studio.wait("split by the button", |t| clips(t) == Some(before + 1));
+    studio.click(button(&ready, "timeline-undo").unwrap());
+    studio.wait("undone by the button", |t| clips(t) == Some(before));
+    studio.click(button(&ready, "timeline-redo").unwrap());
+    studio.wait("redone by the button", |t| clips(t) == Some(before + 1));
+
+    studio.click(button(&ready, "timeline-zoom-in").unwrap());
+    studio.wait("zoomed in by the button", |t| {
+        t["timeline"]["pixels_per_second"].as_f64() == Some(2. * fitted)
+    });
+}

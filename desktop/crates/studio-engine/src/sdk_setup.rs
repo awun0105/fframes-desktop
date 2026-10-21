@@ -8,14 +8,65 @@ use std::{
 use studio_bootstrap::ProcessTreeManager;
 use studio_sdk::{install::SdkInstaller, manifest::CompatibilityManifest};
 
+/// Names the folder of installed SDKs, overriding the detected one.
+pub const SDK_HOME_ENV: &str = "FFRAMES_SDK_HOME";
+
+/// The folder of installed SDKs: `FFRAMES_SDK_HOME` when set, otherwise `.fframes/sdk` under
+/// `HOME` or `USERPROFILE`, preferring the one that already holds an installed SDK (they
+/// differ on Windows when one tool set `HOME` and another did not).
 pub fn default_sdk_home() -> PathBuf {
-    if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".fframes").join("sdk")
-    } else if let Ok(profile) = std::env::var("USERPROFILE") {
-        PathBuf::from(profile).join(".fframes").join("sdk")
-    } else {
-        std::env::temp_dir().join("fframes_sdk")
+    if let Some(explicit) = std::env::var_os(SDK_HOME_ENV).filter(|v| !v.is_empty()) {
+        return PathBuf::from(explicit);
     }
+    let homes: Vec<PathBuf> = ["HOME", "USERPROFILE"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .filter(|v| !v.is_empty())
+        .map(|home| PathBuf::from(home).join(".fframes").join("sdk"))
+        .collect();
+    pick_sdk_home(&homes).unwrap_or_else(|| std::env::temp_dir().join("fframes_sdk"))
+}
+
+/// The first of `homes` with an installed SDK, else the first of them.
+fn pick_sdk_home(homes: &[PathBuf]) -> Option<PathBuf> {
+    homes
+        .iter()
+        .find(|home| !installed_sdks(home).is_empty())
+        .or(homes.first())
+        .cloned()
+}
+
+fn read_sdk_manifest(dir: &Path) -> Result<CompatibilityManifest, String> {
+    fs::read_to_string(dir.join("compatibility.json"))
+        .map_err(|e| e.to_string())
+        .and_then(|json| CompatibilityManifest::from_json_str(&json).map_err(|e| e.to_string()))
+}
+
+/// The SDKs installed under `sdk_home` that target this host: the active installation,
+/// then the one it replaced (kept by the installer as `previous`).
+pub fn installed_sdks(sdk_home: &Path) -> Vec<(PathBuf, CompatibilityManifest)> {
+    let installer = SdkInstaller::new(sdk_home);
+    let host = CompatibilityManifest::host_target();
+    [installer.active_sdk_dir(), installer.previous_sdk_dir()]
+        .into_iter()
+        .filter_map(|dir| {
+            let manifest = read_sdk_manifest(&dir).ok()?;
+            (Some(manifest.target_triple.as_str()) == host).then_some((dir, manifest))
+        })
+        .collect()
+}
+
+/// The installed SDK `project` is pinned to, if any is installed under `sdk_home`.
+pub fn installed_sdk_for(
+    project: &studio_project::manifest::Manifest,
+    sdk_home: &Path,
+) -> Option<PathBuf> {
+    installed_sdks(sdk_home)
+        .into_iter()
+        .find(|(_, manifest)| {
+            crate::build_materialization::framework_for(project, manifest).is_some()
+        })
+        .map(|(dir, _)| dir)
 }
 
 /// What to do when no SDK bundle targets this host.
@@ -63,11 +114,7 @@ pub fn resolve_manifest(
     dev_bundles: &[PathBuf],
     sdk_home: &Path,
 ) -> Result<CompatibilityManifest, String> {
-    let read = |bundle: &Path| {
-        fs::read_to_string(bundle.join("compatibility.json"))
-            .map_err(|e| e.to_string())
-            .and_then(|json| CompatibilityManifest::from_json_str(&json).map_err(|e| e.to_string()))
-    };
+    let read = read_sdk_manifest;
     if let Some(bundle) = packaged.filter(|p| p.join("compatibility.json").is_file()) {
         return read(bundle);
     }
@@ -286,6 +333,63 @@ mod tests {
         )
         .unwrap();
         manifest
+    }
+
+    #[test]
+    fn a_project_builds_with_the_installed_sdk_of_its_pin() {
+        let host = CompatibilityManifest::host_target().expect("supported host");
+        let root = tempfile::tempdir().unwrap();
+        let (empty, home) = (root.path().join("empty"), root.path().join("home"));
+        let older = write_bundle(&home.join("previous"), host);
+        let mut newer = older.clone();
+        newer.sdk_id = "studio-sdk-newer".into();
+        fs::create_dir_all(home.join("active")).unwrap();
+        fs::write(
+            home.join("active").join("compatibility.json"),
+            serde_json::to_string(&newer).unwrap(),
+        )
+        .unwrap();
+        // A foreign SDK is never one of this host's installations.
+        write_bundle(
+            &root.path().join("foreign").join("active"),
+            "riscv64gc-unknown-linux-gnu",
+        );
+
+        assert_eq!(installed_sdks(&home).len(), 2);
+        assert!(installed_sdks(&root.path().join("foreign")).is_empty());
+        // The home that holds an installation wins over an earlier empty one.
+        assert_eq!(
+            pick_sdk_home(&[empty.clone(), home.clone()]),
+            Some(home.clone())
+        );
+        assert_eq!(
+            pick_sdk_home(&[empty.clone(), root.path().join("foreign")]),
+            Some(empty)
+        );
+
+        let project = |sdk: &CompatibilityManifest| {
+            let dir = tempfile::tempdir().unwrap();
+            studio_project::create(
+                &dir.path().join("video"),
+                "Video",
+                crate::build_materialization::sdk_pin(sdk),
+                &sdk.fframes_version,
+                &sdk.runtime_version,
+            )
+            .unwrap()
+            .manifest
+        };
+        assert_eq!(
+            installed_sdk_for(&project(&newer), &home),
+            Some(home.join("active"))
+        );
+        assert_eq!(
+            installed_sdk_for(&project(&older), &home),
+            Some(home.join("previous"))
+        );
+        let mut missing = older.clone();
+        missing.sdk_id = "studio-sdk-not-installed".into();
+        assert_eq!(installed_sdk_for(&project(&missing), &home), None);
     }
 
     #[test]

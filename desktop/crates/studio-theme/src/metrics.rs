@@ -25,15 +25,12 @@ pub struct Metrics {
     pub toolbar_h: f32,
     pub transport_h: f32,
     pub gutter: f32,
-    /// The icon rail on the window's left edge.
-    pub rail_w: f32,
-    /// The Project, Assets or Style drawer beside the rail.
-    pub drawer_w: f32,
-    /// The agent column's default width, and the range its grip keeps it in.
-    pub agent_w: f32,
-    pub agent_min_w: f32,
-    pub agent_max_w: f32,
-    /// The player and timeline column never gets narrower than this while it fits.
+    /// The tabbed sidebar right of the player: its default width, and the range its grip
+    /// keeps it in.
+    pub sidebar_w: f32,
+    pub sidebar_min_w: f32,
+    pub sidebar_max_w: f32,
+    /// The player card never gets narrower than this while it fits.
     pub editor_min_w: f32,
     pub status_bar_h: f32,
     pub timeline_default_h: f32,
@@ -43,6 +40,12 @@ pub struct Metrics {
     pub track_h: f32,
     pub track_gap: f32,
     pub track_gutter_w: f32,
+    /// The rounded icon tile in a track's gutter.
+    pub track_tile: f32,
+    /// The timeline card's padding: left and right, top, bottom.
+    pub timeline_pad_x: f32,
+    pub timeline_pad_top: f32,
+    pub timeline_pad_bottom: f32,
     /// Button padding.
     pub control_pad_x: f32,
     pub control_pad_y: f32,
@@ -72,11 +75,9 @@ pub const METRICS: Metrics = Metrics {
     toolbar_h: 44.,
     transport_h: 48.,
     gutter: 8.,
-    rail_w: 56.,
-    drawer_w: 320.,
-    agent_w: 360.,
-    agent_min_w: 320.,
-    agent_max_w: 520.,
+    sidebar_w: 416.,
+    sidebar_min_w: 320.,
+    sidebar_max_w: 520.,
     editor_min_w: 480.,
     status_bar_h: 28.,
     timeline_default_h: 260.,
@@ -86,6 +87,10 @@ pub const METRICS: Metrics = Metrics {
     track_h: 44.,
     track_gap: 6.,
     track_gutter_w: 104.,
+    track_tile: 22.,
+    timeline_pad_x: 11.,
+    timeline_pad_top: 9.,
+    timeline_pad_bottom: 11.,
     control_pad_x: 12.,
     control_pad_y: 7.,
 };
@@ -139,19 +144,27 @@ mod tests {
         );
         assert_eq!(
             [
-                m.rail_w,
-                m.drawer_w,
-                m.agent_w,
-                m.agent_min_w,
-                m.agent_max_w,
+                m.sidebar_w,
+                m.sidebar_min_w,
+                m.sidebar_max_w,
                 m.editor_min_w,
                 m.status_bar_h
             ],
-            [56., 320., 360., 320., 520., 480., 28.]
+            [416., 320., 520., 480., 28.]
         );
         assert_eq!(
-            [m.ruler_h, m.track_h, m.track_gap, m.track_gutter_w],
-            [26., 44., 6., 104.]
+            [
+                m.ruler_h,
+                m.track_h,
+                m.track_gap,
+                m.track_gutter_w,
+                m.track_tile
+            ],
+            [26., 44., 6., 104., 22.]
+        );
+        assert_eq!(
+            [m.timeline_pad_x, m.timeline_pad_top, m.timeline_pad_bottom],
+            [11., 9., 11.]
         );
     }
 }

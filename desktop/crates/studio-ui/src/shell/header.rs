@@ -1,5 +1,5 @@
-//! The window header, after Cap's editor header: the project's name and its file, project
-//! and export actions in a row flush with the window's top edge.
+//! The window header, after Cap's editor header: the project's name, then undo and redo,
+//! the project actions, Settings and Export in a row flush with the window's top edge.
 //!
 //! The header is a cached section. On Windows the row around it (in `layout.rs`) is the
 //! window's drag area and holds the caption buttons, because a cached view does not replay
@@ -11,6 +11,7 @@ use gpui::{
     prelude::FluentBuilder, px,
 };
 use studio_engine::engine::backend::Command;
+use studio_engine::timing::TimelineCommand;
 use studio_theme::{METRICS, TextStyle, text_style};
 
 use super::sections::{Section, section_probe};
@@ -22,9 +23,9 @@ const TRAFFIC_LIGHTS_W: f32 = 82.;
 /// The title keeps at least this much before the actions lose their labels.
 const TITLE_MIN_W: f32 = 200.;
 /// The action cluster's width with labels, Settings included, with a project open and
-/// without one: 556 and 251 px in the app on Windows, 602 and about 282 px in the test
+/// without one: 652 px (undo, redo and the divider included) and about 282 px in the test
 /// platform, plus a margin for other systems' fonts.
-const ACTIONS_W: f32 = 640.;
+const ACTIONS_W: f32 = 680.;
 const ACTIONS_CLOSED_W: f32 = 300.;
 
 impl StudioShell {
@@ -40,8 +41,53 @@ impl StudioShell {
             .gap(px(METRICS.space_2))
             // Keeps the Windows drag area behind from answering for the buttons.
             .occlude();
+        let timeline = self.timeline_controls;
         for id in header_actions(project.is_some()) {
             let button = match id {
+                "undo" | "redo" => {
+                    let undo = id == "undo";
+                    let can = if undo {
+                        timeline.can_undo
+                    } else {
+                        timeline.can_redo
+                    };
+                    let command = if undo {
+                        TimelineCommand::Undo
+                    } else {
+                        TimelineCommand::Redo
+                    };
+                    actions = actions.child(self.action_icon_button(
+                        if undo {
+                            "timeline-undo"
+                        } else {
+                            "timeline-redo"
+                        },
+                        if undo { "Undo" } else { "Redo" },
+                        if undo { Icon::Undo } else { Icon::Redo },
+                        IconButtonSize::Medium,
+                        enabled && timeline.editable && can,
+                        cx,
+                        move |s, cx| s.timeline_history(command.clone(), cx),
+                    ));
+                    if !undo {
+                        actions = actions.child(div().w(px(1.)).h(px(16.)).bg(theme.editor.line));
+                    }
+                    continue;
+                }
+                // App-level, so it shows with or without a project; it opens the settings
+                // window or brings it to the front.
+                "settings" => {
+                    actions = actions.child(self.action_icon_button(
+                        "settings",
+                        "Settings",
+                        Icon::Settings,
+                        IconButtonSize::Medium,
+                        true,
+                        cx,
+                        |s, cx| s.open_settings(cx),
+                    ));
+                    continue;
+                }
                 "create" => self.action_button(
                     "create",
                     "Create…",
@@ -96,33 +142,24 @@ impl StudioShell {
             };
             actions = actions.child(button);
         }
-        // App-level, so it shows with or without a project; a second press returns.
-        actions = actions.child(self.action_icon_button(
-            "settings",
-            "Settings",
-            Icon::Settings,
-            IconButtonSize::Medium,
-            true,
-            cx,
-            |s, cx| {
-                if s.settings_open {
-                    s.close_settings(cx)
-                } else {
-                    s.open_settings(cx)
-                }
-            },
-        ));
         self.header_appearance.set(Some(theme.appearance));
         let title = project
             .as_ref()
             .map(|p| p.name.clone())
             .unwrap_or_else(|| "fframes Studio".into());
-        let mut text = div().flex().flex_col().min_w_0().child(
-            text_style(div().truncate(), TextStyle::Title)
-                .child(selectable(title).over_drag_area()),
-        );
+        let mut text = div()
+            .flex()
+            .items_center()
+            .gap(px(METRICS.space_3))
+            .min_w_0()
+            .child(
+                text_style(div().truncate(), TextStyle::BodyStrong)
+                    .child(selectable(title).over_drag_area()),
+            );
         if let Some(p) = &project {
-            let path = p.root.display().to_string();
+            let path = studio_bootstrap::external_path(&p.root)
+                .display()
+                .to_string();
             // Selectable rather than a tooltip: the text blocks the hover a tooltip needs,
             // and a triple click selects the whole path however it is truncated.
             text = text.child(
@@ -153,8 +190,8 @@ impl StudioShell {
                     .gap(px(METRICS.space_3))
                     .child(
                         gpui::img("branding/studio-icon.png")
-                            .w(px(28.))
-                            .h(px(28.))
+                            .w(px(22.))
+                            .h(px(22.))
                             .flex_none(),
                     )
                     .child(text),
@@ -202,13 +239,16 @@ fn compact_header_controls(viewport_width: f32, chrome_width: f32, project_open:
     viewport_width < TITLE_MIN_W + actions + chrome_width + 2. * METRICS.space_4
 }
 
-/// Ids of the header actions. Create, open and import live in the empty state while
-/// no project is open, so each id is rendered once.
+/// The header actions in Cap's order, Export last. Undo and redo edit the open project's
+/// timeline; create, open and import live in the empty state while no project is open, so
+/// each id is rendered once.
 fn header_actions(project_open: bool) -> Vec<&'static str> {
     if project_open {
-        vec!["create", "open", "import", "export", "close"]
+        vec![
+            "undo", "redo", "create", "open", "import", "close", "settings", "export",
+        ]
     } else {
-        vec!["export", "close"]
+        vec!["close", "settings", "export"]
     }
 }
 
@@ -218,10 +258,12 @@ mod tests {
 
     #[test]
     fn header_hides_project_pickers_while_the_empty_state_shows() {
-        assert_eq!(header_actions(false), ["export", "close"]);
+        assert_eq!(header_actions(false), ["close", "settings", "export"]);
         assert_eq!(
             header_actions(true),
-            ["create", "open", "import", "export", "close"]
+            [
+                "undo", "redo", "create", "open", "import", "close", "settings", "export"
+            ]
         );
     }
 
@@ -237,9 +279,9 @@ mod tests {
     #[test]
     fn the_window_controls_and_an_open_project_need_room() {
         let caption = 3. * CAPTION_BUTTON_W;
-        assert!(compact_header_controls(900., caption, true));
-        assert!(!compact_header_controls(900., 0., true));
-        assert!(!compact_header_controls(900., caption, false));
+        assert!(compact_header_controls(960., caption, true));
+        assert!(!compact_header_controls(960., 0., true));
+        assert!(!compact_header_controls(960., caption, false));
         assert!(compact_header_controls(400., 0., false));
     }
 }

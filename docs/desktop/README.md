@@ -2,7 +2,7 @@
 
 fframes Studio is a native GPUI app in Rust where a person describes a video, watches it, selects a scene or visible object, and asks a coding agent to change it. The agent edits an ordinary fframes Rust project. The app owns project setup, style presets, agent connections, compilation, preview, validation, history and export. Rust source remains the authority for the video; templates are starting points.
 
-**Install the unsigned Windows preview** (per user, no administrator rights): `irm https://github.com/khanhthanhdev/fframes-desktop/releases/latest/download/install.ps1 | iex`, Scoop, or the Setup.exe from the [latest release](https://github.com/khanhthanhdev/fframes-desktop/releases/latest). winget follows once `khanhthanhdev.fframesStudio` is accepted into the community repository. See [preview releases](phase-zero-feasibility.md#unsigned-preview-releases).
+**Install the unsigned Windows preview** (per user, no administrator rights): `irm https://github.com/khanhthanhdev/fframes-desktop/releases/latest/download/install.ps1 | iex`, Scoop, or the Setup.exe from the [latest release](https://github.com/khanhthanhdev/fframes-desktop/releases/latest). The script first offers to install the only thing Studio does not bring, Visual Studio Build Tools with C++ and clang (through winget; that installer asks for administrator rights; `-Prerequisites Install` or `Skip` to not be asked). Rust, FFmpeg and fframes come with the managed SDK. winget follows once `khanhthanhdev.fframesStudio` is accepted into the community repository. See [preview releases](phase-zero-feasibility.md#unsigned-preview-releases).
 
 Documents:
 
@@ -26,6 +26,12 @@ The app is the `fframes-studio` package in [`desktop/app`](../../desktop/app). T
 
 Projects compile against a managed SDK. The setup screen installs it step by step and marks the failing step if setup fails. The SDK manifest comes from the packaged bundle or `FFRAMES_SDK_BUNDLE`, then from the built-in manifest when it targets this host; development builds also look for a bundle assembled into the desktop workspace's target folder, `phase-zero-sdk` ([`build-phase-zero-sdk.ps1`](../../desktop/scripts/build-phase-zero-sdk.ps1) on Windows, [`build-phase-zero-sdk.sh`](../../desktop/scripts/build-phase-zero-sdk.sh) elsewhere); otherwise Studio uses the installed SDK's receipt (`~/.fframes/sdk/active`) or asks you to import a bundle ([`sdk_setup.rs`](../../desktop/crates/studio-engine/src/sdk_setup.rs)). Host prerequisites are checked against the selected SDK's manifest. Opening a project never installs an SDK or runs Cargo.
 
+- **Where SDKs are found.** The SDK folder is `FFRAMES_SDK_HOME` when set, otherwise `.fframes/sdk` under `HOME` or `USERPROFILE`, whichever already holds an installed SDK. On Windows, libclang is found through `LIBCLANG_PATH`, `Program Files\LLVM`, a Scoop install or Visual Studio's bundled LLVM, and builds use the folder the doctor found.
+- **Which SDK a project builds with.** A project builds with the installed SDK its `studio.json` is pinned to: the active one, or the one the last install replaced (`previous`), so installing a newer SDK keeps older projects building. **Select installed SDK…** still overrides this.
+- **Projects whose SDK is missing.** When a project (often an imported one) is pinned to an SDK that is not installed, the Project tab says which SDK it needs. **Use installed SDK** rewrites the pin in `studio.json` to the active SDK; source that does not compile with that SDK's framework reports it at the next build.
+- **SDK updates.** When the app ships a different SDK than the installed one, the SDK status says an update is available and **Install managed SDK** installs it.
+- **App updates.** At launch Studio asks GitHub for the latest release ([`updates.rs`](../../desktop/crates/studio-engine/src/updates.rs), using the system `curl`) and shows a notice with **Download…** when it is newer. Nothing is downloaded or installed automatically. **Settings → General → Updates** turns the launch check off (`update_check_disabled` in `app-settings.json`) and has **Check now**.
+
 App data lives in `%LOCALAPPDATA%/fframes-studio` on Windows, `~/Library/Application Support/fframes-studio` on macOS and `${XDG_DATA_HOME:-~/.local/share}/fframes-studio` on Linux ([`app_paths.rs`](../../desktop/crates/studio-engine/src/app_paths.rs)). It holds the SQLite metadata, per-project journals, checkpoint objects, the agent draft and stored agent sessions, build copies and `app-settings.json`. None of it travels with the project.
 
 ## Projects
@@ -35,6 +41,8 @@ App data lives in `%LOCALAPPDATA%/fframes-studio` on Windows, `~/Library/Applica
 Source and copied assets travel with the folder; local history does not. A checkpoint saves bytes, not proof of a successful build. **Restore as copy** exports a checkpoint to a separately identified folder and never replaces the current source. **Locate** reconnects a moved, unchanged project; **Remove recent** removes only the list entry.
 
 **Projects made by an older Studio are refused.** There is no migration. A `studio.json` of an earlier schema or instruction version is refused with "made by an older Studio … The project is left as it is and cannot be opened" ([`manifest.rs`](../../desktop/crates/studio-project/src/manifest.rs)), and the same rule covers the history database, journals, checkpoint inventories, stored agent sessions and the provider registry: an old file is reported and left byte for byte, and nothing repairs or rewrites it. A file from a newer Studio asks you to update Studio. An `agent-adapter.json` or a single-session conversation log from an earlier build is simply ignored, and Setup is shown again.
+
+To open an existing fframes project, follow [Open an existing fframes project in Studio](open-fframes-project-in-studio.md).
 
 ### Try real repository examples
 
@@ -84,13 +92,13 @@ The player plays, pauses and steps frames; the ruler scrubs. Click a scene or us
 
 The timeline ([`studio-ui/src/timeline`](../../desktop/crates/studio-ui/src/timeline)) shows the scene clips in play order, the audio files and the mix waveform. **Split**, trim and move edit `timeline.json` directly, with undo and redo; a drag is one undo step and one write, and a timing-only change does not rebuild. Timing edits are refused while an agent task runs. See [architecture, timing](architecture.md#timing-document-and-revision).
 
-**Mute** silences output without stopping the clock; **Next output**, **Retry audio** and **No audio** pick the output device or a silent clock. Output latency and underruns appear below the preview.
+**Mute** silences output without stopping the clock. **Settings → General → Audio output** has **Next output**, **Retry audio** and **No audio**, which pick the output device or a silent clock. The device, its latency and underruns appear above the preview and on that page.
 
-The **Style** tab applies a preset or edits token overrides through the same durable file-set transaction as an agent edit. **Export…** opens a panel in place of the editor with the formats the project's worker can encode, the size and frame rate, an estimate of the file size, progress and **Cancel export**.
+**Settings → Presets** applies a preset or edits token overrides through the same durable file-set transaction as an agent edit; the sidebar's **Style** tab lists the project's style files and opens that page. **Settings → SDK** installs, imports or selects the managed SDK. **Export…** opens a panel in place of the editor with the formats the project's worker can encode, the size and frame rate, an estimate of the file size, progress and **Cancel export**. The panel starts from the defaults saved in **Settings → Export** (format, size, frame rate); a default the project's SDK or video cannot take falls back to the built-in one, and a change in the panel applies to that export only.
 
 ## Agent panel
 
-The agent panel is the column on the window's right and is always shown; drag the grip on its left edge to widen or narrow it (320 to 520 px, not saved between launches). The rail on the left opens **Project**, **Assets** and **Style** in a drawer beside it; pressing the open item again, or the drawer's close button, gives the width back to the preview. The panel has three tabs: **Chat** (the conversation, the plan and the composer), **History** (stored sessions) and **Project** (review policy, Apply, Undo, accepted edits and recovery). The settings button in the panel header opens the **Agent** page of the settings frame.
+The agent panel is the **Agent** tab of the sidebar on the window's right, beside the player. The sidebar's other tabs are **Project**, **Assets** and **Style**. Drag the grip on the sidebar's left edge to widen or narrow it (320 to 520 px, not saved between launches). While another tab is open, a dot on the Agent tab means the agent is waiting for an answer, and a permission request switches back to the Agent tab. The panel has three tabs of its own: **Chat** (the conversation, the plan and the composer), **History** (stored sessions) and **Changes** (the review policy, chosen in **Settings → Agent → Review**, Apply, Undo, accepted edits and recovery). The settings button in the panel header opens the settings window on its **Agent** page.
 
 ### Providers and wires
 
@@ -106,7 +114,7 @@ Studio has three agent wires, and the **Protocol** control on the Agent page cho
   - **Allow everything**: every request is allowed once, commands included. They run on this computer, not in a sandbox.
 
   Studio always picks the agent's own `allow_once` option, never `allow_always`, never answers a question, and records each automatic answer in the transcript ("Allowed automatically · …"). A running task keeps the policy it started with ([`auto_answer.rs`](../../desktop/crates/studio-engine/src/agent/auto_answer.rs)).
-- On first launch, when the SDK or an agent is still missing, Studio opens a setup in place of the workspace: Appearance, SDK, first video, Agent and Permissions. Every step can be skipped; **Settings → Appearance → Run setup again** reopens it. The record lives in `app-settings.json` (`onboarding_completed`, `permission_policy`).
+- On first launch, when the SDK or an agent is still missing, Studio opens a setup in place of the workspace: Appearance, SDK, first video, Agent and Permissions. Every step can be skipped; **Settings → General → Run setup again** reopens it. The record lives in `app-settings.json` (`onboarding_completed`, `permission_policy`).
 - The Agent page shows the writer containment the last launch verified (a job object on Windows, a process group with an escape scan on Linux and macOS). A writer that is not contained cannot have its candidate captured.
 
 ### The composer

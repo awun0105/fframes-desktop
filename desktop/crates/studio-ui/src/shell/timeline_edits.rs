@@ -9,6 +9,7 @@ use studio_engine::engine::backend::Command;
 use studio_engine::timing::TimelineCommand;
 
 use super::StudioShell;
+use crate::timeline::TimelineControls;
 
 impl StudioShell {
     /// Queues `command` and sends it when the engine is free.
@@ -86,6 +87,26 @@ impl StudioShell {
         if !self.timeline.read(cx).edit_dragging() && (step || pending) {
             self.timeline_edit(command, cx);
         }
+    }
+
+    /// The timeline's controls changed: the header draws undo and redo, the transport
+    /// draws zoom, Fit, Split and Cycle. Only the section that shows a change renders.
+    pub(super) fn timeline_controls_changed(
+        &mut self,
+        controls: TimelineControls,
+        cx: &mut Context<Self>,
+    ) {
+        let old = std::mem::replace(&mut self.timeline_controls, controls);
+        let Some(sections) = &self.sections else {
+            cx.notify();
+            return;
+        };
+        if (old.editable, old.can_undo, old.can_redo)
+            != (controls.editable, controls.can_undo, controls.can_redo)
+        {
+            sections.header.update(cx, |_, cx| cx.notify());
+        }
+        sections.player.update(cx, |_, cx| cx.notify());
     }
 
     /// While a clip is dragged, follows the pointer through the whole window, including

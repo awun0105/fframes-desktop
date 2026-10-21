@@ -11,6 +11,7 @@ mod player;
 mod review;
 mod sections;
 mod settings;
+mod settings_window;
 mod status_strip;
 mod timeline_edits;
 mod transport;
@@ -42,16 +43,16 @@ use studio_project::ProjectId;
 use studio_proto::CommandId;
 use studio_theme::Theme;
 
-use crate::agent::{AgentSetupPage, ConversationPanel, PanelEvent};
+use crate::agent::{AgentSetupPage, Attention, ConversationPanel, PanelEvent};
 use crate::app_state::{AppEvent, AppState};
 use crate::kit::{EditorButton, Icon, IconButton, IconButtonSize, MenuState};
 use crate::{
     canvas_view::CanvasViewState,
     frame_image::ImagePresentationManager,
     preset_panel::PresetPanel,
-    timeline::{TimelineEvent, TimelineView},
+    timeline::{TimelineControls, TimelineEvent, TimelineView},
 };
-use left_column::LeftTab;
+use left_column::SidebarTab;
 
 enum Picker {
     Create,
@@ -95,9 +96,10 @@ pub struct StudioShell {
     in_flight: Option<(CommandId, bool)>,
     error: Option<String>,
     failed_open: Option<PathBuf>,
-    /// The rail item whose drawer is open; `None` gives the editor the width.
-    drawer: Option<LeftTab>,
-    sdk_open: bool,
+    /// The sidebar tab on show.
+    sidebar_tab: SidebarTab,
+    /// What waits in the agent panel, for the Agent tab's dot.
+    agent_attention: Attention,
     recents_open: bool,
     status_open: bool,
     preview: Option<Arc<PreviewCoordinator>>,
@@ -124,6 +126,8 @@ pub struct StudioShell {
     timing_sent: Option<u64>,
     timeline: gpui::Entity<TimelineView>,
     _timeline_subscription: gpui::Subscription,
+    /// The timeline's controls the transport and the header draw, as it last reported.
+    timeline_controls: TimelineControls,
     /// Timeline edits waiting for the engine, oldest first.
     timeline_queue: VecDeque<studio_engine::timing::TimelineCommand>,
     /// The timeline edit the engine is running.
@@ -148,24 +152,25 @@ pub struct StudioShell {
     qualifying: bool,
     button_bounds: HashMap<String, [f32; 4]>,
     player_width: f32,
-    /// The editor column's height (player row, gap and timeline), measured at paint.
+    /// The workspace's height (the player and sidebar row, gap and timeline), measured at
+    /// paint.
     editor_height: f32,
     /// The timeline height the grip asked for; `None` keeps the default.
     timeline_height: Option<f32>,
     /// The grip being dragged, with the pointer and the size at the press.
     resize: Option<layout::Resize>,
-    /// The agent column width its grip asked for; `None` keeps the default.
-    agent_width: Option<f32>,
+    /// The sidebar width its grip asked for; `None` keeps the default.
+    sidebar_width: Option<f32>,
     /// Where the grip was last painted, `[left, top, width, height]`.
     grip_bounds: Option<[f32; 4]>,
-    /// Where the agent column's grip was last painted.
+    /// Where the sidebar's grip was last painted.
     agent_grip_bounds: Option<[f32; 4]>,
     /// The bounds each cached section was laid out in, for the qualification telemetry.
     section_bounds: HashMap<&'static str, [f32; 4]>,
     /// The window's viewport, measured each render.
     viewport: [f32; 2],
-    /// The settings frame shows in place of the editor.
-    settings_open: bool,
+    /// The settings window, while it is open.
+    settings_window: Option<gpui::WindowHandle<settings_window::SettingsWindow>>,
     settings_page: settings::SettingsPage,
     settings_writer: Arc<settings::SettingsWriter>,
     /// The first-run setup, while it shows in place of the workspace.
@@ -176,6 +181,12 @@ pub struct StudioShell {
     onboarding_completed: Option<bool>,
     /// How agent permission requests are answered, for every project.
     permission_policy: studio_proto::PermissionPolicy,
+    /// Whether the launch check for a newer Studio is turned off.
+    update_check_disabled: bool,
+    /// The last check for a newer Studio and its answer.
+    update: settings::UpdateCheck,
+    /// The "update available" notice was closed for this launch.
+    update_dismissed: bool,
     /// The appearance the cached header last rendered with, for the telemetry.
     header_appearance: std::cell::Cell<Option<studio_theme::Appearance>>,
     overflow_open: bool,
@@ -290,6 +301,7 @@ impl StudioShell {
                 }
                 TimelineEvent::Edit(command) => shell.timeline_edit(command, cx),
                 TimelineEvent::ThumbnailsWanted => shell.request_thumbnails(cx),
+                TimelineEvent::Controls(controls) => shell.timeline_controls_changed(controls, cx),
                 TimelineEvent::ScopeChanged(scope) => {
                     let scope = scope.map(|scope| scope.map(|scope| *scope));
                     shell.install_task_scope(scope, cx);
@@ -308,6 +320,15 @@ impl StudioShell {
             cx.subscribe_in(&panel, window, |shell, _, event, window, cx| match event {
                 PanelEvent::Leave => window.focus(&shell.focus, cx),
                 PanelEvent::OpenSetup => shell.open_agent_setup(cx),
+                PanelEvent::Attention(attention) => {
+                    // A new permission card brings the panel forward; one already waiting
+                    // does not keep the user from other tabs.
+                    if attention.permissions > shell.agent_attention.permissions {
+                        shell.sidebar_tab = SidebarTab::Agent;
+                    }
+                    shell.agent_attention = *attention;
+                    cx.notify();
+                }
             });
         let review = review::ReviewState::new(&panel, cx);
         let setup_page = cx.new(|cx| AgentSetupPage::new(&panel, cx));
@@ -405,8 +426,8 @@ impl StudioShell {
             in_flight: None,
             error: None,
             failed_open: None,
-            drawer: None,
-            sdk_open: true,
+            sidebar_tab: SidebarTab::Agent,
+            agent_attention: Attention::default(),
             recents_open: true,
             status_open: false,
             preview: None,
@@ -429,6 +450,7 @@ impl StudioShell {
             timing_sent: None,
             timeline,
             _timeline_subscription: timeline_subscription,
+            timeline_controls: TimelineControls::default(),
             timeline_queue: VecDeque::new(),
             timeline_in_flight: None,
             _activation_subscription: activation_subscription,
@@ -468,18 +490,21 @@ impl StudioShell {
             editor_height: 0.,
             timeline_height: None,
             resize: None,
-            agent_width: None,
+            sidebar_width: None,
             grip_bounds: None,
             agent_grip_bounds: None,
             section_bounds: HashMap::new(),
             viewport: [0., 0.],
-            settings_open: false,
+            settings_window: None,
             settings_page: settings::SettingsPage::default(),
             settings_writer: Arc::default(),
             onboarding: None,
             setup_checked: false,
             onboarding_completed: None,
             permission_policy: studio_proto::PermissionPolicy::default(),
+            update_check_disabled: false,
+            update: settings::UpdateCheck::NotChecked,
+            update_dismissed: false,
             header_appearance: std::cell::Cell::new(None),
             overflow_open: false,
             overflow_menu: MenuState::new(gpui::Point::default(), &[]),

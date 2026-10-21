@@ -412,48 +412,40 @@ pub(crate) fn wait_with_output_drained(
         )
     };
 
-    let stdout_handle = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut r) = stdout_opt {
-            let mut chunk = [0u8; 4096];
-            while let Ok(n) = r.read(&mut chunk) {
-                if n == 0 {
-                    break;
-                }
-                if buf.len() < max_diagnostic_bytes {
-                    let to_take = n.min(max_diagnostic_bytes - buf.len());
-                    buf.extend_from_slice(&chunk[..to_take]);
-                }
-            }
-        }
-        buf
-    });
-
-    let stderr_handle = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut r) = stderr_opt {
-            let mut chunk = [0u8; 4096];
-            while let Ok(n) = r.read(&mut chunk) {
-                if n == 0 {
-                    break;
-                }
-                if buf.len() < max_diagnostic_bytes {
-                    let to_take = n.min(max_diagnostic_bytes - buf.len());
-                    buf.extend_from_slice(&chunk[..to_take]);
+    // A cold build of the SDK framework can take well over five minutes, but cargo keeps
+    // printing while it makes progress. Only a child that stays silent that long is hung.
+    let last_output = Arc::new(Mutex::new(Instant::now()));
+    let drain = |reader: Option<Box<dyn Read + Send>>| {
+        let last_output = last_output.clone();
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut r) = reader {
+                let mut chunk = [0u8; 4096];
+                while let Ok(n) = r.read(&mut chunk) {
+                    if n == 0 {
+                        break;
+                    }
+                    *last_output.lock() = Instant::now();
+                    if buf.len() < max_diagnostic_bytes {
+                        let to_take = n.min(max_diagnostic_bytes - buf.len());
+                        buf.extend_from_slice(&chunk[..to_take]);
+                    }
                 }
             }
-        }
-        buf
-    });
+            buf
+        })
+    };
+    let stdout_handle = drain(stdout_opt.map(|r| Box::new(r) as Box<dyn Read + Send>));
+    let stderr_handle = drain(stderr_opt.map(|r| Box::new(r) as Box<dyn Read + Send>));
 
-    let deadline = Instant::now() + Duration::from_secs(300);
+    let stall_limit = Duration::from_secs(300);
     let status = loop {
-        if Instant::now() >= deadline {
+        if last_output.lock().elapsed() >= stall_limit {
             let _ = child_arc.lock().kill_forcefully();
             let _ = stdout_handle.join();
             let _ = stderr_handle.join();
             return Err(ProjectError::BuildError(
-                "Child exceeded five-minute build/render deadline".into(),
+                "Child produced no output for five minutes and was stopped".into(),
             ));
         }
         let maybe_status = {

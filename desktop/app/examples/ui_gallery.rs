@@ -16,10 +16,10 @@ use gpui::{
 use studio_theme::{AppTheme, METRICS, Theme};
 use studio_ui::kit::{
     Badge, Button, ButtonSize, ButtonVariant, Card, CollapsibleSection, EditorButton, Icon,
-    IconButton, IconButtonSize, KbdChip, Menu, MenuItem, MenuState, NavRail, NavRailItem, Notice,
-    Section, SegmentOption, SegmentedControl, Select, SettingRow, SettingsFrame, SettingsNavItem,
-    Slider, SliderTrack, StatusDot, TabRail, TabRailItem, TextInput, TextInputState, Toggle, Tone,
-    bind_text_input_keys, field_row, focus_ring, heading, label, muted, section_title,
+    IconButton, IconButtonSize, KbdChip, Menu, MenuItem, MenuState, Notice, Section, SegmentOption,
+    SegmentedControl, Select, SettingRow, SettingsFrame, SettingsNavItem, Slider, SliderTrack,
+    StatusDot, TabRail, TabRailItem, TextInput, TextInputState, Toggle, Tone, bind_text_input_keys,
+    field_row, focus_ring, heading, label, muted, section_title,
 };
 
 const RESOLUTIONS: [&str; 4] = ["1080p", "1440p", "2160p", "Custom"];
@@ -29,7 +29,6 @@ struct Gallery {
     toggle_on: bool,
     segment: usize,
     tab: usize,
-    drawer: Option<usize>,
     fraction: f32,
     zoom: f32,
     collapsible_open: bool,
@@ -59,7 +58,6 @@ impl Gallery {
             toggle_on: true,
             segment: 1,
             tab: 0,
-            drawer: Some(0),
             fraction: 0.4,
             zoom: 0.6,
             collapsible_open: true,
@@ -378,13 +376,14 @@ impl Render for Gallery {
             &theme,
             "TabRail",
             [div()
-                .w(px(240.))
+                .w(px(300.))
                 .child(
                     TabRail::editor(
                         &theme,
                         "tabs",
                         colors.card.into(),
                         [
+                            (Icon::Bot, "Agent"),
                             (Icon::Folder, "Project"),
                             (Icon::Image, "Assets"),
                             (Icon::Palette, "Style"),
@@ -392,45 +391,15 @@ impl Render for Gallery {
                         .iter()
                         .enumerate()
                         .map(|(index, (glyph, name))| {
+                            // The Agent tab's dot shows while another tab is selected.
                             TabRailItem::new(glyph.path(), *name, index == tab, false)
+                                .dot(index == 0 && tab != 0)
                         })
                         .collect(),
                     )
                     .on_select(update(&this, |gallery, index: &usize, _, _| {
                         gallery.tab = *index
                     })),
-                )
-                .into_any_element()],
-        );
-
-        let drawer = self.drawer;
-        let rail = row(
-            &theme,
-            "NavRail",
-            [div()
-                .h(px(180.))
-                .child(
-                    NavRail::editor(
-                        &theme,
-                        "rail",
-                        [
-                            (Icon::Folder, "Project"),
-                            (Icon::Image, "Assets"),
-                            (Icon::Palette, "Style"),
-                        ]
-                        .iter()
-                        .enumerate()
-                        .map(|(index, (glyph, name))| {
-                            NavRailItem::new(glyph.path(), *name, drawer == Some(index))
-                        })
-                        .collect(),
-                    )
-                    .on_select(update(
-                        &this,
-                        |gallery, index: &usize, _, _| {
-                            gallery.drawer = (gallery.drawer != Some(*index)).then_some(*index)
-                        },
-                    )),
                 )
                 .into_any_element()],
         );
@@ -627,7 +596,6 @@ impl Render for Gallery {
                     .child(select)
                     .child(slider)
                     .child(tabs)
-                    .child(rail)
                     .child(settings)
                     .child(chips)
                     .child(focus_sample),

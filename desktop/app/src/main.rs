@@ -167,6 +167,8 @@ fn run_studio(observation: Option<Observed>) {
                 .map(|paths| studio_engine::app_settings::AppSettings::load(&paths))
                 .unwrap_or_default();
             studio_theme::init(cx, settings.theme);
+            // Observed (telemetry) runs are tests: they never reach the network.
+            let check_for_update = observation.is_none() && !settings.update_check_disabled;
             let bounds = Bounds::centered(None, size(px(1275.), px(800.)), cx);
             let window = cx
                 .open_window(
@@ -192,6 +194,9 @@ fn run_studio(observation: Option<Observed>) {
                                 cx,
                             );
                             studio_theme::bind_window(window, cx);
+                            if check_for_update {
+                                shell.check_for_update(cx);
+                            }
                             if let Some(Observed {
                                 project,
                                 output,
@@ -205,12 +210,16 @@ fn run_studio(observation: Option<Observed>) {
                     },
                 )
                 .expect("failed to open Studio");
-            // Closing the last window must not release the shell before its awaited
-            // quit hook can stop audio and drop the final materialization consumers.
+            // Closing the main window quits, the settings window does not. Closing must not
+            // release the shell before its awaited quit hook can stop audio and drop the
+            // final materialization consumers.
             let shell = window.entity(cx).expect("Studio root entity");
-            cx.on_window_closed(move |cx, _| {
+            let main = window.window_id();
+            cx.on_window_closed(move |cx, closed| {
                 let _keep_alive = &shell;
-                cx.quit();
+                if closed == main {
+                    cx.quit();
+                }
             })
             .detach();
             cx.activate(true);

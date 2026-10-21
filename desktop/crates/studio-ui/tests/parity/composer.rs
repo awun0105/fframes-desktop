@@ -462,6 +462,9 @@ fn a_question_with_two_items_is_answered_from_its_card(cx: &mut gpui::TestAppCon
             && composer(t)["questions"][0]["typed"] == json!([false, true])
     });
     assert_eq!(phase(&ready), "Waiting for your permission", "{ready:#}");
+    // The sidebar shares the window's height with the timeline: the card scrolls to Send.
+    let (x, y) = button_center(&ready, "question-0-0-opt-0").unwrap();
+    studio.scroll(x, y, -400., false);
     click_id(&mut studio, "question-0-send");
     studio.wait("the turn finished", |t| {
         phase(t) == "Accepted" && composer(t)["questions"] == json!([])

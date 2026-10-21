@@ -836,13 +836,18 @@ impl ConversationPanel {
             let state = setup.detected.state(found);
             let location = match setup.detected.installed.get(&found.id) {
                 Some(installed) => {
-                    format!(" · installed by Studio · {}", installed.entry.display())
+                    format!(
+                        " · installed by Studio · {}",
+                        studio_bootstrap::external_path(&installed.entry).display()
+                    )
                 }
                 None => found
                     .adapter
                     .as_ref()
                     .or(found.cli.as_ref())
-                    .map_or_else(String::new, |path| format!(" · {}", path.display())),
+                    .map_or_else(String::new, |path| {
+                        format!(" · {}", studio_bootstrap::external_path(path).display())
+                    }),
             };
             let installable = profile.adapter.wire == studio_harness::AgentWire::Acp
                 && adapter_install::package_for(&profile.id).is_some();

@@ -28,12 +28,28 @@ fn zoom_slider_runs_from_fit_to_the_closest_zoom() {
 }
 
 #[gpui::test]
-fn the_fit_button_reports_its_bounds_for_qualification(cx: &mut gpui::TestAppContext) {
+fn the_controls_turn_on_with_a_timeline_and_follow_the_zoom(cx: &mut gpui::TestAppContext) {
     let (view, cx) = cx.add_window_view(|_, cx| TimelineView::new(cx));
+    let reported = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let _subscription = cx.update(|_, cx| {
+        let reported = reported.clone();
+        cx.subscribe(&view, move |_, event, _| {
+            if let TimelineEvent::Controls(controls) = event {
+                reported.borrow_mut().push(*controls);
+            }
+        })
+    });
+    view.update(cx, |view, cx| {
+        view.install(thirty_clips(), Arc::from([]), 0, cx)
+    });
     cx.run_until_parked();
-    let fit = view.read_with(cx, |view, _| view.fit_bounds);
-    let [_, _, width, height] = fit.expect("the Fit button reports where it is");
-    assert!(width > 0. && height > 0., "{fit:?}");
+    let fitted = *reported.borrow().last().expect("the controls are reported");
+    assert!(fitted.enabled, "{fitted:?}");
+    assert_eq!(fitted.zoom_fraction, 0.);
+    view.update(cx, |view, cx| view.zoom(2., cx));
+    cx.run_until_parked();
+    let zoomed = *reported.borrow().last().unwrap();
+    assert!(zoomed.zoom_fraction > 0., "{zoomed:?}");
 }
 
 /// 30 one-second clips at 10 fps.

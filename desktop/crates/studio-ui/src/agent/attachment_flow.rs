@@ -343,7 +343,7 @@ impl ConversationPanel {
         let front = self.host.stage.front()?;
         let body = format!(
             "{}\n{} bytes. The agent receives a copy of this file's content; it is not part of the project.",
-            front.staged.path.display(),
+            studio_bootstrap::external_path(&front.staged.path).display(),
             front.staged.size
         );
         Some(

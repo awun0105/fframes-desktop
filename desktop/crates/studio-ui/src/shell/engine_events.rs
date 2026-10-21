@@ -754,7 +754,7 @@ impl StudioShell {
                 files: matches!(kind, Picker::Asset | Picker::Import | Picker::PresetCss),
                 directories: !matches!(kind, Picker::Asset | Picker::Import | Picker::PresetCss),
                 multiple: false,
-                prompt: Some(format!("{label}â€¦").into()),
+                prompt: Some(format!("{label}…").into()),
             });
             cx.spawn(async move |this, cx| {
                 let result = picker.await;
