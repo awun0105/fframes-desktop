@@ -25,6 +25,8 @@ OVERLAY = "desktop/fixtures/annotated-video-overlay"
 SKIA_PINS = "desktop/packaging/sdk/skia-binaries.json"
 # Host variables that would make skia-bindings download, build or bind another Skia.
 SKIA_VARIABLE_PREFIXES = ("SKIA_", "FORCE_SKIA_")
+# The FFmpeg libraries fframes links; a built worker loads no other FFmpeg DLL.
+FFMPEG_LIBRARIES = ["libavcodec", "libavformat", "libavutil", "libswscale", "libswresample"]
 
 
 def run(args, **kwargs):
@@ -74,13 +76,65 @@ def validate_ffmpeg(prefix, expected):
     pattern = rf"^n?{re.escape(major_minor)}(?:\.\d+)?(?:$|[-+._])"
     if not re.match(pattern, version):
         raise ValueError(f"Expected FFmpeg {expected}, found {version}; refusing to mislabel host libraries")
-    for library in ["libavcodec", "libavformat", "libavutil", "libswscale", "libswresample"]:
+    for library in FFMPEG_LIBRARIES:
         if not (prefix / "include" / library).is_dir():
             raise ValueError(f"Missing FFmpeg headers: {library}")
         stem = library.removeprefix("lib")
         if not any((prefix / "lib").glob(f"*{stem}*")):
             raise ValueError(f"Missing FFmpeg library: {library}")
     return version
+
+
+def prune_toolchain(toolchain, target):
+    """Drop what a native build for `target` never uses: other targets' standard libraries
+    (the host may have them installed), rust-src, debug symbols and the wasm component linker.
+    MSVC targets link with Visual Studio's link.exe, so they also drop rust-lld (108 MB); it
+    stays elsewhere, x86_64 Linux links with it by default."""
+    rustlib = toolchain / "lib/rustlib"
+    for entry in rustlib.iterdir():
+        if entry.is_dir() and entry.name not in {target, "etc"}:
+            shutil.rmtree(entry)
+    if target.endswith("windows-msvc"):
+        (rustlib / target / "bin/rust-lld.exe").unlink()
+        shutil.rmtree(rustlib / target / "bin/gcc-ld")
+    for path in toolchain.rglob("*"):
+        if path.is_file() and (path.suffix == ".pdb" or path.stem == "wasm-component-ld"):
+            path.unlink()
+
+
+def copy_ffmpeg(prefix, destination, link_mode):
+    """Copy headers and link libraries; for a shared build only the DLLs of FFMPEG_LIBRARIES.
+    Static builds need no `bin`, and nothing runs the ffmpeg, ffprobe or ffplay programs."""
+    for subdir in ["include", "lib"]:
+        shutil.copytree(prefix / subdir, destination / subdir, symlinks=False)
+    if link_mode == "shared":
+        (destination / "bin").mkdir()
+        for library in FFMPEG_LIBRARIES:
+            for dll in (prefix / "bin").glob(f"{library.removeprefix('lib')}-*.dll"):
+                shutil.copy(dll, destination / "bin" / dll.name)
+
+
+def prune_vendor(vendor_dir, used):
+    """Delete the prebuilt import libraries (`lib/`) of vendored crates that no build for this
+    target compiles, such as winapi's and windows-targets' crates for other targets. Cargo
+    still resolves the full lockfile, so the crates and their sources stay; their checksum
+    lists drop the deleted files, which Cargo then does not look for."""
+    for crate in vendor_dir.iterdir():
+        if crate.name in used or not (crate / "lib").is_dir():
+            continue
+        shutil.rmtree(crate / "lib")
+        checksums_path = crate / ".cargo-checksum.json"
+        checksums = json.loads(checksums_path.read_text())
+        checksums["files"] = {k: v for k, v in checksums["files"].items() if not k.startswith("lib/")}
+        checksums_path.write_text(json.dumps(checksums))
+
+
+def target_packages(cargo, worker, environment, target):
+    """The `name-version` vendor folders of the packages a build of `worker` for `target` uses."""
+    metadata = json.loads(run([cargo, "metadata", "--offline", "--format-version", "1", "--filter-platform", target],
+                              cwd=worker, env=environment, capture_output=True, encoding="utf-8").stdout)
+    packages = {p["id"]: f"{p['name']}-{p['version']}" for p in metadata["packages"]}
+    return {packages[node["id"]] for node in metadata["resolve"]["nodes"]}
 
 
 def configure_bundled_ffmpeg(framework):
@@ -291,9 +345,8 @@ def assemble(output, ffmpeg_root, vendor=None):
         sysroot = Path(run(["rustc", "--print", "sysroot"], capture_output=True).stdout.strip())
         for subdir in ["bin", "lib"]:
             shutil.copytree(sysroot / subdir, staging / "toolchain" / subdir, symlinks=False)
-        for subdir in ["include", "lib", "bin"]:
-            if (ffmpeg_root / subdir).is_dir():
-                shutil.copytree(ffmpeg_root / subdir, staging / "ffmpeg" / subdir, symlinks=False)
+        prune_toolchain(staging / "toolchain", target)
+        copy_ffmpeg(ffmpeg_root, staging / "ffmpeg", link_mode)
         framework = staging / "framework/framework"
         framework.mkdir(parents=True)
         for crate in CRATES:
@@ -322,6 +375,8 @@ def assemble(output, ffmpeg_root, vendor=None):
         if os.name == "nt":
             environment["PATH"] = str(staging / "ffmpeg/bin") + os.pathsep + environment["PATH"]
         cargo = str(staging / "toolchain/bin" / ("cargo.exe" if os.name == "nt" else "cargo"))
+        # Pruned before the qualification builds below, which then prove the archive builds.
+        prune_vendor(vendor_dir, target_packages(cargo, worker, environment, target))
         for directory, attempt in [(worker, "first"), (worker, "second")]:
             environment["CARGO_TARGET_DIR"] = str(staging / f"build-{attempt}")
             run([cargo, "build", "--offline"], cwd=directory, env=environment)

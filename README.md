@@ -204,7 +204,21 @@ compile them from source (up to ~20 minutes). Later builds take seconds. `--back
 
 ## Requirements
 
-[Rust](https://www.rust-lang.org/learn/get-started) and, for working on the editor, [NodeJS](https://nodejs.org/en/download/).
+One command installs everything below that is missing: Rust (rustup's minimal profile, without the offline docs),
+the C toolchain and codec libraries, and on Windows the Visual Studio Build Tools with clang and a shared FFmpeg 9
+(it also sets `FFMPEG_DIR`, `LIBCLANG_PATH` and `PATH` for your user). Running it again skips what is installed.
+
+```sh
+# macOS (Homebrew), Debian/Ubuntu (apt) or Arch (pacman)
+curl -fsSL https://raw.githubusercontent.com/khanhthanhdev/fframes-desktop/main/scripts/install-deps.sh | bash
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/khanhthanhdev/fframes-desktop/main/scripts/install-deps.ps1 | iex
+```
+
+The manual steps follow. You need [Rust](https://www.rust-lang.org/learn/get-started) and, for working on the editor, [NodeJS](https://nodejs.org/en/download/).
 fframes links ffmpeg's libav libraries statically. A prebuilt build is downloaded for macOS and Linux (arm64 and x86_64) and
 compiled from source for other targets or `FFMPEG_FORCE_BUILD=1`; either way the system encoders they link against have to be installed.
 

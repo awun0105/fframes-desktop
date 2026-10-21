@@ -167,11 +167,20 @@ def package(output, sdk_bundle=None):
         ffmpeg = os.environ.get("FFMPEG_DIR")
         if not ffmpeg:
             raise ValueError("FFMPEG_DIR required for native Windows DLL packaging")
-        dlls = list((Path(ffmpeg) / "bin").glob("*.dll"))
-        if not dlls:
+        available = {dll.name.lower(): dll for dll in (Path(ffmpeg) / "bin").glob("*.dll")}
+        if not available:
             raise ValueError("FFMPEG_DIR contains no runtime DLLs")
-        for dll in dlls:
-            shutil.copy2(dll, bin_dir)
+        # Only the DLLs the packaged binaries load, directly or through each other: avfilter
+        # and avdevice (about 40 MB) are imported by no Studio binary.
+        needed, pending = set(), [bin_dir / (name + suffix) for name in PACKAGED_BINARIES]
+        while pending:
+            for name in pe_imports(pending.pop()):
+                dll = available.get(name.lower())
+                if dll and dll.name.lower() not in needed:
+                    needed.add(dll.name.lower())
+                    pending.append(dll)
+        for name in needed:
+            shutil.copy2(available[name], bin_dir)
         (output / "native-dependencies.txt").write_text(native_dependencies(bin_dir))
         (output / "launch.ps1").write_text('$ErrorActionPreference = "Stop"\n$env:FFRAMES_SDK_BUNDLE = Join-Path $PSScriptRoot "sdk"\n& (Join-Path $PSScriptRoot "bin/fframes-studio.exe") studio | Out-Null\nexit $LASTEXITCODE\n')
         (output / "launch.bat").write_text('@echo off\r\nset "FFRAMES_SDK_BUNDLE=%~dp0sdk"\r\n"%~dp0bin\\fframes-studio.exe" studio %*\r\n')
