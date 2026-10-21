@@ -33,6 +33,7 @@
   box-sizing: border-box;
 }
 html {
+  scrollbar-gutter: stable;
   scroll-behavior: smooth;
   scroll-padding-top: 110px;
 }
@@ -245,6 +246,10 @@ p {
 .motion-controls[hidden] {
   display: none;
 }
+html.js-enabled .motion-controls[hidden] {
+  display: flex;
+  visibility: hidden;
+}
 .motion-controls {
   display: flex;
   flex-wrap: wrap;
@@ -252,6 +257,7 @@ p {
   gap: 10px 14px;
   margin: 20px 0 0;
   max-width: 440px;
+  min-height: 38px;
 }
 .motion-controls button {
   border: 1px solid #b7c9eb;
@@ -607,6 +613,16 @@ html:not(.story-motion) .result-packet {
   }
 }
 @media (max-width: 760px) {
+  .motion-controls,
+  html.js-enabled .motion-controls[hidden] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 76px;
+    align-content: start;
+  }
+  .motion-controls button {
+    justify-self: start;
+  }
   .integrations.agent-logos {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;

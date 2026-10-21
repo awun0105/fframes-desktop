@@ -772,7 +772,7 @@
   transform: translateX(var(--support-travel, 0px));
 }
 @media (min-width: 1101px) {
-  body:has(.transaction) main.container {
+  body.internals-page main.container {
     width: min(1450px, calc(100% - 80px));
   }
   .transaction-figure figcaption {
