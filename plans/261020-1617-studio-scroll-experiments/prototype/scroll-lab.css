@@ -1,0 +1,130 @@
+/* Scroll lab: animation engine for the Studio figures. Every keyframe animates FROM a start
+   state TO nothing, so the generated drawing is always the last frame, and nothing hides
+   unless html.lab-motion is set (reduced motion and "Static" leave it off).
+
+   Each animated element carries .a, one .a-<kind>, and --s / --e: its window on a 0..100
+   choreography clock shared by the whole figure. Scrub mode maps that clock onto the
+   figure's view timeline; play mode maps it onto 1.4 s, started by an IntersectionObserver. */
+
+/* ---------- lab chrome ---------- */
+.lab-bar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 6px;
+  border-radius: var(--r-lg);
+  background: rgb(255 255 255 / .9);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 0 0 1px var(--border), 0 8px 24px rgb(0 0 0 / .08);
+  translate: -50% 0;
+}
+.lab-group { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-full); background: var(--surface-secondary); }
+.lab-bar button {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font: 500 12px var(--mono);
+  cursor: pointer;
+}
+.lab-bar button:hover { color: var(--text); }
+.lab-bar button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.lab-replay { box-shadow: inset 0 0 0 1px var(--border); }
+html:not(.mode-play) .lab-replay { display: none; }
+.lab-item:last-child { margin-bottom: 40vh; }
+
+.lab-playhead { stroke: var(--accent); stroke-width: 1.5; }
+html:not(.lab-motion) .lab-playhead { display: none; }
+
+/* pinned hero: the figure holds still while the page scrolls past it */
+@media (min-width: 900px) {
+  html.hero-pin .hero-stage { height: 240vh; }
+  html.hero-pin .hero-stage > .fig { position: sticky; top: 84px; }
+}
+
+/* ---------- engine ---------- */
+/* backwards, not both: once its window has passed an animation has no effect at all, so the
+   element renders exactly like the static drawing (with `both` Chrome keeps finished elements
+   as separate effect nodes and their antialiasing differs) */
+html.lab-motion .a {
+  animation-fill-mode: backwards;
+  animation-timing-function: cubic-bezier(.2, .7, .2, 1);
+}
+/* things that show progress (a line drawing, a bar filling, a playhead) move linearly so
+   their position tracks the scroll; only things that settle into place ease out */
+html.lab-motion .a-draw, html.lab-motion .a-grow-x, html.lab-motion .a-grow-y, html.lab-motion .lab-playhead { animation-timing-function: linear; }
+html.lab-motion .a-draw { stroke-dasharray: 1 1; }
+.a-pop, .a-grow-x, .a-grow-y { transform-box: fill-box; }
+.a-pop { transform-origin: 50% 50%; }
+.a-grow-x { transform-origin: 0 50%; }
+.a-grow-y { transform-origin: 50% 100%; }
+
+html.lab-motion .a-fade { animation-name: a-fade; }
+html.lab-motion .a-dim { animation-name: a-dim; }
+html.lab-motion .a-ghost { animation-name: a-ghost; }
+html.lab-motion .a-move { animation-name: a-move; }
+html.lab-motion .a-move-fade { animation-name: a-move-fade; }
+html.lab-motion .a-draw { animation-name: a-draw; }
+html.lab-motion .a-pop { animation-name: a-pop; }
+html.lab-motion .a-grow-x { animation-name: a-grow-x; }
+html.lab-motion .a-grow-y { animation-name: a-grow-y; }
+html.lab-motion .a-fill { animation-name: a-fill; }
+
+@keyframes a-fade { from { opacity: 0; } }
+@keyframes a-dim { from { opacity: .25; } }
+@keyframes a-ghost { from { opacity: .12; translate: 0 calc(var(--dy, 0) * 1px); } }
+@keyframes a-move { from { translate: calc(var(--dx, 0) * 1px) calc(var(--dy, 0) * 1px); } }
+@keyframes a-move-fade { from { opacity: 0; translate: calc(var(--dx, 0) * 1px) calc(var(--dy, 0) * 1px); } }
+@keyframes a-draw { from { stroke-dashoffset: 1; } }
+@keyframes a-pop { from { opacity: 0; scale: 0; } }
+@keyframes a-grow-x { from { scale: 0 1; } }
+@keyframes a-grow-y { from { scale: 1 0; } }
+@keyframes a-fill { from { fill: #fff; } }
+/* the one exit, for helpers that are not part of the drawing (playheads) */
+@keyframes a-out { to { opacity: 0; } }
+html.lab-motion .a-out { animation-name: a-out; animation-fill-mode: both; }
+
+/* play once: the same windows as delays on a 1.4 s clock */
+html.lab-motion.mode-play .a {
+  animation-duration: calc((var(--e) - var(--s)) * 14ms);
+  animation-delay: calc(var(--s) * 14ms);
+  animation-play-state: paused;
+}
+html.lab-motion.mode-play .fig.is-visible .a { animation-play-state: running; }
+
+/* scrub: the clock is a 1px marker at the figure's centre crossing the viewport, from 85% down
+   the screen (cover 15%) to the middle (cover 50%). Timing the marker instead of the figure
+   gives every figure the same scroll distance, and tall figures finish when centred instead of
+   animating while their lower half is still below the fold. timeline-scope lets the SVG,
+   which is not inside the marker, use its timeline. */
+.fig { position: relative; }
+.fig-clock { position: absolute; top: 50%; left: 0; width: 1px; height: 1px; pointer-events: none; }
+@supports (animation-timeline: view()) {
+  .fig { timeline-scope: --fig; }
+  .fig-clock { view-timeline: --fig block; }
+  .hero-stage { view-timeline: --pin block; }
+  html.lab-motion.mode-scrub .a {
+    animation-duration: auto;
+    animation-timeline: --fig;
+    animation-range: cover calc(15% + var(--s) * .35%) cover calc(15% + var(--e) * .35%);
+  }
+  /* the hero is on screen at load, so it runs on page scroll from 0 to 500px instead */
+  html.lab-motion.mode-scrub .fig[data-fig="hero"] .a {
+    animation-timeline: scroll(root);
+    animation-range: calc(var(--s) * 5px) calc(var(--e) * 5px);
+  }
+  html.lab-motion.mode-scrub.hero-pin .fig[data-fig="hero"] .a {
+    animation-timeline: --pin;
+    animation-range: contain calc(var(--s) * 1%) contain calc(var(--e) * 1%);
+  }
+}
