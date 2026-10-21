@@ -11,10 +11,10 @@
     <meta name="color-scheme" content="light" />
     <link rel="stylesheet" href="home.css" />
     <link rel="stylesheet" href="features.css" />
-    <link rel="icon" href="../brand/favicon.ico" sizes="48x48" />
-    <link rel="icon" href="../brand/fframes-mark.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="../brand/apple-touch-icon.png" />
-    <link rel="manifest" href="../site.webmanifest" />
+    <link rel="icon" href="brand/favicon.ico" sizes="any" />
+    <link rel="icon" href="brand/favicon.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="brand/apple-touch-icon.png" />
+    <link rel="manifest" href="site.webmanifest" />
     <meta name="theme-color" content="#fafbf9" />
     <link rel="canonical" href="https://fframes.studio/studio/" />
     <meta property="og:type" content="website" />
@@ -51,16 +51,22 @@
           (window.plausible.q = window.plausible.q || []).push(arguments);
         };
     </script>
+    <link rel="stylesheet" href="readability.css" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="container nav">
-        <a class="brand" href="./" aria-label="fframes Studio home"
-          ><img src="wordmark.svg" alt="fframes" width="96" height="24" /><span
-            >Studio</span
-          ></a
-        >
+        <a
+          class="studio-brand"
+          href="index.html"
+          aria-label="fframes Studio home"
+          ><img
+            src="brand/fframes-studio-logo-blue-v1.png"
+            alt="fframes studio"
+            width="2048"
+            height="690"
+        /></a>
         <nav class="nav-links" aria-label="Main navigation">
           <a class="desktop-link" href="#workflow">The workflow</a
           ><a href="how-it-works.html">How it works</a
@@ -259,9 +265,9 @@
                   ✓ checked
                 </text>
               </g>
-              <path class="leader" d="M523 551h28" />
-              <text x="561" y="547" class="diagram-label">03 / CHECKS</text>
-              <text x="561" y="563" class="diagram-small">
+              <path class="leader" d="M523 551h8" />
+              <text x="541" y="547" class="diagram-label">03 / CHECKS</text>
+              <text x="541" y="563" class="diagram-small">
                 Build → validate
               </text>
             </g>
@@ -301,9 +307,9 @@
                 </g>
                 <text x="18" y="134" class="diagram-code">&lt;/text&gt;</text>
               </g>
-              <path class="leader" d="M523 362h28" />
-              <text x="561" y="358" class="diagram-label">02 / DRAFT</text>
-              <text x="561" y="374" class="diagram-small">
+              <path class="leader" d="M523 362h8" />
+              <text x="541" y="358" class="diagram-label">02 / DRAFT</text>
+              <text x="541" y="374" class="diagram-small">
                 Agent edits Rust
               </text>
             </g>
@@ -374,9 +380,9 @@
                   stroke-width="2"
                 />
               </g>
-              <path class="leader" d="M523 172h28" />
-              <text x="561" y="168" class="diagram-label">01 / PREVIEW</text>
-              <text x="561" y="184" class="diagram-small">
+              <path class="leader" d="M523 172h8" />
+              <text x="541" y="168" class="diagram-label">01 / PREVIEW</text>
+              <text x="541" y="184" class="diagram-small">
                 Select the title
               </text>
             </g>
@@ -411,6 +417,42 @@
             <span class="readout-index">01—04</span
             ><span data-state-label>Selection → draft → checks → preview</span>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="workflow"
+            role="group"
+            aria-label="Anatomy of an edit"
+          >
+            <div class="compact-card compact-preview">
+              <strong>01 / Preview</strong>
+              <div class="compact-card-detail">
+                <span class="compact-preview-title"
+                  ><span class="compact-before">Hello.</span
+                  ><span class="compact-after">Make your move.</span></span
+                ><small>Select the title</small>
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-draft">
+              <strong>02 / Agent draft</strong>
+              <div class="compact-card-detail">
+                <code>src/lib.rs</code
+                ><small>Edits a separate working copy</small
+                ><span class="compact-edit">+ “Make your move.”</span>
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-checks">
+              <strong>03 / Checks</strong>
+              <div class="compact-card-detail">
+                <span class="compact-check-build">Build ✓</span> →
+                <span class="compact-check-inspect">Inspect ✓</span
+                ><small>Accepted edit updates the preview</small>
+              </div>
+            </div>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption id="figure-caption">
             One selected title, an agent’s draft, and the checks between them.
             Simplified workflow; example artwork and code.
@@ -423,18 +465,99 @@
           </nav>
         </figure>
       </section>
-      <div class="compatibility">
+      <section class="compatibility" aria-labelledby="agent-connections-title">
         <div class="container">
-          <p>Connect the coding agent you use.</p>
-          <div class="integrations">
-            <span>Claude Code</span><span>OpenAI Codex</span
-            ><span>ACP agents</span
-            ><span class="integration-note"
-              >Native workspace. Powered by fframes.</span
-            >
-          </div>
+          <p id="agent-connections-title">Connect the coding agent you use.</p>
+          <ul class="integrations agent-logos" aria-label="Coding agents">
+            <li>
+              <a
+                href="https://claude.com/product/claude-code"
+                target="_blank"
+                rel="noopener noreferrer"
+                ><img
+                  src="agents/claude.svg"
+                  width="32"
+                  height="32"
+                  alt=""
+                  loading="lazy"
+                /><span>Claude Code</span></a
+              >
+            </li>
+            <li>
+              <a
+                href="https://developers.openai.com/codex/"
+                target="_blank"
+                rel="noopener noreferrer"
+                ><img
+                  src="agents/openai.svg"
+                  width="32"
+                  height="32"
+                  alt=""
+                  loading="lazy"
+                /><span>OpenAI Codex</span></a
+              >
+            </li>
+            <li>
+              <a
+                href="https://opencode.ai/"
+                target="_blank"
+                rel="noopener noreferrer"
+                ><img
+                  src="agents/opencode.svg"
+                  width="32"
+                  height="32"
+                  alt=""
+                  loading="lazy"
+                /><span>OpenCode</span></a
+              >
+            </li>
+            <li>
+              <a
+                href="https://antigravity.google/"
+                target="_blank"
+                rel="noopener noreferrer"
+                ><img
+                  src="agents/antigravity.svg"
+                  width="32"
+                  height="32"
+                  alt=""
+                  loading="lazy"
+                /><span>Antigravity</span></a
+              >
+            </li>
+            <li>
+              <a
+                href="https://pi.dev/"
+                target="_blank"
+                rel="noopener noreferrer"
+                ><img
+                  class="agent-logo-pi"
+                  src="agents/pi.svg"
+                  width="44"
+                  height="44"
+                  alt=""
+                  loading="lazy"
+                /><span>Pi</span></a
+              >
+            </li>
+            <li>
+              <a
+                href="https://agentclientprotocol.com/get-started/agents"
+                target="_blank"
+                rel="noopener noreferrer"
+                ><img
+                  class="agent-logo-acp"
+                  src="agents/acp.svg"
+                  width="44"
+                  height="32"
+                  alt=""
+                  loading="lazy"
+                /><span>ACP agents</span></a
+              >
+            </li>
+          </ul>
         </div>
-      </div>
+      </section>
       <section
         class="ownership container"
         id="studio-workspace"
@@ -469,14 +592,11 @@
                 <span>YOUR FILES, CONNECTED</span
                 ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
               </div>
-              <p class="product-figure-hint">
-                Scroll the figure sideways to see every detail ↔
-              </p>
               <div
                 class="product-figure-scroll"
                 tabindex="0"
                 role="region"
-                aria-label="YOUR FILES, CONNECTED; scroll horizontally on small screens"
+                aria-label="YOUR FILES, CONNECTED"
               >
                 <svg
                   viewBox="0 0 640 360"
@@ -507,7 +627,7 @@
                     <text x="57" y="268" class="pf-code">timeline.json</text>
                   </g>
                   <path
-                    d="M307 100h30v80h37m-67 3h67m-67 80h30v-83"
+                    d="M307 100H337V263H307M307 180H374M368 174l6 6-6 6"
                     class="pf-edge"
                   />
                   <g class="pf-flow">
@@ -544,6 +664,36 @@
                   </text>
                 </svg>
               </div>
+              <!-- mobile-diagram -->
+              <div
+                class="compact-diagram"
+                data-compact="project"
+                role="group"
+                aria-label="Diagram"
+              >
+                <div class="compact-card">
+                  <strong>Your project files</strong>
+                  <div class="compact-card-detail">
+                    <code>src/lib.rs</code><code>media/</code
+                    ><code>timeline.json</code>
+                  </div>
+                </div>
+                <span class="compact-arrow" aria-hidden="true">↓</span>
+                <div class="compact-card compact-blue">
+                  <strong>Build & prepare</strong>
+                  <div class="compact-card-detail">
+                    Compatible project · successful build
+                  </div>
+                </div>
+                <span class="compact-arrow" aria-hidden="true">↓</span>
+                <div class="compact-card compact-green">
+                  <strong>Studio preview</strong>
+                  <div class="compact-card-detail">
+                    Your source, rendered as a frame
+                  </div>
+                </div>
+              </div>
+              <!-- /mobile-diagram -->
               <figcaption>
                 A project structure, not a hidden document format. The preview
                 requires a compatible project and a successful build.
@@ -569,14 +719,11 @@
                 <span>CHANGE THE CUT, KEEP THE CODE</span
                 ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
               </div>
-              <p class="product-figure-hint">
-                Scroll the figure sideways to see every detail ↔
-              </p>
               <div
                 class="product-figure-scroll"
                 tabindex="0"
                 role="region"
-                aria-label="CHANGE THE CUT, KEEP THE CODE; scroll horizontally on small screens"
+                aria-label="CHANGE THE CUT, KEEP THE CODE"
               >
                 <svg
                   viewBox="0 0 640 360"
@@ -636,7 +783,7 @@
                       y="163"
                       width="24"
                       height="62"
-                      fill="#fafbf8"
+                      fill="#fafcff"
                     />
                     <path class="pf-trim-edge" d="M32 160v68" />
                     <text x="69" y="200" class="pf-code">A / INTRO</text>
@@ -707,6 +854,41 @@
                   </text>
                 </svg>
               </div>
+              <!-- mobile-diagram -->
+              <div
+                class="compact-diagram"
+                data-compact="timing"
+                role="group"
+                aria-label="Diagram"
+              >
+                <div class="compact-card">
+                  <strong>Original scenes</strong>
+                  <div class="compact-card-detail">
+                    <div class="compact-chips">
+                      <span>A / Intro</span><span>B / Main</span
+                      ><span>C / Outro</span>
+                    </div>
+                  </div>
+                </div>
+                <span class="compact-arrow" aria-hidden="true">↓</span>
+                <div class="compact-card compact-blue">
+                  <strong>Split → reorder → trim</strong>
+                  <div class="compact-card-detail">
+                    <div class="compact-chips">
+                      <span>C / Outro</span><span>A / Intro · trimmed</span
+                      ><span>B₁</span><span>B₂</span>
+                    </div>
+                  </div>
+                </div>
+                <span class="compact-arrow" aria-hidden="true">↓</span>
+                <div class="compact-card compact-green">
+                  <strong>timeline.json updated</strong>
+                  <div class="compact-card-detail">
+                    Rust source stays unchanged. No rebuild.
+                  </div>
+                </div>
+              </div>
+              <!-- /mobile-diagram -->
               <figcaption>
                 Illustrative split → reorder → trim. Timing-only edits do not
                 rebuild Rust. Timing changes are unavailable while an agent task
@@ -733,14 +915,11 @@
                 <span>FROM SETUP TO A WORKING PREVIEW</span
                 ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
               </div>
-              <p class="product-figure-hint">
-                Scroll the figure sideways to see every detail ↔
-              </p>
               <div
                 class="product-figure-scroll"
                 tabindex="0"
                 role="region"
-                aria-label="FROM SETUP TO A WORKING PREVIEW; scroll horizontally on small screens"
+                aria-label="FROM SETUP TO A WORKING PREVIEW"
               >
                 <svg
                   viewBox="0 0 640 360"
@@ -828,6 +1007,35 @@
                   </text>
                 </svg>
               </div>
+              <!-- mobile-diagram -->
+              <div
+                class="compact-diagram"
+                data-compact="sdk"
+                role="group"
+                aria-label="Diagram"
+              >
+                <div class="compact-card compact-blue">
+                  <strong>01 / Install the SDK</strong>
+                  <div class="compact-card-detail">
+                    Rust · fframes · FFmpeg · Skia
+                  </div>
+                </div>
+                <span class="compact-arrow" aria-hidden="true">↓</span>
+                <div class="compact-card">
+                  <strong>02 / Build an example</strong>
+                  <div class="compact-card-detail">
+                    Use the managed toolchain
+                  </div>
+                </div>
+                <span class="compact-arrow" aria-hidden="true">↓</span>
+                <div class="compact-card compact-green">
+                  <strong>03 / Prepare preview</strong>
+                  <div class="compact-card-detail">
+                    Worker + first frame + audio
+                  </div>
+                </div>
+              </div>
+              <!-- /mobile-diagram -->
               <figcaption>
                 A preparation sequence, not elapsed build time. Failed or
                 cancelled builds keep the previous preview.
@@ -853,14 +1061,11 @@
                 <span>TURN THE PROJECT INTO A VIDEO</span
                 ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
               </div>
-              <p class="product-figure-hint">
-                Scroll the figure sideways to see every detail ↔
-              </p>
               <div
                 class="product-figure-scroll"
                 tabindex="0"
                 role="region"
-                aria-label="TURN THE PROJECT INTO A VIDEO; scroll horizontally on small screens"
+                aria-label="TURN THE PROJECT INTO A VIDEO"
               >
                 <svg
                   viewBox="0 0 640 360"
@@ -968,6 +1173,38 @@
                   </text>
                 </svg>
               </div>
+              <!-- mobile-diagram -->
+              <div
+                class="compact-diagram"
+                data-compact="export"
+                role="group"
+                aria-label="Diagram"
+              >
+                <div class="compact-card">
+                  <strong>Your project</strong>
+                  <div class="compact-card-detail">
+                    Editable source + media + timing
+                  </div>
+                </div>
+                <span class="compact-arrow" aria-hidden="true">↓</span>
+                <div class="compact-card compact-blue">
+                  <strong>Render frame by frame</strong>
+                  <div class="compact-card-detail">
+                    <div class="compact-chips">
+                      <span>Frame 001</span><span>Frame 002</span
+                      ><span>Frame 003</span>
+                    </div>
+                  </div>
+                </div>
+                <span class="compact-arrow" aria-hidden="true">↓</span>
+                <div class="compact-card compact-green">
+                  <strong>Save a video file</strong>
+                  <div class="compact-card-detail">
+                    Choose a worker-supported format
+                  </div>
+                </div>
+              </div>
+              <!-- /mobile-diagram -->
               <figcaption>
                 Illustrative frames and render progress. Available formats, size
                 and frame rate come from the project’s worker.
@@ -1098,41 +1335,86 @@
         </div>
       </section>
     </main>
-    <footer>
+    <footer class="studio-footer">
       <div class="container">
-        <div class="footer-top">
-          <a class="brand" href="../index.html" aria-label="fframes home"
-            ><img
-              src="wordmark.svg"
-              alt="fframes"
-              width="96"
-              height="24"
-            /><span>Studio</span></a
+        <div class="studio-footer-callout">
+          <div>
+            <p class="footer-kicker">FROM SOURCE TO FRAME</p>
+            <h2>Your next idea.<br /><span>Already in motion.</span></h2>
+          </div>
+          <a class="button footer-download" href="index.html#install"
+            >Get fframes Studio <span aria-hidden="true">↗</span></a
           >
-          <ul class="footer-links">
-            <li><a href="../index.html">The library ↗</a></li>
-            <li><a href="how-it-works.html">How it works</a></li>
-            <li>
-              <a
-                href="https://github.com/khanhthanhdev/fframes-desktop"
-                target="_blank"
-                rel="noopener noreferrer"
-                >GitHub ↗</a
-              >
-            </li>
-            <li>
-              <a
-                href="https://discord.gg/5UaUVewRe"
-                target="_blank"
-                rel="noopener noreferrer"
-                >Discord ↗</a
-              >
-            </li>
-          </ul>
         </div>
-        <div class="footer-bottom">
-          <span>FROM SOURCE TO FRAME.</span
-          ><span>FFRAMES STUDIO · WINDOWS PREVIEW</span>
+        <div class="studio-footer-grid">
+          <div class="studio-footer-about">
+            <a
+              class="studio-brand footer-brand"
+              href="index.html"
+              aria-label="fframes Studio home"
+              ><img
+                src="brand/fframes-studio-logo-blue-v1.png"
+                alt="fframes studio"
+                width="2048"
+                height="690"
+                loading="lazy"
+            /></a>
+            <p>
+              A native video workspace for your code, your coding agent, and
+              your next idea.
+            </p>
+            <span class="footer-preview"
+              ><span aria-hidden="true"></span> Windows preview available</span
+            >
+          </div>
+          <nav class="studio-footer-column" aria-label="Product links">
+            <h3>Studio</h3>
+            <a href="index.html">Overview</a
+            ><a href="index.html#studio-workspace">The workspace</a
+            ><a href="how-it-works.html">How it works</a
+            ><a href="index.html#install"
+              >Install Studio <span aria-hidden="true">↗</span></a
+            >
+          </nav>
+          <nav class="studio-footer-column" aria-label="Developer links">
+            <h3>Build with us</h3>
+            <a href="../index.html"
+              >fframes library <span aria-hidden="true">↗</span></a
+            ><a
+              href="https://github.com/khanhthanhdev/fframes-desktop"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Source code <span aria-hidden="true">↗</span></a
+            ><a
+              href="https://github.com/khanhthanhdev/fframes-desktop/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Releases <span aria-hidden="true">↗</span></a
+            >
+          </nav>
+          <nav class="studio-footer-column" aria-label="Community links">
+            <h3>Say hello</h3>
+            <a
+              href="https://discord.gg/5UaUVewRe"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Discord <span aria-hidden="true">↗</span></a
+            ><a
+              href="https://github.com/khanhthanhdev/fframes-desktop/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Report an issue <span aria-hidden="true">↗</span></a
+            ><a
+              href="https://github.com/khanhthanhdev/fframes-desktop/blob/main/LICENSE.txt"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Open-source license <span aria-hidden="true">↗</span></a
+            >
+          </nav>
+        </div>
+        <div class="studio-footer-bottom">
+          <span>fframes Studio · Made for making.</span
+          ><span>Your code. Your tools. Your studio.</span>
         </div>
       </div>
     </footer>

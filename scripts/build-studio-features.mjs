@@ -1,5 +1,6 @@
 // Homepage chapters: project ownership, timing, SDK preparation and export.
 import { readFileSync, writeFileSync } from "node:fs";
+import { mobileDiagrams } from "./studio-mobile-diagrams.mjs";
 const file = "landing/studio/index.html";
 const figure = (
   name,
@@ -22,7 +23,7 @@ const project = figure(
 <g class="pf-file pf-file-one"><path d="M40 66h80l13 14h155v52H40Z" class="pf-paper"/><text x="57" y="104" class="pf-code">src/lib.rs</text><text x="223" y="104" class="pf-micro">RUST</text></g>
 <g class="pf-file pf-file-two"><path d="M40 148h80l13 14h155v52H40Z" class="pf-blue"/><text x="57" y="186" class="pf-code">media/</text><path d="M236 175h28v24h-28Zm4 19 8-10 6 6 5-4" class="pf-edge"/></g>
 <g class="pf-file pf-file-three"><path d="M40 230h80l13 14h155v52H40Z" class="pf-green"/><text x="57" y="268" class="pf-code">timeline.json</text></g>
-<path d="M307 100h30v80h37m-67 3h67m-67 80h30v-83" class="pf-edge"/>
+<path d="M307 100H337V263H307M307 180H374M368 174l6 6-6 6" class="pf-edge"/>
 <g class="pf-flow"><path d="M340 174h12v12h-12Z" class="pf-signal"/></g>
 <g class="pf-output"><rect x="385" y="88" width="225" height="184" rx="4" class="pf-paper"/><path d="M385 119h225" class="pf-edge"/><text x="401" y="108" class="pf-micro">STUDIO PREVIEW</text><rect x="401" y="134" width="193" height="99" class="pf-green"/><circle cx="498" cy="183" r="29" class="pf-pink"/><path d="m490 167 23 16-23 16Z" class="pf-fill-ink"/><path d="M403 252h170m-170 0h61" class="pf-edge"/><circle cx="467" cy="252" r="3" class="pf-fill-green"/></g>
 <text x="40" y="332" class="pf-micro">ORDINARY FILES. YOUR OWN TOOLS.</text><text x="610" y="332" text-anchor="end" class="pf-micro">SOURCE → FRAME</text>`,
@@ -125,4 +126,4 @@ page = page.replace(
   /<!-- studio-features -->[\s\S]*?<!-- \/studio-features -->/,
   `<!-- studio-features -->\n${html}\n<!-- /studio-features -->`
 );
-writeFileSync(file, page);
+writeFileSync(file, mobileDiagrams(page));

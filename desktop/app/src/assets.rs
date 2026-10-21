@@ -65,14 +65,20 @@ icon_files!(
     "caption-close-windows",
 );
 
+const BRAND_FILES: &[(&str, &[u8])] = &[(
+    "branding/studio-icon.png",
+    include_bytes!("../assets/branding/studio-icon.png"),
+)];
+
 /// Serves the embedded Lucide icons (ISC, see `packaging/sdk/notices`) and Cap's Windows
-/// caption glyphs.
+/// caption glyphs, along with the full-color Studio application mark.
 pub struct Assets;
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         Ok(ICON_FILES
             .iter()
+            .chain(BRAND_FILES.iter())
             .find(|(name, _)| *name == path)
             .map(|(_, bytes)| Cow::Borrowed(*bytes)))
     }
@@ -80,6 +86,7 @@ impl AssetSource for Assets {
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         Ok(ICON_FILES
             .iter()
+            .chain(BRAND_FILES.iter())
             .filter(|(name, _)| name.starts_with(path))
             .map(|(name, _)| SharedString::from(*name))
             .collect())

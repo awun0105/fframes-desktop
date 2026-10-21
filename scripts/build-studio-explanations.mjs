@@ -1,6 +1,7 @@
 // Fixed node geometry and directed paths: scroll draws the explanation without
 // detaching connected nodes. Stage distances are illustrative, not elapsed time.
 import { readFileSync, writeFileSync } from "node:fs";
+import { mobileDiagrams } from "./studio-mobile-diagrams.mjs";
 const file = "landing/studio/how-it-works.html";
 const node = (
   id,
@@ -115,7 +116,7 @@ ${node("scenes", 25, 45, 210, 110, "Compiled scenes", ["Stable scene keys", "Cur
 ${node("gesture", 25, 240, 210, 110, "Timeline gesture", ["Split · trim · move", "Undo / redo"])}
 ${path("timing", "M235 100H265V150H290", "a")}
 ${path("timing", "M235 295H265V210H290", "b")}
-${node("timing-doc", 290, 115, 210, 130, "timeline.json", ["Order · splits · trims", "Separate timing revision"], "green")}
+${node("timing-doc", 290, 115, 210, 130, "timeline.json", ["Order · splits · trims", "Separate timing", "revision"], "green")}
 ${path("timing", "M500 180H540", "c")}
 ${node("timed-worker", 540, 115, 195, 130, "Preview worker", ["Applies timing", "Same Rust build"], "green", "ex-confirm")}
 <text x="290" y="330" class="ex-label">TIMING CHANGE ≠ SOURCE REBUILD</text>`,
@@ -186,4 +187,4 @@ for (const [id, drawing] of Object.entries({
     ),
     `<!-- explanations:${id} -->${drawing}<!-- /explanations:${id} -->`
   );
-writeFileSync(file, html);
+writeFileSync(file, mobileDiagrams(html));

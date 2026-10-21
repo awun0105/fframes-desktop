@@ -15,7 +15,7 @@ use studio_theme::{METRICS, TextStyle, text_style};
 
 use super::sections::{Section, section_probe};
 use super::{Picker, StudioShell};
-use crate::kit::{CAPTION_BUTTON_W, Icon, IconButtonSize, icon, selectable};
+use crate::kit::{CAPTION_BUTTON_W, Icon, IconButtonSize, selectable};
 
 /// Room for the macOS traffic lights, inset to (20, 20) like Cap's editor.
 const TRAFFIC_LIGHTS_W: f32 = 82.;
@@ -151,7 +151,12 @@ impl StudioShell {
                     .items_center()
                     .min_w_0()
                     .gap(px(METRICS.space_3))
-                    .child(icon(Icon::Layers, 20., theme.editor.accent))
+                    .child(
+                        gpui::img("branding/studio-icon.png")
+                            .w(px(28.))
+                            .h(px(28.))
+                            .flex_none(),
+                    )
                     .child(text),
             )
             .child(

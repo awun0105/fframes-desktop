@@ -11,11 +11,11 @@
     <meta name="color-scheme" content="light" />
     <link rel="stylesheet" href="home.css" />
     <link rel="stylesheet" href="how-it-works.css?v=diagrams-2" />
-    <link rel="icon" href="../brand/favicon.ico" sizes="48x48" />
-    <link rel="icon" href="../brand/fframes-mark.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="../brand/apple-touch-icon.png" />
-    <link rel="manifest" href="../site.webmanifest" />
-    <meta name="theme-color" content="#fafbf8" />
+    <link rel="icon" href="brand/favicon.ico" sizes="any" />
+    <link rel="icon" href="brand/favicon.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="brand/apple-touch-icon.png" />
+    <link rel="manifest" href="site.webmanifest" />
+    <meta name="theme-color" content="#fafcff" />
     <link rel="canonical" href="https://fframes.studio/studio/how-it-works" />
     <meta property="og:type" content="article" />
     <meta property="og:site_name" content="fframes" />
@@ -51,16 +51,22 @@
           (window.plausible.q = window.plausible.q || []).push(arguments);
         };
     </script>
+    <link rel="stylesheet" href="readability.css" />
   </head>
   <body class="internals-page">
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="container nav">
-        <a class="brand" href="index.html" aria-label="fframes Studio home"
-          ><img src="wordmark.svg" alt="fframes" width="96" height="24" /><span
-            >Studio</span
-          ></a
-        >
+        <a
+          class="studio-brand"
+          href="index.html"
+          aria-label="fframes Studio home"
+          ><img
+            src="brand/fframes-studio-logo-blue-v1.png"
+            alt="fframes studio"
+            width="2048"
+            height="690"
+        /></a>
         <nav class="nav-links" aria-label="Studio navigation">
           <a class="desktop-link" href="index.html">Overview</a
           ><a href="how-it-works.html" aria-current="page">How it works</a
@@ -129,12 +135,11 @@
             <span class="eyebrow">WHO DOES WHAT</span
             ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
           <div
             class="diagram-scroll"
             tabindex="0"
             role="region"
-            aria-label="Studio, the coding agent and preview worker are separate processes; scroll horizontally on small screens"
+            aria-label="Studio, the coding agent and preview worker are separate processes"
           >
             <svg
               viewBox="0 0 1000 555"
@@ -334,6 +339,40 @@
               </text>
             </svg>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="process"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card">
+              <strong>Studio application</strong>
+              <div class="compact-card-detail">
+                UI + engine state + agent workflow<small
+                  >Shared builds · journal + store · read-only broker</small
+                >
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-parallel">
+              <div class="compact-card compact-blue">
+                <strong>Coding agent</strong>
+                <div class="compact-card-detail">
+                  Separate process<small>Edits its own draft copy</small>
+                </div>
+              </div>
+              <div class="compact-card compact-green">
+                <strong>Preview worker</strong>
+                <div class="compact-card-detail">
+                  Separate process<small
+                    >Your compiled video: frames, timing & audio</small
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             Responsibility map, not a complete call graph. The agent owns draft
             edits; the preview worker remains separate from the Studio UI.
@@ -587,6 +626,48 @@
               >Capture → build → inspect → review → accept</span
             >
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="gates"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card">
+              <strong>01 / Capture twice</strong>
+              <div class="compact-card-detail">
+                Both immutable copies must match
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-blue">
+              <strong>02 / Build</strong>
+              <div class="compact-card-detail">Isolated copy · pinned SDK</div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card">
+              <strong>03 / Inspect</strong>
+              <div class="compact-card-detail">Frames · boundaries · audio</div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card">
+              <strong>04 / Review policy</strong>
+              <div class="compact-card-detail">
+                Automatic, or wait for manual Apply
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-green">
+              <strong>05 / Accept</strong>
+              <div class="compact-card-detail">
+                Journaled file-set publication
+              </div>
+            </div>
+            <p class="compact-note">
+              Failure retains the draft. Review is optional.
+            </p>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption id="transaction-caption">
             Each plane represents a stage, not a physical component or an
             application screen. Manual review is optional.
@@ -610,12 +691,11 @@
             <span class="eyebrow">WHY CAPTURE TWICE?</span
             ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
           <div
             class="diagram-scroll"
             tabindex="0"
             role="region"
-            aria-label="Only matching captures proceed to validation; scroll horizontally on small screens"
+            aria-label="Only matching captures proceed to validation"
           >
             <svg
               viewBox="0 0 760 395"
@@ -722,6 +802,37 @@
               </text>
             </svg>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="capture"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card">
+              <strong>Writer quiescent</strong>
+              <div class="compact-card-detail">Draft is ready for capture</div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-blue">
+              <strong>Capture A + Capture B</strong>
+              <div class="compact-card-detail">
+                Compare their captured bytes
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-parallel">
+              <div class="compact-card compact-green">
+                <strong>Same bytes</strong>
+                <div class="compact-card-detail">Proceed to validation</div>
+              </div>
+              <div class="compact-card compact-pink">
+                <strong>Different bytes</strong>
+                <div class="compact-card-detail">Refuse capture</div>
+              </div>
+            </div>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             Two captures are compared after writer quiescence. A compile success
             cannot replace this capture check.
@@ -736,12 +847,11 @@
             <span class="eyebrow">TWO POLICIES, ONE ACCEPTANCE BOUNDARY</span
             ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
           <div
             class="diagram-scroll"
             tabindex="0"
             role="region"
-            aria-label="Automatic application or manual Apply; scroll horizontally on small screens"
+            aria-label="Automatic application or manual Apply"
           >
             <svg
               viewBox="0 0 760 405"
@@ -850,6 +960,42 @@
               </text>
             </svg>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="review"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card compact-blue">
+              <strong>Validated candidate</strong>
+              <div class="compact-card-detail">
+                Checks completed for this candidate
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-parallel">
+              <div class="compact-card">
+                <strong>Automatic</strong>
+                <div class="compact-card-detail">Default policy</div>
+              </div>
+              <div class="compact-card">
+                <strong>Manual</strong>
+                <div class="compact-card-detail">Wait for Apply</div>
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-green">
+              <strong>Accepted</strong>
+              <div class="compact-card-detail">
+                Guarded file-set publication
+              </div>
+            </div>
+            <p class="compact-note">
+              If the selected subset changes, validate that subset again.
+            </p>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             Alternative policies, not sequential steps. Manual review is
             optional; neither route bypasses the publication guards.
@@ -891,14 +1037,11 @@
             <span class="eyebrow">THE SELECTION BECOMES CONTEXT</span
             ><span class="illustration-label">WORKFLOW ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">
-            Scroll the diagram sideways <span aria-hidden="true">↔</span>
-          </p>
           <div
             class="support-scroll"
             tabindex="0"
             role="region"
-            aria-label="A selected title supplies project context; scroll horizontally on small screens"
+            aria-label="A selected title supplies project context"
           >
             <svg
               viewBox="0 0 900 350"
@@ -1026,6 +1169,40 @@
               </text>
             </svg>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="context"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card compact-pink">
+              <strong>01 / Selected frame</strong>
+              <div class="compact-card-detail">
+                Hello.<small>Selected object: headline</small>
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card">
+              <strong>02 / Object identity</strong>
+              <div class="compact-card-detail">
+                <code>intro / starter-title</code><code>headline / primary</code
+                ><small>From this frame’s object map</small>
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-blue">
+              <strong>03 / Source anchor</strong>
+              <div class="compact-card-detail">
+                <code>src/lib.rs</code><code>render_frame</code
+                ><small>Only if registered</small>
+              </div>
+            </div>
+            <p class="compact-note">
+              Selection supplies context. It does not edit source.
+            </p>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             Frame → stable object identity → optional source anchor. Without a
             registered anchor, Studio does not infer a source location.
@@ -1055,21 +1232,27 @@ let title_id = title_key.render_id();</code></pre>
         id="tools"
         aria-labelledby="tools-title"
       >
-        <div>
-          <p class="eyebrow">03 / PROJECT TOOLS</p>
-          <h2 id="tools-title">
-            A way to look.<br /><span>Nine read-only tools.</span>
-          </h2>
-          <p>
-            Studio’s tool broker lets your agent inspect the project and
-            rendered output. These nine tools do not provide shell execution,
-            file writes, or export.
-          </p>
-          <p class="detail">
-            The agent’s own tools can still edit files or run commands, subject
-            to your permission policy. Read-only describes Studio’s broker, not
-            the entire agent.
-          </p>
+        <div class="tools-intro">
+          <div class="tools-heading">
+            <p class="eyebrow">03 / PROJECT TOOLS</p>
+            <h2 id="tools-title">
+              A way to look.<br /><span>Nine read-only tools.</span>
+            </h2>
+          </div>
+          <div class="tools-copy">
+            <p>
+              Studio’s tool broker lets your agent inspect the project and
+              rendered output. These nine tools do not provide shell execution,
+              file writes, or export.
+            </p>
+            <p class="detail">
+              The agent’s own tools can still edit files or run commands,
+              subject to your permission policy. Read-only describes Studio’s
+              broker, not the entire agent.
+            </p>
+          </div>
+        </div>
+        <div class="tools-workspace">
           <!-- support:broker -->
           <figure
             class="technical-figure support-figure support-broker"
@@ -1079,14 +1262,11 @@ let title_id = title_key.render_id();</code></pre>
               <span class="eyebrow">LOOK THROUGH THE BROKER</span
               ><span class="illustration-label">WORKFLOW ILLUSTRATION</span>
             </div>
-            <p class="diagram-hint">
-              Scroll the diagram sideways <span aria-hidden="true">↔</span>
-            </p>
             <div
               class="support-scroll"
               tabindex="0"
               role="region"
-              aria-label="The agent requests read-only project information; scroll horizontally on small screens"
+              aria-label="The agent requests read-only project information"
             >
               <svg
                 viewBox="0 0 520 310"
@@ -1197,32 +1377,65 @@ let title_id = title_key.render_id();</code></pre>
                 </text>
               </svg>
             </div>
+            <!-- mobile-diagram -->
+            <div
+              class="compact-diagram"
+              data-compact="broker"
+              role="group"
+              aria-label="Diagram"
+            >
+              <div class="compact-card">
+                <strong>Coding agent</strong>
+                <div class="compact-card-detail">
+                  Requests project information
+                </div>
+              </div>
+              <span class="compact-arrow" aria-hidden="true">↓</span>
+              <div class="compact-card compact-blue">
+                <strong>Studio broker</strong>
+                <div class="compact-card-detail">
+                  9 read-only tools · no file writes
+                </div>
+              </div>
+              <span class="compact-arrow" aria-hidden="true">↓</span>
+              <div class="compact-card compact-green">
+                <strong>Project facts</strong>
+                <div class="compact-card-detail">
+                  Frames · timing · checks<small
+                    >Context returns to the agent ↑</small
+                  >
+                </div>
+              </div>
+            </div>
+            <!-- /mobile-diagram -->
             <figcaption>
               Read-only applies to Studio’s broker. The agent’s own tools can
               edit under your permission policy.
             </figcaption>
           </figure>
           <!-- /support:broker -->
-        </div>
-        <div>
-          <ul class="tool-list" aria-label="Studio’s nine read-only tools">
-            <li><code>project_context</code><span>Project facts</span></li>
-            <li>
-              <code>selection_context</code><span>Frozen task scope</span>
-            </li>
-            <li>
-              <code>source_lookup</code><span>Verified source snippets</span>
-            </li>
-            <li><code>timeline</code><span>Scene timing</span></li>
-            <li><code>render_frame</code><span>A rendered frame</span></li>
-            <li><code>render_strip</code><span>A frame contact sheet</span></li>
-            <li><code>inspect</code><span>Frame diagnostics</span></li>
-            <li><code>style_context</code><span>Style context</span></li>
-            <li><code>build_status</code><span>Build status</span></li>
-          </ul>
-          <p class="tool-boundary">
-            BROKER BOUNDARY &nbsp; / &nbsp; No shell · no writes · no export
-          </p>
+          <div class="tools-list-panel">
+            <ul class="tool-list" aria-label="Studio’s nine read-only tools">
+              <li><code>project_context</code><span>Project facts</span></li>
+              <li>
+                <code>selection_context</code><span>Frozen task scope</span>
+              </li>
+              <li>
+                <code>source_lookup</code><span>Verified source snippets</span>
+              </li>
+              <li><code>timeline</code><span>Scene timing</span></li>
+              <li><code>render_frame</code><span>A rendered frame</span></li>
+              <li>
+                <code>render_strip</code><span>A frame contact sheet</span>
+              </li>
+              <li><code>inspect</code><span>Frame diagnostics</span></li>
+              <li><code>style_context</code><span>Style context</span></li>
+              <li><code>build_status</code><span>Build status</span></li>
+            </ul>
+            <p class="tool-boundary">
+              BROKER BOUNDARY &nbsp; / &nbsp; No shell · no writes · no export
+            </p>
+          </div>
         </div>
       </section>
       <section
@@ -1255,7 +1468,7 @@ let title_id = title_key.render_id();</code></pre>
           class="technical-figure readiness-figure"
           tabindex="0"
           role="region"
-          aria-label="Preview readiness diagram; scroll horizontally on small screens"
+          aria-label="Preview readiness diagram"
         >
           <div class="figure-heading">
             <span class="eyebrow">ONE COORDINATED HANDOFF</span
@@ -1264,9 +1477,6 @@ let title_id = title_key.render_id();</code></pre>
             >
           </div>
           <!-- internals:readiness -->
-          <p class="diagram-hint">
-            Scroll the diagram sideways <span aria-hidden="true">↔</span>
-          </p>
           <svg
             class="readiness-diagram"
             viewBox="0 0 900 280"
@@ -1346,6 +1556,40 @@ let title_id = title_key.render_id();</code></pre>
             </text>
           </svg>
           <!-- /internals:readiness -->
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="readiness"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card compact-green">
+              <strong>Current preview</strong>
+              <div class="compact-card-detail">
+                Remains available while the candidate prepares
+              </div>
+            </div>
+            <div class="compact-card">
+              <strong>Candidate / Compile</strong>
+              <div class="compact-card-detail">Build the new revision</div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-blue">
+              <strong>Prepare</strong>
+              <div class="compact-card-detail">
+                Worker + first frame + audio
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-green">
+              <strong>Ready → switch at the playhead</strong>
+              <div class="compact-card-detail">
+                Worker, frame and audio switch together
+              </div>
+            </div>
+            <p class="compact-note">Compile alone does not mean ready.</p>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             The old revision remains available through compile and preparation.
             Readiness is more than a compiler success.
@@ -1386,12 +1630,11 @@ let title_id = title_key.render_id();</code></pre>
             <span class="eyebrow">OBSERVED ESCAPE → CAPTURE REFUSED</span
             ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
           <div
             class="diagram-scroll"
             tabindex="0"
             role="region"
-            aria-label="An observed writer escape blocks candidate capture; scroll horizontally on small screens"
+            aria-label="An observed writer escape blocks candidate capture"
           >
             <svg
               viewBox="0 0 960 420"
@@ -1509,6 +1752,38 @@ let title_id = title_key.render_id();</code></pre>
               </text>
             </svg>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="containment"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card compact-blue">
+              <strong>Observed writer process tree</strong>
+              <div class="compact-card-detail">
+                Managed agent + child processes<small
+                  >For example: node or cargo</small
+                >
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-pink">
+              <strong>Observed writer escape</strong>
+              <div class="compact-card-detail">
+                A process leaves the tracked tree
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card">
+              <strong>Candidate refused</strong>
+              <div class="compact-card-detail">Capture does not proceed</div>
+            </div>
+            <p class="compact-note">
+              Windows: job object. Linux/macOS: process group + checks.
+            </p>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             The dashed line is an observed process boundary, not a universal
             sandbox. Work delegated to pre-existing services can be outside this
@@ -1559,14 +1834,11 @@ let title_id = title_key.render_id();</code></pre>
               >AN INTERRUPTED TASK IS NOT AN ACCEPTED EDIT</span
             ><span class="illustration-label">WORKFLOW ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">
-            Scroll the diagram sideways <span aria-hidden="true">↔</span>
-          </p>
           <div
             class="support-scroll"
             tabindex="0"
             role="region"
-            aria-label="Recovery keeps the accepted revision and retains the draft; scroll horizontally on small screens"
+            aria-label="Recovery keeps the accepted revision and retains the draft"
           >
             <svg
               viewBox="0 0 900 350"
@@ -1684,6 +1956,32 @@ let title_id = title_key.render_id();</code></pre>
               </text>
             </svg>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="recovery"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-parallel">
+              <div class="compact-card compact-green">
+                <strong>Accepted revision</strong>
+                <div class="compact-card-detail">
+                  Kept as the recovery baseline
+                </div>
+              </div>
+              <div class="compact-card compact-blue">
+                <strong>Unfinished task</strong>
+                <div class="compact-card-detail">
+                  Marked interrupted<small
+                    >The draft remains available after recovery</small
+                  >
+                </div>
+              </div>
+            </div>
+            <p class="compact-note">Retained draft ≠ accepted revision.</p>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             Two separate outcomes: recover the accepted revision and retain the
             interrupted draft. Retaining a draft does not accept it.
@@ -1701,12 +1999,11 @@ let title_id = title_key.render_id();</code></pre>
             <span class="eyebrow">TIMING HAS ITS OWN DOCUMENT</span
             ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
           <div
             class="diagram-scroll"
             tabindex="0"
             role="region"
-            aria-label="Timeline edits reuse the current Rust build; scroll horizontally on small screens"
+            aria-label="Timeline edits reuse the current Rust build"
           >
             <svg
               viewBox="0 0 760 395"
@@ -1785,9 +2082,8 @@ let title_id = title_key.render_id();</code></pre>
                 <text x="308" y="170" class="ex-copy">
                   Order · splits · trims
                 </text>
-                <text x="308" y="190" class="ex-copy">
-                  Separate timing revision
-                </text>
+                <text x="308" y="190" class="ex-copy">Separate timing</text>
+                <text x="308" y="210" class="ex-copy">revision</text>
               </g>
               <path
                 class="ex-path ex-step-c"
@@ -1813,6 +2109,42 @@ let title_id = title_key.render_id();</code></pre>
               </text>
             </svg>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="timing-detail"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card">
+              <strong>Compiled scenes</strong>
+              <div class="compact-card-detail">
+                Stable scene keys · current built source
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-blue">
+              <strong>Timeline gesture</strong>
+              <div class="compact-card-detail">
+                Split · trim · move<small>Undo / redo</small>
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card">
+              <strong>timeline.json</strong>
+              <div class="compact-card-detail">
+                Order · splits · trims<small>Separate timing revision</small>
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-green">
+              <strong>Preview worker</strong>
+              <div class="compact-card-detail">
+                Applies timing using the same Rust build
+              </div>
+            </div>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             Timing-only changes reuse the current build. Source changes still
             need compilation; timing edits are unavailable during an agent task.
@@ -1827,12 +2159,11 @@ let title_id = title_key.render_id();</code></pre>
             <span class="eyebrow">A FROZEN PROJECT, THE SESSION’S TIMING</span
             ><span class="illustration-label">ARCHITECTURE ILLUSTRATION</span>
           </div>
-          <p class="diagram-hint">Scroll the diagram sideways ↔</p>
           <div
             class="diagram-scroll"
             tabindex="0"
             role="region"
-            aria-label="Export combines a frozen project with session timing; scroll horizontally on small screens"
+            aria-label="Export combines a frozen project with session timing"
           >
             <svg
               viewBox="0 0 760 430"
@@ -1970,6 +2301,44 @@ let title_id = title_key.render_id();</code></pre>
               </g>
             </svg>
           </div>
+          <!-- mobile-diagram -->
+          <div
+            class="compact-diagram"
+            data-compact="export-detail"
+            role="group"
+            aria-label="Diagram"
+          >
+            <div class="compact-card">
+              <strong>Export settings</strong>
+              <div class="compact-card-detail">
+                Worker-supported format · size · fps
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-parallel">
+              <div class="compact-card">
+                <strong>Frozen project</strong>
+                <div class="compact-card-detail">Selected code revision</div>
+              </div>
+              <div class="compact-card">
+                <strong>Session timing</strong>
+                <div class="compact-card-detail">Current timeline</div>
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-blue">
+              <strong>Render job</strong>
+              <div class="compact-card-detail">
+                Worker encoder · progress + Cancel
+              </div>
+            </div>
+            <span class="compact-arrow" aria-hidden="true">↓</span>
+            <div class="compact-card compact-green">
+              <strong>Video file</strong>
+              <div class="compact-card-detail">Saved render output</div>
+            </div>
+          </div>
+          <!-- /mobile-diagram -->
           <figcaption>
             Formats are worker-dependent. The frozen project's source and the
             session’s timing are separate inputs; rendering does not hold the
@@ -1989,41 +2358,86 @@ let title_id = title_key.render_id();</code></pre>
         >
       </aside>
     </main>
-    <footer>
+    <footer class="studio-footer">
       <div class="container">
-        <div class="footer-top">
-          <a class="brand" href="index.html" aria-label="fframes Studio home"
-            ><img
-              src="wordmark.svg"
-              alt="fframes"
-              width="96"
-              height="24"
-            /><span>Studio</span></a
+        <div class="studio-footer-callout">
+          <div>
+            <p class="footer-kicker">FROM SOURCE TO FRAME</p>
+            <h2>Your next idea.<br /><span>Already in motion.</span></h2>
+          </div>
+          <a class="button footer-download" href="index.html#install"
+            >Get fframes Studio <span aria-hidden="true">↗</span></a
           >
-          <ul class="footer-links">
-            <li><a href="../index.html">The library ↗</a></li>
-            <li><a href="index.html">Studio overview</a></li>
-            <li>
-              <a
-                href="https://github.com/khanhthanhdev/fframes-desktop"
-                target="_blank"
-                rel="noopener noreferrer"
-                >GitHub ↗</a
-              >
-            </li>
-            <li>
-              <a
-                href="https://discord.gg/5UaUVewRe"
-                target="_blank"
-                rel="noopener noreferrer"
-                >Discord ↗</a
-              >
-            </li>
-          </ul>
         </div>
-        <div class="footer-bottom">
-          <span>FROM SOURCE TO FRAME.</span
-          ><span>FFRAMES STUDIO · HOW IT WORKS</span>
+        <div class="studio-footer-grid">
+          <div class="studio-footer-about">
+            <a
+              class="studio-brand footer-brand"
+              href="index.html"
+              aria-label="fframes Studio home"
+              ><img
+                src="brand/fframes-studio-logo-blue-v1.png"
+                alt="fframes studio"
+                width="2048"
+                height="690"
+                loading="lazy"
+            /></a>
+            <p>
+              A native video workspace for your code, your coding agent, and
+              your next idea.
+            </p>
+            <span class="footer-preview"
+              ><span aria-hidden="true"></span> Windows preview available</span
+            >
+          </div>
+          <nav class="studio-footer-column" aria-label="Product links">
+            <h3>Studio</h3>
+            <a href="index.html">Overview</a
+            ><a href="index.html#studio-workspace">The workspace</a
+            ><a href="how-it-works.html">How it works</a
+            ><a href="index.html#install"
+              >Install Studio <span aria-hidden="true">↗</span></a
+            >
+          </nav>
+          <nav class="studio-footer-column" aria-label="Developer links">
+            <h3>Build with us</h3>
+            <a href="../index.html"
+              >fframes library <span aria-hidden="true">↗</span></a
+            ><a
+              href="https://github.com/khanhthanhdev/fframes-desktop"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Source code <span aria-hidden="true">↗</span></a
+            ><a
+              href="https://github.com/khanhthanhdev/fframes-desktop/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Releases <span aria-hidden="true">↗</span></a
+            >
+          </nav>
+          <nav class="studio-footer-column" aria-label="Community links">
+            <h3>Say hello</h3>
+            <a
+              href="https://discord.gg/5UaUVewRe"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Discord <span aria-hidden="true">↗</span></a
+            ><a
+              href="https://github.com/khanhthanhdev/fframes-desktop/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Report an issue <span aria-hidden="true">↗</span></a
+            ><a
+              href="https://github.com/khanhthanhdev/fframes-desktop/blob/main/LICENSE.txt"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Open-source license <span aria-hidden="true">↗</span></a
+            >
+          </nav>
+        </div>
+        <div class="studio-footer-bottom">
+          <span>fframes Studio · Made for making.</span
+          ><span>Your code. Your tools. Your studio.</span>
         </div>
       </div>
     </footer>

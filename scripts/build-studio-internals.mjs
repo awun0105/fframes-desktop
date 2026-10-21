@@ -1,5 +1,6 @@
 // Code-native illustrations for the technical Studio page. No raster assets/dependencies.
 import { readFileSync, writeFileSync } from "node:fs";
+import { mobileDiagrams } from "./studio-mobile-diagrams.mjs";
 const file = new URL("../landing/studio/how-it-works.html", import.meta.url);
 const stages = [
   ["Capture twice", "Matching, immutable bytes"],
@@ -43,4 +44,4 @@ for (const [name, drawing] of Object.entries({ gates, readiness })) {
     `<!-- internals:${name} -->\n${drawing}\n<!-- /internals:${name} -->`
   );
 }
-writeFileSync(file, html);
+writeFileSync(file, mobileDiagrams(html));

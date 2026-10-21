@@ -31,7 +31,7 @@
   border: 0;
   padding: 0;
   margin-bottom: 22px;
-  color: var(--green);
+  color: var(--accent);
 }
 .product-chapter h3 {
   font-size: clamp(32px, 3vw, 42px);
@@ -45,7 +45,7 @@
   margin-bottom: 20px;
 }
 .product-chapter .feature-detail {
-  border-left: 1px solid #b6c6b8;
+  border-left: 1px solid #bacbea;
   padding-left: 16px;
   font-size: 12px;
 }
@@ -73,7 +73,7 @@
   padding-block: 18px;
 }
 .product-figure-scroll:focus-visible {
-  outline: 3px solid #2764db;
+  outline: 3px solid #2864f5;
   outline-offset: 4px;
 }
 .product-figure svg {
@@ -95,57 +95,57 @@
 .pf-blue,
 .pf-green,
 .pf-pink {
-  stroke: #9cae9e;
+  stroke: #9bb0cf;
   stroke-width: 1;
 }
 .pf-paper {
-  fill: #fafbf8;
+  fill: #fafcff;
 }
 .pf-blue {
-  fill: #e3eefb;
+  fill: #e5edff;
 }
 .pf-green {
-  fill: #e4eddf;
+  fill: #e5f4ef;
 }
 .pf-pink {
-  fill: #f5cfde;
+  fill: #f8dae8;
 }
 .pf-faint {
-  fill: #edf0e9;
-  stroke: #d9dfd6;
+  fill: #eff3fa;
+  stroke: #dce4f0;
 }
 .pf-edge {
-  stroke: #9cae9e;
+  stroke: #9bb0cf;
   stroke-width: 1.2;
   fill: none;
 }
 .pf-guide {
-  stroke: #b9c8bb;
+  stroke: #bfcee4;
   stroke-dasharray: 2 6;
   fill: none;
 }
 .pf-code {
   font: 13px var(--mono);
-  fill: #334b3c;
+  fill: #243b61;
 }
 .pf-micro {
   font: 10px var(--mono);
   letter-spacing: 0.3px;
-  fill: #5d6f61;
+  fill: #586f93;
 }
 .pf-fill-ink {
-  fill: #36513f;
+  fill: #2a4774;
 }
 .pf-fill-green,
 .pf-render-bar {
-  fill: #467c58;
+  fill: #2864f5;
 }
 .pf-signal {
-  fill: #99bedc;
-  stroke: #5b8bae;
+  fill: #aecbff;
+  stroke: #648be0;
 }
 .pf-check {
-  stroke: #43875c;
+  stroke: #288264;
   stroke-width: 3;
   fill: none;
 }

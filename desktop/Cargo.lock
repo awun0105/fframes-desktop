@@ -2027,6 +2027,7 @@ version = "0.1.4"
 dependencies = [
  "clap",
  "cpal",
+ "embed-resource",
  "fframes-studio-protocol",
  "gpui",
  "gpui_platform",

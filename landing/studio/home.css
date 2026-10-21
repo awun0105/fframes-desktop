@@ -15,11 +15,18 @@
   src: url("fonts/geist-mono-latin-v6.woff2") format("woff2");
 }
 :root {
-  --ink: #202925;
-  --muted: #626b65;
-  --line: #dfe3df;
-  --paper: #fafbf8;
-  --green: #245e45;
+  --ink: #15294b;
+  --muted: #586b85;
+  --line: #dce4f0;
+  --paper: #fafcff;
+  --accent: #2864f5;
+  --accent-hover: #174fd5;
+  --accent-soft: #edf3ff;
+  --navy: #15294b;
+  --mint: #e5f4ef;
+  --lavender: #eeeaff;
+  --peach: #fff0e3;
+  --rose: #fbe7ef;
   --mono: "Geist Mono", Consolas, monospace;
 }
 * {
@@ -45,11 +52,11 @@ button {
 }
 a:focus-visible,
 button:focus-visible {
-  outline: 3px solid #2764db;
+  outline: 3px solid #2864f5;
   outline-offset: 5px;
 }
 ::selection {
-  background: #d5e9da;
+  background: #dce8ff;
 }
 .container {
   width: min(1240px, calc(100% - 96px));
@@ -94,7 +101,7 @@ button:focus-visible {
   height: auto;
 }
 .brand span {
-  border-left: 1px solid #c7cec8;
+  border-left: 1px solid #c6d3e8;
   padding-left: 12px;
 }
 .nav-links {
@@ -107,7 +114,7 @@ button:focus-visible {
   color: var(--muted);
 }
 a:hover {
-  color: var(--green);
+  color: var(--accent);
 }
 .button {
   display: inline-flex;
@@ -116,16 +123,16 @@ a:hover {
   gap: 25px;
   min-height: 48px;
   padding: 0 22px;
-  background: var(--ink);
+  background: var(--accent);
   color: white;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--accent);
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
   transition: background 0.15s;
 }
 .button:hover {
-  background: var(--green);
+  background: var(--accent-hover);
   color: white;
 }
 .button.small {
@@ -146,7 +153,7 @@ a:hover {
   display: inline-block;
   width: 6px;
   height: 6px;
-  background: #50946c;
+  background: #2864f5;
   border-radius: 50%;
 }
 .announcement {
@@ -170,7 +177,7 @@ h1 {
   margin-bottom: 28px;
 }
 h1 em {
-  color: var(--green);
+  color: var(--accent);
   font-style: normal;
 }
 h2 {
@@ -229,7 +236,7 @@ p {
   align-items: center;
   gap: 19px;
   padding: 9px 0;
-  border-bottom: 1px solid #cbd1cb;
+  border-bottom: 1px solid #d1dcef;
 }
 .hero-note {
   font: 10px/1.6 var(--mono);
@@ -247,17 +254,17 @@ p {
   max-width: 440px;
 }
 .motion-controls button {
-  border: 1px solid #a9b9a9;
+  border: 1px solid #b7c9eb;
   border-radius: 4px;
-  background: #edf2e9;
-  color: #245e45;
+  background: #edf3ff;
+  color: #2864f5;
   padding: 9px 12px;
   font-size: 11px;
   cursor: pointer;
   min-height: 36px;
 }
 .motion-controls button:hover {
-  background: #deeadc;
+  background: #dfeaff;
 }
 .motion-controls [role="status"] {
   font-size: 10px;
@@ -291,7 +298,7 @@ p {
 }
 .story-step:nth-of-type(3) .step-number,
 .story-step:nth-of-type(4) .step-number {
-  color: var(--green);
+  color: var(--accent);
 }
 .story-step h3 {
   font-size: 42px;
@@ -305,7 +312,7 @@ p {
 .story-step .detail {
   font-size: 12px;
   line-height: 1.75;
-  border-left: 1px solid #cbd1cb;
+  border-left: 1px solid #d1dcef;
   padding-left: 16px;
 }
 .story-step .text-link {
@@ -343,48 +350,48 @@ p {
   overflow: visible;
 }
 .plane {
-  stroke: #7f8983;
+  stroke: #9aacc7;
   stroke-width: 1.15;
   fill-opacity: 0.92;
 }
 .plane-side {
-  stroke: #7f8983;
+  stroke: #9aacc7;
   stroke-width: 1;
   fill-opacity: 0.8;
 }
 .preview-tone {
-  fill: #f7faf7;
+  fill: #f8fbff;
 }
 .draft-tone {
-  fill: #e9f1fc;
+  fill: #e8efff;
 }
 .check-tone {
-  fill: #f3f3e9;
+  fill: #eeeaff;
 }
 .leader {
-  stroke: #9ca69f;
+  stroke: #a7b8d1;
   stroke-width: 1;
   fill: none;
 }
 .diagram-label {
   font: 9px var(--mono);
-  fill: #333e36;
+  fill: #243b61;
   letter-spacing: 0.5px;
 }
 .diagram-small {
   font: 9px var(--mono);
-  fill: #606c63;
+  fill: #586b85;
 }
 .diagram-code {
   font: 10px var(--mono);
-  fill: #334b62;
+  fill: #365781;
 }
 .diagram-title {
   font:
     500 42px "Geist",
     Arial,
     sans-serif;
-  fill: #273c30;
+  fill: #15294b;
   letter-spacing: -2px;
 }
 .final-title {
@@ -396,18 +403,18 @@ p {
     12px "Geist",
     Arial,
     sans-serif;
-  fill: #39433c;
+  fill: #314c72;
 }
 .gate {
-  fill: #e5eee3;
-  stroke: #83a78a;
+  fill: #e5f4ef;
+  stroke: #80b9a5;
   stroke-width: 1;
 }
 .source-before {
   fill: #a85070;
 }
 .result-path {
-  stroke: #73b58c;
+  stroke: #5c8df0;
   stroke-width: 1;
   stroke-dasharray: 3 5;
   opacity: 0.5;
@@ -423,7 +430,7 @@ p {
 }
 .readout-index {
   font: 10px var(--mono);
-  color: var(--green);
+  color: var(--accent);
   flex: none;
   white-space: nowrap;
 }
@@ -451,8 +458,8 @@ figcaption {
   align-items: center;
 }
 .step-nav a[aria-current="step"] {
-  color: var(--green);
-  box-shadow: 0 2px var(--green);
+  color: var(--accent);
+  box-shadow: 0 2px var(--accent);
 }
 /* Only transforms and opacity change as scroll advances. No transitions: reversing is exact. */
 .story-motion .preview-plane {
@@ -543,6 +550,87 @@ html:not(.story-motion) .result-packet {
   color: var(--muted);
   font-weight: 400;
 }
+.compatibility > .container {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 24px;
+}
+.compatibility #agent-connections-title {
+  width: 100%;
+  font-size: 18px;
+  text-align: center;
+  color: var(--ink);
+}
+.integrations.agent-logos {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 16px;
+}
+.agent-logos li {
+  min-width: 0;
+}
+.agent-logos a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 12px 8px;
+  border-radius: 6px;
+  color: var(--ink);
+}
+.agent-logos a:hover {
+  background: #e8f0ff;
+}
+.agent-logos img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  object-fit: contain;
+}
+.agent-logos .agent-logo-pi {
+  width: 44px;
+  height: 44px;
+}
+.agent-logos .agent-logo-acp {
+  width: 44px;
+}
+@media (max-width: 1100px) {
+  .integrations.agent-logos {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .integrations.agent-logos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .agent-logos a {
+    flex-direction: column;
+    min-height: 120px;
+    gap: 12px;
+    padding: 12px 4px;
+  }
+  .agent-logos img {
+    width: 44px;
+    height: 44px;
+    padding: 6px;
+  }
+  .agent-logos .agent-logo-pi,
+  .agent-logos .agent-logo-acp {
+    padding: 0;
+  }
+  .agent-logos a span {
+    font-size: 15px;
+    text-align: center;
+  }
+}
 .ownership {
   padding-block: 105px;
   display: grid;
@@ -565,7 +653,7 @@ html:not(.story-motion) .result-packet {
 }
 .principle-number {
   font: 10px var(--mono);
-  color: #7c8880;
+  color: #6c80a0;
   display: block;
   border-top: 1px solid var(--line);
   padding-top: 15px;
@@ -584,8 +672,8 @@ html:not(.story-motion) .result-packet {
 }
 .install-section {
   padding: 90px 0 45px;
-  background: #e8eee3;
-  border-block: 1px solid #d9e0d7;
+  background: #edf3ff;
+  border-block: 1px solid #d4e1f7;
   scroll-margin-top: 75px;
 }
 .install-top {
@@ -606,7 +694,7 @@ html:not(.story-motion) .result-packet {
   margin-bottom: 26px;
 }
 .install-top h2 em {
-  color: var(--green);
+  color: var(--accent);
   font-style: normal;
 }
 .install-top .install-sequence {
@@ -627,7 +715,7 @@ html:not(.story-motion) .result-packet {
   padding: 0 26px;
   gap: 18px;
   font-size: 14px;
-  background: #245e45;
+  background: #2864f5;
 }
 .windows-download svg {
   width: 21px;
@@ -659,8 +747,8 @@ html:not(.story-motion) .result-packet {
 .card {
   padding: 25px;
   min-width: 0;
-  background: #fafbf8;
-  border: 1px solid #d8dfd5;
+  background: #fafcff;
+  border: 1px solid #d7e1f0;
   border-radius: 4px;
 }
 .card h3 {
@@ -673,10 +761,10 @@ html:not(.story-motion) .result-packet {
   margin-bottom: 20px;
 }
 .install-primary {
-  background: #19372b;
-  border-color: #19372b;
+  background: #15294b;
+  border-color: #15294b;
   padding: 28px 30px 32px;
-  color: #f5f8ef;
+  color: #f3f7ff;
 }
 .terminal-bar {
   display: flex;
@@ -686,7 +774,7 @@ html:not(.story-motion) .result-packet {
   padding-bottom: 27px;
   font: 9px/1.5 var(--mono);
   letter-spacing: 1px;
-  color: #b1c5b4;
+  color: #c7d8f5;
 }
 .terminal-dots {
   display: flex;
@@ -695,7 +783,7 @@ html:not(.story-motion) .result-packet {
 .terminal-dots i {
   width: 6px;
   height: 6px;
-  border: 1px solid #8fae98;
+  border: 1px solid #8aa9dc;
   border-radius: 50%;
 }
 .install-primary h3 {
@@ -703,37 +791,37 @@ html:not(.story-motion) .result-packet {
   letter-spacing: -0.7px;
 }
 .install-primary p {
-  color: #b8cabb;
+  color: #c1d2ef;
 }
 .install-primary .command {
-  border-color: #486351;
+  border-color: #3b557f;
   padding-top: 24px;
   gap: 18px;
 }
 .install-primary .command pre {
   font-size: 14px;
   line-height: 1.9;
-  color: #f0f5e9;
+  color: #f0f5ff;
 }
 .install-primary .command-verb {
-  color: #9ce7b4;
+  color: #9bc8ff;
 }
 .install-primary .prompt {
-  color: #88a891;
+  color: #8faace;
 }
 .install-primary .copy {
-  background: #2c4c3b;
-  border-color: #65846c;
-  color: #e1efdf;
+  background: #233f69;
+  border-color: #6483b4;
+  color: #e3eeff;
 }
 .install-primary .copy:hover {
-  background: #3a5f46;
+  background: #31588b;
 }
 .install-primary .copy:focus-visible {
-  outline-color: #b2e9c3;
+  outline-color: #b5d2ff;
 }
 .install-primary .copy-feedback {
-  color: #b9efcc;
+  color: #bad8ff;
 }
 .command {
   display: flex;
@@ -749,10 +837,10 @@ html:not(.story-motion) .result-packet {
   overflow-wrap: anywhere;
   flex: 1;
   min-width: 0;
-  color: #4c5b51;
+  color: #425b7d;
 }
 .prompt {
-  color: #87928a;
+  color: #7186a5;
   user-select: none;
 }
 .copy {
@@ -764,7 +852,7 @@ html:not(.story-motion) .result-packet {
   background: white;
   border: 1px solid var(--line);
   border-radius: 4px;
-  color: #58665b;
+  color: #526987;
   cursor: pointer;
 }
 html:not(.js-enabled) .copy {
@@ -773,12 +861,12 @@ html:not(.js-enabled) .copy {
 .copy-feedback {
   display: block;
   font-size: 10px;
-  color: var(--green);
+  color: var(--accent);
   min-height: 16px;
   margin-top: 8px;
 }
 .copy:hover {
-  background: #e7eee5;
+  background: #e8effb;
 }
 .copy svg {
   width: 16px;

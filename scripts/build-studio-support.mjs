@@ -1,5 +1,6 @@
 // Supplementary scroll diagrams. Static geometry stays readable without JavaScript.
 import { readFileSync, writeFileSync } from "node:fs";
+import { mobileDiagrams } from "./studio-mobile-diagrams.mjs";
 const file = "landing/studio/how-it-works.html";
 const figure = (
   id,
@@ -92,4 +93,4 @@ for (const [id, drawing] of Object.entries({ context, broker, recovery }))
     new RegExp(`<!-- support:${id} -->[\\s\\S]*?<!-- /support:${id} -->`),
     `<!-- support:${id} -->${drawing}<!-- /support:${id} -->`
   );
-writeFileSync(file, html);
+writeFileSync(file, mobileDiagrams(html));

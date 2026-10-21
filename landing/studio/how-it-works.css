@@ -55,16 +55,16 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  border: 1px solid #7c8c80;
+  border: 1px solid #a2b4d0;
 }
 .key-dot.old {
-  background: #e2e7df;
+  background: #e7edf7;
 }
 .key-dot.candidate {
-  background: #a9ccf5;
+  background: #acc8ff;
 }
 .key-dot.accepted {
-  background: #8ad7aa;
+  background: #9bd8c3;
 }
 .section-intro {
   display: grid;
@@ -106,12 +106,12 @@
 .diagram-scroll {
   overflow-x: auto;
   scrollbar-width: thin;
-  scrollbar-color: #adb7ad transparent;
+  scrollbar-color: #a5b8d7 transparent;
   max-width: 100%;
   padding-bottom: 8px;
 }
 .diagram-scroll:focus-visible {
-  outline: 3px solid #2764db;
+  outline: 3px solid #2864f5;
   outline-offset: 4px;
 }
 .diagram-scroll svg {
@@ -127,59 +127,59 @@
 /* The generator's shared SVG vocabulary. */
 .f-line {
   fill: none;
-  stroke: #7d8980;
+  stroke: #8da2c3;
   stroke-width: 1;
 }
 .f-faint {
   fill: none;
-  stroke: #a5afa7;
+  stroke: #b5c4dc;
   stroke-width: 1;
   stroke-dasharray: 4 5;
 }
 .f-lead {
   fill: none;
-  stroke: #97a499;
+  stroke: #9db1cf;
   stroke-width: 1;
 }
 .f-label,
 .f-title {
   font: 500 11px var(--mono);
   letter-spacing: 0.3px;
-  fill: #3f4f44;
+  fill: #314c72;
 }
 .f-small {
   font: 10px var(--mono);
-  fill: #626e65;
+  fill: #586b85;
 }
 .f-small-dark {
   font: 10px var(--mono);
-  fill: #d0dbd2;
+  fill: #dbe7fb;
 }
 .f-code {
   font: 10px var(--mono);
-  fill: #3c5146;
+  fill: #36567f;
 }
 .f-on-dark {
   font: 500 11px var(--mono);
   fill: white;
 }
 .t-paper {
-  fill: #fafbf8;
+  fill: #fafcff;
 }
 .t-grey {
-  fill: #edf0eb;
+  fill: #f0f4fb;
 }
 .t-blue {
-  fill: #e3eefb;
+  fill: #e5edff;
 }
 .t-red {
-  fill: #f9e1e9;
+  fill: #fbe6ef;
 }
 .t-yellow {
-  fill: #f3f1df;
+  fill: #fff0e3;
 }
 .t-dark {
-  fill: #34473b;
+  fill: #243b61;
 }
 .k-blue {
   stroke: #619cce;
@@ -224,7 +224,7 @@
 }
 .gate-step .step-number {
   font-size: 9px;
-  color: #427058;
+  color: #2864f5;
   margin-bottom: 24px;
 }
 .gate-step h3 {
@@ -240,7 +240,7 @@
 .detail {
   font-size: 12px !important;
   line-height: 1.8;
-  border-left: 1px solid #cbd1cb;
+  border-left: 1px solid #d1dcef;
   padding-left: 16px;
 }
 .transaction-figure {
@@ -258,50 +258,50 @@
 }
 .gate-guides {
   fill: none;
-  stroke: #c7d0c8;
+  stroke: #c5d4eb;
   stroke-width: 1;
   stroke-dasharray: 3 7;
 }
 .slab-side {
-  fill: #edf1e9;
+  fill: #edf3ff;
   fill-opacity: 0.6;
-  stroke: #8c978d;
+  stroke: #9bb0cf;
   stroke-width: 0.8;
 }
 .slab-top {
-  fill: #f7faf5;
+  fill: #f7faff;
   fill-opacity: 0.35;
-  stroke: #8c978d;
+  stroke: #9bb0cf;
   stroke-width: 1;
 }
 .plane-highlight {
-  fill: #9cd3af;
+  fill: #b4dcce;
   opacity: 0.4;
 }
 .check-layer:nth-of-type(2) .plane-highlight {
-  fill: #b9d6f5;
+  fill: #b7ceff;
 }
 .gate-title {
   font: 11px var(--mono);
-  fill: #36483c;
+  fill: #243b61;
 }
 .gate-subtitle {
   font: 9px var(--mono);
-  fill: #66746a;
+  fill: #657b9c;
 }
 .gate-tick circle {
-  fill: #e4f2e8;
-  stroke: #81ac90;
+  fill: #e5f4ef;
+  stroke: #80b9a5;
   stroke-width: 1;
 }
 .gate-tick path {
   fill: none;
-  stroke: #4d8560;
+  stroke: #288264;
   stroke-width: 1.7;
 }
 .candidate-track {
   fill: none;
-  stroke: #97a99a;
+  stroke: #a8b9d3;
   stroke-width: 1;
   stroke-dasharray: 3 6;
 }
@@ -312,18 +312,18 @@
   stroke-width: 1;
 }
 .accepted-result path {
-  stroke: #43875c;
+  stroke: #288264;
   stroke-width: 2;
   fill: none;
 }
 .accepted-result text {
   font: 11px var(--mono);
-  fill: #3e7955;
+  fill: #288264;
   letter-spacing: 1px;
 }
 .gate-base-label {
   font: 10px var(--mono);
-  fill: #536c5b;
+  fill: #4c6891;
   letter-spacing: 1px;
 }
 .repair-leader {
@@ -362,8 +362,8 @@
   min-height: 35px;
 }
 .gate-nav a[aria-current="step"] {
-  color: var(--green);
-  box-shadow: 0 2px var(--green);
+  color: var(--accent);
+  box-shadow: 0 2px var(--accent);
 }
 .guide-section {
   padding-top: 65px;
@@ -391,12 +391,12 @@
   margin: 0;
   padding: 20px 24px;
   min-width: 0;
-  background: #edf1eb;
-  border: 1px solid #dce4d9;
+  background: #edf3ff;
+  border: 1px solid #d9e4f6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: 11px/1.9 var(--mono);
-  color: #3b5e48;
+  color: #2d548e;
   border-radius: 3px;
 }
 .code-example code {
@@ -435,7 +435,7 @@
 }
 .tool-list code {
   font: 11px var(--mono);
-  color: #3b6151;
+  color: #315a98;
 }
 .tool-list span {
   font-size: 11px;
@@ -462,17 +462,17 @@
   scrollbar-width: thin;
 }
 .readiness-figure:focus-visible {
-  outline: 3px solid #2764db;
+  outline: 3px solid #2864f5;
   outline-offset: 4px;
 }
 .old-lane {
-  fill: #edf0e8;
-  stroke: #b1bfad;
+  fill: #f0f4fb;
+  stroke: #b8c8e2;
   stroke-width: 1;
 }
 .lane-label {
   font: 10px var(--mono);
-  fill: #405c49;
+  fill: #314e7b;
   letter-spacing: 0.5px;
 }
 .lane-copy {
@@ -480,21 +480,21 @@
     11px "Geist",
     Arial,
     sans-serif;
-  fill: #405547;
+  fill: #314e7b;
 }
 .candidate-outline {
   fill: none;
-  stroke: #c0cbc1;
+  stroke: #bdcde5;
   stroke-width: 1;
 }
 .compile-fill {
-  fill: #e1edf9;
+  fill: #e3edff;
 }
 .prepare-fill {
-  fill: #efeedb;
+  fill: #eeeaff;
 }
 .ready-fill {
-  fill: #deeee0;
+  fill: #e5f4ef;
 }
 .readiness-marker path {
   stroke: #b56384;
@@ -502,7 +502,7 @@
   stroke-width: 1;
 }
 .handoff-marker path {
-  stroke: #43875c;
+  stroke: #288264;
   fill: none;
   stroke-width: 1.5;
 }
@@ -513,8 +513,8 @@
   gap: 35px;
   margin: 75px 0 20px;
   padding: 45px;
-  background: #edf1e9;
-  border: 1px solid #dce3d7;
+  background: #edf3ff;
+  border: 1px solid #d8e3f5;
   border-radius: 4px;
 }
 .guide-install h2 {
@@ -534,7 +534,7 @@
   padding-bottom: 8px;
 }
 .support-scroll:focus-visible {
-  outline: 3px solid #2764db;
+  outline: 3px solid #2864f5;
   outline-offset: 4px;
 }
 .support-scroll svg {
@@ -555,35 +555,35 @@
 .support-paper,
 .support-blue,
 .support-green {
-  stroke: #98a99b;
+  stroke: #9bb0cf;
   stroke-width: 1;
 }
 .support-paper {
-  fill: #fafbf8;
+  fill: #fafcff;
 }
 .support-blue {
-  fill: #e4eef8;
+  fill: #e5edff;
 }
 .support-green {
-  fill: #e4eddf;
+  fill: #e5f4ef;
 }
 .support-line {
-  stroke: #b2bcb2;
+  stroke: #b3c2da;
   fill: none;
   stroke-width: 1;
 }
 .support-guide {
-  stroke: #b8c4b8;
+  stroke: #bdcde5;
   stroke-dasharray: 2 6;
 }
 .support-small {
   font: 11px var(--mono);
   letter-spacing: 0.4px;
-  fill: #536459;
+  fill: #4c6891;
 }
 .support-code {
   font: 13px var(--mono);
-  fill: #344c3b;
+  fill: #243b61;
 }
 .support-headline {
   font:
@@ -591,7 +591,7 @@
     Arial,
     sans-serif;
   letter-spacing: -2px;
-  fill: #2d4938;
+  fill: #243b61;
 }
 .support-number {
   font:
@@ -599,7 +599,7 @@
     Arial,
     sans-serif;
   letter-spacing: -2px;
-  fill: #245e45;
+  fill: #2864f5;
 }
 .support-selection {
   stroke: #cf7594;
@@ -607,17 +607,17 @@
   stroke-width: 2;
 }
 .support-connector {
-  stroke: #9daea0;
+  stroke: #9bb0cf;
   stroke-width: 2;
   fill: none;
 }
 .support-return {
-  stroke: #6c9d7b;
+  stroke: #6489d3;
   stroke-width: 1.5;
   fill: none;
 }
 .support-check {
-  stroke: #43875c;
+  stroke: #288264;
   stroke-width: 2;
   fill: none;
 }
@@ -630,7 +630,7 @@
 }
 .support-arrow {
   fill: none;
-  stroke: #7b9581;
+  stroke: #7c97c2;
   stroke-width: 1.5;
 }
 .support-context [data-optional-link],
@@ -643,7 +643,7 @@
   opacity: calc(0.4 + 0.6 * var(--support-return, 1));
 }
 .support-baseline {
-  stroke: #6c9475;
+  stroke: #6489d3;
   stroke-width: 1.5;
   fill: none;
 }
@@ -670,60 +670,60 @@
   min-width: 760px;
 }
 .ex-node rect {
-  stroke: #98a99b;
+  stroke: #9bb0cf;
   stroke-width: 1;
 }
 .ex-paper {
-  fill: #fafbf8;
+  fill: #fafcff;
 }
 .ex-blue {
-  fill: #e3eefb;
+  fill: #e5edff;
 }
 .ex-green {
-  fill: #e4eddf;
+  fill: #e5f4ef;
 }
 .ex-amber {
-  fill: #f3f1df;
+  fill: #fff0e3;
 }
 .ex-boundary {
   fill: none;
-  stroke: #9fb2a2;
+  stroke: #9db1cf;
   stroke-width: 1;
   stroke-dasharray: 4 6;
 }
 .ex-title {
   font: 500 14px var(--mono);
-  fill: #334a3b;
+  fill: #243b61;
 }
 .ex-copy {
   font: 12px var(--mono);
-  fill: #55685a;
+  fill: #526b91;
 }
 .ex-label {
   font: 10px var(--mono);
   letter-spacing: 0.4px;
-  fill: #5a7061;
+  fill: #526b91;
 }
 .ex-or {
   font:
     20px "Geist",
     Arial,
     sans-serif;
-  fill: #6b7f70;
+  fill: #7689a7;
 }
 .ex-structure {
-  stroke: #bdc8be;
+  stroke: #bfcee4;
   fill: none;
   stroke-width: 1;
 }
 .ex-path {
-  stroke: #609074;
+  stroke: #6489d3;
   fill: none;
   stroke-width: 1.5;
 }
 .ex-arrow {
   fill: none;
-  stroke: #609074;
+  stroke: #6489d3;
   stroke-width: 1.5;
 }
 .ex-escape {
