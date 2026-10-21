@@ -1,0 +1,10 @@
+// landing/studio/ alone as static assets on Cloudflare, served from the site root:
+// `npx wrangler deploy --config wrangler.studio.jsonc`. The build step only regenerates the
+// inlined styles and scripts of the two pages; landing/studio/.assetsignore keeps notes out.
+{
+  "name": "fframes-studio",
+  "account_id": "bf82bfb4dae9053291ad1217c99e32ae",
+  "compatibility_date": "2026-09-01",
+  "build": { "command": "node scripts/build-studio-delivery.mjs" },
+  "assets": { "directory": "./landing/studio" }
+}
