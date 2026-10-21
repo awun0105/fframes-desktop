@@ -437,7 +437,8 @@ color: var(--muted);
 .edit-diagram {
 display: block;
 width: 100%;
-height: clamp(330px, calc(100svh - 300px), 780px);
+height: auto;
+max-height: clamp(330px, calc(100svh - 300px), 780px);
 overflow: visible;
 }
 .plane {
@@ -504,6 +505,55 @@ stroke-width: 1;
 .source-before {
 fill: #a85070;
 }
+.gate-track {
+fill: #cfe5dc;
+}
+.gate-run {
+fill: #2f9a76;
+}
+.key-mark {
+fill: #f8dae8;
+}
+.source-strike {
+stroke: #a85070;
+stroke-width: 1.2;
+}
+.accepted-mark {
+fill: none;
+stroke: #2f9a76;
+stroke-width: 2;
+}
+.click-ring {
+fill: none;
+stroke: #d65e88;
+stroke-width: 1.5;
+}
+.flow-chip text,
+.phone-chip text {
+font: 11px var(--mono);
+letter-spacing: 0.3px;
+}
+.chip-context rect {
+fill: #fbe1ea;
+stroke: #d65e88;
+}
+.chip-context text {
+fill: #9b3a5d;
+}
+.chip-candidate rect {
+fill: #dce8ff;
+stroke: #5b8be0;
+}
+.chip-candidate text {
+fill: #2c4f8f;
+}
+.chip-result rect {
+fill: #d5f0e4;
+stroke: #2f9a76;
+}
+.chip-result text {
+fill: #1d6b50;
+}
 .result-path {
 stroke: #5c8df0;
 stroke-width: 1;
@@ -565,26 +615,77 @@ transform: translateY(var(--check-y, 0px));
 opacity: var(--selection, 1);
 transform: translateX(var(--selection-x, 0px));
 }
-.story-motion .context-packet {
-opacity: var(--context-opacity, 0);
-transform: translateY(var(--context-y, 0px));
+.story-motion .click-ring {
+opacity: var(--click, 0);
+transform: scale(var(--click-scale, 1));
+transform-box: fill-box;
+transform-origin: center;
+}
+.story-motion .key-mark {
+opacity: var(--key, 1);
+}
+.story-motion .source-strike {
+transform: scaleX(var(--strike, 1));
+transform-box: fill-box;
+transform-origin: left;
 }
 .story-motion .source-after {
 opacity: var(--edit, 0);
+}
+.story-motion .insert-bar {
+transform: scaleX(var(--edit, 1));
+transform-box: fill-box;
+transform-origin: left;
 }
 .story-motion .prompt-note {
 opacity: var(--prompt, 0);
 transform: translateX(var(--prompt-x, 0px));
 }
-.story-motion .candidate-packet {
+.story-motion .flow-chip.chip-context {
+opacity: var(--context-opacity, 0);
+transform: translate(var(--context-x, 0px), var(--context-y, 0px));
+}
+.story-motion .flow-chip.chip-candidate {
 opacity: var(--candidate-opacity, 0);
-transform: translateY(var(--candidate-y, 0px));
+transform: translate(var(--candidate-x, 0px), var(--candidate-y, 0px));
+}
+.story-motion .flow-chip.chip-result {
+opacity: var(--result-opacity, 0);
+transform: translate(var(--result-x, 0px), var(--result-y, 0px));
+}
+.story-motion .phone-chip {
+transform: translate(
+calc(var(--x0) + (var(--x1) - var(--x0)) * var(--t)),
+calc(var(--y0) + (var(--y1) - var(--y0)) * var(--t))
+);
+}
+.story-motion .phone-chip.chip-context {
+--t: var(--context-k, 0);
+opacity: var(--context-opacity, 0);
+}
+.story-motion .phone-chip.chip-candidate {
+--t: var(--candidate-k, 0);
+opacity: var(--candidate-opacity, 0);
+}
+.story-motion .phone-chip.chip-result {
+--t: var(--result-k, 0);
+opacity: var(--result-opacity, 0);
 }
 .story-motion .gate-build {
-opacity: var(--build, 0.25);
+opacity: var(--build-run, 0.25);
 }
 .story-motion .gate-inspect {
-opacity: var(--inspect, 0.25);
+opacity: var(--inspect-run, 0.25);
+}
+.story-motion .gate-build-run {
+transform: scaleX(var(--build-run, 0));
+transform-box: fill-box;
+transform-origin: left;
+}
+.story-motion .gate-inspect-run {
+transform: scaleX(var(--inspect-run, 0));
+transform-box: fill-box;
+transform-origin: left;
 }
 .story-motion .gate-build-label {
 opacity: var(--build, 0);
@@ -592,26 +693,25 @@ opacity: var(--build, 0);
 .story-motion .gate-inspect-label {
 opacity: var(--inspect, 0);
 }
-.story-motion .result-packet {
-opacity: var(--result-opacity, 0);
-transform: translateY(var(--result-y, 0px));
+.story-motion .accepted-mark {
+opacity: var(--after, 0);
 }
 .story-motion .title-before {
 opacity: var(--before, 1);
 }
 .story-motion .title-after {
 opacity: var(--after, 0);
+transform: translateY(calc(8px * (1 - var(--after, 0))));
 }
 html:not(.story-motion) .title-after,
-html:not(.story-motion) .candidate-packet {
+html:not(.story-motion) .accepted-mark,
+html:not(.story-motion) .click-ring,
+html:not(.story-motion) .flow-chip,
+html:not(.story-motion) .phone-chip {
 display: none;
 }
 html:not(.story-motion) .object-selection {
 opacity: 1;
-}
-html:not(.story-motion) .context-packet,
-html:not(.story-motion) .result-packet {
-opacity: 0.7;
 }
 .compatibility {
 border-block: 1px solid var(--line);
@@ -1082,7 +1182,7 @@ gap: 40px;
 grid-template-columns: 42% 58%;
 }
 .edit-diagram {
-height: clamp(310px, calc(100svh - 385px), 650px);
+max-height: clamp(310px, calc(100svh - 385px), 650px);
 }
 }
 @media (max-width: 760px) {
@@ -1417,6 +1517,177 @@ background: white;
 width: 100%;
 }
 }
+[data-explanation],
+[data-scroll-figure],
+[data-product-figure] {
+--p: 1;
+}
+.sc {
+--k: clamp(0, (var(--p) - var(--a)) / (var(--b) - var(--a)), 1);
+}
+.sc-fade {
+opacity: var(--k);
+}
+.sc-hide {
+opacity: calc(1 - var(--k));
+}
+.sc-lit {
+opacity: calc(0.28 + 0.72 * var(--k));
+}
+.sc-rise {
+opacity: var(--k);
+transform: translateY(calc(10px * (1 - var(--k))));
+}
+.sc-pop {
+opacity: var(--k);
+transform: scale(calc(0.6 + 0.4 * var(--k)));
+transform-box: fill-box;
+transform-origin: center;
+}
+.sc-blink {
+--off: clamp(0, (var(--p) - var(--c)) / (var(--d) - var(--c)), 1);
+opacity: min(var(--k), 1 - var(--off));
+}
+.sc-settle {
+fill: #9bb0cf;
+transform: scaleY(calc(1 - 0.82 * var(--k)));
+transform-box: fill-box;
+transform-origin: bottom;
+}
+.sc-move {
+transform: translateX(calc(var(--dx) * var(--k)));
+}
+.sc-dip {
+transform: translateY(calc(36px * var(--k)));
+}
+.sc-undip {
+transform: translateY(calc(-36px * var(--k)));
+}
+:is(.internals-motion, .story-motion) .sc-draw {
+stroke-dasharray: 1 1;
+stroke-dashoffset: calc(1 - var(--k));
+}
+.sc-edge {
+fill: none;
+stroke: #6489d3;
+stroke-width: 1.5;
+}
+.sc-head {
+fill: none;
+stroke: #6489d3;
+stroke-width: 1.5;
+stroke-linecap: round;
+stroke-linejoin: round;
+}
+.sc-edge.sc-warn,
+.sc-head.sc-warn {
+stroke: #c0702f;
+}
+.sc-edge.sc-quiet,
+.sc-head.sc-quiet {
+stroke: #9bb0cf;
+}
+.sc-ring {
+fill: none;
+stroke: #2f80ff;
+stroke-width: 2;
+}
+.sc-ring-warn {
+stroke: #c0702f;
+}
+.sc-token {
+display: none;
+}
+:is(.internals-motion, .story-motion) .sc-token {
+display: inline;
+opacity: 0;
+}
+.sc-chip {
+stroke-width: 1.5;
+}
+.sc-chip-pink {
+fill: #f3c3d3;
+stroke: #c57894;
+}
+.sc-chip-blue {
+fill: #cfe0ff;
+stroke: #2f80ff;
+}
+.sc-chip-green {
+fill: #bfe8d9;
+stroke: #239c76;
+}
+.sc-chip-amber {
+fill: #ffd9b8;
+stroke: #c0702f;
+}
+.sc-narration text {
+font: 500 11px var(--mono);
+letter-spacing: 0.3px;
+fill: #243b61;
+}
+.sc-step {
+fill: #2f80ff;
+}
+.sc-check {
+fill: none;
+stroke: #239c76;
+stroke-width: 2.5;
+stroke-linecap: round;
+stroke-linejoin: round;
+}
+.sc-cross {
+fill: none;
+stroke: #c0702f;
+stroke-width: 2.5;
+stroke-linecap: round;
+}
+.sc-cell {
+fill: #fff;
+stroke: #b8c8e2;
+}
+.sc-cell-text {
+font: 11px var(--mono);
+fill: #243b61;
+}
+.sc-compare {
+stroke: #8fd3bb;
+stroke-dasharray: 2 3;
+}
+.sc-equal {
+font: 600 15px var(--mono);
+fill: #239c76;
+}
+.sc-stamp rect {
+fill: #fff4ea;
+stroke: #c0702f;
+stroke-width: 1.5;
+}
+.sc-stamp text {
+font: 600 11px var(--mono);
+letter-spacing: 0.6px;
+fill: #a35b22;
+}
+.sc-button rect {
+fill: #2f80ff;
+}
+.sc-button text {
+font: 600 11px var(--mono);
+fill: #fff;
+}
+.sc-bar-track {
+fill: #d7e4f6;
+}
+.sc-bar {
+fill: #2cbe95;
+transform: scaleX(var(--k));
+transform-box: fill-box;
+transform-origin: left;
+}
+html:not(.internals-motion):not(.story-motion) .motion-cue,
+html:not(.internals-motion):not(.story-motion) .scroll-cue {
+display: none;
+}
 .ownership {
 display: block;
 }
@@ -1553,18 +1824,8 @@ fill: #586f93;
 .pf-fill-ink {
 fill: #2a4774;
 }
-.pf-fill-green,
-.pf-render-bar {
+.pf-fill-green {
 fill: #2864f5;
-}
-.pf-signal {
-fill: #aecbff;
-stroke: #648be0;
-}
-.pf-check {
-stroke: #288264;
-stroke-width: 3;
-fill: none;
 }
 .pf-trim-edge,
 .pf-split-mark {
@@ -1572,89 +1833,43 @@ stroke: #ad6b85;
 stroke-width: 2;
 fill: none;
 }
-.pf-flow {
-opacity: 0;
+.pf-workspace {
+fill: rgb(229 237 255 / 0.25);
+stroke: #6489d3;
+stroke-dasharray: 5 5;
 }
-.pf-unsplit-label {
-opacity: 0;
+.pf-title {
+font:
+500 22px "Geist",
+Arial,
+sans-serif;
+letter-spacing: -0.6px;
+fill: #10284d;
 }
-.pf-clip-a,
-.pf-clip-b {
-transform: translateX(180px);
+.pf-tick {
+stroke: #bfcee4;
 }
-.pf-clip-c {
-transform: translateX(-360px);
+.pf-trimmed {
+fill: rgb(82 107 145 / 0.18);
+stroke: #9bb0cf;
+stroke-dasharray: 3 3;
 }
-.pf-split-half {
-transform: translateX(6px);
+.pf-active {
+fill: none;
+stroke: #c0702f;
+stroke-width: 1.5;
 }
-.pf-trim-edge {
-transform: translateX(24px);
+.pf-render-bar {
+fill: #2864f5;
 }
-.story-motion .pf-file-one {
-transform: translateY(var(--feature-file-one, 0px));
-}
-.story-motion .pf-file-two {
-transform: translateY(var(--feature-file-two, 0px));
-}
-.story-motion .pf-file-three {
-transform: translateY(var(--feature-file-three, 0px));
-}
-.story-motion .pf-flow {
-opacity: var(--feature-packet, 0);
-transform: translateX(var(--feature-travel, 0px));
-}
-.story-motion .pf-output,
-.story-motion .pf-ready,
-.story-motion .pf-video-file {
-opacity: var(--feature-ready, 1);
-}
-.story-motion .pf-clip-a,
-.story-motion .pf-clip-b {
-transform: translateX(var(--feature-reorder, 180px));
-}
-.story-motion .pf-clip-c {
-transform: translate(
-var(--feature-outro-x, -360px),
-var(--feature-outro-y, 0px)
-);
-}
-.story-motion .pf-split-half {
-transform: translateX(var(--feature-split, 6px));
-}
-.story-motion .pf-trim-mask {
-opacity: var(--feature-trim, 1);
-}
-.story-motion .pf-trim-edge {
-transform: translateX(var(--feature-trim-x, 24px));
-}
-.story-motion .pf-split-mark {
-opacity: var(--feature-split-alpha, 1);
-}
-.story-motion .pf-unsplit-label {
-opacity: calc(1 - var(--feature-split-alpha, 1));
-}
-.story-motion .pf-split-label {
-opacity: var(--feature-split-alpha, 1);
-}
-.story-motion .pf-tool-one {
-transform: translateY(var(--feature-tool-one, 0px));
-}
-.story-motion .pf-tool-two {
-transform: translateY(var(--feature-tool-two, 0px));
-}
-.story-motion .pf-export-one {
-transform: translateY(var(--feature-file-one, 0px));
-}
-.story-motion .pf-export-two {
-transform: translateY(var(--feature-file-two, 0px));
-}
-.story-motion .pf-export-three {
-transform: translateY(var(--feature-file-three, 0px));
+.sc-drop {
+opacity: var(--k);
+transform: translateY(calc(-28px * (1 - var(--k))));
 }
 .story-motion .pf-render-bar {
-transform: scaleX(var(--feature-render, 1));
-transform-origin: 32px 269px;
+transform: scaleX(var(--k));
+transform-box: fill-box;
+transform-origin: left;
 }
 @media (max-width: 1100px) {
 .product-chapter,
@@ -1884,7 +2099,7 @@ overflow: visible;
 .diagram-hint {
 display: none;
 }
-.compact-diagram {
+.phone-figure {
 display: none;
 }
 @media (max-width: 1100px) {
@@ -1965,7 +2180,7 @@ gap: 8px;
 .gate-readout {
 font-size: 14px;
 height: auto;
-min-height: 60px;
+min-height: 64px;
 line-height: 1.6;
 }
 .readout-index {
@@ -2016,168 +2231,74 @@ overflow: visible;
 .readiness-figure .figure-heading {
 min-width: 0;
 }
-.compact-diagram {
-display: flex;
-flex-direction: column;
-gap: 0;
+.phone-figure {
+display: block;
 padding-block: 16px;
 }
-.compact-card {
-display: flex;
-flex-direction: column;
-gap: 8px;
-min-width: 0;
-border: 1px solid #b8cbea;
-border-radius: 6px;
-padding: 18px;
-background: #f4f7fd;
-color: #243b61;
-overflow-wrap: anywhere;
-}
-.compact-card strong {
-font-size: 17px;
-font-weight: 550;
-line-height: 1.4;
-letter-spacing: -0.3px;
-}
-.compact-card-detail {
-font-size: 16px;
-line-height: 1.65;
-}
-.compact-card small {
+.phone-figure svg {
 display: block;
-font:
-14px/1.65 "Geist",
-Arial,
-sans-serif;
-color: #526b91;
+width: 100%;
+height: auto;
+max-width: 440px;
+margin-inline: auto;
 }
-.compact-card code {
-display: block;
-font: 14px/1.9 var(--mono);
-overflow-wrap: anywhere;
+.phone-figure .pf-micro,
+.phone-figure .diagram-small,
+.phone-figure .diagram-label {
+font-size: 11px;
 }
-.compact-blue,
-.compact-draft {
-background: #e5edff;
-border-color: #a8c0ef;
+.phone-figure .sc-narration text,
+.phone-figure .diagram-code,
+.phone-figure .prompt-text {
+font-size: 12px;
 }
-.compact-green,
-.compact-checks {
-background: #e5f4ef;
-border-color: #a0c9bb;
-}
-.compact-pink,
-.compact-preview {
-background: #fbe7ef;
-border-color: #dcb5c4;
-}
-.compact-arrow {
-align-self: center;
-display: block;
-font-size: 21px;
-line-height: 1.6;
-color: #6489d3;
-}
-.compact-chips {
-display: flex;
-flex-wrap: wrap;
-gap: 8px;
-}
-.compact-chips > span {
-padding: 7px 10px;
-font-size: 14px;
-border: 1px solid #bacbea;
-border-radius: 4px;
-background: #ffffff90;
-}
-.compact-parallel {
-display: grid;
-grid-template-columns: 1fr;
-gap: 12px;
-}
-.compact-note {
-font-size: 14px;
-line-height: 1.7;
-margin: 14px 0 0;
-}
-.compact-diagram[data-compact="readiness"] > .compact-card:first-child {
-margin-bottom: 18px;
-border-left: 4px solid #6489d3;
-}
-.compact-diagram[data-compact="workflow"] {
-gap: 0;
-padding-block: 12px;
-}
-.compact-diagram[data-compact="workflow"] .compact-card {
-display: grid;
-grid-template-columns: 100px minmax(0, 1fr);
-align-items: center;
-gap: 10px;
-padding: 12px;
-}
-.compact-diagram[data-compact="workflow"] .compact-card strong {
+.phone-figure .pf-code {
 font-size: 13px;
 }
-.compact-diagram[data-compact="workflow"] .compact-card-detail {
-font-size: 15px;
-line-height: 1.5;
+.phone-figure .diagram-title {
+font-size: 28px;
+letter-spacing: -0.8px;
 }
-.compact-diagram[data-compact="workflow"] .compact-arrow {
-font-size: 16px;
-line-height: 1.25;
+.story-motion .phone-figure[data-phone="workflow"] {
+padding-block: 0;
 }
-.compact-preview-title {
-display: grid;
+.story-motion .phone-figure[data-phone="workflow"] svg {
+height: 40svh;
+min-height: 210px;
+max-height: 370px;
 }
-.compact-preview-title > span {
-grid-area: 1/1;
-font-size: 21px;
-font-weight: 500;
-letter-spacing: -0.5px;
+.phone-figure .ex-title {
+font-size: 13px;
 }
-.compact-after,
-.compact-edit {
-display: none;
+.phone-figure .ex-copy,
+.phone-figure .ex-label,
+.phone-figure .support-small,
+.phone-figure .lane-label,
+.phone-figure .gate-subtitle,
+.phone-figure .gate-base-label {
+font-size: 11px;
+letter-spacing: 0;
 }
-.compact-edit {
-font: 13px/1.6 var(--mono);
+.phone-figure .support-code,
+.phone-figure .gate-title,
+.phone-figure .lane-copy {
+font-size: 12px;
 }
-.story-motion .compact-before {
-opacity: var(--before, 1);
+.phone-figure .support-headline,
+.phone-figure .support-number {
+font-size: 30px;
+letter-spacing: -1px;
 }
-.story-motion .compact-after {
-display: block;
-opacity: var(--after, 0);
+.phone-figure .ex-or {
+font-size: 12px;
 }
-.story-motion .compact-edit {
-display: block;
-opacity: var(--edit, 0);
+.internals-motion .phone-figure[data-phone="gates"] {
+padding-block: 0;
 }
-.story-motion .compact-preview {
-border-color: #cf7594;
-box-shadow: inset 3px 0 #cf7594;
-}
-.story-motion .compact-check-build {
-opacity: calc(0.4 + 0.6 * var(--build, 0));
-}
-.story-motion .compact-check-inspect {
-opacity: calc(0.4 + 0.6 * var(--inspect, 0));
-}
-.internals-motion .transaction-figure {
-position: relative;
-top: auto;
-}
-.internals-motion .transaction-figure figcaption {
-position: static;
-width: auto;
-height: auto;
-clip-path: none;
-overflow: visible;
-}
-.internals-motion .gate-step {
-min-height: 0;
-scroll-margin-top: 100px;
+.internals-motion .phone-figure[data-phone="gates"] svg {
+height: 40svh;
+min-height: 210px;
+max-height: 370px;
 }
 .transaction-figure .gate-nav {
 gap: 8px 14px;
@@ -2222,12 +2343,9 @@ gap: 12px;
 .hero-actions .button {
 padding-inline: 16px;
 }
-.compact-diagram[data-compact="workflow"] .compact-card {
-grid-template-columns: 78px minmax(0, 1fr);
-gap: 8px;
-}
 }
 @media (max-width: 760px) and (max-height: 700px) {
+.internals-motion .transaction-figure,
 .story-motion .workflow-figure {
 position: relative;
 top: auto;
@@ -2582,7 +2700,7 @@ width: 150px;
 }
 }
 @media print {
-.compact-diagram {
+.phone-figure {
 display: none;
 }
 }
@@ -2663,9 +2781,9 @@ display: none;
               >
             </h1>
             <p class="hero-description">
-              Bring your coding agent, arrange scenes on a timeline, and preview
-              the result. Studio manages the SDK; your video stays a Rust
-              project.
+              Describe an animated video to your AI coding assistant. Studio
+              builds a preview you can watch. Select a scene, ask for a change,
+              then export the finished video.
             </p>
             <div class="hero-actions">
               <a class="button" href="#install"
@@ -2679,11 +2797,19 @@ display: none;
                 Enable scroll motion</button
               ><span role="status"></span>
             </div>
-            <p class="hero-note">Open source. Rust projects. Your agent.</p>
+            <p class="hero-note">
+              Requires your own AI assistant, such as Claude Code or Codex.
+            </p>
           </div>
           <div class="workflow-intro" id="workflow">
             <p class="eyebrow">ONE WAY TO WORK / THE AGENT LOOP</p>
             <h2>A small change.<br />A complete loop.</h2>
+            <p>
+              For example: ask for a short title video, then select its title
+              and say “Change the title to ‘Make your move.’” You can also
+              select a scene or time range when individual objects cannot be
+              selected.
+            </p>
             <p>
               Follow “Hello.” from a selected title to an updated preview.
               Scroll slowly, pause, or go back.
@@ -2764,7 +2890,7 @@ display: none;
           <!-- workflow-figure -->
           <svg
             class="edit-diagram"
-            viewBox="0 0 680 690"
+            viewBox="0 0 660 532"
             role="img"
             aria-labelledby="diagram-title diagram-desc"
           >
@@ -2800,10 +2926,12 @@ display: none;
               stroke-width="1"
               stroke-dasharray="3 7"
             >
-              <path d="M300 48V465M170 123v418M525 178v430" />
+              <path
+                d="M272 34L140 274M142.1 109L10.1 349M497.2 164L365.2 404"
+              />
             </g>
             <g class="check-plane">
-              <g transform="matrix(.866 .5 -.866 .5 300 445)">
+              <g transform="matrix(.866 .5 -.866 .5 140 274)">
                 <path class="plane-side check-tone" d="M0 150v10h260v-10Z" />
                 <rect class="plane check-tone" width="260" height="150" />
                 <rect
@@ -2823,71 +2951,92 @@ display: none;
                 <text x="154" y="91" class="diagram-code gate-inspect-label">
                   ✓ checked
                 </text>
+                <rect
+                  x="31"
+                  y="99"
+                  width="74"
+                  height="4"
+                  rx="2"
+                  class="gate-track"
+                />
+                <rect
+                  x="31"
+                  y="99"
+                  width="74"
+                  height="4"
+                  rx="2"
+                  class="gate-run gate-build-run"
+                />
+                <rect
+                  x="154"
+                  y="99"
+                  width="74"
+                  height="4"
+                  rx="2"
+                  class="gate-track"
+                />
+                <rect
+                  x="154"
+                  y="99"
+                  width="74"
+                  height="4"
+                  rx="2"
+                  class="gate-run gate-inspect-run"
+                />
               </g>
-              <path class="leader" d="M523 551h8" />
-              <text x="541" y="547" class="diagram-label">03 / CHECKS</text>
-              <text x="541" y="563" class="diagram-small">
+              <path class="leader" d="M375.2 404h8" />
+              <text x="389.2" y="400" class="diagram-label">03 / CHECKS</text>
+              <text x="389.2" y="416" class="diagram-small">
                 Build → validate
               </text>
             </g>
-            <path class="result-path" d="M335 495V189" fill="none" />
-            <g class="result-packet">
-              <path
-                d="M325 258v-65l-12 7 22-47 22 22-12 6v65Z"
-                fill="#89e9b1"
-                stroke="#35a46a"
-              />
-              <path
-                d="m329 215 5 4 9-20"
-                fill="none"
-                stroke="#186c48"
-                stroke-width="2"
-              />
-            </g>
+            <path class="result-path" d="M200.6 429L315.3 99" fill="none" />
             <g class="draft-plane">
-              <g transform="matrix(.866 .5 -.866 .5 300 255)">
+              <g transform="matrix(.866 .5 -.866 .5 206 154)">
                 <path class="plane-side draft-tone" d="M0 150v10h260v-10Z" />
                 <rect class="plane draft-tone" width="260" height="150" />
                 <path d="M0 25h260" class="leader" />
                 <text x="14" y="17" class="diagram-code">
                   src/lib.rs · working copy
                 </text>
+                <rect
+                  x="12"
+                  y="41"
+                  width="150"
+                  height="17"
+                  rx="2"
+                  class="key-mark"
+                />
                 <text x="18" y="53" class="diagram-code">
                   &lt;text id={title_key}&gt;
                 </text>
                 <text x="28" y="82" class="diagram-code source-before">
                   − &quot;Hello.&quot;
                 </text>
+                <path d="M26 79h62" class="source-strike" />
                 <g class="source-after">
-                  <rect x="19" y="91" width="222" height="24" fill="#dbeee5" />
+                  <rect
+                    x="19"
+                    y="91"
+                    width="222"
+                    height="24"
+                    fill="#dbeee5"
+                    class="insert-bar"
+                  />
                   <text x="28" y="108" class="diagram-code">
                     + &quot;Make your move.&quot;
                   </text>
                 </g>
                 <text x="18" y="134" class="diagram-code">&lt;/text&gt;</text>
               </g>
-              <path class="leader" d="M523 362h8" />
-              <text x="541" y="358" class="diagram-label">02 / DRAFT</text>
-              <text x="541" y="374" class="diagram-small">
+              <path class="leader" d="M441.2 284h8" />
+              <text x="455.2" y="280" class="diagram-label">02 / DRAFT</text>
+              <text x="455.2" y="296" class="diagram-small">
                 Agent edits Rust
               </text>
             </g>
-            <g class="candidate-packet">
-              <path
-                d="M321 405v62l-12-7 22 47 22-22-12-6v-62Z"
-                fill="#91c9fa"
-                stroke="#5b9fdc"
-              />
-            </g>
-            <g class="context-packet">
-              <path
-                d="M219 201v69l-12-7 22 47 22-22-12-6v-69Z"
-                fill="#ffb6cc"
-                stroke="#de7395"
-              />
-            </g>
             <g class="preview-plane">
-              <g transform="matrix(.866 .5 -.866 .5 300 65)">
+              <g transform="matrix(.866 .5 -.866 .5 272 34)">
                 <path class="plane-side preview-tone" d="M0 150v10h260v-10Z" />
                 <rect class="plane preview-tone" width="260" height="150" />
                 <rect
@@ -2919,6 +3068,10 @@ display: none;
                     move.
                   </text>
                 </g>
+                <path
+                  class="accepted-mark"
+                  d="M17 58V48h12M151 48h12v10M163 110v10h-12M29 120H17v-10"
+                />
                 <g class="object-selection">
                   <path
                     d="M17 58V48h12M121 48h12v10M133 100v10h-12M29 110H17v-10"
@@ -2932,6 +3085,7 @@ display: none;
                     stroke="#ad456a"
                   />
                 </g>
+                <circle cx="113" cy="104" r="10" class="click-ring" />
                 <path
                   d="M12 126h54m5 0h16"
                   fill="none"
@@ -2939,33 +3093,55 @@ display: none;
                   stroke-width="2"
                 />
               </g>
-              <path class="leader" d="M523 172h8" />
-              <text x="541" y="168" class="diagram-label">01 / PREVIEW</text>
-              <text x="541" y="184" class="diagram-small">
+              <path class="leader" d="M507.2 164h8" />
+              <text x="521.2" y="160" class="diagram-label">01 / PREVIEW</text>
+              <text x="521.2" y="176" class="diagram-small">
                 Select the title
               </text>
             </g>
             <g class="prompt-note">
               <rect
-                x="33"
-                y="350"
-                width="196"
-                height="66"
+                x="4"
+                y="30"
+                width="160"
+                height="62"
                 rx="3"
                 fill="#fff"
                 stroke="#c9cecc"
               />
-              <path d="M229 371h26" class="leader" />
-              <text x="46" y="369" class="diagram-small">YOUR REQUEST</text>
-              <text x="46" y="388" class="prompt-text">
-                Change the title to
-              </text>
-              <text x="46" y="404" class="prompt-text">“Make your move.”</text>
+              <path d="M110 92L145.4 189" class="leader" />
+              <text x="17" y="49" class="diagram-small">YOUR REQUEST</text>
+              <text x="17" y="68" class="prompt-text">Change the title to</text>
+              <text x="17" y="84" class="prompt-text">“Make your move.”</text>
+            </g>
+            <g
+              class="flow-chip chip-context"
+              data-from="224.4 131.5"
+              data-to="240.6 224"
+            >
+              <rect x="-46" y="-12" width="92" height="24" rx="12" />
+              <text y="4" text-anchor="middle">title_key</text>
+            </g>
+            <g
+              class="flow-chip chip-candidate"
+              data-from="219 296.5"
+              data-to="144.3 351.5"
+            >
+              <rect x="-46" y="-12" width="92" height="24" rx="12" />
+              <text y="4" text-anchor="middle">candidate</text>
+            </g>
+            <g
+              class="flow-chip chip-result"
+              data-from="200.6 429"
+              data-to="315.3 99"
+            >
+              <rect x="-42" y="-12" width="84" height="24" rx="12" />
+              <text y="4" text-anchor="middle">accepted</text>
             </g>
             <text
-              x="300"
-              y="677"
-              text-anchor="middle"
+              x="656"
+              y="522"
+              text-anchor="end"
               class="diagram-small diagram-foot"
             >
               SOURCE → CANDIDATE → ACCEPTED REVISION
@@ -2977,39 +3153,231 @@ display: none;
             ><span data-state-label>Selection → draft → checks → preview</span>
           </div>
           <!-- mobile-diagram -->
-          <div
-            class="compact-diagram"
-            data-compact="workflow"
-            role="group"
-            aria-label="Anatomy of an edit"
-          >
-            <div class="compact-card compact-preview">
-              <strong>01 / Preview</strong>
-              <div class="compact-card-detail">
-                <span class="compact-preview-title"
-                  ><span class="compact-before">Hello.</span
-                  ><span class="compact-after">Make your move.</span></span
-                ><small>Select the title</small>
-              </div>
-            </div>
-            <span class="compact-arrow" aria-hidden="true">↓</span>
-            <div class="compact-card compact-draft">
-              <strong>02 / Agent draft</strong>
-              <div class="compact-card-detail">
-                <code>src/lib.rs</code
-                ><small>Edits a separate working copy</small
-                ><span class="compact-edit">+ “Make your move.”</span>
-              </div>
-            </div>
-            <span class="compact-arrow" aria-hidden="true">↓</span>
-            <div class="compact-card compact-checks">
-              <strong>03 / Checks</strong>
-              <div class="compact-card-detail">
-                <span class="compact-check-build">Build ✓</span> →
-                <span class="compact-check-inspect">Inspect ✓</span
-                ><small>Accepted edit updates the preview</small>
-              </div>
-            </div>
+          <div class="phone-figure" data-phone="workflow">
+            <svg
+              viewBox="0 0 340 346"
+              role="img"
+              aria-labelledby="diagram-title"
+              aria-describedby="phone-workflow-d"
+            >
+              <desc id="phone-workflow-d">
+                A selected title in the preview supplies context to an agent
+                draft. The draft is built and inspected before a successful edit
+                updates the preview. Pink marks selection, blue marks the draft,
+                and green marks successful checks. This is an illustration, not
+                a recording of the application.
+              </desc>
+              <defs>
+                <pattern
+                  id="diagram-grid-m"
+                  width="26"
+                  height="25"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <path
+                    d="M26 0H0V25"
+                    fill="none"
+                    stroke="#cbd1d2"
+                    stroke-width=".45"
+                  />
+                </pattern>
+              </defs>
+              <g>
+                <path class="plane-side check-tone" d="M2 338v6h300v-6Z" />
+                <rect
+                  class="plane check-tone"
+                  x="2"
+                  y="258"
+                  width="300"
+                  height="80"
+                />
+                <text x="14" y="276" class="diagram-label">03 / CHECKS</text>
+                <text x="290" y="276" text-anchor="end" class="diagram-small">
+                  Build → validate
+                </text>
+                <path class="gate gate-build" d="M12 284h136v46H12Z" />
+                <path class="gate gate-inspect" d="M156 284h136v46H156Z" />
+                <text x="22" y="300" class="diagram-code">cargo build</text>
+                <text x="166" y="300" class="diagram-code">inspect</text>
+                <rect
+                  x="22"
+                  y="307"
+                  width="116"
+                  height="4"
+                  rx="2"
+                  class="gate-track"
+                />
+                <rect
+                  x="22"
+                  y="307"
+                  width="116"
+                  height="4"
+                  rx="2"
+                  class="gate-run gate-build-run"
+                />
+                <rect
+                  x="166"
+                  y="307"
+                  width="116"
+                  height="4"
+                  rx="2"
+                  class="gate-track"
+                />
+                <rect
+                  x="166"
+                  y="307"
+                  width="116"
+                  height="4"
+                  rx="2"
+                  class="gate-run gate-inspect-run"
+                />
+                <text x="22" y="325" class="diagram-code gate-build-label">
+                  ✓ compiled
+                </text>
+                <text x="166" y="325" class="diagram-code gate-inspect-label">
+                  ✓ checked
+                </text>
+              </g>
+              <path class="result-path" d="M232 292L240 108" fill="none" />
+              <g>
+                <path class="plane-side draft-tone" d="M18 242v6h300v-6Z" />
+                <rect
+                  class="plane draft-tone"
+                  x="18"
+                  y="150"
+                  width="300"
+                  height="92"
+                />
+                <text x="30" y="168" class="diagram-code">
+                  src/lib.rs · working copy
+                </text>
+                <text x="306" y="168" text-anchor="end" class="diagram-label">
+                  02 / DRAFT
+                </text>
+                <path d="M18 176h300" class="leader" />
+                <rect
+                  x="24"
+                  y="182"
+                  width="176"
+                  height="18"
+                  rx="2"
+                  class="key-mark"
+                />
+                <text x="30" y="195" class="diagram-code">
+                  &lt;text id={title_key}&gt;
+                </text>
+                <text x="40" y="214" class="diagram-code source-before">
+                  − &quot;Hello.&quot;
+                </text>
+                <path d="M38 210h66" class="source-strike" />
+                <g class="source-after">
+                  <rect
+                    x="30"
+                    y="220"
+                    width="276"
+                    height="18"
+                    fill="#dbeee5"
+                    class="insert-bar"
+                  />
+                  <text x="40" y="233" class="diagram-code">
+                    + &quot;Make your move.&quot;
+                  </text>
+                </g>
+              </g>
+              <g>
+                <path class="plane-side preview-tone" d="M34 134v6h300v-6Z" />
+                <rect
+                  class="plane preview-tone"
+                  x="34"
+                  y="40"
+                  width="300"
+                  height="94"
+                />
+                <rect
+                  x="40"
+                  y="46"
+                  width="288"
+                  height="82"
+                  fill="url(#diagram-grid-m)"
+                />
+                <text x="46" y="62" class="diagram-small">
+                  LAUNCH FILM / INTRO
+                </text>
+                <text x="322" y="62" text-anchor="end" class="diagram-label">
+                  01 / PREVIEW
+                </text>
+                <path d="M292 90h30v30h-30Z" fill="#b6d8fb" stroke="#74a7d8" />
+                <circle
+                  cx="302"
+                  cy="101"
+                  r="12"
+                  fill="#f9c2d2"
+                  stroke="#df8da7"
+                />
+                <g class="title-before">
+                  <text x="48" y="112" class="diagram-title">Hello.</text>
+                </g>
+                <g class="title-after">
+                  <text x="48" y="112" class="diagram-title final-title">
+                    Make your move.
+                  </text>
+                </g>
+                <path
+                  class="accepted-mark"
+                  d="M40 88V80h10M262 80h10v8M272 112v8h-10M50 120H40v-8"
+                />
+                <g class="object-selection">
+                  <path
+                    d="M40 88V80h10M132 80h10v8M142 112v8h-10M50 120H40v-8"
+                    fill="none"
+                    stroke="#d65e88"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="m124 108 3 21 5-7 8 5 3-5-9-5 7-4Z"
+                    fill="white"
+                    stroke="#ad456a"
+                  />
+                </g>
+                <circle cx="125" cy="109" r="10" class="click-ring" />
+              </g>
+              <g class="prompt-note">
+                <rect
+                  x="0"
+                  y="2"
+                  width="300"
+                  height="28"
+                  rx="3"
+                  fill="#fff"
+                  stroke="#c9cecc"
+                />
+                <text x="10" y="20" class="diagram-small">REQUEST</text>
+                <text x="72" y="21" class="prompt-text">
+                  Change the title to “Make your move.”
+                </text>
+              </g>
+              <g
+                class="phone-chip chip-context"
+                style="--x0: 96px; --y0: 126px; --x1: 130px; --y1: 191px"
+              >
+                <rect x="-46" y="-12" width="92" height="24" rx="12" />
+                <text y="4" text-anchor="middle">title_key</text>
+              </g>
+              <g
+                class="phone-chip chip-candidate"
+                style="--x0: 210px; --y0: 229px; --x1: 150px; --y1: 297px"
+              >
+                <rect x="-46" y="-12" width="92" height="24" rx="12" />
+                <text y="4" text-anchor="middle">candidate</text>
+              </g>
+              <g
+                class="phone-chip chip-result"
+                style="--x0: 232px; --y0: 292px; --x1: 240px; --y1: 108px"
+              >
+                <rect x="-42" y="-12" width="84" height="24" rx="12" />
+                <text y="4" text-anchor="middle">accepted</text>
+              </g>
+            </svg>
           </div>
           <!-- /mobile-diagram -->
           <figcaption id="figure-caption">
@@ -3149,7 +3517,10 @@ display: none;
             <figure class="product-figure" data-product-figure="project">
               <div class="product-figure-heading">
                 <span>YOUR FILES, CONNECTED</span
-                ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
+                ><span
+                  ><span class="scroll-cue">SCROLL TO FOLLOW · </span
+                  >ILLUSTRATION</span
+                >
               </div>
               <div
                 class="product-figure-scroll"
@@ -3164,93 +3535,664 @@ display: none;
                 >
                   <title id="product-project-t">YOUR FILES, CONNECTED</title>
                   <desc id="product-project-d">
-                    Rust source, media and timing remain ordinary project files.
-                    Studio uses them to build and prepare a video preview.
+                    Rust source, media and timing remain ordinary project files
+                    that your editor and Git use directly. Studio adds a
+                    workspace around them, builds the project and prepares a
+                    video preview.
                   </desc>
-                  <path d="M35 300H606" class="pf-guide" />
-                  <g class="pf-file pf-file-one">
-                    <path d="M40 66h80l13 14h155v52H40Z" class="pf-paper" />
-                    <text x="57" y="104" class="pf-code">src/lib.rs</text>
-                    <text x="223" y="104" class="pf-micro">RUST</text>
-                  </g>
-                  <g class="pf-file pf-file-two">
-                    <path d="M40 148h80l13 14h155v52H40Z" class="pf-blue" />
-                    <text x="57" y="186" class="pf-code">media/</text>
-                    <path
-                      d="M236 175h28v24h-28Zm4 19 8-10 6 6 5-4"
-                      class="pf-edge"
+                  <g class="sc sc-fade" style="--a: 0.3; --b: 0.38">
+                    <rect
+                      x="22"
+                      y="40"
+                      width="596"
+                      height="262"
+                      rx="6"
+                      class="pf-workspace"
                     />
+                    <text x="606" y="31" text-anchor="end" class="pf-micro">
+                      STUDIO WORKSPACE
+                    </text>
                   </g>
-                  <g class="pf-file pf-file-three">
-                    <path d="M40 230h80l13 14h155v52H40Z" class="pf-green" />
-                    <text x="57" y="268" class="pf-code">timeline.json</text>
+                  <rect
+                    x="44"
+                    y="62"
+                    width="250"
+                    height="184"
+                    rx="4"
+                    class="pf-paper"
+                  />
+                  <text x="60" y="86" class="pf-micro">MY-VIDEO/</text>
+                  <path d="M44 98h250" class="pf-edge" />
+                  <g class="sc sc-rise" style="--a: 0.02; --b: 0.08">
+                    <rect
+                      x="58"
+                      y="108"
+                      width="222"
+                      height="32"
+                      rx="3"
+                      class="pf-paper"
+                    />
+                    <text x="72" y="129" class="pf-code">src/lib.rs</text>
+                    <text x="268" y="128" text-anchor="end" class="pf-micro">
+                      RUST
+                    </text>
+                  </g>
+                  <g class="sc sc-rise" style="--a: 0.06; --b: 0.12">
+                    <rect
+                      x="58"
+                      y="152"
+                      width="222"
+                      height="32"
+                      rx="3"
+                      class="pf-blue"
+                    />
+                    <text x="72" y="173" class="pf-code">media/</text>
+                    <text x="268" y="172" text-anchor="end" class="pf-micro">
+                      MEDIA
+                    </text>
+                  </g>
+                  <g class="sc sc-rise" style="--a: 0.1; --b: 0.16">
+                    <rect
+                      x="58"
+                      y="196"
+                      width="222"
+                      height="32"
+                      rx="3"
+                      class="pf-green"
+                    />
+                    <text x="72" y="217" class="pf-code">timeline.json</text>
+                    <text x="268" y="216" text-anchor="end" class="pf-micro">
+                      TIMING
+                    </text>
+                  </g>
+                  <g class="sc sc-fade" style="--a: 0.16; --b: 0.24">
+                    <path d="M110 314V246M202 314V246" class="pf-guide" />
+                    <rect
+                      x="58"
+                      y="314"
+                      width="104"
+                      height="24"
+                      rx="12"
+                      class="pf-paper"
+                    />
+                    <text x="110" y="330" text-anchor="middle" class="pf-micro">
+                      YOUR EDITOR
+                    </text>
+                    <rect
+                      x="174"
+                      y="314"
+                      width="56"
+                      height="24"
+                      rx="12"
+                      class="pf-paper"
+                    />
+                    <text x="202" y="330" text-anchor="middle" class="pf-micro">
+                      GIT
+                    </text>
                   </g>
                   <path
-                    d="M307 100H337V263H307M307 180H374M368 174l6 6-6 6"
-                    class="pf-edge"
+                    id="project-src"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.44; --b: 0.5"
+                    d="M280 124H302V159H318"
+                    pathLength="1"
                   />
-                  <g class="pf-flow">
-                    <path d="M340 174h12v12h-12Z" class="pf-signal" />
-                  </g>
-                  <g class="pf-output">
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.48; --b: 0.5"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(318 159) rotate(0)"
+                  />
+                  <path
+                    id="project-media"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.46; --b: 0.52"
+                    d="M280 168H302V159H318"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.5; --b: 0.52"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(318 159) rotate(0)"
+                  />
+                  <path
+                    id="project-timing"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.48; --b: 0.54"
+                    d="M280 212H302V159H318"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.52; --b: 0.54"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(318 159) rotate(0)"
+                  />
+                  <g class="sc sc-lit" style="--a: 0.5; --b: 0.56">
                     <rect
-                      x="385"
-                      y="88"
-                      width="225"
-                      height="184"
+                      x="318"
+                      y="128"
+                      width="124"
+                      height="62"
                       rx="4"
                       class="pf-paper"
                     />
-                    <path d="M385 119h225" class="pf-edge" />
-                    <text x="401" y="108" class="pf-micro">STUDIO PREVIEW</text>
+                    <text x="332" y="152" class="pf-code">cargo build</text>
                     <rect
-                      x="401"
-                      y="134"
-                      width="193"
-                      height="99"
+                      x="332"
+                      y="166"
+                      width="82"
+                      height="5"
+                      rx="2.5"
+                      class="sc-bar-track"
+                    />
+                    <rect
+                      x="332"
+                      y="166"
+                      width="82"
+                      height="5"
+                      rx="2.5"
+                      class="sc sc-bar"
+                      style="--a: 0.58; --b: 0.74"
+                    />
+                  </g>
+                  <g class="sc sc-pop" style="--a: 0.74; --b: 0.78">
+                    <path d="m422 166 4 4 8-9" class="sc-check" />
+                  </g>
+                  <path
+                    id="project-preview"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.76; --b: 0.82"
+                    d="M442 159H458"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.8; --b: 0.82"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(458 159) rotate(0)"
+                  />
+                  <g
+                    class="sc-token"
+                    data-along="#project-src"
+                    data-a="0.5"
+                    data-b="0.62"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-blue"
+                    />
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#project-media"
+                    data-a="0.52"
+                    data-b="0.64"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-pink"
+                    />
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#project-timing"
+                    data-a="0.54"
+                    data-b="0.66"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-green"
+                    />
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#project-preview"
+                    data-a="0.8"
+                    data-b="0.88"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-green"
+                    />
+                  </g>
+                  <g class="sc sc-rise pf-output" style="--a: 0.84; --b: 0.92">
+                    <rect
+                      x="462"
+                      y="74"
+                      width="146"
+                      height="170"
+                      rx="4"
+                      class="pf-paper"
+                    />
+                    <text x="476" y="94" class="pf-micro">STUDIO PREVIEW</text>
+                    <path d="M462 104h146" class="pf-edge" />
+                    <rect
+                      x="474"
+                      y="114"
+                      width="122"
+                      height="78"
                       class="pf-green"
                     />
-                    <circle cx="498" cy="183" r="29" class="pf-pink" />
-                    <path d="m490 167 23 16-23 16Z" class="pf-fill-ink" />
-                    <path d="M403 252h170m-170 0h61" class="pf-edge" />
-                    <circle cx="467" cy="252" r="3" class="pf-fill-green" />
+                    <circle cx="576" cy="136" r="12" class="pf-pink" />
+                    <text x="486" y="170" class="pf-title">Hello.</text>
+                    <path d="M476 222h118" class="pf-edge" />
+                    <circle cx="520" cy="222" r="3" class="pf-fill-green" />
                   </g>
-                  <text x="40" y="332" class="pf-micro">
-                    ORDINARY FILES. YOUR OWN TOOLS.
-                  </text>
-                  <text x="610" y="332" text-anchor="end" class="pf-micro">
-                    SOURCE → FRAME
-                  </text>
+                  <rect
+                    x="458"
+                    y="70"
+                    width="154"
+                    height="178"
+                    rx="6"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.92; --b: 0.96; --c: 0.97; --d: 0.99"
+                  />
+                  <g class="sc-narration">
+                    <text
+                      x="618"
+                      y="330"
+                      text-anchor="end"
+                      class="sc sc-blink"
+                      style="--a: 0; --b: 0.04; --c: 0.14; --d: 0.16"
+                    >
+                      <tspan class="sc-step">01</tspan>
+                      Your video is a Rust project of ordinary files
+                    </text>
+                    <text
+                      x="618"
+                      y="330"
+                      text-anchor="end"
+                      class="sc sc-blink"
+                      style="--a: 0.16; --b: 0.22; --c: 0.28; --d: 0.3"
+                    >
+                      <tspan class="sc-step">02</tspan>
+                      Open them in your editor; keep them in Git
+                    </text>
+                    <text
+                      x="618"
+                      y="330"
+                      text-anchor="end"
+                      class="sc sc-blink"
+                      style="--a: 0.3; --b: 0.36; --c: 0.42; --d: 0.44"
+                    >
+                      <tspan class="sc-step">03</tspan>
+                      Studio adds a workspace around them
+                    </text>
+                    <text
+                      x="618"
+                      y="330"
+                      text-anchor="end"
+                      class="sc sc-blink"
+                      style="--a: 0.44; --b: 0.5; --c: 0.78; --d: 0.8"
+                    >
+                      <tspan class="sc-step">04</tspan>
+                      It builds the project from those files
+                    </text>
+                    <text
+                      x="618"
+                      y="330"
+                      text-anchor="end"
+                      class="sc sc-fade"
+                      style="--a: 0.8; --b: 0.86"
+                    >
+                      <tspan class="sc-step">05</tspan>
+                      Studio prepares a video preview
+                    </text>
+                  </g>
                 </svg>
               </div>
               <!-- mobile-diagram -->
-              <div
-                class="compact-diagram"
-                data-compact="project"
-                role="group"
-                aria-label="Diagram"
-              >
-                <div class="compact-card">
-                  <strong>Your project files</strong>
-                  <div class="compact-card-detail">
-                    <code>src/lib.rs</code><code>media/</code
-                    ><code>timeline.json</code>
-                  </div>
-                </div>
-                <span class="compact-arrow" aria-hidden="true">↓</span>
-                <div class="compact-card compact-blue">
-                  <strong>Build & prepare</strong>
-                  <div class="compact-card-detail">
-                    Compatible project · successful build
-                  </div>
-                </div>
-                <span class="compact-arrow" aria-hidden="true">↓</span>
-                <div class="compact-card compact-green">
-                  <strong>Studio preview</strong>
-                  <div class="compact-card-detail">
-                    Your source, rendered as a frame
-                  </div>
-                </div>
+              <div class="phone-figure" data-phone="project">
+                <svg
+                  viewBox="0 0 340 468"
+                  role="img"
+                  aria-labelledby="product-project-t"
+                  aria-describedby="phone-project-d"
+                >
+                  <desc id="phone-project-d">
+                    Rust source, media and timing remain ordinary project files
+                    that your editor and Git use directly. Studio adds a
+                    workspace around them, builds the project and prepares a
+                    video preview.
+                  </desc>
+                  <g class="sc sc-fade" style="--a: 0.3; --b: 0.38">
+                    <rect
+                      x="6"
+                      y="28"
+                      width="328"
+                      height="380"
+                      rx="6"
+                      class="pf-workspace"
+                    />
+                    <text x="328" y="18" text-anchor="end" class="pf-micro">
+                      STUDIO WORKSPACE
+                    </text>
+                  </g>
+                  <rect
+                    x="20"
+                    y="42"
+                    width="210"
+                    height="146"
+                    rx="4"
+                    class="pf-paper"
+                  />
+                  <text x="34" y="64" class="pf-micro">MY-VIDEO/</text>
+                  <path d="M20 76h210" class="pf-edge" />
+                  <g class="sc sc-rise" style="--a: 0.02; --b: 0.08">
+                    <rect
+                      x="32"
+                      y="85"
+                      width="186"
+                      height="30"
+                      rx="3"
+                      class="pf-paper"
+                    />
+                    <text x="44" y="105" class="pf-code">src/lib.rs</text>
+                    <text x="208" y="104" text-anchor="end" class="pf-micro">
+                      RUST
+                    </text>
+                  </g>
+                  <g class="sc sc-rise" style="--a: 0.06; --b: 0.12">
+                    <rect
+                      x="32"
+                      y="121"
+                      width="186"
+                      height="30"
+                      rx="3"
+                      class="pf-blue"
+                    />
+                    <text x="44" y="141" class="pf-code">media/</text>
+                    <text x="208" y="140" text-anchor="end" class="pf-micro">
+                      MEDIA
+                    </text>
+                  </g>
+                  <g class="sc sc-rise" style="--a: 0.1; --b: 0.16">
+                    <rect
+                      x="32"
+                      y="157"
+                      width="186"
+                      height="30"
+                      rx="3"
+                      class="pf-green"
+                    />
+                    <text x="44" y="177" class="pf-code">timeline.json</text>
+                    <text x="208" y="176" text-anchor="end" class="pf-micro">
+                      TIMING
+                    </text>
+                  </g>
+                  <g class="sc sc-fade" style="--a: 0.16; --b: 0.24">
+                    <path d="M230 92H242M230 140H242" class="pf-guide" />
+                    <rect
+                      x="242"
+                      y="80"
+                      width="84"
+                      height="24"
+                      rx="12"
+                      class="pf-paper"
+                    />
+                    <text x="284" y="96" text-anchor="middle" class="pf-micro">
+                      EDITOR
+                    </text>
+                    <rect
+                      x="242"
+                      y="128"
+                      width="84"
+                      height="24"
+                      rx="12"
+                      class="pf-paper"
+                    />
+                    <text x="284" y="144" text-anchor="middle" class="pf-micro">
+                      GIT
+                    </text>
+                  </g>
+                  <path
+                    id="project-src-m"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.44; --b: 0.5"
+                    d="M80 188V218"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.48; --b: 0.5"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(80 218) rotate(90)"
+                  />
+                  <path
+                    id="project-media-m"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.46; --b: 0.52"
+                    d="M125 188V218"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.5; --b: 0.52"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(125 218) rotate(90)"
+                  />
+                  <path
+                    id="project-timing-m"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.48; --b: 0.54"
+                    d="M170 188V218"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.52; --b: 0.54"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(170 218) rotate(90)"
+                  />
+                  <g class="sc sc-lit" style="--a: 0.5; --b: 0.56">
+                    <rect
+                      x="40"
+                      y="218"
+                      width="170"
+                      height="48"
+                      rx="4"
+                      class="pf-paper"
+                    />
+                    <text x="54" y="238" class="pf-code">cargo build</text>
+                    <rect
+                      x="54"
+                      y="250"
+                      width="124"
+                      height="5"
+                      rx="2.5"
+                      class="sc-bar-track"
+                    />
+                    <rect
+                      x="54"
+                      y="250"
+                      width="124"
+                      height="5"
+                      rx="2.5"
+                      class="sc sc-bar"
+                      style="--a: 0.58; --b: 0.74"
+                    />
+                  </g>
+                  <g class="sc sc-pop" style="--a: 0.74; --b: 0.78">
+                    <path d="m186 250 4 4 8-9" class="sc-check" />
+                  </g>
+                  <path
+                    id="project-preview-m"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.76; --b: 0.82"
+                    d="M125 266V286"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.8; --b: 0.82"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(125 286) rotate(90)"
+                  />
+                  <g
+                    class="sc-token"
+                    data-along="#project-src-m"
+                    data-a="0.5"
+                    data-b="0.62"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-blue"
+                    />
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#project-media-m"
+                    data-a="0.52"
+                    data-b="0.64"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-pink"
+                    />
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#project-timing-m"
+                    data-a="0.54"
+                    data-b="0.66"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-green"
+                    />
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#project-preview-m"
+                    data-a="0.8"
+                    data-b="0.88"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-green"
+                    />
+                  </g>
+                  <g class="sc sc-rise" style="--a: 0.84; --b: 0.92">
+                    <rect
+                      x="40"
+                      y="286"
+                      width="260"
+                      height="112"
+                      rx="4"
+                      class="pf-paper"
+                    />
+                    <text x="54" y="304" class="pf-micro">STUDIO PREVIEW</text>
+                    <path d="M40 312h260" class="pf-edge" />
+                    <rect
+                      x="52"
+                      y="320"
+                      width="236"
+                      height="52"
+                      class="pf-green"
+                    />
+                    <circle cx="262" cy="338" r="12" class="pf-pink" />
+                    <text x="66" y="356" class="pf-title">Hello.</text>
+                    <path d="M54 386h232" class="pf-edge" />
+                    <circle cx="120" cy="386" r="3" class="pf-fill-green" />
+                  </g>
+                  <rect
+                    x="36"
+                    y="282"
+                    width="268"
+                    height="120"
+                    rx="6"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.92; --b: 0.96; --c: 0.97; --d: 0.99"
+                  />
+                  <g class="sc-narration">
+                    <text
+                      x="12"
+                      y="434"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0; --b: 0.04; --c: 0.14; --d: 0.16"
+                    >
+                      <tspan class="sc-step">01</tspan>
+                      Your video is a Rust project of
+                      <tspan x="34" dy="17">ordinary files</tspan>
+                    </text>
+                    <text
+                      x="12"
+                      y="434"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.16; --b: 0.22; --c: 0.28; --d: 0.3"
+                    >
+                      <tspan class="sc-step">02</tspan>
+                      Open them in your editor; keep them in
+                      <tspan x="34" dy="17">Git</tspan>
+                    </text>
+                    <text
+                      x="12"
+                      y="434"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.3; --b: 0.36; --c: 0.42; --d: 0.44"
+                    >
+                      <tspan class="sc-step">03</tspan>
+                      Studio adds a workspace around them
+                    </text>
+                    <text
+                      x="12"
+                      y="434"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.44; --b: 0.5; --c: 0.78; --d: 0.8"
+                    >
+                      <tspan class="sc-step">04</tspan>
+                      It builds the project from those files
+                    </text>
+                    <text
+                      x="12"
+                      y="434"
+                      text-anchor="start"
+                      class="sc sc-fade"
+                      style="--a: 0.8; --b: 0.86"
+                    >
+                      <tspan class="sc-step">05</tspan>
+                      Studio prepares a video preview
+                    </text>
+                  </g>
+                </svg>
               </div>
               <!-- /mobile-diagram -->
               <figcaption>
@@ -3276,7 +4218,10 @@ display: none;
             <figure class="product-figure" data-product-figure="timing">
               <div class="product-figure-heading">
                 <span>CHANGE THE CUT, KEEP THE CODE</span
-                ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
+                ><span
+                  ><span class="scroll-cue">SCROLL TO FOLLOW · </span
+                  >ILLUSTRATION</span
+                >
               </div>
               <div
                 class="product-figure-scroll"
@@ -3294,158 +4239,629 @@ display: none;
                   </title>
                   <desc id="product-timing-d">
                     A scene is split, the outro moves to the beginning and a
-                    clip edge is trimmed. Timing changes are written to
+                    clip edge is trimmed. Each timing change is written to
                     timeline.json; Rust source stays unchanged.
                   </desc>
-                  <text x="32" y="40" class="pf-micro">
-                    ORIGINAL SCENE ORDER
-                  </text>
-                  <path d="M32 54H608" class="pf-guide" />
+                  <text x="32" y="40" class="pf-micro">TIMELINE</text>
+                  <path d="M32 82H608" class="pf-guide" />
+                  <path
+                    d="M32 78v8M80 78v8M128 78v8M176 78v8M224 78v8M272 78v8M320 78v8M368 78v8M416 78v8M464 78v8M512 78v8M560 78v8M608 78v8"
+                    class="pf-tick"
+                  />
                   <rect
                     x="32"
-                    y="69"
-                    width="168"
-                    height="35"
+                    y="98"
+                    width="576"
+                    height="74"
                     class="pf-faint"
                   />
-                  <text x="45" y="92" class="pf-micro">A / INTRO</text>
-                  <rect
-                    x="212"
-                    y="69"
-                    width="168"
-                    height="35"
-                    class="pf-faint"
+                  <path
+                    id="timing-write"
+                    class="sc sc-draw sc-edge sc-quiet"
+                    style="--a: 0.04; --b: 0.12"
+                    d="M167 172V258"
+                    pathLength="1"
                   />
-                  <text x="225" y="92" class="pf-micro">B / MAIN</text>
-                  <rect
-                    x="392"
-                    y="69"
-                    width="168"
-                    height="35"
-                    class="pf-faint"
+                  <path
+                    class="sc sc-fade sc-head sc-quiet"
+                    style="--a: 0.1; --b: 0.12"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(167 258) rotate(90)"
                   />
-                  <text x="405" y="92" class="pf-micro">C / OUTRO</text>
-                  <text x="32" y="145" class="pf-micro">EDITED TIMELINE</text>
-                  <path d="M32 205H607" class="pf-edge" />
-                  <g class="pf-clip-a">
+                  <g
+                    class="sc sc-move"
+                    style="--a: 0.4; --b: 0.58; --dx: 180px"
+                  >
                     <rect
                       x="32"
-                      y="163"
+                      y="104"
                       width="168"
                       height="62"
                       rx="2"
                       class="pf-blue"
                     />
-                    <rect
-                      class="pf-trim-mask"
-                      x="32"
-                      y="163"
-                      width="24"
-                      height="62"
-                      fill="#fafcff"
-                    />
-                    <path class="pf-trim-edge" d="M32 160v68" />
-                    <text x="69" y="200" class="pf-code">A / INTRO</text>
+                    <text x="70" y="141" class="pf-code">A / INTRO</text>
+                    <g class="sc sc-fade" style="--a: 0.66; --b: 0.74">
+                      <rect
+                        x="32"
+                        y="104"
+                        width="24"
+                        height="62"
+                        class="pf-trimmed"
+                      />
+                    </g>
+                    <g class="sc sc-fade" style="--a: 0.62; --b: 0.66">
+                      <g
+                        class="sc sc-move"
+                        style="--a: 0.66; --b: 0.78; --dx: 24px"
+                      >
+                        <path d="M32 96v78" class="pf-trim-edge" />
+                      </g>
+                    </g>
                   </g>
-                  <g class="pf-clip-b">
+                  <g
+                    class="sc sc-move"
+                    style="--a: 0.4; --b: 0.58; --dx: 180px"
+                  >
                     <rect
                       x="212"
-                      y="163"
+                      y="104"
                       width="81"
                       height="62"
                       rx="2"
                       class="pf-green"
                     />
-                    <text x="225" y="200" class="pf-code pf-split-label">
-                      B₁
-                    </text>
-                    <g class="pf-split-half">
+                    <g
+                      class="sc sc-move"
+                      style="--a: 0.16; --b: 0.26; --dx: 6px"
+                    >
                       <rect
                         x="293"
-                        y="163"
+                        y="104"
                         width="81"
                         height="62"
                         rx="2"
                         class="pf-green"
                       />
-                      <text x="309" y="200" class="pf-code pf-split-label">
-                        B₂
-                      </text>
                     </g>
-                    <text x="225" y="200" class="pf-code pf-unsplit-label">
-                      B / MAIN
-                    </text>
-                    <path class="pf-split-mark" d="M293 150v87" />
-                  </g>
-                  <g class="pf-clip-c">
-                    <rect
-                      x="392"
-                      y="163"
-                      width="168"
-                      height="62"
-                      rx="2"
-                      class="pf-pink"
+                    <g class="sc sc-hide" style="--a: 0.16; --b: 0.2">
+                      <text x="226" y="141" class="pf-code">B / MAIN</text>
+                    </g>
+                    <g class="sc sc-fade" style="--a: 0.18; --b: 0.24">
+                      <text x="226" y="141" class="pf-code">B₁</text>
+                      <g
+                        class="sc sc-move"
+                        style="--a: 0.16; --b: 0.26; --dx: 6px"
+                      >
+                        <text x="309" y="141" class="pf-code">B₂</text>
+                      </g>
+                    </g>
+                    <path
+                      d="M293 92v86"
+                      class="sc sc-blink pf-split-mark"
+                      style="--a: 0.08; --b: 0.12; --c: 0.26; --d: 0.3"
                     />
-                    <text x="405" y="200" class="pf-code">C / OUTRO</text>
                   </g>
-                  <path d="M300 243v20" class="pf-edge" />
+                  <g
+                    class="sc sc-move pf-clip-c"
+                    style="--a: 0.4; --b: 0.58; --dx: -360px"
+                  >
+                    <g class="sc sc-undip" style="--a: 0.32; --b: 0.4">
+                      <g class="sc sc-dip" style="--a: 0.58; --b: 0.66">
+                        <rect
+                          x="392"
+                          y="104"
+                          width="168"
+                          height="62"
+                          rx="2"
+                          class="pf-pink"
+                        />
+                        <text x="406" y="141" class="pf-code">C / OUTRO</text>
+                      </g>
+                    </g>
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#timing-write"
+                    data-a="0.24"
+                    data-b="0.32"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-blue"
+                    />
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#timing-write"
+                    data-a="0.6"
+                    data-b="0.68"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-blue"
+                    />
+                  </g>
+                  <g
+                    class="sc-token"
+                    data-along="#timing-write"
+                    data-a="0.78"
+                    data-b="0.86"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-blue"
+                    />
+                  </g>
                   <rect
                     x="32"
-                    y="276"
+                    y="262"
                     width="270"
-                    height="53"
+                    height="56"
                     rx="3"
                     class="pf-green"
                   />
-                  <text x="48" y="307" class="pf-code">
-                    timeline.json → written
+                  <text x="48" y="286" class="pf-code">timeline.json</text>
+                  <text
+                    x="288"
+                    y="286"
+                    text-anchor="end"
+                    class="pf-micro sc sc-blink"
+                    style="--a: -0.01; --b: 0; --c: 0.3; --d: 0.32"
+                  >
+                    REV 1
                   </text>
+                  <text
+                    x="288"
+                    y="286"
+                    text-anchor="end"
+                    class="pf-micro sc sc-blink"
+                    style="--a: 0.3; --b: 0.32; --c: 0.66; --d: 0.68"
+                  >
+                    REV 2
+                  </text>
+                  <text
+                    x="288"
+                    y="286"
+                    text-anchor="end"
+                    class="pf-micro sc sc-blink"
+                    style="--a: 0.66; --b: 0.68; --c: 0.84; --d: 0.86"
+                  >
+                    REV 3
+                  </text>
+                  <text
+                    x="288"
+                    y="286"
+                    text-anchor="end"
+                    class="pf-micro sc sc-fade"
+                    style="--a: 0.84; --b: 0.86"
+                  >
+                    REV 4
+                  </text>
+                  <g class="sc sc-fade" style="--a: 0.3; --b: 0.32">
+                    <text x="48" y="306" class="pf-micro">SPLIT</text>
+                  </g>
+                  <g class="sc sc-fade" style="--a: 0.66; --b: 0.68">
+                    <text x="96" y="306" class="pf-micro">· MOVE</text>
+                  </g>
+                  <g class="sc sc-fade" style="--a: 0.84; --b: 0.86">
+                    <text x="150" y="306" class="pf-micro">· TRIM</text>
+                  </g>
+                  <rect
+                    x="28"
+                    y="258"
+                    width="278"
+                    height="64"
+                    rx="6"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.3; --b: 0.32; --c: 0.38; --d: 0.42"
+                  />
+                  <rect
+                    x="28"
+                    y="258"
+                    width="278"
+                    height="64"
+                    rx="6"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.66; --b: 0.68; --c: 0.74; --d: 0.78"
+                  />
+                  <rect
+                    x="28"
+                    y="258"
+                    width="278"
+                    height="64"
+                    rx="6"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.84; --b: 0.86; --c: 0.96; --d: 0.99"
+                  />
                   <rect
                     x="326"
-                    y="276"
+                    y="262"
                     width="282"
-                    height="53"
+                    height="56"
                     rx="3"
                     class="pf-paper"
                   />
-                  <text x="342" y="307" class="pf-code">
+                  <text x="342" y="286" class="pf-code">
                     Rust source → unchanged
                   </text>
+                  <g class="sc sc-fade" style="--a: 0.88; --b: 0.94">
+                    <text x="342" y="306" class="pf-micro">NO REBUILD</text>
+                    <path d="m430 298 4 4 8-9" class="sc-check" />
+                  </g>
+                  <g class="sc-narration">
+                    <text
+                      x="608"
+                      y="40"
+                      text-anchor="end"
+                      class="sc sc-blink"
+                      style="--a: 0.04; --b: 0.1; --c: 0.3; --d: 0.32"
+                    >
+                      <tspan class="sc-step">01</tspan>
+                      Split the main scene
+                    </text>
+                    <text
+                      x="608"
+                      y="40"
+                      text-anchor="end"
+                      class="sc sc-blink"
+                      style="--a: 0.32; --b: 0.38; --c: 0.6; --d: 0.62"
+                    >
+                      <tspan class="sc-step">02</tspan>
+                      Move the outro to the start
+                    </text>
+                    <text
+                      x="608"
+                      y="40"
+                      text-anchor="end"
+                      class="sc sc-blink"
+                      style="--a: 0.62; --b: 0.68; --c: 0.86; --d: 0.88"
+                    >
+                      <tspan class="sc-step">03</tspan>
+                      Trim the intro’s edge
+                    </text>
+                    <text
+                      x="608"
+                      y="40"
+                      text-anchor="end"
+                      class="sc sc-fade"
+                      style="--a: 0.88; --b: 0.94"
+                    >
+                      <tspan class="sc-step">04</tspan>
+                      timeline.json changes; Rust does not
+                    </text>
+                  </g>
                 </svg>
               </div>
               <!-- mobile-diagram -->
-              <div
-                class="compact-diagram"
-                data-compact="timing"
-                role="group"
-                aria-label="Diagram"
-              >
-                <div class="compact-card">
-                  <strong>Original scenes</strong>
-                  <div class="compact-card-detail">
-                    <div class="compact-chips">
-                      <span>A / Intro</span><span>B / Main</span
-                      ><span>C / Outro</span>
-                    </div>
-                  </div>
-                </div>
-                <span class="compact-arrow" aria-hidden="true">↓</span>
-                <div class="compact-card compact-blue">
-                  <strong>Split → reorder → trim</strong>
-                  <div class="compact-card-detail">
-                    <div class="compact-chips">
-                      <span>C / Outro</span><span>A / Intro · trimmed</span
-                      ><span>B₁</span><span>B₂</span>
-                    </div>
-                  </div>
-                </div>
-                <span class="compact-arrow" aria-hidden="true">↓</span>
-                <div class="compact-card compact-green">
-                  <strong>timeline.json updated</strong>
-                  <div class="compact-card-detail">
-                    Rust source stays unchanged. No rebuild.
-                  </div>
-                </div>
+              <div class="phone-figure" data-phone="timing">
+                <svg
+                  viewBox="0 0 340 352"
+                  role="img"
+                  aria-labelledby="product-timing-t"
+                  aria-describedby="phone-timing-d"
+                >
+                  <desc id="phone-timing-d">
+                    A scene is split, the outro moves to the beginning and a
+                    clip edge is trimmed. Each timing change is written to
+                    timeline.json; Rust source stays unchanged.
+                  </desc>
+                  <g transform="translate(0 -20)">
+                    <text x="12" y="44" class="pf-micro">TIMELINE</text>
+                    <path d="M12 66H328" class="pf-guide" />
+                    <path
+                      d="M12.0 62v8M38.3 62v8M64.7 62v8M91.0 62v8M117.3 62v8M143.6 62v8M170.0 62v8M196.3 62v8M222.6 62v8M249.0 62v8M275.3 62v8M301.6 62v8M328.0 62v8"
+                      class="pf-tick"
+                    />
+                    <rect
+                      x="12"
+                      y="76"
+                      width="316"
+                      height="68"
+                      class="pf-faint"
+                    />
+                    <path
+                      id="timing-write-m"
+                      class="sc sc-draw sc-edge sc-quiet"
+                      style="--a: 0.04; --b: 0.12"
+                      d="M66 144V198"
+                      pathLength="1"
+                    />
+                    <path
+                      class="sc sc-fade sc-head sc-quiet"
+                      style="--a: 0.1; --b: 0.12"
+                      d="m-8-4.5 8 4.5-8 4.5"
+                      transform="translate(66 198) rotate(90)"
+                    />
+                    <g
+                      class="sc sc-move"
+                      style="--a: 0.4; --b: 0.58; --dx: 99px"
+                    >
+                      <rect
+                        x="12"
+                        y="82"
+                        width="92"
+                        height="56"
+                        rx="2"
+                        class="pf-blue"
+                      />
+                      <text x="30" y="115" class="pf-code">A / INTRO</text>
+                      <g class="sc sc-fade" style="--a: 0.66; --b: 0.74">
+                        <rect
+                          x="12"
+                          y="82"
+                          width="13"
+                          height="56"
+                          class="pf-trimmed"
+                        />
+                      </g>
+                      <g class="sc sc-fade" style="--a: 0.62; --b: 0.66">
+                        <g
+                          class="sc sc-move"
+                          style="--a: 0.66; --b: 0.78; --dx: 13px"
+                        >
+                          <path d="M12 74v72" class="pf-trim-edge" />
+                        </g>
+                      </g>
+                    </g>
+                    <g
+                      class="sc sc-move"
+                      style="--a: 0.4; --b: 0.58; --dx: 99px"
+                    >
+                      <rect
+                        x="111"
+                        y="82"
+                        width="45"
+                        height="56"
+                        rx="2"
+                        class="pf-green"
+                      />
+                      <g
+                        class="sc sc-move"
+                        style="--a: 0.16; --b: 0.26; --dx: 4px"
+                      >
+                        <rect
+                          x="156"
+                          y="82"
+                          width="45"
+                          height="56"
+                          rx="2"
+                          class="pf-green"
+                        />
+                      </g>
+                      <g class="sc sc-hide" style="--a: 0.16; --b: 0.2">
+                        <text x="119" y="115" class="pf-code">B / MAIN</text>
+                      </g>
+                      <g class="sc sc-fade" style="--a: 0.18; --b: 0.24">
+                        <text x="121" y="115" class="pf-code">B₁</text>
+                        <g
+                          class="sc sc-move"
+                          style="--a: 0.16; --b: 0.26; --dx: 4px"
+                        >
+                          <text x="166" y="115" class="pf-code">B₂</text>
+                        </g>
+                      </g>
+                      <path
+                        d="M156 72v76"
+                        class="sc sc-blink pf-split-mark"
+                        style="--a: 0.08; --b: 0.12; --c: 0.26; --d: 0.3"
+                      />
+                    </g>
+                    <g
+                      class="sc sc-move"
+                      style="--a: 0.4; --b: 0.58; --dx: -198px"
+                    >
+                      <g class="sc sc-undip" style="--a: 0.32; --b: 0.4">
+                        <g class="sc sc-dip" style="--a: 0.58; --b: 0.66">
+                          <rect
+                            x="210"
+                            y="82"
+                            width="92"
+                            height="56"
+                            rx="2"
+                            class="pf-pink"
+                          />
+                          <text x="218" y="115" class="pf-code">C / OUTRO</text>
+                        </g>
+                      </g>
+                    </g>
+                    <g
+                      class="sc-token"
+                      data-along="#timing-write-m"
+                      data-a="0.24"
+                      data-b="0.32"
+                    >
+                      <rect
+                        x="-7"
+                        y="-7"
+                        width="14"
+                        height="14"
+                        rx="3"
+                        class="sc-chip sc-chip-blue"
+                      />
+                    </g>
+                    <g
+                      class="sc-token"
+                      data-along="#timing-write-m"
+                      data-a="0.6"
+                      data-b="0.68"
+                    >
+                      <rect
+                        x="-7"
+                        y="-7"
+                        width="14"
+                        height="14"
+                        rx="3"
+                        class="sc-chip sc-chip-blue"
+                      />
+                    </g>
+                    <g
+                      class="sc-token"
+                      data-along="#timing-write-m"
+                      data-a="0.78"
+                      data-b="0.86"
+                    >
+                      <rect
+                        x="-7"
+                        y="-7"
+                        width="14"
+                        height="14"
+                        rx="3"
+                        class="sc-chip sc-chip-blue"
+                      />
+                    </g>
+                    <rect
+                      x="12"
+                      y="198"
+                      width="316"
+                      height="54"
+                      rx="3"
+                      class="pf-green"
+                    />
+                    <text x="26" y="221" class="pf-code">timeline.json</text>
+                    <text
+                      x="314"
+                      y="221"
+                      text-anchor="end"
+                      class="pf-micro sc sc-blink"
+                      style="--a: -0.01; --b: 0; --c: 0.3; --d: 0.32"
+                    >
+                      REV 1
+                    </text>
+                    <text
+                      x="314"
+                      y="221"
+                      text-anchor="end"
+                      class="pf-micro sc sc-blink"
+                      style="--a: 0.3; --b: 0.32; --c: 0.66; --d: 0.68"
+                    >
+                      REV 2
+                    </text>
+                    <text
+                      x="314"
+                      y="221"
+                      text-anchor="end"
+                      class="pf-micro sc sc-blink"
+                      style="--a: 0.66; --b: 0.68; --c: 0.84; --d: 0.86"
+                    >
+                      REV 3
+                    </text>
+                    <text
+                      x="314"
+                      y="221"
+                      text-anchor="end"
+                      class="pf-micro sc sc-fade"
+                      style="--a: 0.84; --b: 0.86"
+                    >
+                      REV 4
+                    </text>
+                    <g class="sc sc-fade" style="--a: 0.3; --b: 0.32">
+                      <text x="26" y="241" class="pf-micro">SPLIT</text>
+                    </g>
+                    <g class="sc sc-fade" style="--a: 0.66; --b: 0.68">
+                      <text x="70" y="241" class="pf-micro">· MOVE</text>
+                    </g>
+                    <g class="sc sc-fade" style="--a: 0.84; --b: 0.86">
+                      <text x="122" y="241" class="pf-micro">· TRIM</text>
+                    </g>
+                    <rect
+                      x="8"
+                      y="194"
+                      width="324"
+                      height="62"
+                      rx="6"
+                      class="sc sc-blink sc-ring"
+                      style="--a: 0.3; --b: 0.32; --c: 0.38; --d: 0.42"
+                    />
+                    <rect
+                      x="8"
+                      y="194"
+                      width="324"
+                      height="62"
+                      rx="6"
+                      class="sc sc-blink sc-ring"
+                      style="--a: 0.66; --b: 0.68; --c: 0.74; --d: 0.78"
+                    />
+                    <rect
+                      x="8"
+                      y="194"
+                      width="324"
+                      height="62"
+                      rx="6"
+                      class="sc sc-blink sc-ring"
+                      style="--a: 0.84; --b: 0.86; --c: 0.96; --d: 0.99"
+                    />
+                    <rect
+                      x="12"
+                      y="266"
+                      width="316"
+                      height="54"
+                      rx="3"
+                      class="pf-paper"
+                    />
+                    <text x="26" y="289" class="pf-code">
+                      Rust source → unchanged
+                    </text>
+                    <g class="sc sc-fade" style="--a: 0.88; --b: 0.94">
+                      <text x="26" y="309" class="pf-micro">NO REBUILD</text>
+                      <path d="m98 301 4 4 8-9" class="sc-check" />
+                    </g>
+                    <g class="sc-narration">
+                      <text
+                        x="12"
+                        y="346"
+                        text-anchor="start"
+                        class="sc sc-blink"
+                        style="--a: 0.04; --b: 0.1; --c: 0.3; --d: 0.32"
+                      >
+                        <tspan class="sc-step">01</tspan>
+                        Split the main scene
+                      </text>
+                      <text
+                        x="12"
+                        y="346"
+                        text-anchor="start"
+                        class="sc sc-blink"
+                        style="--a: 0.32; --b: 0.38; --c: 0.6; --d: 0.62"
+                      >
+                        <tspan class="sc-step">02</tspan>
+                        Move the outro to the start
+                      </text>
+                      <text
+                        x="12"
+                        y="346"
+                        text-anchor="start"
+                        class="sc sc-blink"
+                        style="--a: 0.62; --b: 0.68; --c: 0.86; --d: 0.88"
+                      >
+                        <tspan class="sc-step">03</tspan>
+                        Trim the intro’s edge
+                      </text>
+                      <text
+                        x="12"
+                        y="346"
+                        text-anchor="start"
+                        class="sc sc-fade"
+                        style="--a: 0.88; --b: 0.94"
+                      >
+                        <tspan class="sc-step">04</tspan>
+                        timeline.json changes; Rust does not
+                      </text>
+                    </g>
+                  </g>
+                </svg>
               </div>
               <!-- /mobile-diagram -->
               <figcaption>
@@ -3472,7 +4888,10 @@ display: none;
             <figure class="product-figure" data-product-figure="sdk">
               <div class="product-figure-heading">
                 <span>FROM SETUP TO A WORKING PREVIEW</span
-                ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
+                ><span
+                  ><span class="scroll-cue">SCROLL TO FOLLOW · </span
+                  >ILLUSTRATION</span
+                >
               </div>
               <div
                 class="product-figure-scroll"
@@ -3491,20 +4910,22 @@ display: none;
                   <desc id="product-sdk-d">
                     Studio installs a managed SDK. A compatible example project
                     builds with it and prepares a preview worker, frame and
-                    audio before replacing the preview.
+                    audio before replacing the preview, which stays available
+                    meanwhile.
                   </desc>
                   <path d="M45 291H605" class="pf-guide" />
-                  <g class="pf-sdk-case">
-                    <path d="m48 160 112-61 112 61-112 61Z" class="pf-green" />
-                    <path
-                      d="m48 160v30l112 61 112-61v-30l-112 61Z"
-                      class="pf-paper"
-                    />
-                    <text x="160" y="176" text-anchor="middle" class="pf-code">
-                      MANAGED SDK
-                    </text>
-                  </g>
-                  <g class="pf-tool pf-tool-one">
+                  <path d="m48 160 112-61 112 61-112 61Z" class="pf-green" />
+                  <path
+                    d="m48 160v30l112 61 112-61v-30l-112 61Z"
+                    class="pf-paper"
+                  />
+                  <text x="160" y="176" text-anchor="middle" class="pf-code">
+                    MANAGED SDK
+                  </text>
+                  <g
+                    class="sc sc-drop pf-tool-one"
+                    style="--a: 0.04; --b: 0.14"
+                  >
                     <rect
                       x="58"
                       y="47"
@@ -3515,7 +4936,7 @@ display: none;
                     />
                     <text x="76" y="70" class="pf-code">Rust</text>
                   </g>
-                  <g class="pf-tool pf-tool-two">
+                  <g class="sc sc-drop pf-tool-two" style="--a: 0.1; --b: 0.2">
                     <rect
                       x="164"
                       y="47"
@@ -3526,73 +4947,495 @@ display: none;
                     />
                     <text x="179" y="70" class="pf-code">fframes</text>
                   </g>
-                  <path d="M284 174h51m-7-6 7 6-7 6" class="pf-edge" />
-                  <g class="pf-example">
+                  <rect
+                    x="70"
+                    y="262"
+                    width="180"
+                    height="5"
+                    rx="2.5"
+                    class="sc-bar-track"
+                  />
+                  <rect
+                    x="70"
+                    y="262"
+                    width="180"
+                    height="5"
+                    rx="2.5"
+                    class="sc sc-bar"
+                    style="--a: 0.06; --b: 0.26"
+                  />
+                  <g class="sc sc-fade" style="--a: 0.26; --b: 0.3">
+                    <text x="70" y="282" class="pf-micro">SDK INSTALLED</text>
+                    <path d="m178 274 4 4 8-9" class="sc-check" />
+                  </g>
+                  <path
+                    id="sdk-open"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.3; --b: 0.36"
+                    d="M284 174H330"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.34; --b: 0.36"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(330 174) rotate(0)"
+                  />
+                  <g class="sc sc-rise pf-example" style="--a: 0.34; --b: 0.42">
                     <rect
-                      x="344"
-                      y="103"
-                      width="112"
-                      height="147"
+                      x="340"
+                      y="100"
+                      width="124"
+                      height="150"
                       rx="4"
                       class="pf-paper"
                     />
-                    <path d="M363 126h48l13 13v81h-61Z" class="pf-blue" />
-                    <text x="375" y="171" class="pf-code">&lt;/&gt;</text>
-                    <text x="400" y="236" text-anchor="middle" class="pf-micro">
-                      EXAMPLE
-                    </text>
+                    <text x="354" y="120" class="pf-micro">EXAMPLE</text>
+                    <path d="M340 130h124" class="pf-edge" />
+                    <path d="M356 142h40l12 12v38h-52Z" class="pf-blue" />
+                    <text x="368" y="176" class="pf-code">&lt;/&gt;</text>
+                    <text x="354" y="216" class="pf-micro">cargo build</text>
+                    <rect
+                      x="354"
+                      y="226"
+                      width="96"
+                      height="5"
+                      rx="2.5"
+                      class="sc-bar-track"
+                    />
                   </g>
-                  <path d="M469 174h32m-7-6 7 6-7 6" class="pf-edge" />
+                  <rect
+                    x="354"
+                    y="226"
+                    width="96"
+                    height="5"
+                    rx="2.5"
+                    class="sc sc-bar"
+                    style="--a: 0.44; --b: 0.62"
+                  />
+                  <path
+                    id="sdk-prepare"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.62; --b: 0.66"
+                    d="M464 140H494"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.64; --b: 0.66"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(494 140) rotate(0)"
+                  />
+                  <rect
+                    x="504"
+                    y="114"
+                    width="12"
+                    height="12"
+                    rx="2"
+                    class="pf-paper"
+                  />
+                  <g class="sc sc-pop" style="--a: 0.66; --b: 0.7">
+                    <path d="m506 120 3 3 6-7" class="sc-check" />
+                  </g>
+                  <g class="sc sc-lit" style="--a: 0.66; --b: 0.7">
+                    <text x="524" y="124" class="pf-micro">WORKER</text>
+                  </g>
+                  <rect
+                    x="504"
+                    y="136"
+                    width="12"
+                    height="12"
+                    rx="2"
+                    class="pf-paper"
+                  />
+                  <g class="sc sc-pop" style="--a: 0.72; --b: 0.76">
+                    <path d="m506 142 3 3 6-7" class="sc-check" />
+                  </g>
+                  <g class="sc sc-lit" style="--a: 0.72; --b: 0.76">
+                    <text x="524" y="146" class="pf-micro">FIRST FRAME</text>
+                  </g>
+                  <rect
+                    x="504"
+                    y="158"
+                    width="12"
+                    height="12"
+                    rx="2"
+                    class="pf-paper"
+                  />
+                  <g class="sc sc-pop" style="--a: 0.78; --b: 0.82">
+                    <path d="m506 164 3 3 6-7" class="sc-check" />
+                  </g>
+                  <g class="sc sc-lit" style="--a: 0.78; --b: 0.82">
+                    <text x="524" y="168" class="pf-micro">AUDIO</text>
+                  </g>
                   <g class="pf-ready">
                     <rect
-                      x="512"
-                      y="123"
-                      width="95"
-                      height="104"
+                      x="504"
+                      y="184"
+                      width="104"
+                      height="86"
                       rx="4"
-                      class="pf-green"
+                      class="pf-paper"
                     />
-                    <path d="m535 162 14 14 25-31" class="pf-check" />
-                    <text x="560" y="209" text-anchor="middle" class="pf-micro">
-                      PREVIEW
+                    <text x="514" y="201" class="pf-micro">PREVIEW</text>
+                    <rect
+                      x="512"
+                      y="210"
+                      width="88"
+                      height="50"
+                      class="pf-faint"
+                    />
+                    <g class="sc sc-hide" style="--a: 0.86; --b: 0.9">
+                      <text
+                        x="556"
+                        y="239"
+                        text-anchor="middle"
+                        class="pf-micro"
+                      >
+                        CURRENT
+                      </text>
+                    </g>
+                    <g class="sc sc-fade" style="--a: 0.86; --b: 0.92">
+                      <rect
+                        x="512"
+                        y="210"
+                        width="88"
+                        height="50"
+                        class="pf-green"
+                      />
+                      <path d="m548 224 16 11-16 11Z" class="pf-fill-ink" />
+                    </g>
+                  </g>
+                  <rect
+                    x="500"
+                    y="180"
+                    width="112"
+                    height="94"
+                    rx="6"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.9; --b: 0.94; --c: 0.97; --d: 0.99"
+                  />
+                  <g class="sc-narration">
+                    <text
+                      x="48"
+                      y="330"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.02; --b: 0.08; --c: 0.28; --d: 0.3"
+                    >
+                      <tspan class="sc-step">01</tspan>
+                      Install the managed SDK from Setup
+                    </text>
+                    <text
+                      x="48"
+                      y="330"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.3; --b: 0.36; --c: 0.4; --d: 0.42"
+                    >
+                      <tspan class="sc-step">02</tspan>
+                      Open a compatible example
+                    </text>
+                    <text
+                      x="48"
+                      y="330"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.42; --b: 0.48; --c: 0.62; --d: 0.64"
+                    >
+                      <tspan class="sc-step">03</tspan>
+                      Studio builds it with the SDK
+                    </text>
+                    <text
+                      x="48"
+                      y="330"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.64; --b: 0.7; --c: 0.84; --d: 0.86"
+                    >
+                      <tspan class="sc-step">04</tspan>
+                      and prepares its worker, first frame and audio
+                    </text>
+                    <text
+                      x="48"
+                      y="330"
+                      text-anchor="start"
+                      class="sc sc-fade"
+                      style="--a: 0.86; --b: 0.92"
+                    >
+                      <tspan class="sc-step">05</tspan>
+                      The new preview replaces the current one
                     </text>
                   </g>
-                  <text x="48" y="326" class="pf-micro">01 / INSTALL SDK</text>
-                  <text x="344" y="326" class="pf-micro">
-                    02 / BUILD EXAMPLE
-                  </text>
-                  <text x="607" y="350" text-anchor="end" class="pf-micro">
-                    03 / PREPARE WORKER, FRAME &amp; AUDIO
-                  </text>
                 </svg>
               </div>
               <!-- mobile-diagram -->
-              <div
-                class="compact-diagram"
-                data-compact="sdk"
-                role="group"
-                aria-label="Diagram"
-              >
-                <div class="compact-card compact-blue">
-                  <strong>01 / Install the SDK</strong>
-                  <div class="compact-card-detail">
-                    Rust · fframes · FFmpeg · Skia
-                  </div>
-                </div>
-                <span class="compact-arrow" aria-hidden="true">↓</span>
-                <div class="compact-card">
-                  <strong>02 / Build an example</strong>
-                  <div class="compact-card-detail">
-                    Use the managed toolchain
-                  </div>
-                </div>
-                <span class="compact-arrow" aria-hidden="true">↓</span>
-                <div class="compact-card compact-green">
-                  <strong>03 / Prepare preview</strong>
-                  <div class="compact-card-detail">
-                    Worker + first frame + audio
-                  </div>
-                </div>
+              <div class="phone-figure" data-phone="sdk">
+                <svg
+                  viewBox="0 0 340 452"
+                  role="img"
+                  aria-labelledby="product-sdk-t"
+                  aria-describedby="phone-sdk-d"
+                >
+                  <desc id="phone-sdk-d">
+                    Studio installs a managed SDK. A compatible example project
+                    builds with it and prepares a preview worker, frame and
+                    audio before replacing the preview, which stays available
+                    meanwhile.
+                  </desc>
+                  <path d="m70 104 100-54 100 54-100 54Z" class="pf-green" />
+                  <path
+                    d="m70 104v26l100 54 100-54v-26l-100 54Z"
+                    class="pf-paper"
+                  />
+                  <text x="170" y="120" text-anchor="middle" class="pf-code">
+                    MANAGED SDK
+                  </text>
+                  <g class="sc sc-drop" style="--a: 0.04; --b: 0.14">
+                    <rect
+                      x="78"
+                      y="10"
+                      width="84"
+                      height="34"
+                      rx="3"
+                      class="pf-blue"
+                    />
+                    <text x="96" y="32" class="pf-code">Rust</text>
+                  </g>
+                  <g class="sc sc-drop" style="--a: 0.1; --b: 0.2">
+                    <rect
+                      x="176"
+                      y="10"
+                      width="96"
+                      height="34"
+                      rx="3"
+                      class="pf-pink"
+                    />
+                    <text x="190" y="32" class="pf-code">fframes</text>
+                  </g>
+                  <rect
+                    x="90"
+                    y="200"
+                    width="160"
+                    height="5"
+                    rx="2.5"
+                    class="sc-bar-track"
+                  />
+                  <rect
+                    x="90"
+                    y="200"
+                    width="160"
+                    height="5"
+                    rx="2.5"
+                    class="sc sc-bar"
+                    style="--a: 0.06; --b: 0.26"
+                  />
+                  <g class="sc sc-fade" style="--a: 0.26; --b: 0.3">
+                    <text x="90" y="222" class="pf-micro">SDK INSTALLED</text>
+                    <path d="m186 214 4 4 8-9" class="sc-check" />
+                  </g>
+                  <path
+                    id="sdk-open-m"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.3; --b: 0.36"
+                    d="M90 230V250"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.34; --b: 0.36"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(90 250) rotate(90)"
+                  />
+                  <g class="sc sc-rise" style="--a: 0.34; --b: 0.42">
+                    <rect
+                      x="20"
+                      y="252"
+                      width="150"
+                      height="132"
+                      rx="4"
+                      class="pf-paper"
+                    />
+                    <text x="34" y="272" class="pf-micro">EXAMPLE</text>
+                    <path d="M20 282h150" class="pf-edge" />
+                    <path d="M34 292h40l12 12v34h-52Z" class="pf-blue" />
+                    <text x="46" y="324" class="pf-code">&lt;/&gt;</text>
+                    <text x="34" y="360" class="pf-micro">cargo build</text>
+                    <rect
+                      x="34"
+                      y="370"
+                      width="122"
+                      height="5"
+                      rx="2.5"
+                      class="sc-bar-track"
+                    />
+                  </g>
+                  <rect
+                    x="34"
+                    y="370"
+                    width="122"
+                    height="5"
+                    rx="2.5"
+                    class="sc sc-bar"
+                    style="--a: 0.44; --b: 0.62"
+                  />
+                  <path
+                    id="sdk-prepare-m"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.62; --b: 0.66"
+                    d="M170 270H180"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.64; --b: 0.66"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(180 270) rotate(0)"
+                  />
+                  <rect
+                    x="186"
+                    y="258"
+                    width="12"
+                    height="12"
+                    rx="2"
+                    class="pf-paper"
+                  />
+                  <g class="sc sc-pop" style="--a: 0.66; --b: 0.7">
+                    <path d="m188 264 3 3 6-7" class="sc-check" />
+                  </g>
+                  <g class="sc sc-lit" style="--a: 0.66; --b: 0.7">
+                    <text x="206" y="268" class="pf-micro">WORKER</text>
+                  </g>
+                  <rect
+                    x="186"
+                    y="280"
+                    width="12"
+                    height="12"
+                    rx="2"
+                    class="pf-paper"
+                  />
+                  <g class="sc sc-pop" style="--a: 0.72; --b: 0.76">
+                    <path d="m188 286 3 3 6-7" class="sc-check" />
+                  </g>
+                  <g class="sc sc-lit" style="--a: 0.72; --b: 0.76">
+                    <text x="206" y="290" class="pf-micro">FIRST FRAME</text>
+                  </g>
+                  <rect
+                    x="186"
+                    y="302"
+                    width="12"
+                    height="12"
+                    rx="2"
+                    class="pf-paper"
+                  />
+                  <g class="sc sc-pop" style="--a: 0.78; --b: 0.82">
+                    <path d="m188 308 3 3 6-7" class="sc-check" />
+                  </g>
+                  <g class="sc sc-lit" style="--a: 0.78; --b: 0.82">
+                    <text x="206" y="312" class="pf-micro">AUDIO</text>
+                  </g>
+                  <g>
+                    <rect
+                      x="186"
+                      y="326"
+                      width="134"
+                      height="58"
+                      rx="4"
+                      class="pf-paper"
+                    />
+                    <text x="196" y="342" class="pf-micro">PREVIEW</text>
+                    <rect
+                      x="196"
+                      y="348"
+                      width="114"
+                      height="28"
+                      class="pf-faint"
+                    />
+                    <g class="sc sc-hide" style="--a: 0.86; --b: 0.9">
+                      <text
+                        x="253"
+                        y="367"
+                        text-anchor="middle"
+                        class="pf-micro"
+                      >
+                        CURRENT
+                      </text>
+                    </g>
+                    <g class="sc sc-fade" style="--a: 0.86; --b: 0.92">
+                      <rect
+                        x="196"
+                        y="348"
+                        width="114"
+                        height="28"
+                        class="pf-green"
+                      />
+                      <path d="m246 354 13 8-13 8Z" class="pf-fill-ink" />
+                    </g>
+                  </g>
+                  <rect
+                    x="182"
+                    y="322"
+                    width="142"
+                    height="66"
+                    rx="6"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.9; --b: 0.94; --c: 0.97; --d: 0.99"
+                  />
+                  <g class="sc-narration">
+                    <text
+                      x="12"
+                      y="412"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.02; --b: 0.08; --c: 0.28; --d: 0.3"
+                    >
+                      <tspan class="sc-step">01</tspan>
+                      Install the managed SDK from Setup
+                    </text>
+                    <text
+                      x="12"
+                      y="412"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.3; --b: 0.36; --c: 0.4; --d: 0.42"
+                    >
+                      <tspan class="sc-step">02</tspan>
+                      Open a compatible example
+                    </text>
+                    <text
+                      x="12"
+                      y="412"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.42; --b: 0.48; --c: 0.62; --d: 0.64"
+                    >
+                      <tspan class="sc-step">03</tspan>
+                      Studio builds it with the SDK
+                    </text>
+                    <text
+                      x="12"
+                      y="412"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.64; --b: 0.7; --c: 0.84; --d: 0.86"
+                    >
+                      <tspan class="sc-step">04</tspan>
+                      and prepares its worker, first frame
+                      <tspan x="34" dy="17">and audio</tspan>
+                    </text>
+                    <text
+                      x="12"
+                      y="412"
+                      text-anchor="start"
+                      class="sc sc-fade"
+                      style="--a: 0.86; --b: 0.92"
+                    >
+                      <tspan class="sc-step">05</tspan>
+                      The new preview replaces the current
+                      <tspan x="34" dy="17">one</tspan>
+                    </text>
+                  </g>
+                </svg>
               </div>
               <!-- /mobile-diagram -->
               <figcaption>
@@ -3618,7 +5461,10 @@ display: none;
             <figure class="product-figure" data-product-figure="export">
               <div class="product-figure-heading">
                 <span>TURN THE PROJECT INTO A VIDEO</span
-                ><span>ILLUSTRATION · SCROLL TO EXPLORE</span>
+                ><span
+                  ><span class="scroll-cue">SCROLL TO FOLLOW · </span
+                  >ILLUSTRATION</span
+                >
               </div>
               <div
                 class="product-figure-scroll"
@@ -3637,131 +5483,636 @@ display: none;
                   <desc id="product-export-d">
                     The project's preview worker exposes its supported export
                     formats. Studio renders the chosen output with progress and
-                    cancellation.
+                    cancellation, then saves the video file.
                   </desc>
-                  <text x="32" y="46" class="pf-micro">
-                    YOUR VIDEO, FRAME BY FRAME
-                  </text>
-                  <g class="pf-export-frame pf-export-one">
+                  <g transform="translate(0 26)">
                     <rect
                       x="32"
-                      y="80"
-                      width="110"
-                      height="130"
+                      y="36"
+                      width="200"
+                      height="52"
+                      rx="4"
+                      class="pf-green"
+                    />
+                    <text x="46" y="57" class="pf-micro">PREVIEW WORKER</text>
+                    <text x="46" y="75" class="pf-micro">
+                      supported formats
+                    </text>
+                    <path
+                      id="export-offer"
+                      class="sc sc-draw sc-edge"
+                      style="--a: 0.02; --b: 0.08"
+                      d="M132 88V118"
+                      pathLength="1"
+                    />
+                    <path
+                      class="sc sc-fade sc-head"
+                      style="--a: 0.06; --b: 0.08"
+                      d="m-8-4.5 8 4.5-8 4.5"
+                      transform="translate(132 118) rotate(90)"
+                    />
+                    <g
+                      class="sc-token"
+                      data-along="#export-offer"
+                      data-a="0.06"
+                      data-b="0.16"
+                    >
+                      <rect
+                        x="-7"
+                        y="-7"
+                        width="14"
+                        height="14"
+                        rx="3"
+                        class="sc-chip sc-chip-green"
+                      />
+                    </g>
+                    <rect
+                      x="32"
+                      y="118"
+                      width="214"
+                      height="150"
+                      rx="4"
+                      class="pf-paper"
+                    />
+                    <text x="46" y="138" class="pf-micro">EXPORT</text>
+                    <path d="M32 148h214" class="pf-edge" />
+                    <text x="46" y="170" class="pf-micro">FORMAT</text>
+                    <rect
+                      x="132"
+                      y="157"
+                      width="108"
+                      height="18"
+                      rx="2"
+                      class="pf-faint"
+                    />
+                    <g class="sc sc-fade" style="--a: 0.16; --b: 0.2">
+                      <text x="137" y="170" class="pf-micro">
+                        from worker ▾
+                      </text>
+                    </g>
+                    <text x="46" y="196" class="pf-micro">SIZE</text>
+                    <rect
+                      x="132"
+                      y="183"
+                      width="108"
+                      height="18"
+                      rx="2"
+                      class="pf-faint"
+                    />
+                    <g class="sc sc-fade" style="--a: 0.22; --b: 0.26">
+                      <text x="137" y="196" class="pf-micro">1920×1080</text>
+                    </g>
+                    <text x="46" y="222" class="pf-micro">FRAME RATE</text>
+                    <rect
+                      x="132"
+                      y="209"
+                      width="108"
+                      height="18"
+                      rx="2"
+                      class="pf-faint"
+                    />
+                    <g class="sc sc-fade" style="--a: 0.28; --b: 0.32">
+                      <text x="137" y="222" class="pf-micro">30 fps</text>
+                    </g>
+                    <g class="sc-button">
+                      <rect x="46" y="236" width="78" height="22" rx="3" />
+                      <text x="85" y="251" text-anchor="middle">RENDER</text>
+                    </g>
+                    <rect
+                      x="134"
+                      y="236"
+                      width="84"
+                      height="22"
                       rx="3"
                       class="pf-paper"
                     />
+                    <text x="176" y="251" text-anchor="middle" class="pf-micro">
+                      CANCEL
+                    </text>
                     <rect
                       x="42"
-                      y="94"
-                      width="90"
-                      height="83"
-                      class="pf-blue"
+                      y="232"
+                      width="86"
+                      height="30"
+                      rx="4"
+                      class="sc sc-blink sc-ring"
+                      style="--a: 0.36; --b: 0.4; --c: 0.46; --d: 0.5"
                     />
-                    <circle cx="72" cy="136" r="16" class="pf-pink" />
-                    <text x="43" y="197" class="pf-micro">FRAME 001</text>
-                  </g>
-                  <g class="pf-export-frame pf-export-two">
                     <rect
-                      x="156"
-                      y="80"
-                      width="110"
-                      height="130"
+                      x="134"
+                      y="236"
+                      width="84"
+                      height="22"
+                      rx="3"
+                      class="sc sc-blink pf-active"
+                      style="--a: 0.42; --b: 0.46; --c: 0.84; --d: 0.88"
+                    />
+                    <g class="sc sc-rise" style="--a: 0.46; --b: 0.52">
+                      <rect
+                        x="262"
+                        y="56"
+                        width="80"
+                        height="100"
+                        rx="3"
+                        class="pf-paper"
+                      />
+                      <rect
+                        x="270"
+                        y="64"
+                        width="64"
+                        height="56"
+                        class="pf-blue"
+                      />
+                      <circle cx="286" cy="92" r="11" class="pf-pink" />
+                      <text x="270" y="142" class="pf-micro">001</text>
+                    </g>
+                    <g class="sc sc-rise" style="--a: 0.58; --b: 0.64">
+                      <rect
+                        x="350"
+                        y="56"
+                        width="80"
+                        height="100"
+                        rx="3"
+                        class="pf-paper"
+                      />
+                      <rect
+                        x="358"
+                        y="64"
+                        width="64"
+                        height="56"
+                        class="pf-blue"
+                      />
+                      <circle cx="386" cy="92" r="11" class="pf-pink" />
+                      <text x="358" y="142" class="pf-micro">045</text>
+                    </g>
+                    <g class="sc sc-rise" style="--a: 0.7; --b: 0.76">
+                      <rect
+                        x="438"
+                        y="56"
+                        width="80"
+                        height="100"
+                        rx="3"
+                        class="pf-paper"
+                      />
+                      <rect
+                        x="446"
+                        y="64"
+                        width="64"
+                        height="56"
+                        class="pf-blue"
+                      />
+                      <circle cx="488" cy="92" r="11" class="pf-pink" />
+                      <text x="446" y="142" class="pf-micro">090</text>
+                    </g>
+                    <path
+                      id="export-save"
+                      class="sc sc-draw sc-edge"
+                      style="--a: 0.8; --b: 0.84"
+                      d="M524 106H544"
+                      pathLength="1"
+                    />
+                    <path
+                      class="sc sc-fade sc-head"
+                      style="--a: 0.82; --b: 0.84"
+                      d="m-8-4.5 8 4.5-8 4.5"
+                      transform="translate(544 106) rotate(0)"
+                    />
+                    <g
+                      class="sc sc-pop pf-video-file"
+                      style="--a: 0.84; --b: 0.9"
+                    >
+                      <path d="M548 56h40l20 20v80h-60Z" class="pf-green" />
+                      <path d="M588 56v20h20" class="pf-edge" />
+                      <path d="m570 94 18 11-18 11Z" class="pf-fill-green" />
+                      <text
+                        x="578"
+                        y="144"
+                        text-anchor="middle"
+                        class="pf-micro"
+                      >
+                        VIDEO
+                      </text>
+                    </g>
+                    <rect
+                      x="544"
+                      y="52"
+                      width="68"
+                      height="108"
+                      rx="6"
+                      class="sc sc-blink sc-ring"
+                      style="--a: 0.9; --b: 0.94; --c: 0.97; --d: 0.99"
+                    />
+                    <g class="sc sc-fade" style="--a: 0.42; --b: 0.46">
+                      <text x="262" y="196" class="pf-micro">RENDERING</text>
+                    </g>
+                    <text
+                      x="608"
+                      y="196"
+                      text-anchor="end"
+                      class="pf-micro sc sc-blink"
+                      style="--a: 0.44; --b: 0.46; --c: 0.56; --d: 0.58"
+                    >
+                      FRAME 001 / 090
+                    </text>
+                    <text
+                      x="608"
+                      y="196"
+                      text-anchor="end"
+                      class="pf-micro sc sc-blink"
+                      style="--a: 0.58; --b: 0.6; --c: 0.68; --d: 0.7"
+                    >
+                      FRAME 045 / 090
+                    </text>
+                    <text
+                      x="608"
+                      y="196"
+                      text-anchor="end"
+                      class="pf-micro sc sc-fade"
+                      style="--a: 0.7; --b: 0.72"
+                    >
+                      FRAME 090 / 090
+                    </text>
+                    <rect
+                      x="262"
+                      y="206"
+                      width="346"
+                      height="8"
+                      rx="4"
+                      class="pf-faint"
+                    />
+                    <rect
+                      x="262"
+                      y="206"
+                      width="346"
+                      height="8"
+                      rx="4"
+                      class="sc pf-render-bar"
+                      style="--a: 0.44; --b: 0.84"
+                    />
+                    <g class="sc sc-fade" style="--a: 0.9; --b: 0.96">
+                      <text x="608" y="236" text-anchor="end" class="pf-micro">
+                        SAVED
+                      </text>
+                      <path d="m552 228 4 4 8-9" class="sc-check" />
+                    </g>
+                    <g class="sc-narration">
+                      <text
+                        x="262"
+                        y="262"
+                        text-anchor="start"
+                        class="sc sc-blink"
+                        style="--a: 0.02; --b: 0.08; --c: 0.14; --d: 0.16"
+                      >
+                        <tspan class="sc-step">01</tspan>
+                        The worker reports what it can export
+                      </text>
+                      <text
+                        x="262"
+                        y="262"
+                        text-anchor="start"
+                        class="sc sc-blink"
+                        style="--a: 0.16; --b: 0.22; --c: 0.36; --d: 0.38"
+                      >
+                        <tspan class="sc-step">02</tspan>
+                        Choose format, size and frame rate
+                      </text>
+                      <text
+                        x="262"
+                        y="262"
+                        text-anchor="start"
+                        class="sc sc-blink"
+                        style="--a: 0.38; --b: 0.44; --c: 0.82; --d: 0.84"
+                      >
+                        <tspan class="sc-step">03</tspan>
+                        Render: follow progress, or cancel
+                      </text>
+                      <text
+                        x="262"
+                        y="262"
+                        text-anchor="start"
+                        class="sc sc-fade"
+                        style="--a: 0.84; --b: 0.9"
+                      >
+                        <tspan class="sc-step">04</tspan>
+                        The video file is saved
+                      </text>
+                    </g>
+                  </g>
+                </svg>
+              </div>
+              <!-- mobile-diagram -->
+              <div class="phone-figure" data-phone="export">
+                <svg
+                  viewBox="0 0 340 476"
+                  role="img"
+                  aria-labelledby="product-export-t"
+                  aria-describedby="phone-export-d"
+                >
+                  <desc id="phone-export-d">
+                    The project's preview worker exposes its supported export
+                    formats. Studio renders the chosen output with progress and
+                    cancellation, then saves the video file.
+                  </desc>
+                  <rect
+                    x="12"
+                    y="4"
+                    width="200"
+                    height="50"
+                    rx="4"
+                    class="pf-green"
+                  />
+                  <text x="24" y="25" class="pf-micro">PREVIEW WORKER</text>
+                  <text x="24" y="43" class="pf-micro">supported formats</text>
+                  <path
+                    id="export-offer-m"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.02; --b: 0.08"
+                    d="M112 54V82"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.06; --b: 0.08"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(112 82) rotate(90)"
+                  />
+                  <g
+                    class="sc-token"
+                    data-along="#export-offer-m"
+                    data-a="0.06"
+                    data-b="0.16"
+                  >
+                    <rect
+                      x="-7"
+                      y="-7"
+                      width="14"
+                      height="14"
+                      rx="3"
+                      class="sc-chip sc-chip-green"
+                    />
+                  </g>
+                  <rect
+                    x="12"
+                    y="82"
+                    width="240"
+                    height="158"
+                    rx="4"
+                    class="pf-paper"
+                  />
+                  <text x="24" y="102" class="pf-micro">EXPORT</text>
+                  <path d="M12 112h240" class="pf-edge" />
+                  <text x="24" y="136" class="pf-micro">FORMAT</text>
+                  <rect
+                    x="110"
+                    y="122"
+                    width="130"
+                    height="20"
+                    rx="2"
+                    class="pf-faint"
+                  />
+                  <g class="sc sc-fade" style="--a: 0.16; --b: 0.2">
+                    <text x="116" y="136" class="pf-micro">from worker ▾</text>
+                  </g>
+                  <text x="24" y="164" class="pf-micro">SIZE</text>
+                  <rect
+                    x="110"
+                    y="150"
+                    width="130"
+                    height="20"
+                    rx="2"
+                    class="pf-faint"
+                  />
+                  <g class="sc sc-fade" style="--a: 0.22; --b: 0.26">
+                    <text x="116" y="164" class="pf-micro">1920×1080</text>
+                  </g>
+                  <text x="24" y="192" class="pf-micro">FRAME RATE</text>
+                  <rect
+                    x="110"
+                    y="178"
+                    width="130"
+                    height="20"
+                    rx="2"
+                    class="pf-faint"
+                  />
+                  <g class="sc sc-fade" style="--a: 0.28; --b: 0.32">
+                    <text x="116" y="192" class="pf-micro">30 fps</text>
+                  </g>
+                  <g class="sc-button">
+                    <rect x="24" y="208" width="84" height="22" rx="3" />
+                    <text x="66" y="223" text-anchor="middle">RENDER</text>
+                  </g>
+                  <rect
+                    x="118"
+                    y="208"
+                    width="84"
+                    height="22"
+                    rx="3"
+                    class="pf-paper"
+                  />
+                  <text x="160" y="223" text-anchor="middle" class="pf-micro">
+                    CANCEL
+                  </text>
+                  <rect
+                    x="20"
+                    y="204"
+                    width="92"
+                    height="30"
+                    rx="4"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.36; --b: 0.4; --c: 0.46; --d: 0.5"
+                  />
+                  <rect
+                    x="118"
+                    y="208"
+                    width="84"
+                    height="22"
+                    rx="3"
+                    class="sc sc-blink pf-active"
+                    style="--a: 0.42; --b: 0.46; --c: 0.84; --d: 0.88"
+                  />
+                  <g class="sc sc-rise" style="--a: 0.46; --b: 0.52">
+                    <rect
+                      x="12"
+                      y="254"
+                      width="72"
+                      height="92"
                       rx="3"
                       class="pf-paper"
                     />
                     <rect
-                      x="166"
-                      y="94"
-                      width="90"
-                      height="83"
+                      x="19"
+                      y="261"
+                      width="58"
+                      height="50"
                       class="pf-blue"
                     />
-                    <circle cx="211" cy="136" r="16" class="pf-pink" />
-                    <text x="167" y="197" class="pf-micro">FRAME 002</text>
+                    <circle cx="32" cy="286" r="10" class="pf-pink" />
+                    <text x="19" y="334" class="pf-micro">001</text>
                   </g>
-                  <g class="pf-export-frame pf-export-three">
+                  <g class="sc sc-rise" style="--a: 0.58; --b: 0.64">
                     <rect
-                      x="280"
-                      y="80"
-                      width="110"
-                      height="130"
+                      x="90"
+                      y="254"
+                      width="72"
+                      height="92"
                       rx="3"
                       class="pf-paper"
                     />
                     <rect
-                      x="290"
-                      y="94"
-                      width="90"
-                      height="83"
+                      x="97"
+                      y="261"
+                      width="58"
+                      height="50"
                       class="pf-blue"
                     />
-                    <circle cx="353" cy="136" r="16" class="pf-pink" />
-                    <text x="291" y="197" class="pf-micro">FRAME 003</text>
+                    <circle cx="124" cy="286" r="10" class="pf-pink" />
+                    <text x="97" y="334" class="pf-micro">045</text>
                   </g>
-                  <path d="M405 144h52m-8-6 8 6-8 6" class="pf-edge" />
-                  <g class="pf-video-file">
-                    <path d="M478 75h82l45 44v118H478Z" class="pf-green" />
-                    <path d="M560 75v44h45" class="pf-edge" />
-                    <path d="m523 146 30 18-30 18Z" class="pf-fill-green" />
-                    <text x="542" y="216" text-anchor="middle" class="pf-code">
-                      VIDEO FILE
+                  <g class="sc sc-rise" style="--a: 0.7; --b: 0.76">
+                    <rect
+                      x="168"
+                      y="254"
+                      width="72"
+                      height="92"
+                      rx="3"
+                      class="pf-paper"
+                    />
+                    <rect
+                      x="175"
+                      y="261"
+                      width="58"
+                      height="50"
+                      class="pf-blue"
+                    />
+                    <circle cx="220" cy="286" r="10" class="pf-pink" />
+                    <text x="175" y="334" class="pf-micro">090</text>
+                  </g>
+                  <path
+                    id="export-save-m"
+                    class="sc sc-draw sc-edge"
+                    style="--a: 0.8; --b: 0.84"
+                    d="M244 300H262"
+                    pathLength="1"
+                  />
+                  <path
+                    class="sc sc-fade sc-head"
+                    style="--a: 0.82; --b: 0.84"
+                    d="m-8-4.5 8 4.5-8 4.5"
+                    transform="translate(262 300) rotate(0)"
+                  />
+                  <g class="sc sc-pop" style="--a: 0.84; --b: 0.9">
+                    <path d="M266 254h40l20 20v72h-60Z" class="pf-green" />
+                    <path d="M306 254v20h20" class="pf-edge" />
+                    <path d="m286 290 18 11-18 11Z" class="pf-fill-green" />
+                    <text x="296" y="336" text-anchor="middle" class="pf-micro">
+                      VIDEO
                     </text>
                   </g>
                   <rect
-                    x="32"
-                    y="265"
-                    width="573"
+                    x="262"
+                    y="250"
+                    width="68"
+                    height="100"
+                    rx="6"
+                    class="sc sc-blink sc-ring"
+                    style="--a: 0.9; --b: 0.94; --c: 0.97; --d: 0.99"
+                  />
+                  <g class="sc sc-fade" style="--a: 0.42; --b: 0.46">
+                    <text x="12" y="374" class="pf-micro">RENDERING</text>
+                  </g>
+                  <text
+                    x="326"
+                    y="374"
+                    text-anchor="end"
+                    class="pf-micro sc sc-blink"
+                    style="--a: 0.44; --b: 0.46; --c: 0.56; --d: 0.58"
+                  >
+                    FRAME 001 / 090
+                  </text>
+                  <text
+                    x="326"
+                    y="374"
+                    text-anchor="end"
+                    class="pf-micro sc sc-blink"
+                    style="--a: 0.58; --b: 0.6; --c: 0.68; --d: 0.7"
+                  >
+                    FRAME 045 / 090
+                  </text>
+                  <text
+                    x="326"
+                    y="374"
+                    text-anchor="end"
+                    class="pf-micro sc sc-fade"
+                    style="--a: 0.7; --b: 0.72"
+                  >
+                    FRAME 090 / 090
+                  </text>
+                  <rect
+                    x="12"
+                    y="384"
+                    width="314"
                     height="8"
                     rx="4"
                     class="pf-faint"
                   />
                   <rect
-                    class="pf-render-bar"
-                    x="32"
-                    y="265"
-                    width="573"
+                    x="12"
+                    y="384"
+                    width="314"
                     height="8"
                     rx="4"
+                    class="sc pf-render-bar"
+                    style="--a: 0.44; --b: 0.84"
                   />
-                  <text x="32" y="310" class="pf-micro">
-                    WORKER-SUPPORTED FORMAT
-                  </text>
-                  <text x="605" y="310" text-anchor="end" class="pf-micro">
-                    RENDER → SAVE
-                  </text>
+                  <g class="sc sc-fade" style="--a: 0.9; --b: 0.96">
+                    <text x="326" y="414" text-anchor="end" class="pf-micro">
+                      SAVED
+                    </text>
+                    <path d="m270 406 4 4 8-9" class="sc-check" />
+                  </g>
+                  <g class="sc-narration">
+                    <text
+                      x="12"
+                      y="440"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.02; --b: 0.08; --c: 0.14; --d: 0.16"
+                    >
+                      <tspan class="sc-step">01</tspan>
+                      The worker reports what it can export
+                    </text>
+                    <text
+                      x="12"
+                      y="440"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.16; --b: 0.22; --c: 0.36; --d: 0.38"
+                    >
+                      <tspan class="sc-step">02</tspan>
+                      Choose format, size and frame rate
+                    </text>
+                    <text
+                      x="12"
+                      y="440"
+                      text-anchor="start"
+                      class="sc sc-blink"
+                      style="--a: 0.38; --b: 0.44; --c: 0.82; --d: 0.84"
+                    >
+                      <tspan class="sc-step">03</tspan>
+                      Render: follow progress, or cancel
+                    </text>
+                    <text
+                      x="12"
+                      y="440"
+                      text-anchor="start"
+                      class="sc sc-fade"
+                      style="--a: 0.84; --b: 0.9"
+                    >
+                      <tspan class="sc-step">04</tspan>
+                      The video file is saved
+                    </text>
+                  </g>
                 </svg>
-              </div>
-              <!-- mobile-diagram -->
-              <div
-                class="compact-diagram"
-                data-compact="export"
-                role="group"
-                aria-label="Diagram"
-              >
-                <div class="compact-card">
-                  <strong>Your project</strong>
-                  <div class="compact-card-detail">
-                    Editable source + media + timing
-                  </div>
-                </div>
-                <span class="compact-arrow" aria-hidden="true">↓</span>
-                <div class="compact-card compact-blue">
-                  <strong>Render frame by frame</strong>
-                  <div class="compact-card-detail">
-                    <div class="compact-chips">
-                      <span>Frame 001</span><span>Frame 002</span
-                      ><span>Frame 003</span>
-                    </div>
-                  </div>
-                </div>
-                <span class="compact-arrow" aria-hidden="true">↓</span>
-                <div class="compact-card compact-green">
-                  <strong>Save a video file</strong>
-                  <div class="compact-card-detail">
-                    Choose a worker-supported format
-                  </div>
-                </div>
               </div>
               <!-- /mobile-diagram -->
               <figcaption>
@@ -4055,6 +6406,38 @@ for (const button of document.querySelectorAll(".copy")) {
     }
     for (const listener of listeners) listener();
   }
+  // A scroll scene (scripts/studio-scenes.mjs): play(p) sets the figure's --p and
+  // moves each [data-along] token along its connector inside the token's window.
+  function scene(element) {
+    const tokens = [...element.querySelectorAll("[data-along]")].map(token => {
+      const path = element.querySelector(token.dataset.along);
+      return {
+        token,
+        path,
+        length: path.getTotalLength(),
+        a: +token.dataset.a,
+        b: +token.dataset.b,
+      };
+    });
+    return {
+      play(p) {
+        element.style.setProperty("--p", p.toFixed(4));
+        for (const { token, path, length, a, b } of tokens) {
+          const k = Math.max(0, Math.min(1, (p - a) / (b - a)));
+          const at = path.getPointAtLength(k * length);
+          token.setAttribute(
+            "transform",
+            `translate(${at.x.toFixed(1)} ${at.y.toFixed(1)})`
+          );
+          token.style.opacity = k > 0 && k < 1 ? 1 : 0;
+        }
+      },
+      reset() {
+        element.removeAttribute("style");
+        for (const { token } of tokens) token.removeAttribute("style");
+      },
+    };
+  }
   window.studioScrollMotion = {
     get enabled() {
       return enabled();
@@ -4062,6 +6445,7 @@ for (const button of document.querySelectorAll(".copy")) {
     subscribe(listener) {
       listeners.add(listener);
     },
+    scene,
   };
   for (const button of document.querySelectorAll(
     "[data-motion-controls] button"
@@ -4094,12 +6478,29 @@ for (const button of document.querySelectorAll(".copy")) {
   const steps = [...story.querySelectorAll("[data-step]")];
   const links = [...story.querySelectorAll(".step-nav a")];
   const figure = story.querySelector(".workflow-figure");
+  const motion = window.studioScrollMotion;
   const features = [...document.querySelectorAll("[data-product-figure]")].map(
-    element => ({ element, top: 0, height: 0, last: -1 })
+    element => ({
+      element,
+      top: 0,
+      height: 0,
+      last: -1,
+      scene: motion.scene(element),
+    })
   );
+  // Each chip travels between two planes; its end points come from the drawing.
+  const chip = kind => {
+    const element = figure.querySelector(`.chip-${kind}`);
+    const point = name => element.dataset[name].split(" ").map(Number);
+    return { from: point("from"), to: point("to") };
+  };
+  const chips = {
+    context: chip("context"),
+    candidate: chip("candidate"),
+    result: chip("result"),
+  };
   const label = story.querySelector("[data-state-label]");
   const index = story.querySelector(".readout-index");
-  const motion = window.studioScrollMotion;
   const narrow = matchMedia("(max-width: 760px)");
   const clamp = x => Math.min(1, Math.max(0, x));
   const ramp = (p, a, b) => {
@@ -4132,70 +6533,98 @@ for (const button of document.querySelectorAll(".copy")) {
     frame = 0;
     if (!motion.enabled) return;
     const y = scrollY;
+    // A product scene plays while its figure is fully on screen.
     for (const item of features) {
       const q = clamp(
-        (y + innerHeight * 0.88 - item.top) / (item.height + innerHeight * 0.18)
+        (y + innerHeight * 0.88 - item.top) / (item.height + innerHeight * 0.28)
       );
       if (q === item.last) continue;
       item.last = q;
-      const first = ramp(q, 0, 0.32),
-        middle = ramp(q, 0.22, 0.62),
-        end = ramp(q, 0.6, 0.95);
-      const reorder = ramp(q, 0.35, 0.78);
-      const values = {
-        "file-one": `${30 * (1 - first)}px`,
-        "file-two": `${24 * (1 - middle)}px`,
-        "file-three": `${18 * (1 - end)}px`,
-        packet: first * (1 - end),
-        travel: `${24 * middle}px`,
-        ready: 0.25 + 0.75 * end,
-        reorder: `${180 * reorder}px`,
-        "outro-x": `${-360 * reorder}px`,
-        "outro-y": `${-42 * 4 * reorder * (1 - reorder)}px`,
-        split: `${6 * ramp(q, 0.05, 0.3)}px`,
-        "split-alpha": ramp(q, 0.05, 0.3),
-        trim: end,
-        "trim-x": `${24 * end}px`,
-        "tool-one": `${25 * first}px`,
-        "tool-two": `${25 * middle}px`,
-        render: ramp(q, 0.1, 0.9),
-      };
-      for (const [key, value] of Object.entries(values))
-        item.element.style.setProperty(`--feature-${key}`, value);
+      item.scene.play(clamp((q - 0.1) / 0.68));
     }
     let p = 0;
     for (let i = 0; i < positions.length - 1; i++) {
       if (y >= positions[i])
         p = i + clamp((y - positions[i]) / (positions[i + 1] - positions[i]));
     }
-    const edit = ramp(p, 0.65, 1);
+    // Every value holds still near a step position, so a step reads the same
+    // whichever way the reader arrives.
+    const spread = ramp(p, 0.65, 0.97);
     const arrival = ramp(y, 0, Math.max(1, positions[0]));
     // Once the story is settled, scrolling the remaining page needs no SVG work.
     const progress = `${p}:${arrival}`;
     if (progress === lastProgress) return;
     lastProgress = progress;
-    const build = ramp(p, 1.35, 1.7);
-    const inspect = ramp(p, 1.8, 2.15);
-    const after = ramp(p, 2.9, 3);
-    const settle = ramp(p, 2.7, 3);
+    const after = ramp(p, 2.88, 2.97);
+    const settle = ramp(p, 2.68, 2.97);
+    // Plane offsets in SVG units; the chips travel between the moved planes.
+    const previewY = -16 * arrival - 10 * spread + 8 * settle;
+    const draftX = -10 * spread + 10 * settle;
+    const draftY = 6 * arrival + 4 * spread - 4 * settle;
+    const checkY = 8 * arrival + 4 * spread - 4 * settle;
+    const shift = {
+      preview: [0, previewY],
+      draft: [draftX, draftY],
+      check: [0, checkY],
+    };
+    // A chip at k between its start on plane a and its end on plane b.
+    const travel = (name, k, a, b) => {
+      const { from, to } = chips[name];
+      const x0 = from[0] + shift[a][0],
+        y0 = from[1] + shift[a][1];
+      const x1 = to[0] + shift[b][0],
+        y1 = to[1] + shift[b][1];
+      return [`${x0 + (x1 - x0) * k}px`, `${y0 + (y1 - y0) * k}px`];
+    };
+    // How far each chip has travelled; the phone drawing places its chips from these.
+    const contextK = ramp(p, 0.15, 0.6);
+    const candidateK = ramp(p, 1.08, 1.38);
+    const resultK = ramp(p, 2.2, 2.85);
+    const [contextX, contextY] = travel(
+      "context",
+      contextK,
+      "preview",
+      "draft"
+    );
+    const [candidateX, candidateY] = travel(
+      "candidate",
+      candidateK,
+      "draft",
+      "check"
+    );
+    const [resultX, resultY] = travel("result", resultK, "check", "preview");
+    const click = ramp(p, 0, 0.3);
+    const prompt = ramp(p, 0.45, 0.75);
     const values = {
-      "preview-y": `${-32 * arrival - 18 * edit + 12 * settle}px`,
-      "draft-x": `${-16 * edit + 16 * settle}px`,
-      "draft-y": `${10 * arrival + 8 * edit - 8 * settle}px`,
-      "check-y": `${16 * arrival + 8 * edit - 8 * settle}px`,
+      "preview-y": `${previewY}px`,
+      "draft-x": `${draftX}px`,
+      "draft-y": `${draftY}px`,
+      "check-y": `${checkY}px`,
       selection: 1 - ramp(p, 0.35, 0.9),
       "selection-x": `${8 * (1 - ramp(p, 0, 0.35))}px`,
-      "context-opacity": ramp(p, 0.1, 0.3) * (1 - ramp(p, 0.85, 1)),
-      "context-y": `${80 * ramp(p, 0.1, 0.9)}px`,
-      edit,
-      prompt: edit,
-      "prompt-x": `${-12 * (1 - edit)}px`,
-      "candidate-opacity": ramp(p, 1.05, 1.2) * (1 - ramp(p, 1.8, 2)),
-      "candidate-y": `${60 * ramp(p, 1.1, 1.9)}px`,
-      build,
-      inspect,
-      "result-opacity": ramp(p, 2.15, 2.3) * (1 - after),
-      "result-y": `${210 * (1 - ramp(p, 2.25, 2.9))}px`,
+      click: Math.sin(Math.PI * click),
+      "click-scale": 0.6 + click,
+      "context-opacity": ramp(p, 0.1, 0.2) * (1 - ramp(p, 0.6, 0.7)),
+      "context-x": contextX,
+      "context-y": contextY,
+      "context-k": contextK,
+      key: ramp(p, 0.55, 0.65),
+      prompt,
+      "prompt-x": `${-12 * (1 - prompt)}px`,
+      strike: ramp(p, 0.7, 0.85),
+      edit: ramp(p, 0.8, 1),
+      "candidate-opacity": ramp(p, 1.03, 1.12) * (1 - ramp(p, 1.38, 1.48)),
+      "candidate-x": candidateX,
+      "candidate-y": candidateY,
+      "candidate-k": candidateK,
+      "build-run": ramp(p, 1.4, 1.65),
+      build: ramp(p, 1.6, 1.7),
+      "inspect-run": ramp(p, 1.72, 1.97),
+      inspect: ramp(p, 2.03, 2.12),
+      "result-opacity": ramp(p, 2.15, 2.25) * (1 - ramp(p, 2.85, 2.95)),
+      "result-x": resultX,
+      "result-y": resultY,
+      "result-k": resultK,
       before: 1 - after,
       after,
     };
@@ -4226,7 +6655,7 @@ for (const button of document.querySelectorAll(".copy")) {
     figure.removeAttribute("style");
     for (const item of features) {
       item.last = -1;
-      item.element.removeAttribute("style");
+      item.scene.reset();
     }
     if (!enabled) {
       label.textContent = "Selection → draft → checks → preview";

@@ -163,7 +163,7 @@ figcaption,
 .diagram-hint {
   display: none;
 }
-.compact-diagram {
+.phone-figure {
   display: none;
 }
 
@@ -245,7 +245,8 @@ figcaption,
   .gate-readout {
     font-size: 14px;
     height: auto;
-    min-height: 60px;
+    /* Two lines and their padding, so a longer label does not resize the sticky figure. */
+    min-height: 64px;
     line-height: 1.6;
   }
   .readout-index {
@@ -297,169 +298,77 @@ figcaption,
     min-width: 0;
   }
 
-  .compact-diagram {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
+  /* Portrait drawings (scripts/studio-mobile-diagrams.mjs), drawn at about 1:1. */
+  .phone-figure {
+    display: block;
     padding-block: 16px;
   }
-  .compact-card {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 0;
-    border: 1px solid #b8cbea;
-    border-radius: 6px;
-    padding: 18px;
-    background: #f4f7fd;
-    color: #243b61;
-    overflow-wrap: anywhere;
-  }
-  .compact-card strong {
-    font-size: 17px;
-    font-weight: 550;
-    line-height: 1.4;
-    letter-spacing: -0.3px;
-  }
-  .compact-card-detail {
-    font-size: 16px;
-    line-height: 1.65;
-  }
-  .compact-card small {
+  .phone-figure svg {
     display: block;
-    font:
-      14px/1.65 "Geist",
-      Arial,
-      sans-serif;
-    color: #526b91;
+    width: 100%;
+    height: auto;
+    max-width: 440px;
+    margin-inline: auto;
   }
-  .compact-card code {
-    display: block;
-    font: 14px/1.9 var(--mono);
-    overflow-wrap: anywhere;
+  .phone-figure .pf-micro,
+  .phone-figure .diagram-small,
+  .phone-figure .diagram-label {
+    font-size: 11px;
   }
-  .compact-blue,
-  .compact-draft {
-    background: #e5edff;
-    border-color: #a8c0ef;
+  .phone-figure .sc-narration text,
+  .phone-figure .diagram-code,
+  .phone-figure .prompt-text {
+    font-size: 12px;
   }
-  .compact-green,
-  .compact-checks {
-    background: #e5f4ef;
-    border-color: #a0c9bb;
-  }
-  .compact-pink,
-  .compact-preview {
-    background: #fbe7ef;
-    border-color: #dcb5c4;
-  }
-  .compact-arrow {
-    align-self: center;
-    display: block;
-    font-size: 21px;
-    line-height: 1.6;
-    color: #6489d3;
-  }
-  .compact-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .compact-chips > span {
-    padding: 7px 10px;
-    font-size: 14px;
-    border: 1px solid #bacbea;
-    border-radius: 4px;
-    background: #ffffff90;
-  }
-  .compact-parallel {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-  .compact-note {
-    font-size: 14px;
-    line-height: 1.7;
-    margin: 14px 0 0;
-  }
-  .compact-diagram[data-compact="readiness"] > .compact-card:first-child {
-    margin-bottom: 18px;
-    border-left: 4px solid #6489d3;
-  }
-  .compact-diagram[data-compact="workflow"] {
-    gap: 0;
-    padding-block: 12px;
-  }
-  .compact-diagram[data-compact="workflow"] .compact-card {
-    display: grid;
-    grid-template-columns: 100px minmax(0, 1fr);
-    align-items: center;
-    gap: 10px;
-    padding: 12px;
-  }
-  .compact-diagram[data-compact="workflow"] .compact-card strong {
+  .phone-figure .pf-code {
     font-size: 13px;
   }
-  .compact-diagram[data-compact="workflow"] .compact-card-detail {
-    font-size: 15px;
-    line-height: 1.5;
+  .phone-figure .diagram-title {
+    font-size: 28px;
+    letter-spacing: -0.8px;
   }
-  .compact-diagram[data-compact="workflow"] .compact-arrow {
-    font-size: 16px;
-    line-height: 1.25;
+  /* The hero drawing shares the sticky slot with its readout and step links. */
+  .story-motion .phone-figure[data-phone="workflow"] {
+    padding-block: 0;
   }
-  .compact-preview-title {
-    display: grid;
+  .story-motion .phone-figure[data-phone="workflow"] svg {
+    height: 40svh;
+    min-height: 210px;
+    max-height: 370px;
   }
-  .compact-preview-title > span {
-    grid-area: 1/1;
-    font-size: 21px;
-    font-weight: 500;
-    letter-spacing: -0.5px;
+  .phone-figure .ex-title {
+    font-size: 13px;
   }
-  .compact-after,
-  .compact-edit {
-    display: none;
+  .phone-figure .ex-copy,
+  .phone-figure .ex-label,
+  .phone-figure .support-small,
+  .phone-figure .lane-label,
+  .phone-figure .gate-subtitle,
+  .phone-figure .gate-base-label {
+    font-size: 11px;
+    letter-spacing: 0;
   }
-  .compact-edit {
-    font: 13px/1.6 var(--mono);
+  .phone-figure .support-code,
+  .phone-figure .gate-title,
+  .phone-figure .lane-copy {
+    font-size: 12px;
   }
-  .story-motion .compact-before {
-    opacity: var(--before, 1);
+  .phone-figure .support-headline,
+  .phone-figure .support-number {
+    font-size: 30px;
+    letter-spacing: -1px;
   }
-  .story-motion .compact-after {
-    display: block;
-    opacity: var(--after, 0);
+  .phone-figure .ex-or {
+    font-size: 12px;
   }
-  .story-motion .compact-edit {
-    display: block;
-    opacity: var(--edit, 0);
+  /* Like the hero, the candidate's path stays in view while its steps scroll past. */
+  .internals-motion .phone-figure[data-phone="gates"] {
+    padding-block: 0;
   }
-  .story-motion .compact-preview {
-    border-color: #cf7594;
-    box-shadow: inset 3px 0 #cf7594;
-  }
-  .story-motion .compact-check-build {
-    opacity: calc(0.4 + 0.6 * var(--build, 0));
-  }
-  .story-motion .compact-check-inspect {
-    opacity: calc(0.4 + 0.6 * var(--inspect, 0));
-  }
-  /* Tall mobile compositions stay in normal flow, leaving room for the explanation. */
-  .internals-motion .transaction-figure {
-    position: relative;
-    top: auto;
-  }
-  .internals-motion .transaction-figure figcaption {
-    position: static;
-    width: auto;
-    height: auto;
-    clip-path: none;
-    overflow: visible;
-  }
-  .internals-motion .gate-step {
-    min-height: 0;
-    scroll-margin-top: 100px;
+  .internals-motion .phone-figure[data-phone="gates"] svg {
+    height: 40svh;
+    min-height: 210px;
+    max-height: 370px;
   }
   .transaction-figure .gate-nav {
     gap: 8px 14px;
@@ -504,12 +413,9 @@ figcaption,
   .hero-actions .button {
     padding-inline: 16px;
   }
-  .compact-diagram[data-compact="workflow"] .compact-card {
-    grid-template-columns: 78px minmax(0, 1fr);
-    gap: 8px;
-  }
 }
 @media (max-width: 760px) and (max-height: 700px) {
+  .internals-motion .transaction-figure,
   .story-motion .workflow-figure {
     position: relative;
     top: auto;
@@ -865,7 +771,7 @@ figcaption,
   }
 }
 @media print {
-  .compact-diagram {
+  .phone-figure {
     display: none;
   }
 }

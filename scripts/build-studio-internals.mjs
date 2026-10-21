@@ -22,12 +22,12 @@ ${stages
 <g class="travelling-candidate"><path d="M295 506v-37l-12 7 22-40 22 18-12 7v37Z"/><path d="m300 472 5-3 5 3" fill="none" stroke="#407eaf"/></g>
 <g class="accepted-result"><path d="M293 78 302 87 320 61"/><text x="305" y="42" text-anchor="middle">ACCEPTED REVISION</text></g>
 <text x="305" y="550" text-anchor="middle" class="gate-base-label">CAPTURED AGENT DRAFT</text>
-<path d="M154 276H91" class="repair-leader"/><text x="83" y="273" text-anchor="end" class="gate-subtitle">Failure</text><text x="83" y="290" text-anchor="end" class="gate-subtitle">retains draft</text>
+<path d="M154 276H91" class="repair-leader"/><text x="83" y="273" text-anchor="end" class="gate-subtitle">Failure</text><text x="83" y="290" text-anchor="end" class="gate-subtitle">keeps draft</text>
 <text x="305" y="595" text-anchor="middle" class="gate-subtitle">STAGES, NOT ELAPSED TIME · REVIEW IS OPTIONAL</text>
 </svg>`;
 const readiness = `<p class="diagram-hint">Scroll the diagram sideways <span aria-hidden="true">↔</span></p><svg class="readiness-diagram" viewBox="0 0 900 280" role="img" aria-labelledby="ready-t ready-d"><title id="ready-t">Prepare a revision before switching the preview</title><desc id="ready-d">The current revision remains available while the candidate compiles and prepares its worker, frame and audio. Only once ready can the revision replace it at the playhead. Diagram spacing is illustrative, not elapsed build time.</desc>
 <text x="20" y="64" class="lane-label">CURRENT</text><text x="20" y="158" class="lane-label">CANDIDATE</text>
-<rect x="152" y="39" width="712" height="42" rx="2" class="old-lane"/><text x="170" y="65" class="lane-copy">Working preview remains available</text>
+<rect x="152" y="39" width="712" height="42" rx="2" class="old-lane"/><text x="170" y="65" class="lane-copy">Working preview remains available</text><g class="preview-chip"><rect x="700" y="45" width="156" height="30" rx="3" class="sc-dark"/><text x="778" y="65" text-anchor="middle" class="sc-on-dark preview-old">Hello.</text><text x="778" y="65" text-anchor="middle" class="sc-on-dark preview-new">Make your move.</text></g>
 <path d="M152 133H864v42H152Z" class="candidate-outline"/>
 <g class="compile-lane"><rect x="152" y="133" width="233" height="42" class="compile-fill"/></g><text x="168" y="159" class="lane-copy">Compile</text>
 <g class="prepare-lane"><rect x="385" y="133" width="255" height="42" class="prepare-fill"/></g><text x="401" y="159" class="lane-copy">Prepare worker, frame, audio</text>

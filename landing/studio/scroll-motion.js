@@ -29,6 +29,38 @@
     }
     for (const listener of listeners) listener();
   }
+  // A scroll scene (scripts/studio-scenes.mjs): play(p) sets the figure's --p and
+  // moves each [data-along] token along its connector inside the token's window.
+  function scene(element) {
+    const tokens = [...element.querySelectorAll("[data-along]")].map(token => {
+      const path = element.querySelector(token.dataset.along);
+      return {
+        token,
+        path,
+        length: path.getTotalLength(),
+        a: +token.dataset.a,
+        b: +token.dataset.b,
+      };
+    });
+    return {
+      play(p) {
+        element.style.setProperty("--p", p.toFixed(4));
+        for (const { token, path, length, a, b } of tokens) {
+          const k = Math.max(0, Math.min(1, (p - a) / (b - a)));
+          const at = path.getPointAtLength(k * length);
+          token.setAttribute(
+            "transform",
+            `translate(${at.x.toFixed(1)} ${at.y.toFixed(1)})`
+          );
+          token.style.opacity = k > 0 && k < 1 ? 1 : 0;
+        }
+      },
+      reset() {
+        element.removeAttribute("style");
+        for (const { token } of tokens) token.removeAttribute("style");
+      },
+    };
+  }
   window.studioScrollMotion = {
     get enabled() {
       return enabled();
@@ -36,6 +68,7 @@
     subscribe(listener) {
       listeners.add(listener);
     },
+    scene,
   };
   for (const button of document.querySelectorAll(
     "[data-motion-controls] button"

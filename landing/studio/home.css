@@ -352,7 +352,8 @@ html.js-enabled .motion-controls[hidden] {
 .edit-diagram {
   display: block;
   width: 100%;
-  height: clamp(330px, calc(100svh - 300px), 780px);
+  height: auto;
+  max-height: clamp(330px, calc(100svh - 300px), 780px);
   overflow: visible;
 }
 .plane {
@@ -419,6 +420,55 @@ html.js-enabled .motion-controls[hidden] {
 .source-before {
   fill: #a85070;
 }
+.gate-track {
+  fill: #cfe5dc;
+}
+.gate-run {
+  fill: #2f9a76;
+}
+.key-mark {
+  fill: #f8dae8;
+}
+.source-strike {
+  stroke: #a85070;
+  stroke-width: 1.2;
+}
+.accepted-mark {
+  fill: none;
+  stroke: #2f9a76;
+  stroke-width: 2;
+}
+.click-ring {
+  fill: none;
+  stroke: #d65e88;
+  stroke-width: 1.5;
+}
+.flow-chip text,
+.phone-chip text {
+  font: 11px var(--mono);
+  letter-spacing: 0.3px;
+}
+.chip-context rect {
+  fill: #fbe1ea;
+  stroke: #d65e88;
+}
+.chip-context text {
+  fill: #9b3a5d;
+}
+.chip-candidate rect {
+  fill: #dce8ff;
+  stroke: #5b8be0;
+}
+.chip-candidate text {
+  fill: #2c4f8f;
+}
+.chip-result rect {
+  fill: #d5f0e4;
+  stroke: #2f9a76;
+}
+.chip-result text {
+  fill: #1d6b50;
+}
 .result-path {
   stroke: #5c8df0;
   stroke-width: 1;
@@ -481,26 +531,79 @@ figcaption {
   opacity: var(--selection, 1);
   transform: translateX(var(--selection-x, 0px));
 }
-.story-motion .context-packet {
-  opacity: var(--context-opacity, 0);
-  transform: translateY(var(--context-y, 0px));
+.story-motion .click-ring {
+  opacity: var(--click, 0);
+  transform: scale(var(--click-scale, 1));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.story-motion .key-mark {
+  opacity: var(--key, 1);
+}
+.story-motion .source-strike {
+  transform: scaleX(var(--strike, 1));
+  transform-box: fill-box;
+  transform-origin: left;
 }
 .story-motion .source-after {
   opacity: var(--edit, 0);
+}
+.story-motion .insert-bar {
+  transform: scaleX(var(--edit, 1));
+  transform-box: fill-box;
+  transform-origin: left;
 }
 .story-motion .prompt-note {
   opacity: var(--prompt, 0);
   transform: translateX(var(--prompt-x, 0px));
 }
-.story-motion .candidate-packet {
+/* Chips travel between the planes; home.js derives their position from scroll. */
+.story-motion .flow-chip.chip-context {
+  opacity: var(--context-opacity, 0);
+  transform: translate(var(--context-x, 0px), var(--context-y, 0px));
+}
+.story-motion .flow-chip.chip-candidate {
   opacity: var(--candidate-opacity, 0);
-  transform: translateY(var(--candidate-y, 0px));
+  transform: translate(var(--candidate-x, 0px), var(--candidate-y, 0px));
+}
+.story-motion .flow-chip.chip-result {
+  opacity: var(--result-opacity, 0);
+  transform: translate(var(--result-x, 0px), var(--result-y, 0px));
+}
+/* The phone drawing keeps its panels still; each chip goes from (--x0, --y0) to (--x1, --y1). */
+.story-motion .phone-chip {
+  transform: translate(
+    calc(var(--x0) + (var(--x1) - var(--x0)) * var(--t)),
+    calc(var(--y0) + (var(--y1) - var(--y0)) * var(--t))
+  );
+}
+.story-motion .phone-chip.chip-context {
+  --t: var(--context-k, 0);
+  opacity: var(--context-opacity, 0);
+}
+.story-motion .phone-chip.chip-candidate {
+  --t: var(--candidate-k, 0);
+  opacity: var(--candidate-opacity, 0);
+}
+.story-motion .phone-chip.chip-result {
+  --t: var(--result-k, 0);
+  opacity: var(--result-opacity, 0);
 }
 .story-motion .gate-build {
-  opacity: var(--build, 0.25);
+  opacity: var(--build-run, 0.25);
 }
 .story-motion .gate-inspect {
-  opacity: var(--inspect, 0.25);
+  opacity: var(--inspect-run, 0.25);
+}
+.story-motion .gate-build-run {
+  transform: scaleX(var(--build-run, 0));
+  transform-box: fill-box;
+  transform-origin: left;
+}
+.story-motion .gate-inspect-run {
+  transform: scaleX(var(--inspect-run, 0));
+  transform-box: fill-box;
+  transform-origin: left;
 }
 .story-motion .gate-build-label {
   opacity: var(--build, 0);
@@ -508,27 +611,26 @@ figcaption {
 .story-motion .gate-inspect-label {
   opacity: var(--inspect, 0);
 }
-.story-motion .result-packet {
-  opacity: var(--result-opacity, 0);
-  transform: translateY(var(--result-y, 0px));
+.story-motion .accepted-mark {
+  opacity: var(--after, 0);
 }
 .story-motion .title-before {
   opacity: var(--before, 1);
 }
 .story-motion .title-after {
   opacity: var(--after, 0);
+  transform: translateY(calc(8px * (1 - var(--after, 0))));
 }
 /* An unanimated overview is the default, including when JS is unavailable. */
 html:not(.story-motion) .title-after,
-html:not(.story-motion) .candidate-packet {
+html:not(.story-motion) .accepted-mark,
+html:not(.story-motion) .click-ring,
+html:not(.story-motion) .flow-chip,
+html:not(.story-motion) .phone-chip {
   display: none;
 }
 html:not(.story-motion) .object-selection {
   opacity: 1;
-}
-html:not(.story-motion) .context-packet,
-html:not(.story-motion) .result-packet {
-  opacity: 0.7;
 }
 .compatibility {
   border-block: 1px solid var(--line);
@@ -999,7 +1101,7 @@ footer {
     grid-template-columns: 42% 58%;
   }
   .edit-diagram {
-    height: clamp(310px, calc(100svh - 385px), 650px);
+    max-height: clamp(310px, calc(100svh - 385px), 650px);
   }
 }
 @media (max-width: 760px) {
@@ -1333,4 +1435,180 @@ footer {
   .container {
     width: 100%;
   }
+}
+/* Scroll scenes (scripts/studio-scenes.mjs). --p is the figure's progress; a part
+   animates inside its window --a..--b (and fades out inside --c..--d for .sc-blink).
+   --p defaults to 1: without JS or scroll motion every scene is finished. */
+[data-explanation],
+[data-scroll-figure],
+[data-product-figure] {
+  --p: 1;
+}
+.sc {
+  --k: clamp(0, (var(--p) - var(--a)) / (var(--b) - var(--a)), 1);
+}
+.sc-fade {
+  opacity: var(--k);
+}
+.sc-hide {
+  opacity: calc(1 - var(--k));
+}
+.sc-lit {
+  opacity: calc(0.28 + 0.72 * var(--k));
+}
+.sc-rise {
+  opacity: var(--k);
+  transform: translateY(calc(10px * (1 - var(--k))));
+}
+.sc-pop {
+  opacity: var(--k);
+  transform: scale(calc(0.6 + 0.4 * var(--k)));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.sc-blink {
+  --off: clamp(0, (var(--p) - var(--c)) / (var(--d) - var(--c)), 1);
+  opacity: min(var(--k), 1 - var(--off));
+}
+.sc-settle {
+  fill: #9bb0cf;
+  transform: scaleY(calc(1 - 0.82 * var(--k)));
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+.sc-move {
+  transform: translateX(calc(var(--dx) * var(--k)));
+}
+/* A clip dips under its lane while it moves past the others, then rises back. */
+.sc-dip {
+  transform: translateY(calc(36px * var(--k)));
+}
+.sc-undip {
+  transform: translateY(calc(-36px * var(--k)));
+}
+:is(.internals-motion, .story-motion) .sc-draw {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: calc(1 - var(--k));
+}
+.sc-edge {
+  fill: none;
+  stroke: #6489d3;
+  stroke-width: 1.5;
+}
+.sc-head {
+  fill: none;
+  stroke: #6489d3;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sc-edge.sc-warn,
+.sc-head.sc-warn {
+  stroke: #c0702f;
+}
+.sc-edge.sc-quiet,
+.sc-head.sc-quiet {
+  stroke: #9bb0cf;
+}
+.sc-ring {
+  fill: none;
+  stroke: #2f80ff;
+  stroke-width: 2;
+}
+.sc-ring-warn {
+  stroke: #c0702f;
+}
+.sc-token {
+  display: none;
+}
+:is(.internals-motion, .story-motion) .sc-token {
+  display: inline;
+  opacity: 0;
+}
+.sc-chip {
+  stroke-width: 1.5;
+}
+.sc-chip-pink {
+  fill: #f3c3d3;
+  stroke: #c57894;
+}
+.sc-chip-blue {
+  fill: #cfe0ff;
+  stroke: #2f80ff;
+}
+.sc-chip-green {
+  fill: #bfe8d9;
+  stroke: #239c76;
+}
+.sc-chip-amber {
+  fill: #ffd9b8;
+  stroke: #c0702f;
+}
+.sc-narration text {
+  font: 500 11px var(--mono);
+  letter-spacing: 0.3px;
+  fill: #243b61;
+}
+.sc-step {
+  fill: #2f80ff;
+}
+.sc-check {
+  fill: none;
+  stroke: #239c76;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sc-cross {
+  fill: none;
+  stroke: #c0702f;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.sc-cell {
+  fill: #fff;
+  stroke: #b8c8e2;
+}
+.sc-cell-text {
+  font: 11px var(--mono);
+  fill: #243b61;
+}
+.sc-compare {
+  stroke: #8fd3bb;
+  stroke-dasharray: 2 3;
+}
+.sc-equal {
+  font: 600 15px var(--mono);
+  fill: #239c76;
+}
+.sc-stamp rect {
+  fill: #fff4ea;
+  stroke: #c0702f;
+  stroke-width: 1.5;
+}
+.sc-stamp text {
+  font: 600 11px var(--mono);
+  letter-spacing: 0.6px;
+  fill: #a35b22;
+}
+.sc-button rect {
+  fill: #2f80ff;
+}
+.sc-button text {
+  font: 600 11px var(--mono);
+  fill: #fff;
+}
+.sc-bar-track {
+  fill: #d7e4f6;
+}
+.sc-bar {
+  fill: #2cbe95;
+  transform: scaleX(var(--k));
+  transform-box: fill-box;
+  transform-origin: left;
+}
+/* Nothing plays without scroll motion. */
+html:not(.internals-motion):not(.story-motion) .motion-cue,
+html:not(.internals-motion):not(.story-motion) .scroll-cue {
+  display: none;
 }
