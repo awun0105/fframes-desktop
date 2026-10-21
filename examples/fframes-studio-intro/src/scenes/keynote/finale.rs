@@ -38,7 +38,7 @@ static NAME: LazyLock<TrackingIn> = LazyLock::new(|| {
         text: "FFrames Studio".to_owned(),
         font_size: 88.0,
         color: TEXT.to_owned(),
-        font_weight: 400,
+        font_weight: DISPLAY_WEIGHT,
         start_tracking: 0.22,
         ..Default::default()
     })
@@ -128,8 +128,8 @@ fn wall(frame: &Frame, ctx: &FFramesContext<'_, '_>, lb: f32) -> Svgr<'static> {
             let id = format!("wall-{i}");
             fframes::svgr!(
                 <g transform={transform} opacity={prog(lb, land, land + 0.25) * (1.0 - collapse)}>
-                    {rounded(&id, rect, 10.0, body)}
-                    <rect x={x} y={y} width={tw} height={th} rx="10" fill="none" stroke={LINE} stroke-width="2" />
+                    {rounded(&id, rect, RADIUS, body)}
+                    <rect x={x} y={y} width={tw} height={th} rx={RADIUS} fill="none" stroke={RULE} stroke-width={RULE_WIDTH} />
                 </g>
             )
         })
@@ -142,7 +142,7 @@ fn end_card(frame: &Frame, lb: f32) -> Svgr<'static> {
     let local = lb - CARD;
     let (to, td) = rise(lb, CARD + 1.2, 20.0);
     let (ro, rd) = rise(lb, CARD + 2.6, 20.0);
-    // an orange hairline traced around the whole card
+    // a hairline in the action colour traced around the whole card
     let trace = cubic_in_out(prog(lb, CARD, CARD + 3.0));
     let perimeter = 2.0 * (1680.0 + 840.0);
     // the code springs up as a dark tile, digital rain falls through it and
@@ -155,22 +155,22 @@ fn end_card(frame: &Frame, lb: f32) -> Svgr<'static> {
     fframes::svgr!(
         <g opacity={prog(lb, CARD - 0.5, CARD)}>
             {rain(lb, land - 1.0, land + MATRIX_BEATS + 0.6)}
-            <rect x="120" y="120" width="1680" height="840" rx="20" fill="none" stroke={ACCENT} stroke-width="2"
+            <rect x="120" y="120" width="1680" height="840" rx={RADIUS} fill="none" stroke={ACTION} stroke-width="1.5"
                 stroke-dasharray={format!("{} {perimeter}", perimeter * trace)} />
             <g transform={at(0.0, -190.0)}>{comp::show(&*NAME, frame, local * BEAT, (0.0, -60.0, 1920.0, 1080.0))}</g>
             <g opacity={to} transform={at(0.0, td)}>
-                <text x="960" y="490" text-anchor="middle" font-family={MONO} font-weight="500" font-size="28" fill={SLATE}>"Programmatic video, with a desktop studio."</text>
+                <text x="960" y="490" text-anchor="middle" font-family={SANS} font-weight="400" font-size="34" letter-spacing="-0.5" fill={SECONDARY}>"Programmatic video, with a desktop studio."</text>
             </g>
             <g opacity={qo} transform={zoom(qx + qs / 2.0, qy + qs / 2.0, pop)}>
-                {rounded("qr-tile", (qx, qy, qs, qs), 18.0, matrix_code(lb - land, (qx, qy, qs)))}
-                <rect x={qx} y={qy} width={qs} height={qs} rx="18" fill="none" stroke={ACCENT} stroke-width="2" opacity={1.0 - prog(lb, land + MATRIX_BEATS, land + MATRIX_BEATS + 0.5)} />
+                {rounded("qr-tile", (qx, qy, qs, qs), RADIUS, matrix_code(lb - land, (qx, qy, qs)))}
+                <rect x={qx} y={qy} width={qs} height={qs} rx={RADIUS} fill="none" stroke={RULE} stroke-width={RULE_WIDTH} />
             </g>
             <g opacity={ro} transform={at(0.0, rd)}>
-                <text x={tx} y="625" font-family={DISPLAY} font-size="52" letter-spacing="-1.5" fill={TEXT}>"Scan to download."</text>
-                <text x={tx} y="675" font-family={MONO} font-weight="500" font-size="24" fill={SLATE}>"Download for Windows, macOS and Linux."</text>
-                <text x={tx} y="755" font-family={MONO} font-weight="500" font-size="21" fill={TEXT}>"dub.sh/fframes"</text>
-                <text x={tx} y="830" font-family={MONO} font-weight="600" font-size="18" letter-spacing="4" fill={ACCENT}>"OPEN SOURCE · MIT · BUILT ON FFRAMES"</text>
-                <text x={tx} y="905" font-family={MONO} font-weight="500" font-size="14" fill={MUTED}>"Lottie emoji: Noto Animated Emoji, CC BY 4.0 · lottie-ios samples, Apache 2.0"</text>
+                <text x={tx} y="625" font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="56" letter-spacing="-2.2" fill={TEXT}>"Scan to download."</text>
+                <text x={tx} y="677" font-family={SANS} font-weight="400" font-size="28" fill={SECONDARY}>"Download for Windows, macOS and Linux."</text>
+                <text x={tx} y="755" font-family={MONO} font-weight="500" font-size="22" fill={TEXT}>"dub.sh/fframes"</text>
+                <text x={tx} y="830" font-family={MONO} font-weight="500" font-size="18" letter-spacing="3" fill={ACTION}>"OPEN SOURCE · MIT · BUILT ON FFRAMES"</text>
+                <text x={tx} y="905" font-family={MONO} font-weight="400" font-size="14" fill={SECONDARY}>"Lottie emoji: Noto Animated Emoji, CC BY 4.0 · lottie-ios samples, Apache 2.0"</text>
             </g>
         </g>
     )
@@ -232,15 +232,15 @@ fn matrix_code(t: f32, (qx, qy, qs): (f32, f32, f32)) -> Svgr<'static> {
             let glyph = GLYPHS
                 [(hash(c as f32 * 31.7 + row as f32 * 7.13 + tick * 1.31) * 16.0) as usize % 16];
             let fill = match (k, on_module) {
-                (0, _) => "#eaf2ff",
-                (_, true) => SKY,
-                _ => ACCENT,
+                (0, _) => INVERSE_TEXT,
+                (_, true) => COMMAND,
+                _ => INVERSE_SECONDARY,
             };
             let opacity = (1.0 - k as f32 / TRAIL as f32 * 0.85)
                 * if on_module || k == 0 { 1.0 } else { 0.55 };
             glyphs.push(fframes::svgr!(
                 <text x={qx + (c as f32 + 0.5) * unit} y={qy + (row as f32 + 0.85) * unit} text-anchor="middle"
-                    font-family={MONO} font-weight="600" font-size={unit * 1.15} fill={fill} opacity={opacity}>{glyph}</text>
+                    font-family={MONO} font-weight="500" font-size={unit * 1.15} fill={fill} opacity={opacity}>{glyph}</text>
             ));
         }
     }
@@ -256,7 +256,7 @@ fn matrix_code(t: f32, (qx, qy, qs): (f32, f32, f32)) -> Svgr<'static> {
     };
     fframes::svgr!(
         <g>
-            <rect x={qx} y={qy} width={qs} height={qs} fill="#050b16" />
+            <rect x={qx} y={qy} width={qs} height={qs} fill={INVERSE} />
             {settled}
             {glyphs}
         </g>
@@ -285,9 +285,9 @@ fn rain(lb: f32, start: f32, end: f32) -> Svgr<'static> {
             let glyph =
                 GLYPHS[(hash(c as f32 * 5.9 + row as f32 * 2.3 + tick) * 16.0) as usize % 16];
             let (fill, alpha) = if k == 0 {
-                (SKY, 0.5)
+                (CANDIDATE, 0.5)
             } else {
-                (ACCENT, 0.32 * (1.0 - k as f32 / 10.0))
+                (ACTION, 0.32 * (1.0 - k as f32 / 10.0))
             };
             let (x, y) = (135.0 + c as f32 * cell, 142.0 + row as f32 * cell);
             // fainter behind the name, the tagline and the download lines
@@ -296,7 +296,8 @@ fn rain(lb: f32, start: f32, end: f32) -> Svgr<'static> {
             let alpha = alpha * if behind_text { 0.3 } else { 1.0 };
             glyphs.push(fframes::svgr!(
                 <text x={x} y={y} text-anchor="middle"
-                    font-family={MONO} font-weight="500" font-size="20" fill={fill} opacity={alpha * o}>{glyph}</text>
+                    font-family={MONO} font-weight="400" font-size="20" fill={fill} opacity={alpha * o}>{glyph}</text>
+
             ));
         }
     }

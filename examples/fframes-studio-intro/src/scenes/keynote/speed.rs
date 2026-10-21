@@ -87,7 +87,7 @@ impl Scene for SpeedScene {
             PROOF - 0.6,
             "Under the hood:",
             "less work per frame, and no detours.",
-            ACCENT,
+            ACTION,
         );
         fframes::svgr!(
             <g opacity={leave(lb, 31.4)}>
@@ -119,11 +119,11 @@ fn engine_row(lb: f32, i: usize, e: &Engine, active: bool) -> Svgr<'static> {
     let number = format!("0{}", i + 1);
     fframes::svgr!(
         <g opacity={o * dim} transform={at(0.0, d)}>
-            <rect x="120" y={y - 34.0} width="4" height={(118.0 * bar).max(0.5)} fill={ACCENT} opacity={if bar > 0.0 { 1.0 } else { 0.0 }} />
-            <text x="148" y={y} font-family={MONO} font-weight="600" font-size="20" letter-spacing="3" fill={ACCENT}>{number}</text>
-            <text x="200" y={y + 2.0} font-family={DISPLAY} font-size="36" letter-spacing="-1" fill={TEXT}>{e.title}</text>
-            <text x="148" y={y + 46.0} font-family={MONO} font-weight="500" font-size="20" fill={SLATE}>{e.lines[0]}</text>
-            <text x="148" y={y + 74.0} font-family={MONO} font-weight="500" font-size="20" fill={SLATE}>{e.lines[1]}</text>
+            <rect x="120" y={y - 34.0} width="4" height={(118.0 * bar).max(0.5)} fill={ACTION} opacity={if bar > 0.0 { 1.0 } else { 0.0 }} />
+            <text x="148" y={y} font-family={MONO} font-weight="500" font-size="20" letter-spacing="3" fill={ACTION}>{number}</text>
+            <text x="200" y={y + 2.0} font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="40" letter-spacing="-1.6" fill={TEXT}>{e.title}</text>
+            <text x="148" y={y + 48.0} font-family={SANS} font-weight="400" font-size="24" fill={SECONDARY}>{e.lines[0]}</text>
+            <text x="148" y={y + 78.0} font-family={SANS} font-weight="400" font-size="24" fill={SECONDARY}>{e.lines[1]}</text>
         </g>
     )
 }
@@ -136,7 +136,7 @@ fn cached(lb: f32) -> Svgr<'static> {
     let grid: Vec<Svgr> = (0..5)
         .map(|k| {
             let gy = cy + k as f32 * ch / 4.0;
-            fframes::svgr!(<rect x={cx} y={gy} width={cw} height="1.5" fill={LINE} />)
+            fframes::svgr!(<rect x={cx} y={gy} width={cw} height="1.5" fill={RULE} />)
         })
         .collect();
     // the moving part: a line that draws itself and keeps scrolling
@@ -154,22 +154,23 @@ fn cached(lb: f32) -> Svgr<'static> {
         .collect();
     let line = if points.len() > 1 {
         let d = format!("M{}", points.join(" L"));
-        fframes::svgr!(<path d={d} fill="none" stroke={ACCENT} stroke-width="4" stroke-linejoin="round" />)
+        fframes::svgr!(<path d={d} fill="none" stroke={CANDIDATE} stroke-width="4" stroke-linejoin="round" />)
     } else {
         Svgr::empty()
     };
     let redrawn = ((lb - ENGINES_AT[0]) * BEAT * 60.0).max(0.0) as usize;
     let tag_y = y + h - 70.0;
+    // what is cached stays put like an accepted state, the line is redrawn work
     fframes::svgr!(
         <g>
-            <text x={cx} y={y + 54.0} font-family={MONO} font-weight="600" font-size="18" letter-spacing="3" fill={SLATE}>"REVENUE · LIVE"</text>
+            <text x={cx} y={y + 54.0} font-family={MONO} font-weight="500" font-size="18" letter-spacing="3" fill={SECONDARY}>"REVENUE · LIVE"</text>
             {grid}
-            <rect x={cx - 14.0} y={cy - 14.0} width={cw + 28.0} height={ch + 28.0} fill="none" stroke={SKY} stroke-width="2" stroke-dasharray="8 8" />
+            <rect x={cx - 14.0} y={cy - 14.0} width={cw + 28.0} height={ch + 28.0} rx={RADIUS} fill="none" stroke={ACCEPTED} stroke-width="1.5" />
             {line}
-            <rect x={cx} y={tag_y - 18.0} width="14" height="14" fill="none" stroke={SKY} stroke-width="2" />
-            <text x={cx + 26.0} y={tag_y - 5.0} font-family={MONO} font-weight="500" font-size="19" fill={SKY}>"cached once"</text>
-            <rect x={cx + 260.0} y={tag_y - 13.0} width="22" height="4" fill={ACCENT} />
-            <text x={cx + 294.0} y={tag_y - 5.0} font-family={MONO} font-weight="500" font-size="19" fill={ACCENT}>{format!("redrawn: {redrawn} frames")}</text>
+            <rect x={cx} y={tag_y - 18.0} width="14" height="14" fill="none" stroke={ACCEPTED} stroke-width="1.5" />
+            <text x={cx + 26.0} y={tag_y - 5.0} font-family={MONO} font-weight="400" font-size="19" fill={ACCEPTED}>"cached once"</text>
+            <rect x={cx + 260.0} y={tag_y - 13.0} width="22" height="4" fill={CANDIDATE} />
+            <text x={cx + 294.0} y={tag_y - 5.0} font-family={MONO} font-weight="400" font-size="19" fill={CANDIDATE}>{format!("redrawn: {redrawn} frames")}</text>
         </g>
     )
 }
@@ -194,17 +195,17 @@ fn lanes(local: f32) -> Svgr<'static> {
             .collect();
         fframes::svgr!(
             <g>
-                <text x={tx} y={ly} font-family={MONO} font-weight="600" font-size="18" letter-spacing="3" fill={color}>{label}</text>
-                <text x={tx + tw} y={ly} text-anchor="end" font-family={MONO} font-weight="500" font-size="19" fill={SLATE}>{format!("{made} frames")}</text>
-                <rect x={tx} y={ly + 20.0} width={tw} height="96" rx="6" fill="none" stroke={LINE} stroke-width="2" />
+                <text x={tx} y={ly} font-family={MONO} font-weight="500" font-size="18" letter-spacing="3" fill={color}>{label}</text>
+                <text x={tx + tw} y={ly} text-anchor="end" font-family={MONO} font-weight="400" font-size="19" fill={SECONDARY}>{format!("{made} frames")}</text>
+                <rect x={tx} y={ly + 20.0} width={tw} height="96" rx={RADIUS} fill={EMPHASIS} />
                 {tiles}
             </g>
         )
     };
     fframes::svgr!(
         <g>
-            {lane(0, "CPU BACKEND", SLATE, 2.0)}
-            {lane(1, "SKIA ON THE GPU", SKY, 20.0)}
+            {lane(0, "CPU BACKEND", SECONDARY, 2.0)}
+            {lane(1, "SKIA ON THE GPU", CANDIDATE, 20.0)}
         </g>
     )
 }
@@ -221,11 +222,15 @@ fn encoder(local: f32) -> Svgr<'static> {
         .enumerate()
         .map(|(k, s)| {
             let bx = x + 60.0 + k as f32 * (bw + gap);
-            let color = if k == 3 { ACCENT } else { TEXT };
+            let (fill, color) = if k == 3 {
+                (ACCEPTED_SURFACE, ACCEPTED)
+            } else {
+                (PANEL, TEXT)
+            };
             fframes::svgr!(
                 <g>
-                    <rect x={bx} y={by} width={bw} height="90" rx="10" fill={BG} stroke={LINE} stroke-width="2" />
-                    <text x={bx + bw / 2.0} y={by + 53.0} text-anchor="middle" font-family={MONO} font-weight="600" font-size="22" fill={color}>{*s}</text>
+                    <rect x={bx} y={by} width={bw} height="90" rx={RADIUS} fill={fill} stroke={if k == 3 { ACCEPTED } else { CONTROL }} stroke-width="1.5" />
+                    <text x={bx + bw / 2.0} y={by + 53.0} text-anchor="middle" font-family={MONO} font-weight="500" font-size="22" fill={color}>{*s}</text>
                 </g>
             )
         })
@@ -238,7 +243,7 @@ fn encoder(local: f32) -> Svgr<'static> {
             let u = t * 0.9 - k as f32 * 0.12;
             (0.0..1.0).contains(&u).then(|| {
                 let px = x + 60.0 + bw / 2.0 + u * span;
-                fframes::svgr!(<rect x={px - 7.0} y={by + 112.0} width="14" height="14" rx="2" fill={ACCENT} />)
+                fframes::svgr!(<rect x={px - 7.0} y={by + 112.0} width="14" height="14" rx="2" fill={CANDIDATE} />)
             })
         })
         .collect();
@@ -248,22 +253,22 @@ fn encoder(local: f32) -> Svgr<'static> {
     fframes::svgr!(
         <g>
             {boxes}
-            <rect x={x + 60.0 + bw / 2.0} y={by + 118.0} width={span} height="2" fill={LINE} />
+            <rect x={x + 60.0 + bw / 2.0} y={by + 118.0} width={span} height="2" fill={CONTROL} opacity="0.6" />
             {packets}
             <g opacity="0.8">
-                <rect x={dx} y={dy} width={w - 120.0} height="110" rx="10" fill="none" stroke={MUTED} stroke-width="2" stroke-dasharray="8 8" />
-                <text x={dx + 30.0} y={dy + 48.0} font-family={MONO} font-weight="500" font-size="20" fill={MUTED}>"frame_0001.png  frame_0002.png  frame_0003.png  …"</text>
-                <text x={dx + 30.0} y={dy + 84.0} font-family={MONO} font-weight="500" font-size="18" fill={MUTED}>"the usual detour: every frame written to disk, then read back"</text>
-                <rect x={dx + 20.0} y={dy + 40.0} width={((w - 160.0) * strike).max(0.5)} height="3" opacity={if strike > 0.0 { 1.0 } else { 0.0 }} fill={RED} />
+                <rect x={dx} y={dy} width={w - 120.0} height="110" rx={RADIUS} fill="none" stroke={CONTROL} stroke-width="1.5" stroke-dasharray="8 8" />
+                <text x={dx + 30.0} y={dy + 48.0} font-family={MONO} font-weight="400" font-size="20" fill={SECONDARY}>"frame_0001.png  frame_0002.png  frame_0003.png  …"</text>
+                <text x={dx + 30.0} y={dy + 84.0} font-family={SANS} font-weight="400" font-size="22" fill={SECONDARY}>"the usual detour: every frame written to disk, then read back"</text>
+                <rect x={dx + 20.0} y={dy + 40.0} width={((w - 160.0) * strike).max(0.5)} height="3" opacity={if strike > 0.0 { 1.0 } else { 0.0 }} fill={FAILURE} />
             </g>
         </g>
     )
 }
 
-/// Frames of this video, and the seconds its own render took on 8 CPU cores of an
-/// Intel Xeon (Icelake) with no GPU: Skia on the CPU, encoded to H.264.
+/// Frames of this video, and the seconds its own render took on 32 CPU cores (four
+/// 8-core Intel Xeon Icelake sockets) with no GPU: Skia on the CPU, encoded to H.264.
 const THIS_FRAMES: f32 = 7401.0;
-const THIS_RENDER_S: f32 = 72.0;
+const THIS_RENDER_S: f32 = 26.0;
 
 /// This very video, rendered on a CPU: the time, and the frames per second.
 fn proof(lb: f32) -> Svgr<'static> {
@@ -281,26 +286,27 @@ fn proof(lb: f32) -> Svgr<'static> {
     let no = prog(lb, PROOF + 3.5, PROOF + 4.1);
     fframes::svgr!(
         <g>
-            <g opacity={eo} transform={at(0.0, ed)}>{eyebrow(120.0, 168.0, "06 / MEASURED", ACCENT)}</g>
-            <g opacity={ho} transform={at(0.0, hd)}>{headline(116.0, 250.0, "This video, rendered.", 64.0, TEXT)}</g>
+            <g opacity={eo} transform={at(0.0, ed)}>{act_eyebrow("06", "MEASURED")}</g>
+            <g opacity={ho} transform={at(0.0, hd)}>{headline(116.0, 252.0, "This video, rendered.", 72.0, TEXT)}</g>
             <g opacity={ho}>
-                <text x="120" y="320" font-family={MONO} font-weight="500" font-size="24" fill={SLATE}>"7,401 frames at 1920×1080, 60 fps, to an H.264 MP4. No GPU."</text>
+                <text x="120" y="326" font-family={SANS} font-weight="400" font-size="30" fill={SECONDARY}>"7,401 frames at 1920×1080, 60 fps, to an H.264 MP4. No GPU."</text>
             </g>
             <g opacity={so} transform={at(0.0, sd)}>
-                <text x="120" y="560" font-family={DISPLAY} font-size="168" letter-spacing="-5" fill={ACCENT}>{format!("{seconds:.1} s")}</text>
-                <text x="128" y="620" font-family={MONO} font-weight="600" font-size="20" letter-spacing="3" fill={SLATE}>"TO RENDER AND ENCODE ALL OF IT"</text>
+                <text x="112" y="560" font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="180" letter-spacing="-7.2" fill={ACTION}>{format!("{seconds:.1} s")}</text>
+                <text x="124" y="620" font-family={MONO} font-weight="500" font-size="20" letter-spacing="3" fill={SECONDARY}>"TO RENDER AND ENCODE ALL OF IT"</text>
             </g>
             <g opacity={fo} transform={at(0.0, fd)}>
-                <text x="1060" y="560" font-family={DISPLAY} font-size="168" letter-spacing="-5" fill={TEXT}>{format!("{:.0}", fps * count.min(1.0))}</text>
-                <text x="1068" y="620" font-family={MONO} font-weight="600" font-size="20" letter-spacing="3" fill={SLATE}>"FRAMES EVERY SECOND"</text>
+                <text x="1052" y="560" font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="180" letter-spacing="-7.2" fill={TEXT}>{format!("{:.0}", fps * count.min(1.0))}</text>
+                <text x="1064" y="620" font-family={MONO} font-weight="500" font-size="20" letter-spacing="3" fill={SECONDARY}>"FRAMES EVERY SECOND"</text>
             </g>
             <g opacity={so}>
-                <rect x="120" y="700" width="1680" height="12" rx="6" fill={LINE} />
-                <rect x="120" y="700" width={(1680.0 * count).max(0.5)} height="12" rx="6" fill={ACCENT} />
-                <text x="120" y="756" font-family={MONO} font-weight="600" font-size="22" fill={TEXT}>{format!("{frames} / 7401 frames")}</text>
+                <rect x="120" y="700" width="1680" height="8" rx="4" fill={EMPHASIS} />
+                <rect x="120" y="700" width={(1680.0 * count).max(0.5)} height="8" rx="4" fill={ACTION} />
+                <text x="120" y="756" font-family={MONO} font-weight="500" font-size="22" fill={TEXT}>{format!("{frames} / 7401 frames")}</text>
             </g>
             <g opacity={no}>
-                <text x="120" y="900" font-family={MONO} font-weight="500" font-size="17" letter-spacing="2" fill={MUTED}>"SKIA ON 8 CPU CORES · INTEL XEON (ICELAKE) · ONE RUN"</text>
+                <text x="120" y="900" font-family={MONO} font-weight="400" font-size="17" letter-spacing="2" fill={SECONDARY}>"SKIA ON 32 CPU CORES · INTEL XEON (ICELAKE) · ONE RUN"</text>
+
             </g>
         </g>
     )

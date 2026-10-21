@@ -31,7 +31,6 @@ struct Layer {
     number: &'static str,
     name: &'static str,
     lines: [&'static str; 2],
-    color: &'static str,
 }
 
 const LAYERS: [Layer; 3] = [
@@ -39,26 +38,25 @@ const LAYERS: [Layer; 3] = [
         number: "01",
         name: "SHADERS & 3D",
         lines: ["Lit 3D scenes and SkSL", "or Shadertoy shaders."],
-        color: SKY,
     },
     Layer {
         number: "02",
         name: "VECTOR SHAPES",
         lines: ["svgr! trees and Lottie files,", "sharp at 1080p or 4K."],
-        color: ACCENT,
     },
     Layer {
         number: "03",
         name: "TIMELINE",
         lines: ["timeline! says when each", "thing moves, on the beat."],
-        color: TEXT,
     },
 ];
 
-/// The plane transform: flat at `tilt` 0, isometric at 1, raised by `lift` px.
+/// The plane transform: flat at `tilt` 0, at 1 the axonometric projection of
+/// the system's stacks, `matrix(.866 .5 -.866 .5)`, raised by `lift` px.
 fn plane(tilt: f32, lift: f32) -> (f32, f32, f32, f32, f32, f32) {
-    let k = 0.6;
-    let iso = (0.707 * k, 0.389 * k, -0.707 * k, 0.389 * k);
+    let k = 0.5;
+    let iso = (0.866 * k, 0.5 * k, -0.866 * k, 0.5 * k);
+
     let flat = (0.82, 0.0, 0.0, 0.82);
     let a = lerp(flat.0, iso.0, tilt);
     let b = lerp(flat.1, iso.1, tilt);
@@ -106,11 +104,11 @@ impl Scene for LayersScene {
                 1 => shapes_layer(lb),
                 _ => timeline_layer(lb),
             };
-            let edge = if named == Some(i) { layer.color } else { LINE };
+            let edge = if named == Some(i) { ACTION } else { CONTROL };
             planes.push(fframes::svgr!(
                 <g transform={matrix(m)} opacity={dim}>
                     {body}
-                    <rect x="0" y="0" width={PW} height={PH} fill="none" stroke={edge} stroke-width="3" />
+                    <rect x="0" y="0" width={PW} height={PH} fill="none" stroke={edge} stroke-width="2.5" />
                 </g>
             ));
 
@@ -127,11 +125,11 @@ impl Scene for LayersScene {
                 };
                 labels.push(fframes::svgr!(
                     <g opacity={shown * o}>
-                        <path d={format!("M{px} {py} L{} {ly} L{lx} {ly}", lx - 40.0)} fill="none" stroke={layer.color} stroke-width="1.5" />
-                        <circle cx={px} cy={py} r="5" fill={layer.color} />
-                        <text x={lx + 16.0} y={ly - 22.0} font-family={MONO} font-weight="600" font-size="18" letter-spacing="3" fill={layer.color}>{layer.number}" "{layer.name}</text>
-                        <text x={lx + 16.0} y={ly + 12.0} font-family={MONO} font-weight="500" font-size="20" fill={TEXT}>{layer.lines[0]}</text>
-                        <text x={lx + 16.0} y={ly + 40.0} font-family={MONO} font-weight="500" font-size="20" fill={SLATE}>{layer.lines[1]}</text>
+                        <path d={format!("M{px} {py} L{} {ly} L{lx} {ly}", lx - 40.0)} fill="none" stroke={ACTION} stroke-width="1.5" />
+                        <circle cx={px} cy={py} r="5" fill={ACTION} />
+                        <text x={lx + 16.0} y={ly - 22.0} font-family={MONO} font-weight="500" font-size="18" letter-spacing="3" fill={ACTION}>{layer.number}" "{layer.name}</text>
+                        <text x={lx + 16.0} y={ly + 14.0} font-family={SANS} font-weight="400" font-size="24" fill={TEXT}>{layer.lines[0]}</text>
+                        <text x={lx + 16.0} y={ly + 44.0} font-family={SANS} font-weight="400" font-size="24" fill={SECONDARY}>{layer.lines[1]}</text>
                     </g>
                 ));
             }
@@ -142,12 +140,12 @@ impl Scene for LayersScene {
         let (ho, hd) = rise(lb, 0.4, 40.0);
         fframes::svgr!(
             <g opacity={leave(lb, 31.4)}>
-                <g opacity={eo} transform={at(0.0, ed)}>{eyebrow(120.0, 168.0, "05 / HOW IT WORKS", ACCENT)}</g>
-                <g opacity={ho} transform={at(0.0, hd)}>{headline(116.0, 250.0, "Three layers, one frame.", 64.0, TEXT)}</g>
+                <g opacity={eo} transform={at(0.0, ed)}>{act_eyebrow("05", "HOW IT WORKS")}</g>
+                <g opacity={ho} transform={at(0.0, hd)}>{headline(116.0, 252.0, "Three layers, one frame.", 72.0, TEXT)}</g>
                 {planes}
                 {labels}
                 {loupe}
-                {caption(lb, MERGE.1, 31.0, "Every frame:", "shaders, vector shapes and a timeline, drawn together.", ACCENT)}
+                {caption(lb, MERGE.1, 31.0, "Every frame:", "shaders, vector shapes and a timeline, drawn together.", ACTION)}
             </g>
         )
     }
@@ -161,12 +159,13 @@ fn shader_layer(frame: &Frame) -> Svgr<'static> {
             .float("uDepth", 0.8)
             .float("uDensity", 16.0)
             .float("uBright", 0.9)
-            .color("uInk", Color::hex("#3a3834"))
-            .color("uHot", Color::hex(SKY)),
+            .color("uInk", Color::hex(CANDIDATE_SURFACE))
+            .color("uHot", Color::hex(COMMAND)),
     );
+    // the shader draws on the inverse surface, like the code that makes it
     fframes::svgr!(
         <g>
-            <rect x="0" y="0" width={PW} height={PH} fill={BG} />
+            <rect x="0" y="0" width={PW} height={PH} fill={INVERSE} />
             <image href={layer.href()} x="0" y="0" width={PW} height={PH} />
         </g>
     )
@@ -177,15 +176,15 @@ fn shapes_layer(lb: f32) -> Svgr<'static> {
     let spin = lb * 12.0;
     fframes::svgr!(
         <g>
-            <rect x="0" y="0" width={PW} height={PH} fill={PANEL} opacity="0.25" />
-            <text x="70" y="250" font-family={DISPLAY} font-size="96" letter-spacing="-3" fill={TEXT}>"Launch day"</text>
-            <text x="74" y="310" font-family={MONO} font-weight="500" font-size="26" fill={SLATE}>"FFrames Studio"</text>
-            <circle cx="770" cy="200" r="90" fill="none" stroke={ACCENT} stroke-width="10" />
+            <rect x="0" y="0" width={PW} height={PH} fill={PANEL} opacity="0.88" />
+            <text x="70" y="250" font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="104" letter-spacing="-4.2" fill={TEXT}>"Launch day"</text>
+            <text x="74" y="310" font-family={SANS} font-weight="400" font-size="30" fill={SECONDARY}>"FFrames Studio"</text>
+            <circle cx="770" cy="200" r="90" fill="none" stroke={CANDIDATE} stroke-width="10" />
             <g transform={format!("rotate({spin} 770 200)")}>
-                <rect x="730" y="160" width="80" height="80" fill={ACCENT} />
+                <rect x="730" y="160" width="80" height="80" fill={CANDIDATE} />
             </g>
-            <rect x="74" y="380" width="260" height="64" rx="32" fill={ACCENT} />
-            <text x="204" y="421" text-anchor="middle" font-family={MONO} font-weight="600" font-size="24" fill={BG}>"Get it"</text>
+            <rect x="74" y="380" width="260" height="64" rx={RADIUS} fill={ACTION} />
+            <text x="204" y="421" text-anchor="middle" font-family={SANS} font-weight="500" font-size="26" fill={ON_ACTION}>"Get it"</text>
         </g>
     )
 }
@@ -208,12 +207,12 @@ fn timeline_layer(lb: f32) -> Svgr<'static> {
                         x - 9.0,
                         y
                     );
-                    fframes::svgr!(<path d={d} fill={ACCENT} />)
+                    fframes::svgr!(<path d={d} fill={TEXT} />)
                 })
                 .collect();
             fframes::svgr!(
                 <g>
-                    <rect x="80" y={y - 2.0} width="800" height="4" fill={LINE} />
+                    <rect x="80" y={y - 2.0} width="800" height="4" fill={EMPHASIS} />
                     {keys}
                 </g>
             )
@@ -221,8 +220,9 @@ fn timeline_layer(lb: f32) -> Svgr<'static> {
         .collect();
     fframes::svgr!(
         <g>
-            <text x="80" y="90" font-family={MONO} font-weight="500" font-size="24" fill={TEXT}>"at 0.0, animate 80 => 0, Easing::Spring"</text>
-            <text x="80" y="130" font-family={MONO} font-weight="500" font-size="24" fill={SLATE}>"at 2.0 => 2.6, animate 1 => 0, Easing::EaseIn"</text>
+            <rect x="0" y="0" width={PW} height={PH} fill={PANEL} opacity="0.88" />
+            <text x="80" y="90" font-family={MONO} font-weight="400" font-size="24" fill={TEXT}>"at 0.0, animate 80 => 0, Easing::Spring"</text>
+            <text x="80" y="130" font-family={MONO} font-weight="400" font-size="24" fill={SECONDARY}>"at 2.0 => 2.6, animate 1 => 0, Easing::EaseIn"</text>
             {rows}
             <rect x={head} y="340" width="3" height="150" fill={TEXT} />
         </g>
@@ -243,10 +243,11 @@ fn loupe(lb: f32) -> Svgr<'static> {
             <clipPath id="loupe"><circle cx={cx} cy={cy} r={r} /></clipPath>
             <circle cx={cx} cy={cy} r={r} fill={PANEL} />
             <g clip-path="url(#loupe)">
-                <text x={cx} y={cy + 72.0} text-anchor="middle" font-family={DISPLAY} font-size="260" fill={TEXT}>"a"</text>
+                <text x={cx} y={cy + 72.0} text-anchor="middle" font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="280" fill={TEXT}>"a"</text>
             </g>
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke={ACCENT} stroke-width="3" />
-            <text x={cx} y={cy + r + 36.0} text-anchor="middle" font-family={MONO} font-weight="600" font-size="16" letter-spacing="3" fill={ACCENT}>"STILL SHARP"</text>
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={CANDIDATE} stroke-width="2.5" />
+            <text x={cx} y={cy + r + 36.0} text-anchor="middle" font-family={MONO} font-weight="500" font-size="16" letter-spacing="3" fill={CANDIDATE}>"STILL SHARP"</text>
+
         </g>
     )
 }

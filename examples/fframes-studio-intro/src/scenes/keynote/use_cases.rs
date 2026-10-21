@@ -60,10 +60,11 @@ static FLIP: LazyLock<WordFlip> = LazyLock::new(|| {
         pause: (first_flip - typing_end).max(0.0),
         cycle: frames(SPOTLIGHTS[2] - SPOTLIGHTS[1]),
         caret: false,
-        font_size: 64.0,
-        font_weight: 400,
+        font_size: 72.0,
+        font_weight: DISPLAY_WEIGHT,
+        tracking_em: -0.04,
         color: TEXT.to_owned(),
-        accent_color: ACCENT.to_owned(),
+        accent_color: ACTION.to_owned(),
         ..Default::default()
     })
 });
@@ -189,13 +190,13 @@ impl Scene for UseCasesScene {
             .enumerate()
             .map(|(i, c)| {
                 let until = SPOTLIGHTS.get(i + 1).copied().unwrap_or(GRID_AGAIN) - 0.6;
-                caption(lb, SPOTLIGHTS[i] + 0.4, until, c.lead, c.caption, ACCENT)
+                caption(lb, SPOTLIGHTS[i] + 0.4, until, c.lead, c.caption, ACTION)
             })
             .collect();
         let (eo, ed) = rise(lb, 0.0, 24.0);
         fframes::svgr!(
             <g opacity={leave(lb, 47.4)}>
-                <g opacity={eo} transform={at(0.0, ed)}><text x="960" y="150" text-anchor="middle" font-family={MONO} font-weight="600" font-size="22" letter-spacing="4" fill={ACCENT}>"04 / USE CASES"</text></g>
+                <g opacity={eo} transform={at(0.0, ed)}><text x="960" y="150" text-anchor="middle" font-family={MONO} font-weight="500" font-size="22" letter-spacing="3" fill={ACTION}>"04"<tspan fill={SECONDARY}>" / USE CASES"</tspan></text></g>
                 {comp::show(&*FLIP, &frame, (lb - TYPE_FROM) * BEAT, (0.0, -320.0, 1920.0, 1080.0))}
                 {cards}
                 {captions}
@@ -236,13 +237,15 @@ fn card(
     let label_y = y + h - strip_h / 2.0 + title_size * 0.36;
     fframes::svgr!(
         <g opacity={o} transform={at(0.0, d)}>
-            {rounded(&id, r, 14.0, body)}
-            <rect x={x} y={y + h - strip_h} width={w} height={strip_h} fill={BG} opacity="0.82" />
-            <text x={x + 20.0} y={label_y} font-family={MONO} font-weight="600" font-size={title_size * 0.75} fill={ACCENT}>{number}</text>
-            <text x={x + 20.0 + title_size * 1.8} y={label_y} font-family={DISPLAY} font-size={title_size} fill={TEXT}>{c.title}</text>
-            <text x={x + w - 20.0} y={label_y} text-anchor="end" font-family={MONO} font-weight="500" font-size={title_size * 0.7} fill={SLATE} opacity={if small { 0.0 } else { 1.0 }}>{c.source}</text>
-            <text x={x + w - 20.0} y={y + 30.0} text-anchor="end" font-family={MONO} font-weight="500" font-size="14" fill={SLATE} opacity={if i == 1 && !small { 0.8 } else { 0.0 }}>"Emoji: Noto Animated Emoji, CC BY 4.0 · lottie-ios, Apache 2.0"</text>
-            <rect x={x} y={y} width={w} height={h} rx="14" fill="none" stroke={if active { ACCENT } else { LINE }} stroke-width="2" />
+            {rounded(&id, r, RADIUS, body)}
+            <rect x={x} y={y + h - strip_h} width={w} height={strip_h} fill={BG} opacity="0.94" />
+            <rect x={x} y={y + h - strip_h} width={w} height="1.5" fill={RULE} />
+            <text x={x + 20.0} y={label_y} font-family={MONO} font-weight="500" font-size={title_size * 0.75} fill={ACTION}>{number}</text>
+            <text x={x + 20.0 + title_size * 1.8} y={label_y} font-family={SANS} font-weight="500" font-size={title_size} letter-spacing={-title_size * 0.02} fill={TEXT}>{c.title}</text>
+            <text x={x + w - 20.0} y={label_y} text-anchor="end" font-family={MONO} font-weight="400" font-size={title_size * 0.7} fill={SECONDARY} opacity={if small { 0.0 } else { 1.0 }}>{c.source}</text>
+            <text x={x + w - 20.0} y={y + 30.0} text-anchor="end" font-family={MONO} font-weight="400" font-size="14" fill={SECONDARY} opacity={if i == 1 && !small { 0.8 } else { 0.0 }}>"Emoji: Noto Animated Emoji, CC BY 4.0 · lottie-ios, Apache 2.0"</text>
+            <rect x={x} y={y} width={w} height={h} rx={RADIUS} fill="none" stroke={if active { ACTION } else { RULE }} stroke-width={if active { 2.0 } else { RULE_WIDTH }} />
+
         </g>
     )
 }

@@ -36,7 +36,7 @@ static TITLE: LazyLock<TrackingIn> = LazyLock::new(|| {
         text: "FFrames Studio".to_owned(),
         font_size: 116.0,
         color: TEXT.to_owned(),
-        font_weight: 400,
+        font_weight: DISPLAY_WEIGHT,
         start_tracking: 0.16,
         ..Default::default()
     })
@@ -55,16 +55,16 @@ static PROMPT_ZOOM: LazyLock<PromptZoom> = LazyLock::new(|| {
         zoom: 1.55,
         focus_x: 0.5,
         focus_y: 0.47,
-        accent_color: Some(ACCENT.to_owned()),
-        mode: Mode::Dark,
+        accent_color: Some(ACTION.to_owned()),
+        mode: Mode::Light,
         theme: Some(theme()),
-        font_family: Some(MONO.to_owned()),
+        font_family: Some(SANS.to_owned()),
         duration: 300,
         ..Default::default()
     })
 });
 
-/// The components' dark palette on the colours of this video.
+/// The components' light palette on the tokens of this cut.
 fn theme() -> UiTheme {
     UiTheme {
         background: BG.to_owned(),
@@ -73,41 +73,40 @@ fn theme() -> UiTheme {
         card_foreground: TEXT.to_owned(),
         popover: PANEL.to_owned(),
         popover_foreground: TEXT.to_owned(),
-        primary: ACCENT.to_owned(),
-        primary_foreground: BG.to_owned(),
-        secondary: "#1c1b19".to_owned(),
-        muted: "#1c1b19".to_owned(),
-        muted_foreground: SLATE.to_owned(),
-        accent: "#1c1b19".to_owned(),
-        border: LINE.to_owned(),
-        input: LINE.to_owned(),
-        ring: ACCENT.to_owned(),
-        font_family: Some(MONO.to_owned()),
-        ..UiTheme::dark()
+        primary: ACTION.to_owned(),
+        primary_foreground: ON_ACTION.to_owned(),
+        secondary: EMPHASIS.to_owned(),
+        secondary_foreground: TEXT.to_owned(),
+        muted: EMPHASIS.to_owned(),
+        muted_foreground: SECONDARY.to_owned(),
+        accent: EMPHASIS.to_owned(),
+        accent_foreground: TEXT.to_owned(),
+        border: RULE.to_owned(),
+        input: CONTROL.to_owned(),
+        ring: ACTION.to_owned(),
+        radius: RADIUS,
+        font_family: Some(SANS.to_owned()),
+        ..UiTheme::light()
     }
 }
 
 struct Card {
     title: &'static str,
     lines: [&'static str; 2],
-    accent: &'static str,
 }
 
 const CARDS: [Card; 3] = [
     Card {
         title: "Write or prompt",
         lines: ["Scenes are plain Rust,", "or ask Codex or Claude Code."],
-        accent: ACCENT,
     },
     Card {
         title: "See it instantly",
         lines: ["A native preview at 60 fps", "with a timeline to scrub."],
-        accent: ACCENT,
     },
     Card {
         title: "Render in seconds",
         lines: ["Skia draws on the GPU and", "frames go straight to MP4."],
-        accent: SKY,
     },
 ];
 
@@ -124,10 +123,10 @@ impl Scene for SolutionScene {
             let (so, sd) = rise(lb, 1.5, 20.0);
             fframes::svgr!(
                 <g opacity={leave(lb, PROMPT_AT - 0.5)}>
-                    <g transform={at(0.0, -40.0)}>{eyebrow(960.0 - 140.0, 380.0, "02 / THE SOLUTION", ACCENT)}</g>
+                    <g transform={at(0.0, -40.0)}><text x="960" y="380" text-anchor="middle" font-family={MONO} font-weight="500" font-size="22" letter-spacing="3" fill={ACTION}>"02"<tspan fill={SECONDARY}>" / THE SOLUTION"</tspan></text></g>
                     {comp::show(&*TITLE, &frame, lb * BEAT, (0.0, -110.0, 1920.0, 1080.0))}
                     <g opacity={so} transform={at(0.0, sd)}>
-                        <text x="960" y="680" text-anchor="middle" font-family={MONO} font-weight="500" font-size="28" fill={SLATE}>"Programmatic video, with a desktop studio."</text>
+                        <text x="960" y="680" text-anchor="middle" font-family={SANS} font-weight="400" font-size="34" letter-spacing="-0.5" fill={SECONDARY}>"Programmatic video, with a desktop studio."</text>
                     </g>
                 </g>
             )
@@ -166,7 +165,7 @@ impl Scene for SolutionScene {
             fframes::svgr!(
                 <g opacity={prog(lb, WINDOW_AT - 0.3, WINDOW_AT)} transform={zoom(960.0, y + h / 2.0, s)}>
                     {window(x, y, w, h, "FFrames Studio — launch-video")}
-                    {rounded("solution-player", (x + 2.0, y + 44.0, w - 4.0, h - 46.0), 12.0, player)}
+                    {rounded("solution-player", (x + 2.0, y + 44.0, w - 4.0, h - 46.0), RADIUS, player)}
                 </g>
             )
         } else {
@@ -187,7 +186,7 @@ impl Scene for SolutionScene {
                     {window}
                     {cards}
                 </g>
-                {caption(lb, WINDOW_AT + 1.0, CARDS_AT - 0.5, "FFrames Studio:", "describe the video, watch it play, export it.", ACCENT)}
+                {caption(lb, WINDOW_AT + 1.0, CARDS_AT - 0.5, "FFrames Studio:", "describe the video, watch it play, export it.", ACTION)}
             </g>
         )
     }
@@ -209,11 +208,11 @@ fn card(lb: f32, i: usize, c: &Card) -> Svgr<'static> {
     fframes::svgr!(
         <g opacity={o} transform={zoom(x + w / 2.0, y + h / 2.0, s)}>
             {panel(x, y, w, h)}
-            <rect x={x + 1.0} y={y} width={((w - 2.0) * trace).max(0.5)} height="3" fill={c.accent} opacity={if trace > 0.0 { 1.0 } else { 0.0 }} />
-            <text x={x + 32.0} y={y + 52.0} font-family={MONO} font-weight="600" font-size="20" letter-spacing="3" fill={c.accent}>{number}</text>
-            <text x={x + 32.0} y={y + 112.0} font-family={DISPLAY} font-size="40" letter-spacing="-1" fill={TEXT}>{c.title}</text>
-            <text x={x + 32.0} y={y + 160.0} font-family={MONO} font-weight="500" font-size="21" fill={SLATE}>{c.lines[0]}</text>
-            <text x={x + 32.0} y={y + 192.0} font-family={MONO} font-weight="500" font-size="21" fill={SLATE}>{c.lines[1]}</text>
+            <rect x={x} y={y} width={(w * trace).max(0.5)} height="2" fill={ACTION} opacity={if trace > 0.0 { 1.0 } else { 0.0 }} />
+            <text x={x + 32.0} y={y + 52.0} font-family={MONO} font-weight="500" font-size="20" letter-spacing="3" fill={ACTION}>{number}</text>
+            <text x={x + 32.0} y={y + 112.0} font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="42" letter-spacing="-1.6" fill={TEXT}>{c.title}</text>
+            <text x={x + 32.0} y={y + 160.0} font-family={SANS} font-weight="400" font-size="24" fill={SECONDARY}>{c.lines[0]}</text>
+            <text x={x + 32.0} y={y + 192.0} font-family={SANS} font-weight="400" font-size="24" fill={SECONDARY}>{c.lines[1]}</text>
         </g>
     )
 }

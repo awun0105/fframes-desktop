@@ -41,9 +41,9 @@ static STRIKE: LazyLock<StrikeThrough> = LazyLock::new(|| {
         struck: "slow".to_owned(),
         after: "way.".to_owned(),
         text_color: TEXT.to_owned(),
-        strike_color: RED.to_owned(),
+        strike_color: FAILURE.to_owned(),
         stroke_width: 7.0,
-        font_family: Some(DISPLAY.to_owned()),
+        font_family: Some(SANS.to_owned()),
         ..Default::default()
     })
 });
@@ -112,9 +112,9 @@ impl Scene for ProblemScene {
         let (eo, ed) = rise(lb, -4.2, 24.0);
         let captions = fframes::svgr!(
             <g>
-                {caption(lb, 1.0, 15.0, "Traditional editors:", "every change means dragging keyframes by hand.", RED)}
-                {caption(lb, 17.0, 31.0, "Browser frameworks:", "a web page is screenshotted for every frame.", RED)}
-                {caption(lb, 33.0, RECAP - 1.0, "AI coding agents:", "great at code, blind to what they render.", RED)}
+                {caption(lb, 1.0, 15.0, "Traditional editors:", "every change means dragging keyframes by hand.", FAILURE)}
+                {caption(lb, 17.0, 31.0, "Browser frameworks:", "a web page is screenshotted for every frame.", FAILURE)}
+                {caption(lb, 33.0, RECAP - 1.0, "AI coding agents:", "great at code, blind to what they render.", FAILURE)}
             </g>
         );
         let strike = comp::show(
@@ -128,7 +128,7 @@ impl Scene for ProblemScene {
                 <g opacity={1.0 - recap} transform={zoom(960.0, 600.0, 1.0 - 0.06 * recap)}>
                     {smear}
                     {screens}
-                    <g opacity={eo} transform={at(0.0, ed)}>{eyebrow(120.0, 168.0, "01 / THE PROBLEM", ACCENT)}</g>
+                    <g opacity={eo} transform={at(0.0, ed)}>{act_eyebrow("01", "THE PROBLEM")}</g>
                 </g>
                 {captions}
                 <g opacity={leave(lb, 47.4)}>{strike}</g>
@@ -140,7 +140,7 @@ impl Scene for ProblemScene {
 /// A screen's headline under the act label.
 fn screen_title(lb: f32, from: f32, text: &'static str) -> Svgr<'static> {
     let (o, d) = rise(lb, from, 40.0);
-    fframes::svgr!(<g opacity={o} transform={at(0.0, d)}>{headline(116.0, 250.0, text, 64.0, TEXT)}</g>)
+    fframes::svgr!(<g opacity={o} transform={at(0.0, d)}>{headline(116.0, 252.0, text, 72.0, TEXT)}</g>)
 }
 
 /// A keyframe diamond.
@@ -153,14 +153,6 @@ fn diamond(x: f32, y: f32, r: f32, fill: &'static str) -> Svgr<'static> {
         x - r
     );
     fframes::svgr!(<path d={d} fill={fill} />)
-}
-
-/// A mouse pointer with its tip at (`x`, `y`).
-fn pointer(x: f32, y: f32) -> Svgr<'static> {
-    fframes::svgr!(
-        <path transform={at(x, y)} d="M0 0 L0 30 L8 23 L14 36 L20 33 L14 21 L24 21 Z"
-              fill={TEXT} stroke={BG} stroke-width="2" stroke-linejoin="round" />
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +196,12 @@ fn editor(lb: f32) -> Svgr<'static> {
             let dx = if i == 0 { drag } else { 0.0 };
             let x = lane_x + 20.0 + hash(n * 1.3 + i as f32) * (lane_w - 40.0) + dx;
             let s = snap(appear).min(1.2);
-            let fill = if i == 0 && lb > 4.0 { RED } else { SLATE };
+            // the title track is the client's target, every one of its keys moves by hand
+            let fill = if i == 0 && lb > 4.0 {
+                SELECTION
+            } else {
+                SECONDARY
+            };
             keys.push(diamond(x, row_y(i) + 17.0, 6.0 * s, fill));
         }
     }
@@ -216,13 +213,13 @@ fn editor(lb: f32) -> Svgr<'static> {
             let y = row_y(i);
             let cx = lane_x + 10.0 + hash(i as f32 * 5.1) * 300.0 + if i == 0 { drag } else { 0.0 };
             let cw = 500.0 + hash(i as f32 * 2.3) * 700.0;
-            let fill = if i == 0 { "#2a1517" } else { "#1c1b19" };
-            let stroke = if i == 0 { RED } else { LINE };
+            let fill = if i == 0 { SELECTION_SURFACE } else { PANEL };
+            let stroke = if i == 0 { SELECTION } else { RULE };
             fframes::svgr!(
                 <g>
-                    <text x={x0 + 24.0} y={y + 23.0} font-family={MONO} font-weight="500" font-size="16" fill={MUTED}>{*name}</text>
-                    <rect x={lane_x} y={y + 2.0} width={lane_w} height="30" fill="#100f0e" />
-                    <rect x={cx} y={y + 4.0} width={cw} height="26" rx="4" fill={fill} stroke={stroke} stroke-width="1.5" />
+                    <text x={x0 + 24.0} y={y + 23.0} font-family={MONO} font-weight="500" font-size="16" fill={SECONDARY}>{*name}</text>
+                    <rect x={lane_x} y={y + 2.0} width={lane_w} height="30" fill={EMPHASIS} />
+                    <rect x={cx} y={y + 4.0} width={cw} height="26" rx={RADIUS} fill={fill} stroke={stroke} stroke-width="1.5" />
                 </g>
             )
         })
@@ -232,7 +229,7 @@ fn editor(lb: f32) -> Svgr<'static> {
     let ticks: Vec<Svgr> = (0..=24)
         .map(|k| {
             let x = lane_x + k as f32 * lane_w / 24.0;
-            fframes::svgr!(<rect x={x} y={y0 + 278.0} width="1" height={if k % 4 == 0 { 14.0 } else { 7.0 }} fill={MUTED} />)
+            fframes::svgr!(<rect x={x} y={y0 + 278.0} width="1" height={if k % 4 == 0 { 14.0 } else { 7.0 }} fill={SECONDARY} />)
         })
         .collect();
 
@@ -251,18 +248,18 @@ fn editor(lb: f32) -> Svgr<'static> {
             {screen_title(lb, -3.5, "Hours of keyframes.")}
             {window(x0, y0, w, h, "Untitled Project – Edit")}
             // the program monitor
-            <rect x={x0 + 560.0} y={y0 + 66.0} width="560" height="200" fill="#070707" stroke={LINE} stroke-width="2" />
-            <text x={x0 + 840.0} y={y0 + 182.0} text-anchor="middle" font-family={DISPLAY} font-size="46" fill={TEXT}>{word}</text>
-            <text x={x0 + 24.0} y={y0 + 90.0} font-family={MONO} font-weight="500" font-size="16" fill={MUTED}>"00:00:12:24"</text>
-            <text x={x0 + w - 24.0} y={y0 + 90.0} text-anchor="end" font-family={MONO} font-weight="600" font-size="16" letter-spacing="2" fill={RED}>{count}</text>
+            <rect x={x0 + 560.0} y={y0 + 66.0} width="560" height="200" fill={EMPHASIS} />
+            <text x={x0 + 840.0} y={y0 + 182.0} text-anchor="middle" font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="46" fill={TEXT}>{word}</text>
+            <text x={x0 + 24.0} y={y0 + 90.0} font-family={MONO} font-weight="500" font-size="16" fill={SECONDARY}>"00:00:12:24"</text>
+            <text x={x0 + w - 24.0} y={y0 + 90.0} text-anchor="end" font-family={MONO} font-weight="500" font-size="16" letter-spacing="2" fill={FAILURE}>{count}</text>
             {ticks}
             {clips}
             {keys}
-            <rect x={playhead} y={y0 + 276.0} width="2" height="300" fill={ACCENT} />
+            <rect x={playhead} y={y0 + 276.0} width="2" height="300" fill={TEXT} />
             <g opacity={note} transform={at(0.0, (1.0 - snap(lb - 3.0)) * 20.0)}>
-                <rect x={x0 + 1250.0} y={y0 + 120.0} width="340" height="96" rx="8" fill="#1a0f12" stroke={RED} stroke-width="2" />
-                <text x={x0 + 1272.0} y={y0 + 156.0} font-family={MONO} font-weight="600" font-size="16" letter-spacing="2" fill={RED}>"CLIENT NOTE"</text>
-                <text x={x0 + 1272.0} y={y0 + 190.0} font-family={MONO} font-weight="500" font-size="19" fill={TEXT}>"Change one word, please."</text>
+                <rect x={x0 + 1250.0} y={y0 + 120.0} width="340" height="96" rx={RADIUS} fill={SELECTION_SURFACE} stroke={SELECTION} stroke-width="1.5" />
+                <text x={x0 + 1272.0} y={y0 + 156.0} font-family={MONO} font-weight="500" font-size="16" letter-spacing="2" fill={SELECTION}>"CLIENT NOTE"</text>
+                <text x={x0 + 1272.0} y={y0 + 190.0} font-family={SANS} font-weight="400" font-size="22" fill={TEXT}>"Change one word, please."</text>
             </g>
             {if lb > 3.6 { pointer(cursor_x, row_y(0) + 14.0) } else { Svgr::empty() }}
         </g>
@@ -285,17 +282,15 @@ fn browser(lb: f32) -> Svgr<'static> {
     let total = BROWSER_FRAMES as usize;
     let status = format!("RENDERING FRAME {frame_no} / {total}  ·  ONE SCREENSHOT PER FRAME");
     let progress = frame_no as f32 / total as f32;
-    let source = "HEADLESS BROWSER · SCREENSHOTS → PNG FILES → ENCODER";
-
     // the page being photographed: a title card whose circle moves a little per frame
     let t = frame_no as f32 * 0.08;
     let (px, py, pw, ph) = (150.0, 396.0, 940.0, 446.0);
     let page = fframes::svgr!(
         <g>
-            <rect x={px} y={py} width={pw} height={ph} fill="#f1eee8" />
-            <circle cx={px + 300.0 + t.sin() * 120.0} cy={py + 230.0} r="110" fill={ACCENT} />
-            <text x={px + 480.0} y={py + 220.0} font-family={DISPLAY} font-size="58" fill="#0b0b0b">"Launch day"</text>
-            <text x={px + 482.0} y={py + 268.0} font-family={MONO} font-weight="500" font-size="22" fill="#4a4743">"localhost:3000"</text>
+            <rect x={px} y={py} width={pw} height={ph} fill={EMPHASIS} />
+            <circle cx={px + 300.0 + t.sin() * 120.0} cy={py + 230.0} r="110" fill={CANDIDATE} />
+            <text x={px + 480.0} y={py + 220.0} font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="58" fill={TEXT}>"Launch day"</text>
+            <text x={px + 482.0} y={py + 268.0} font-family={MONO} font-weight="400" font-size="22" fill={SECONDARY}>"localhost:3000"</text>
         </g>
     );
 
@@ -310,10 +305,10 @@ fn browser(lb: f32) -> Svgr<'static> {
             let tt = (96 + k + 1) as f32 * 0.08;
             fframes::svgr!(
                 <g opacity={arrive} transform={at((1.0 - arrive) * -200.0, 0.0)}>
-                    <rect x={x} y={y} width="180" height="100" fill="#e3dfd8" />
-                    <circle cx={x + 60.0 + tt.sin() * 24.0} cy={y + 50.0} r="22" fill={ACCENT} />
-                    <rect x={x + 96.0} y={y + 40.0} width="64" height="10" fill="#0b0b0b" />
-                    <text x={x} y={y + 118.0} font-family={MONO} font-weight="500" font-size="13" fill={MUTED}>{format!("frame_{:04}.png", 96 + k + 1)}</text>
+                    <rect x={x} y={y} width="180" height="100" fill={EMPHASIS} stroke={RULE} stroke-width="1" />
+                    <circle cx={x + 60.0 + tt.sin() * 24.0} cy={y + 50.0} r="22" fill={CANDIDATE} />
+                    <rect x={x + 96.0} y={y + 40.0} width="64" height="10" fill={TEXT} />
+                    <text x={x} y={y + 118.0} font-family={MONO} font-weight="500" font-size="13" fill={SECONDARY}>{format!("frame_{:04}.png", 96 + k + 1)}</text>
                 </g>
             )
         })
@@ -324,18 +319,46 @@ fn browser(lb: f32) -> Svgr<'static> {
         <g>
             {screen_title(lb, 16.0, "One screenshot at a time.")}
             {window(120.0, 300.0, 1000.0, 570.0, "Chromium – headless")}
-            <rect x="150" y="354" width="940" height="30" rx="15" fill="#0f0e0d" stroke={LINE} stroke-width="1.5" />
-            <text x="620" y="375" text-anchor="middle" font-family={MONO} font-weight="500" font-size="15" fill={SLATE}>{url}</text>
+            <rect x="150" y="354" width="940" height="30" rx={RADIUS} fill={EMPHASIS} />
+            <text x="620" y="375" text-anchor="middle" font-family={MONO} font-weight="400" font-size="15" fill={SECONDARY}>{url}</text>
             {page}
-            <rect x={px} y={py} width={pw} height={ph} fill="#ffffff" opacity={flash * 0.85} />
-            <text x="1190" y="350" font-family={MONO} font-weight="600" font-size="16" letter-spacing="2" fill={MUTED}>"SCREENSHOTS"</text>
+            // the camera flash of the screenshot
+            <rect x={px} y={py} width={pw} height={ph} fill={BG} opacity={flash * 0.9} />
+            <text x="1190" y="350" font-family={MONO} font-weight="500" font-size="16" letter-spacing="2" fill={SECONDARY}>"SCREENSHOTS"</text>
             {thumbs}
-            <text x="120" y="904" font-family={MONO} font-weight="600" font-size="18" letter-spacing="2" fill={RED}>{status}</text>
-            <rect x="120" y="918" width="1680" height="6" rx="3" fill={LINE} />
-            <rect x="120" y="918" width={1680.0 * progress} height="6" rx="3" fill={RED} />
-            <text x="1800" y="904" text-anchor="end" font-family={MONO} font-weight="500" font-size="15" letter-spacing="1" fill={MUTED}>{source}</text>
+            <text x="120" y="904" font-family={MONO} font-weight="500" font-size="18" letter-spacing="2" fill={FAILURE}>{status}</text>
+            <rect x="120" y="918" width="1680" height="6" rx="3" fill={EMPHASIS} />
+            <rect x="120" y="918" width={1680.0 * progress} height="6" rx="3" fill={FAILURE} />
+            {detour(1800.0, 904.0)}
         </g>
     )
+}
+
+/// `HEADLESS BROWSER · SCREENSHOTS → PNG FILES → ENCODER`, right-aligned at
+/// `right`, with the arrows drawn (the Latin subset of Geist Mono has none).
+fn detour(right: f32, y: f32) -> Svgr<'static> {
+    // Geist Mono advances 0.6 em per character, plus the letter spacing
+    let advance = 15.0 * 0.6 + 1.0;
+    let gap = 4.0 * advance;
+    let parts = ["HEADLESS BROWSER · SCREENSHOTS", "PNG FILES", "ENCODER"];
+    let width = parts
+        .iter()
+        .map(|p| p.chars().count() as f32 * advance)
+        .sum::<f32>()
+        + gap * 2.0;
+    let mut x = right - width;
+    let mut out = Vec::new();
+    for (k, part) in parts.iter().enumerate() {
+        if k > 0 {
+            out.push(arrow(x + advance, x + gap - advance, y - 5.0, SECONDARY));
+            x += gap;
+        }
+        out.push(fframes::svgr!(
+            <text x={x} y={y} font-family={MONO} font-weight="400" font-size="15" letter-spacing="1" fill={SECONDARY}>{*part}</text>
+        ));
+        x += part.chars().count() as f32 * advance;
+    }
+    fframes::svgr!(<g>{out}</g>)
 }
 
 // ---------------------------------------------------------------------------
@@ -377,9 +400,9 @@ fn agent(lb: f32) -> Svgr<'static> {
             let s = 1.0 + (1.0 - snap(lb - at_beat)) * 0.08;
             fframes::svgr!(
                 <g opacity={o} transform={zoom(x + w / 2.0, y + h / 2.0, s)}>
-                    <rect x={*x} y={*y} width={*w} height={*h} fill="none" stroke={RED} stroke-width="3" stroke-dasharray="10 6" />
-                    <rect x={*x} y={y - 30.0} width={text.len() as f32 * 12.0 + 20.0} height="28" fill={RED} />
-                    <text x={x + 10.0} y={y - 10.0} font-family={MONO} font-weight="600" font-size="16" letter-spacing="1.5" fill={BG}>{*text}</text>
+                    <rect x={*x} y={*y} width={*w} height={*h} fill="none" stroke={FAILURE} stroke-width="3" stroke-dasharray="10 6" />
+                    <rect x={*x} y={y - 30.0} width={text.len() as f32 * 12.0 + 20.0} height="28" fill={FAILURE} />
+                    <text x={x + 10.0} y={y - 10.0} font-family={MONO} font-weight="500" font-size="16" letter-spacing="1.5" fill={ON_ACTION}>{*text}</text>
                 </g>
             )
         })
@@ -388,7 +411,7 @@ fn agent(lb: f32) -> Svgr<'static> {
         .map(|k| {
             let v = (hash(k as f32 * 2.7) * 0.7 + 0.35).min(1.0);
             let hh = v * 54.0;
-            let fill = if v > 0.92 { RED } else { SKY };
+            let fill = if v > 0.92 { FAILURE } else { INVERSE_SECONDARY };
             fframes::svgr!(<rect x={fx + 70.0 + k as f32 * 17.0} y={fy + 492.0 - hh} width="10" height={hh} fill={fill} />)
         })
         .collect();
@@ -398,29 +421,32 @@ fn agent(lb: f32) -> Svgr<'static> {
             {screen_title(lb, 32.0, "The agent can’t see the video.")}
             // the chat
             {panel(120.0, 320.0, 680.0, 540.0)}
-            <text x="148" y="364" font-family={MONO} font-weight="600" font-size="16" letter-spacing="2" fill={MUTED}>"AGENT"</text>
-            <rect x="260" y="396" width="510" height="84" rx="12" fill="#1f1d1b" />
-            <text x="284" y="446" font-family={MONO} font-weight="500" font-size="21" fill={TEXT}>{ask}</text>
+            <text x="148" y="364" font-family={MONO} font-weight="500" font-size="16" letter-spacing="2" fill={SECONDARY}>"AGENT"</text>
+            // the user's request is the selection pink of supplied context
+            <rect x="260" y="396" width="510" height="84" rx={RADIUS} fill={SELECTION_SURFACE} />
+            <text x="284" y="446" font-family={SANS} font-weight="400" font-size="24" fill={TEXT}>{ask}</text>
             <g opacity={prog(lb, reply_at - 0.3, reply_at)}>
-                <rect x="150" y="510" width="560" height="120" rx="12" fill="none" stroke={LINE} stroke-width="2" />
-                <text x="174" y="556" font-family={MONO} font-weight="500" font-size="21" fill={TEXT}>{typed("Done! I wrote the scenes", reply_at, lb, 16.0)}</text>
-                <text x="174" y="592" font-family={MONO} font-weight="500" font-size="21" fill={TEXT}>{if reply.len() > 24 { &reply[24..] } else { "" }}</text>
+                <rect x="150" y="510" width="560" height="120" rx={RADIUS} fill="none" stroke={RULE} stroke-width="1.5" />
+                <text x="174" y="556" font-family={SANS} font-weight="400" font-size="24" fill={TEXT}>{typed("Done! I wrote the scenes", reply_at, lb, 16.0)}</text>
+                <text x="174" y="592" font-family={SANS} font-weight="400" font-size="24" fill={TEXT}>{if reply.len() > 24 { reply[24..].trim_start() } else { "" }}</text>
             </g>
+            // what the agent claims: a file, not a checked video
             <g opacity={rendered}>
-                <rect x="150" y="660" width="300" height="56" rx="10" fill="#0c1a12" stroke={GREEN} stroke-width="2" />
-                <text x="174" y="696" font-family={MONO} font-weight="600" font-size="19" fill={GREEN}>"✓ launch.mp4"</text>
+                <rect x="150" y="660" width="300" height="56" rx={RADIUS} fill={ACCEPTED_SURFACE} />
+                {check(172.0, 690.0, 18.0, ACCEPTED)}
+                <text x="204" y="696" font-family={MONO} font-weight="500" font-size="19" fill={ACCEPTED}>"launch.mp4"</text>
             </g>
             // the frame it rendered
             <g opacity={rendered} transform={at(shake, 0.0)}>
                 <clipPath id="agent-frame"><rect x={fx} y={fy} width={fw} height={fh} /></clipPath>
-                <rect x={fx} y={fy} width={fw} height={fh} fill="#151413" stroke={LINE} stroke-width="2" />
+                <rect x={fx} y={fy} width={fw} height={fh} rx={RADIUS} fill={INVERSE} />
                 <g clip-path="url(#agent-frame)">
-                    <text x={fx + 60.0} y={fy + 210.0} font-family={DISPLAY} font-size="112" letter-spacing="-3" fill={TEXT}>"LAUNCH DAY IS HERE"</text>
-                    <rect x={fx + 70.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={SLATE} stroke-width="3" />
-                    <rect x={fx + 122.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={SLATE} stroke-width="3" />
-                    <rect x={fx + 174.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={SLATE} stroke-width="3" />
-                    <rect x={fx + 250.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={SLATE} stroke-width="3" />
-                    <rect x={fx + 302.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={SLATE} stroke-width="3" />
+                    <text x={fx + 60.0} y={fy + 210.0} font-family={SANS} font-weight={DISPLAY_WEIGHT} font-size="112" letter-spacing="-4" fill={INVERSE_TEXT}>"LAUNCH DAY IS HERE"</text>
+                    <rect x={fx + 70.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={INVERSE_SECONDARY} stroke-width="3" />
+                    <rect x={fx + 122.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={INVERSE_SECONDARY} stroke-width="3" />
+                    <rect x={fx + 174.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={INVERSE_SECONDARY} stroke-width="3" />
+                    <rect x={fx + 250.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={INVERSE_SECONDARY} stroke-width="3" />
+                    <rect x={fx + 302.0} y={fy + 312.0} width="40" height="46" fill="none" stroke={INVERSE_SECONDARY} stroke-width="3" />
                     {meter}
                 </g>
                 {marks}

@@ -5,6 +5,8 @@
 //! and where to get it, with real renders of other examples and real output of
 //! the CLI tools. The 9:16 and short cuts keep their own story. Everything sits
 //! on the beat grid of the soundtrack of `examples/fframes-intro` (see `beat.rs`).
+//! The 16:9 cut is drawn in the Editorial Engineering system of
+//! `docs/design/README.md` (`scenes/keynote/look.rs`).
 //! `cargo run --release -p fframes-studio-intro -- timeline` lists the scenes.
 
 pub mod beat;
@@ -74,7 +76,7 @@ impl Video for StudioIntroVideo {
     const FPS: usize = FPS;
     const WIDTH: usize = WIDTH;
     const HEIGHT: usize = HEIGHT;
-    const BACKGROUND_COLOR: Color = Color::BLACK;
+    const BACKGROUND_COLOR: Color = Color::WHITE;
 
     fn duration(&self) -> Duration<'_> {
         Duration::Auto
@@ -98,19 +100,13 @@ impl Video for StudioIntroVideo {
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
-        let b = gbeat(&frame);
-        let grain = SHADERS.grain.draw(
-            &frame,
-            ShaderUniforms::new()
-                .float("uGrain", 0.05)
-                .float("uVignette", 0.5),
-        );
+        // a quiet paper canvas: no grain, vignette, flashes or glitches, the
+        // motion of the figures carries the beat
         fframes::svgr!(
             <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
                 <rect width="1920" height="1080" fill={keynote::look::BG} />
-                {energy_long(&frame, ctx, b)}
-                <image href={grain.href()} x="0" y="0" width="1920" height="1080" />
-                {hud_long(&frame, b)}
+                {ctx.render_scenes(&frame)}
+                {hud_long(&frame, gbeat(&frame))}
             </svg>
         )
     }
@@ -191,7 +187,7 @@ const DROPS: &[f32] = &[48.0, 96.0, 144.0, 208.0];
 /// The HUD of the 16:9 cut: crop marks, the product, the act and a hairline of
 /// progress.
 fn hud_long(frame: &Frame, b: f32) -> Svgr<'static> {
-    use keynote::look::{ACCENT, MUTED, SLATE};
+    use keynote::look::{ACTION, CONTROL, RULE, label};
     let appear = prog(gsec(frame), 0.1, 0.5) * (1.0 - prog(b, LONG_END - 1.0, LONG_END - 0.5));
     if appear <= 0.0 {
         return Svgr::empty();
@@ -204,59 +200,11 @@ fn hud_long(frame: &Frame, b: f32) -> Svgr<'static> {
     let progress = (gsec(frame) / LONG_TOTAL_SECONDS * 1788.0).max(0.5);
     fframes::svgr!(
         <g opacity={appear}>
-            {corners(36.0, 36.0, 1848.0, 1008.0, 26.0, MUTED, 2.0)}
-            {label(66.0, 80.0, "FFRAMES STUDIO".to_owned(), SLATE, 20.0, "start")}
-            {label(1854.0, 1016.0, act.to_owned(), SLATE, 20.0, "end")}
-            <rect x="66" y="1034" width="1788" height="1" fill={MUTED} opacity="0.4" />
-            <rect x="66" y="1033" width={progress} height="3" fill={ACCENT} />
-        </g>
-    )
-}
-
-/// Act cuts of the 16:9 cut, which glitch for three frames.
-const ACT_CUTS: &[f32] = &[48.0, 80.0, 128.0, 176.0, 208.0];
-/// Drops of the 16:9 cut, which flash.
-const LONG_DROPS: &[f32] = &[48.0, 96.0, 176.0, 240.0];
-/// Where the full beat plays in the 16:9 cut and the picture pumps with the kick.
-const LONG_PUMPING: &[(f32, f32)] = &[(48.0, 80.0), (96.0, 192.0), (240.0, 264.0)];
-
-fn energy_long<'a>(frame: &Frame, ctx: &FFramesContext<'a, '_>, b: f32) -> Svgr<'a> {
-    let pumping = LONG_PUMPING.iter().any(|(s, e)| (*s..*e).contains(&b));
-    let pump = if pumping { pulse(b, 9.0) } else { 0.0 };
-    let s = 1.0 + pump * 0.004;
-    let flash = LONG_DROPS
-        .iter()
-        .map(|d| if b >= *d { (-(b - d) * 8.0).exp() } else { 0.0 })
-        .fold(0.0_f32, f32::max);
-
-    // a cut glitches for 3 frames: the picture splits in bands pushed sideways
-    let since_cut = ACT_CUTS
-        .iter()
-        .map(|c| (b - c) * BEAT * FPS as f32)
-        .find(|f| *f >= 0.0 && *f < 3.0);
-    let scene = if let Some(f) = since_cut {
-        let bands: Vec<Svgr> = (0..6)
-            .map(|i| {
-                let y = i as f32 * 180.0;
-                let dx = (hash(i as f32 * 13.0 + f.floor() * 7.0) - 0.5) * 140.0 * (1.0 - f / 3.0);
-                let id = format!("glitch-{i}");
-                let url = format!("url(#{id})");
-                fframes::svgr!(
-                    <g>
-                        <clipPath id={id.clone()}><rect x="0" y={y} width="1920" height="180" /></clipPath>
-                        <g clip-path={url} transform={format!("translate({dx} 0)")}>{ctx.render_scenes(frame)}</g>
-                    </g>
-                )
-            })
-            .collect();
-        fframes::svgr!(<g>{bands}</g>)
-    } else {
-        ctx.render_scenes(frame)
-    };
-    fframes::svgr!(
-        <g>
-            <g transform={format!("translate(960 540) scale({s}) translate(-960 -540)")}>{scene}</g>
-            <rect width="1920" height="1080" fill={keynote::look::TEXT} opacity={flash * 0.16} />
+            {corners(36.0, 36.0, 1848.0, 1008.0, 26.0, CONTROL, 1.5)}
+            {label(66.0, 80.0, "FFRAMES STUDIO", "start")}
+            {label(1854.0, 1016.0, act, "end")}
+            <rect x="66" y="1034" width="1788" height="1.5" fill={RULE} />
+            <rect x="66" y="1033" width={progress} height="3" fill={ACTION} />
         </g>
     )
 }
