@@ -1085,6 +1085,64 @@ line-height: 1.8;
 margin: 25px 0 0;
 max-width: 720px;
 }
+.faq {
+padding-block: 105px;
+display: grid;
+grid-template-columns: 43% 57%;
+scroll-margin-top: 75px;
+}
+.faq .eyebrow {
+color: var(--muted);
+margin-bottom: 24px;
+}
+.faq h2 {
+font-size: 36px;
+padding-right: 30px;
+}
+.faq-list {
+border-top: 1px solid var(--line);
+}
+.faq details {
+border-bottom: 1px solid var(--line);
+}
+.faq summary {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 20px;
+padding: 20px 0;
+font-size: 16px;
+font-weight: 600;
+cursor: pointer;
+list-style: none;
+}
+.faq summary::-webkit-details-marker {
+display: none;
+}
+.faq summary::after {
+content: "+";
+flex: none;
+font: 20px/1 var(--mono);
+color: var(--accent);
+transition: transform 0.15s;
+}
+.faq details[open] summary::after {
+transform: rotate(45deg);
+}
+.faq summary:focus-visible {
+outline: 2px solid var(--accent);
+outline-offset: 4px;
+}
+.faq details p {
+max-width: 620px;
+margin: 0 0 22px;
+font-size: 13px;
+line-height: 1.8;
+color: var(--muted);
+}
+.faq code {
+font: 12px var(--mono);
+}
 footer {
 padding: 38px 0 25px;
 }
@@ -1404,6 +1462,18 @@ max-width: 450px;
 }
 .install-section {
 padding: 48px 0 30px;
+}
+.faq {
+padding-block: 55px;
+grid-template-columns: 1fr;
+gap: 28px;
+}
+.faq h2 {
+font-size: 33px;
+letter-spacing: -1.2px;
+}
+.faq summary {
+font-size: 15px;
 }
 .install-top {
 display: block;
@@ -6242,6 +6312,79 @@ display: none;
             is unsigned. Linux runs the tests in CI. macOS is not fully tested
             yet.
           </p>
+        </div>
+      </section>
+      <section class="faq container" id="faq" aria-labelledby="faq-title">
+        <div class="faq-intro">
+          <p class="eyebrow">QUESTIONS</p>
+          <h2 id="faq-title">Frequently<br /><span>asked.</span></h2>
+        </div>
+        <div class="faq-list">
+          <details>
+            <summary>What is fframes Studio?</summary>
+            <p>
+              A native desktop app for making videos in code. You describe a
+              video, watch it, select a scene or an object in the preview, and
+              ask your coding agent to change it. The agent edits an ordinary
+              fframes Rust project; Studio handles setup, compilation, preview,
+              validation, history and export.
+            </p>
+          </details>
+          <details>
+            <summary>Is it free?</summary>
+            <p>
+              Yes. Studio and the fframes framework it builds on are open
+              source under the MIT license. You bring your own coding agent.
+            </p>
+          </details>
+          <details>
+            <summary>Which coding agents can I connect?</summary>
+            <p>
+              Claude Code and OpenAI Codex connect through their own CLIs. Pi,
+              Antigravity and any other agent that speaks the Agent Client
+              Protocol, such as OpenCode, connect through ACP. Sign-in stays with
+              each agent; Studio stores only the names of sign-in variables,
+              never their values.
+            </p>
+          </details>
+          <details>
+            <summary>Do I need Rust or FFmpeg installed?</summary>
+            <p>
+              No. Rust, FFmpeg and fframes come with the managed SDK, which the
+              Setup screen installs step by step. On Windows the only extra is
+              Visual Studio Build Tools with C++ and clang, and the install
+              script offers to set that up for you.
+            </p>
+          </details>
+          <details>
+            <summary>Which platforms are supported?</summary>
+            <p>
+              Windows x64 is the tested platform, and the preview installer is
+              unsigned. Linux runs the test suite in CI. macOS is not fully
+              tested yet.
+            </p>
+          </details>
+          <details>
+            <summary>Who owns the project files?</summary>
+            <p>
+              You do. A project is a plain Rust crate in a folder you choose,
+              and its source stays the authority for the video. Importing an
+              existing fframes project keeps your files and Git history and
+              adds only <code>studio.json</code>. Checkpoints and agent history
+              stay on your computer.
+            </p>
+          </details>
+          <details>
+            <summary>Can the agent break my video?</summary>
+            <p>
+              Every agent edit is built and checked before it reaches your
+              project: rendered frames, boundary frames and audio. Under manual
+              review you read the diff and can turn files off before you apply
+              it, and <b>Undo last agent edit</b> reverts an accepted change. A
+              permission policy decides what the agent may do on its own, from
+              asking every time to allowing edits inside the working copy.
+            </p>
+          </details>
         </div>
       </section>
     </main>

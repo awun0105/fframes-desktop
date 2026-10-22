@@ -1079,6 +1079,64 @@ line-height: 1.8;
 margin: 25px 0 0;
 max-width: 720px;
 }
+.faq {
+padding-block: 105px;
+display: grid;
+grid-template-columns: 43% 57%;
+scroll-margin-top: 75px;
+}
+.faq .eyebrow {
+color: var(--muted);
+margin-bottom: 24px;
+}
+.faq h2 {
+font-size: 36px;
+padding-right: 30px;
+}
+.faq-list {
+border-top: 1px solid var(--line);
+}
+.faq details {
+border-bottom: 1px solid var(--line);
+}
+.faq summary {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 20px;
+padding: 20px 0;
+font-size: 16px;
+font-weight: 600;
+cursor: pointer;
+list-style: none;
+}
+.faq summary::-webkit-details-marker {
+display: none;
+}
+.faq summary::after {
+content: "+";
+flex: none;
+font: 20px/1 var(--mono);
+color: var(--accent);
+transition: transform 0.15s;
+}
+.faq details[open] summary::after {
+transform: rotate(45deg);
+}
+.faq summary:focus-visible {
+outline: 2px solid var(--accent);
+outline-offset: 4px;
+}
+.faq details p {
+max-width: 620px;
+margin: 0 0 22px;
+font-size: 13px;
+line-height: 1.8;
+color: var(--muted);
+}
+.faq code {
+font: 12px var(--mono);
+}
 footer {
 padding: 38px 0 25px;
 }
@@ -1398,6 +1456,18 @@ max-width: 450px;
 }
 .install-section {
 padding: 48px 0 30px;
+}
+.faq {
+padding-block: 55px;
+grid-template-columns: 1fr;
+gap: 28px;
+}
+.faq h2 {
+font-size: 33px;
+letter-spacing: -1.2px;
+}
+.faq summary {
+font-size: 15px;
 }
 .install-top {
 display: block;
