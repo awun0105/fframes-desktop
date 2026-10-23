@@ -16,6 +16,11 @@ pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
 pub use crate::data::BarChart;
 pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
 pub use crate::geometry::{Geometry, Look, Shape};
+#[cfg(feature = "latex")]
+pub use crate::latex::{
+    Anchor, ChemEq, Formula, FormulaView, MathTex, Part, Tex, TexEngine, TexError, TexTemplate,
+    TransformMatchingTex,
+};
 pub use crate::media::KenBurns;
 pub use crate::motion::{self, Beat};
 pub use crate::overlay::{

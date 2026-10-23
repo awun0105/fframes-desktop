@@ -13,10 +13,10 @@ use super::enter_alpha;
 
 /// Cubic segments per subpath a morph runs on at least: a square's corners then meet a
 /// circle's diagonals.
-const MORPH_SEGMENTS: usize = 16;
+pub(crate) const MORPH_SEGMENTS: usize = 16;
 
 /// Paint between `a` and `b`; a missing paint is the other one, transparent.
-fn lerp_paint(a: Option<Color>, b: Option<Color>, t: f32) -> Option<Color> {
+pub(crate) fn lerp_paint(a: Option<Color>, b: Option<Color>, t: f32) -> Option<Color> {
     match (a, b) {
         (None, None) => None,
         (Some(a), None) => Some(a.apply_progress(&a.with_alpha(0), t)),
@@ -27,7 +27,7 @@ fn lerp_paint(a: Option<Color>, b: Option<Color>, t: f32) -> Option<Color> {
 
 /// The shape `t` of the way from `from` to `to`, on paths aligned with
 /// [`paths::align_points`].
-fn morph(from: &Shape, to: &Shape, a: &BezPath, b: &BezPath, t: f32) -> Shape {
+pub(crate) fn morph(from: &Shape, to: &Shape, a: &BezPath, b: &BezPath, t: f32) -> Shape {
     Shape {
         path: paths::lerp_aligned(f64::from(t), a, b),
         fill: lerp_paint(from.fill, to.fill, t),

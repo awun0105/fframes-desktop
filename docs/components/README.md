@@ -8,6 +8,8 @@ fframes-kit` from `components/`).
 | --- | --- |
 | [components.md](components.md) | the import, the component model, time containers, fades, rate functions, `Anim`, `Theme`, writing your own component, a whole video |
 
+LaTeX formulas (feature `latex`) need a TeX installation: see [latex-setup.md](../latex-setup.md).
+
 Commands, from `components/` (or `just -f components/justfile <recipe>` from the root):
 
 - `just test`: unit tests and these doctests

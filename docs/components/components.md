@@ -251,6 +251,87 @@ let chart = BarChart { bars: vec![("a".into(), 10.0), ("b".into(), 20.0)], ..Bar
 assert_eq!(chart.grown(1, 0.0), 0.0);
 ```
 
+## Formulas
+
+Feature `latex`: `fframes-kit = { features = ["latex"] }`. The kit runs the TeX installed on
+the machine, as Manim does: `latex` makes a DVI file, `dvisvgm --no-fonts` turns it into
+paths, and each glyph becomes a `<path>`. Any package your TeX has works: amsmath, mhchem,
+physics, siunitx, TikZ, chemfig, circuitikz. Installing and checking TeX on Windows, Ubuntu
+and macOS is in [latex-setup.md](../latex-setup.md).
+
+| Type | What it is |
+| --- | --- |
+| `TexEngine::new(cache_dir)` | finds `latex`, `xelatex`, `lualatex` and `dvisvgm`, runs them with a timeout (120 s, `with_timeout`) and keeps every SVG in `cache_dir` |
+| `MathTex::new(tex)` | math mode in an `align*` environment (`&` aligns, `\\` breaks a line), `.template(..)`, `.typeset(&engine) -> Result<Formula, TexError>` |
+| `Tex::new(text)` | text mode: `$..$`, whole TikZ pictures, anything a document body holds |
+| `ChemEq::new("2H2 + O2 -> 2H2O")` | `\ce{..}` with the chemistry template, one part per species |
+| `TexTemplate` | `compiler` (`TexCompiler::Latex`, `XeLatex`, `LuaLatex`), `preamble`, `body_wrapper` (with `YourTextHere`); `default()` (standalone, amsmath, amssymb), `chemistry()`, `physics()`, `tikz()`, `add_to_preamble` |
+| `Formula` | the glyphs in TeX points, `part_bbox(part)`, `size_pt()`; implements `Geometry` |
+| `FormulaView` | the component: `of`, `size` (pixels of 10 pt text, 48), `x`, `y`, `anchor` (`Anchor::TopLeft`, `Center`, ...), `color` (replaces black, keeps the colours the source sets), `color_map: &[(Part, Color)]`, `opacity`, `enter`, `exit`, `emphasis`, `emphasize: Option<Part>` (the part `emphasis` applies to), `key` |
+| `TransformMatchingTex` | `from`, `to` (two `FormulaView`s), `delay`, `run_time`, `rate_func` |
+
+Rules:
+
+- Typeset in the video's constructor or a `OnceLock`, never in `render_frame`. A new formula
+  takes about a second; one from the cache takes a file read.
+- `{{ }}` marks a part, as in Manim: `{{a}}^2 + {{b}}^2 = {{c}}^2` has the parts 0, 1 and 2
+  (`Part::Index`). `\part{name}{..}` names one (`Part::Label("name")`). A part is a braced
+  group, so `{{+}}` is spaced like an ordinary symbol and a part cannot hold an `&`.
+- `TransformMatchingTex` matches labels first, then parts with the same source, then glyphs
+  outside parts with the same outline. Matched glyphs move, the rest fades out and in.
+- `ChemEq` makes each species a part: separate `+` and arrows with spaces.
+- Commit the cache directory. Open it at a path that does not depend on the working directory,
+  `concat!(env!("CARGO_MANIFEST_DIR"), "/tex-cache")`, and machines without TeX (CI, other
+  people) render from it. A formula that is neither cached nor typesettable is a
+  `TexError::NotInstalled` that names it.
+- The web editor cannot run TeX. Draw `Formula::unset(source)` when `typeset` fails: the
+  view then shows the source as text, and `inspect` lists it as the missing font
+  `fframes-kit formula not typeset`.
+- With `emphasize` and a `Write` entrance, the part and the rest of the formula each stagger
+  their glyphs over the whole `Write`.
+
+```rust
+use std::sync::OnceLock;
+
+use fframes_kit::prelude::*;
+
+struct Formulas {
+    pythagoras: Formula,
+    solved: Formula,
+}
+
+fn typeset() -> Result<Formulas, TexError> {
+    let engine = TexEngine::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tex-cache"));
+    Ok(Formulas {
+        pythagoras: MathTex::new("{{a}}^2 + {{b}}^2 = {{c}}^2").typeset(&engine)?,
+        solved: MathTex::new("{{a}}^2 = {{c}}^2 - {{b}}^2").typeset(&engine)?,
+    })
+}
+
+// filled in the video's constructor: `FORMULAS.get_or_init(typeset)`
+static FORMULAS: OnceLock<Result<Formulas, TexError>> = OnceLock::new();
+
+fn solve<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let Ok(f) = FORMULAS.get_or_init(typeset) else {
+        return Svgr::empty();
+    };
+    let theme = ui.theme;
+    let view = |of| FormulaView {
+        size: 120.0,
+        x: 960.0,
+        y: 540.0,
+        anchor: Anchor::Center,
+        ..FormulaView::new(of).themed(theme)
+    };
+    let map = [(Part::Index(0), theme.colors.accent)];
+    let from = FormulaView { color_map: &map, ..view(&f.pythagoras) };
+    ui.show(TransformMatchingTex { delay: 0.5, ..TransformMatchingTex::new(from, view(&f.solved)) })
+}
+
+let reaction = ChemEq::new("CH4 + 2O2 -> CO2 + 2H2O");
+assert_eq!(fframes_kit::latex::chem_source(reaction.ce).matches("{{").count(), 4);
+```
+
 ## Shapes
 
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,

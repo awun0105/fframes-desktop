@@ -40,6 +40,8 @@
 //! | `Indicate`, `Circumscribe`, `Flash`, `Wiggle` | [`animate`], `emphasis` |
 //! | `Transform`, `ReplacementTransform` | [`animate::Transform`] (`Morph` in the prelude), [`ReplacementTransform`](animate::ReplacementTransform) |
 //! | `MoveAlongPath` | [`MoveAlongPath`](animate::MoveAlongPath) |
+//! | `MathTex`, `Tex`, `TexTemplate` (feature `latex`) | `latex::MathTex`, `latex::Tex`, `latex::TexTemplate`, typeset with a `latex::TexEngine` and drawn by `latex::FormulaView` |
+//! | `TransformMatchingTex` (feature `latex`) | `latex::TransformMatchingTex` |
 
 pub mod anim;
 pub mod animate;

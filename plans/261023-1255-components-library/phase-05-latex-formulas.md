@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Phase 5: LaTeX formulas"
-status: in-progress
+status: completed
 priority: P1
 effort: 4d
 dependencies: [2]
@@ -160,7 +160,7 @@ Editor fallback (wasm32):
 - [x] Parts marking chosen and tested on the three tricky cases
 - [x] Discovery with fake-executable tests and per-OS install messages
 - [x] Runner with timeout and log extraction; cache; SVG to glyphs
-- [ ] `Formula` component, `TransformMatchingTex`, `ChemEq`
-- [ ] Gallery scenes and committed `tex-cache/`
-- [ ] Measurements recorded
-- [ ] `docs/latex-setup.md` and `components.md` formulas section
+- [x] `Formula` component, `TransformMatchingTex`, `ChemEq`
+- [x] Gallery scenes and committed `tex-cache/`
+- [x] Measurements recorded
+- [x] `docs/latex-setup.md` and `components.md` formulas section
