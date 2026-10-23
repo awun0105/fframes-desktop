@@ -22,7 +22,8 @@ pub use crate::explain::{
 pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(feature = "math")]
 pub use crate::kits::math::{
-    AreaUnder, FunctionPlot, Interval, NumberPoint, RiemannSum, Secant, Tangent,
+    AreaUnder, FunctionPlot, Interval, LinearTransform, NumberPoint, Pythagoras, RiemannSum,
+    Secant, Tangent, UnitCircle, VectorSum,
 };
 pub use crate::label::{BraceLabel, Label, Leader};
 #[cfg(feature = "latex")]

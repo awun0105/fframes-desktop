@@ -1,6 +1,7 @@
 //! The math kit's figures, in the order of the plan's table: a point and an interval on a
-//! number line, a plot with a tracer, a tangent and a secant, a Riemann sum and the area
-//! under a graph.
+//! number line, a plot with a tracer, a tangent and a secant, a Riemann sum, the area
+//! under a graph, the unit circle, a linear transformation, a vector sum and the
+//! Pythagorean theorem.
 
 use std::sync::OnceLock;
 
@@ -234,6 +235,79 @@ fn area_under<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{axes}{area}{graph}</g>)
 }
 
+/// The unit circle turning most of the way round, with its cosine and sine.
+fn unit_circle<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static ANGLE: OnceLock<KeyFramesAnimation<f32>> = OnceLock::new();
+    let angle =
+        ANGLE.get_or_init(|| timeline!(at 1.0 => 4.0, animate 0.5_f32 => 5.4, Easing::EaseInOut));
+    let head = title(ui, "UnitCircle");
+    let circle = ui.show(UnitCircle {
+        center: (0.0, -0.4),
+        radius: 2.6,
+        angle: angle.into(),
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.6)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{circle}</g>)
+}
+
+/// A shear applied to the plane, next to its matrix.
+fn linear_transform<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "LinearTransform");
+    let transform = ui.show(LinearTransform {
+        matrix: [[1.0, 1.0], [0.0, 1.0]],
+        center: (-1.5, -0.4),
+        delay: 1.0,
+        run_time: 2.0,
+        matrix_at: (1600.0, 540.0),
+        enter: Some(create(0.0)),
+        matrix_enter: Some(fade(0.6)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{transform}</g>)
+}
+
+/// Three vectors moving tip to tail, then their sum.
+fn vector_sum<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "VectorSum");
+    let sum = ui.show(VectorSum {
+        vectors: vec![(3.0, 1.0), (1.0, 2.0), (-1.5, 1.0)],
+        origin: (-2.5, -2.8),
+        colors: vec![
+            ui.theme.colors.accent,
+            ui.theme.colors.highlight,
+            Color::hex("#5fd68f"),
+        ],
+        labels: vec!["u".into(), "v".into(), "w".into()],
+        resultant_label: "u + v + w".into(),
+        delay: 1.2,
+        run_time: 1.5,
+        enter: Some(create(0.0)),
+        resultant_enter: Some(create(2.9)),
+        labels_enter: Some(fade(0.5)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{sum}</g>)
+}
+
+/// The 3-4-5 triangle with its squares drawn in turn.
+fn pythagoras<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Pythagoras");
+    let mut small = ui.with_space(Space {
+        origin: (960.0, 560.0),
+        unit: 70.0,
+    });
+    let figure = small.show(Pythagoras {
+        corner: (-1.5, -2.4),
+        enter: Some(create(0.0)),
+        squares_enter: [Some(create(0.6)), Some(create(1.2)), Some(create(1.8))],
+        labels_enter: Some(fade(2.6)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("NumberLinePoint", 4.0, number_line_point),
@@ -241,5 +315,9 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("TangentSecant", 4.5, tangent_secant),
         GalleryScene::new("RiemannSum", 4.5, riemann_sum),
         GalleryScene::new("AreaUnder", 3.5, area_under),
+        GalleryScene::new("UnitCircle", 4.5, unit_circle),
+        GalleryScene::new("LinearTransform", 4.0, linear_transform),
+        GalleryScene::new("VectorSum", 4.5, vector_sum),
+        GalleryScene::new("Pythagoras", 4.0, pythagoras),
     ]
 }

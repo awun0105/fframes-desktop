@@ -7,9 +7,11 @@ prelude. Animated values are `ValueTracker`s: a `timeline!` stored in the video 
 with `ui.sample`. Every entry names its scene in the components gallery
 (`cargo run --release -p components-gallery -- strip <Scene> -n 8`).
 
-Most figures are overlays. They take the mapping of the line or axes they sit on and draw
-only themselves, so you show the line or axes once and put several figures on it.
-`FunctionPlot` is the exception: it draws its axes too.
+The calculus figures are overlays. They take the mapping of the line or axes they sit on
+and draw only themselves, so you show the line or axes once and put several figures on it.
+`FunctionPlot` draws its axes too. The geometry figures (`UnitCircle`, `LinearTransform`,
+`VectorSum`, `Pythagoras`) stand alone and are placed in units of `ui.space`; show them in
+a `ui.with_space(..)` to draw them at another scale.
 
 ## NumberPoint and Interval
 
@@ -157,4 +159,81 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 // the integral of 0.4 x² from 0 to 3 is 0.4 * 27 / 3
 let area = fframes_kit::kits::math::integral(|x| 0.4 * x * x, None, 0.0, 3.0, 256);
 assert!((area - 3.6).abs() < 1e-3);
+```
+
+## UnitCircle
+
+The unit circle at a tracked angle (radians, counterclockwise): the radius to the point,
+the cosine along the x-axis, the sine up to the point and the angle's arc. With `labels`
+it writes `cos 0.71`, `sin 0.71` and the angle in degrees. The circle and its axes draw
+with `enter`, the moving parts fade in with `parts_enter`. Gallery scene: `UnitCircle`.
+
+```rust
+use fframes::animation::KeyFramesAnimation;
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>, angle: &'a KeyFramesAnimation<f32>) -> Svgr<'a> {
+    ui.show(UnitCircle {
+        center: (0.0, -0.4),
+        radius: 2.6,
+        angle: angle.into(),
+        ..ui.defaults()
+    })
+}
+```
+
+## LinearTransform and VectorSum
+
+`LinearTransform` is Manim's `ApplyMatrix` on a `LinearTransformationScene`. It moves a grid
+and the two basis vectors from the identity to `matrix` over `run_time`, over the
+original grid drawn faintly, and writes the matrix at `matrix_at` with the `Matrix`
+component. `VectorSum` adds vectors tip to tail: each one moves from `origin` to the tip
+of the one before, then the resultant draws with `resultant_enter`. `apply(m, p)` and
+`towards(m, p)` are the matrix product and the interpolation from the identity they use.
+Gallery scenes: `LinearTransform`, `VectorSum`.
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::kits::math::apply;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let shear = ui.show(LinearTransform {
+        matrix: [[1.0, 1.0], [0.0, 1.0]],
+        delay: 1.0,
+        ..ui.defaults()
+    });
+    let sum = ui.show(VectorSum {
+        vectors: vec![(3.0, 1.0), (1.0, 2.0)],
+        labels: vec!["u".into(), "v".into()],
+        resultant_label: "u + v".into(),
+        delay: 3.5,
+        resultant_enter: Some(Create { delay: 5.0, ..Create::default() }.into()),
+        ..ui.defaults()
+    });
+    svgr!(<g>{shear}{sum}</g>)
+}
+
+assert_eq!(apply([[1.0, 1.0], [0.0, 1.0]], (2.0, 3.0)), (5.0, 3.0));
+```
+
+## Pythagoras
+
+A right triangle with legs `a` and `b` and a square on each side, each drawn with its own
+`squares_enter` and labeled with its area (`a² = 9`, `b² = 16`, `c² = 25`). `corner` is the
+right angle. Gallery scene: `Pythagoras`, drawn at 70 pixels per unit.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let create = |delay| Some(EnterAnim::from(Create { delay, ..Create::default() }));
+    let mut small = ui.with_space(Space { origin: (960.0, 560.0), unit: 70.0 });
+    small.show(Pythagoras {
+        corner: (-1.5, -2.4),
+        squares_enter: [create(0.6), create(1.2), create(1.8)],
+        ..ui.defaults()
+    })
+}
+
+assert_eq!(Pythagoras::default().areas(), [9.0, 16.0, 25.0]);
 ```
