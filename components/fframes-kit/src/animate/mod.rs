@@ -19,6 +19,7 @@ pub use create::{Create, DrawBorderThenFill, Uncreate};
 pub use emphasis::{Circumscribe, Flash, Indicate, Wiggle};
 pub use group::{AnimationGroup, LaggedStart, Succession};
 pub use grow::{GrowArrow, GrowFromCenter, GrowFromPoint, SpinInFromNothing};
+#[cfg(feature = "latex")]
 pub(crate) use transform::{MORPH_SEGMENTS, lerp_paint, morph};
 pub use transform::{MoveAlongPath, ReplacementTransform, Transform};
 pub use write::Write;

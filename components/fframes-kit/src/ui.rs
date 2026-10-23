@@ -6,7 +6,7 @@ use fframes::{
     usvgr::svgtree::SvgAttributeValue,
 };
 
-use crate::{anim::Anim, theme::Theme};
+use crate::{anim::Anim, explain::Space, theme::Theme};
 
 /// What a component renders with: the local frame, the time left, the render context and
 /// the theme.
@@ -24,6 +24,9 @@ pub struct Ui<'a, 'c, 'm> {
     pub ctx: &'c FFramesContext<'a, 'm>,
     /// Defaults of every component.
     pub theme: &'a Theme,
+    /// The coordinate system of the explain components, [`Space::FULL_HD`] unless a
+    /// [`Canvas`](crate::explain::Canvas) sets another.
+    pub space: Space,
 }
 
 /// A props struct that renders itself at the current time of a [`Ui`].
@@ -88,6 +91,7 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             duration: Some(ctx.duration_in_frames),
             ctx,
             theme,
+            space: Space::FULL_HD,
         }
     }
 
@@ -111,6 +115,7 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             duration: Some(duration),
             ctx,
             theme,
+            space: Space::FULL_HD,
         }
     }
 
@@ -123,6 +128,18 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             duration,
             ctx: self.ctx,
             theme: self.theme,
+            space: self.space,
+        }
+    }
+
+    /// A `Ui` at the same time whose explain components measure in `space`.
+    pub fn with_space(&self, space: Space) -> Ui<'a, 'c, 'm> {
+        Ui {
+            frame: self.frame.clone(),
+            duration: self.duration,
+            ctx: self.ctx,
+            theme: self.theme,
+            space,
         }
     }
 

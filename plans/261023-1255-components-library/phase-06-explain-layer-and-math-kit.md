@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Phase 6: Explain layer and math kit"
-status: todo
+status: in-progress
 priority: P1
 effort: 5d
 dependencies: [2]
@@ -92,8 +92,8 @@ phase ends, verify both builds; otherwise phase 5 adds the `math,latex` gallery 
 
 ## Todo
 
-- [ ] `Canvas` and `Space`
-- [ ] `Axes`, `NumberPlane`, `NumberLine`, `FunctionGraph`
+- [x] `Canvas` and `Space`
+- [x] `Axes`, `NumberPlane`, `NumberLine`, `FunctionGraph`
 - [ ] `VGroup`, `layout`, `label`, `sim`
 - [ ] `Matrix`, `Table`, `Brace`
 - [ ] The 12 math figures in table order

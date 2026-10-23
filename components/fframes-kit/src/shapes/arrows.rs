@@ -23,7 +23,13 @@ fn tip(path: &mut BezPath, base: Point, point: Point, width: f64) {
 
 /// A shaft from `from` to `to` with tips at the ends that are set. The shaft stops at the
 /// tips so its round cap does not show through them.
-fn straight(from: Point, to: Point, tip_length: f64, tip_width: f64, start: bool) -> BezPath {
+pub(crate) fn straight(
+    from: Point,
+    to: Point,
+    tip_length: f64,
+    tip_width: f64,
+    start: bool,
+) -> BezPath {
     let mut path = BezPath::new();
     let d = to - from;
     let length = d.hypot();

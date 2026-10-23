@@ -25,6 +25,7 @@ mod brace;
 mod remotion;
 
 pub use crate::text_outline::TextPath;
+pub(crate) use arrows::straight;
 pub use arrows::{Arrow, CurvedArrow, DoubleArrow, Vector};
 pub use basic::{
     Annulus, Arc, Circle, DashedLine, Dot, Ellipse, Line, Polygon, Rectangle, RegularPolygon,

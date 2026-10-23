@@ -7,6 +7,7 @@ use kurbo::{Affine, BezPath, Rect, Shape as _};
 use crate::{
     animate::{Emphasis, EnterAnim, ExitAnim, draw_animated},
     geometry::{Geometry, Shape},
+    layout::Anchor,
     theme::Theme,
     ui::{Component, Ui},
 };
@@ -195,39 +196,6 @@ impl Geometry for Formula {
 
     fn bbox(&self) -> Rect {
         Rect::new(0.0, 0.0, self.width, self.height)
-    }
-}
-
-/// Where `(x, y)` is on a box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Anchor {
-    #[default]
-    TopLeft,
-    Top,
-    TopRight,
-    Left,
-    Center,
-    Right,
-    BottomLeft,
-    Bottom,
-    BottomRight,
-}
-
-impl Anchor {
-    /// The anchor point of a `width` x `height` box whose top left is at the origin.
-    pub fn point(self, width: f64, height: f64) -> (f64, f64) {
-        use Anchor::*;
-        let x = match self {
-            TopLeft | Left | BottomLeft => 0.0,
-            Top | Center | Bottom => width / 2.0,
-            TopRight | Right | BottomRight => width,
-        };
-        let y = match self {
-            TopLeft | Top | TopRight => 0.0,
-            Left | Center | Right => height / 2.0,
-            BottomLeft | Bottom | BottomRight => height,
-        };
-        (x, y)
     }
 }
 

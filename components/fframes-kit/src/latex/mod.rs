@@ -14,10 +14,9 @@ mod run;
 mod svg_to_glyphs;
 mod template;
 
+pub use crate::layout::Anchor;
 pub use chem::{ChemEq, chem_source};
-pub use component::{
-    Anchor, Formula, FormulaView, MathTex, PX_PER_PT, Part, Tex, UNSET_FORMULA_FONT,
-};
+pub use component::{Formula, FormulaView, MathTex, PX_PER_PT, Part, Tex, UNSET_FORMULA_FONT};
 pub use discover::{TEX_BIN_VAR, TexTools, install_help};
 pub use engine::TexEngine;
 pub use error::TexError;

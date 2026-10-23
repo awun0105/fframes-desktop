@@ -2,6 +2,7 @@ use crate::GalleryScene;
 
 pub mod animate;
 pub mod core;
+pub mod explain;
 pub mod general;
 pub mod latex;
 pub mod overlay;
@@ -19,6 +20,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(overlay::scenes());
     scenes.extend(general::scenes());
     scenes.extend(latex::scenes());
+    scenes.extend(explain::scenes());
     scenes.extend(shapes::bench_scenes());
     scenes.extend(latex::bench_scenes());
     scenes

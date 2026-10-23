@@ -15,12 +15,18 @@ pub use crate::animate::{
 pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
 pub use crate::data::BarChart;
 pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
+pub use crate::explain::{
+    Area, Axes, AxesMap, Canvas, Func, FunctionGraph, NumberLine, NumberPlane, Range,
+    RiemannRectangles, SampleAt, Space,
+};
 pub use crate::geometry::{Geometry, Look, Shape};
+pub use crate::label::Label;
 #[cfg(feature = "latex")]
 pub use crate::latex::{
-    Anchor, ChemEq, Formula, FormulaView, MathTex, Part, Tex, TexEngine, TexError, TexTemplate,
+    ChemEq, Formula, FormulaView, MathTex, Part, Tex, TexEngine, TexError, TexTemplate,
     TransformMatchingTex,
 };
+pub use crate::layout::Anchor;
 pub use crate::media::KenBurns;
 pub use crate::motion::{self, Beat};
 pub use crate::overlay::{

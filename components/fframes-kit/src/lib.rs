@@ -42,15 +42,22 @@
 //! | `MoveAlongPath` | [`MoveAlongPath`](animate::MoveAlongPath) |
 //! | `MathTex`, `Tex`, `TexTemplate` (feature `latex`) | `latex::MathTex`, `latex::Tex`, `latex::TexTemplate`, typeset with a `latex::TexEngine` and drawn by `latex::FormulaView` |
 //! | `TransformMatchingTex` (feature `latex`) | `latex::TransformMatchingTex` |
+//! | the frame: 8 units tall, `y` up, origin in the middle | [`Space`](explain::Space) in `ui.space`, [`Canvas`](explain::Canvas) for another one |
+//! | `NumberLine`, `Axes`, `NumberPlane` | [`explain`]: the same names, `x_range: Range::new(min, max, step)` |
+//! | `axes.c2p`, `p2c`, `plot`, `i2gp`, `get_vertical_line`, `get_graph_label`, `get_riemann_rectangles`, `get_area` | `Axes::c2p`, `p2c`, `plot`, `FunctionGraph::point`, `Axes::vertical_line`, `graph_label`, `riemann_rectangles`, `area` |
+//! | `m.next_to(point, UR)` | [`Label`](label::Label) `{ direction: Anchor::TopRight, .. }` |
 
 pub mod anim;
 pub mod animate;
 pub mod audio;
 pub mod data;
 pub mod decor;
+pub mod explain;
 pub mod geometry;
+pub mod label;
 #[cfg(feature = "latex")]
 pub mod latex;
+pub mod layout;
 pub mod media;
 pub mod motion;
 pub mod overlay;
