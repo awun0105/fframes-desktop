@@ -242,11 +242,246 @@ fn graph_area<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{axes}{area}{riemann}{c1}{c2}{lines}</g>)
 }
 
+fn lissajous(t: f64) -> (f64, f64) {
+    (2.0 * (3.0 * t).sin(), 2.0 * (2.0 * t).sin())
+}
+
+/// A box of `space` the same size as the canvas, so the two coordinate systems show.
+fn frame_of<'a>(ui: &mut Ui<'a, '_, '_>, x: f32, y: f32, w: f32, h: f32) -> Svgr<'a> {
+    ui.show(RoundedRectangle {
+        cx: x + w / 2.0,
+        cy: y + h / 2.0,
+        width: w,
+        height: h,
+        corner_radius: 24.0,
+        stroke: Some(ui.theme.colors.surface),
+        ..ui.defaults()
+    })
+}
+
+/// Two canvases side by side: a Lissajous curve in units of the left one, axes in the right
+/// one. Each has its own origin and 130 px per unit.
+fn canvas<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Canvas");
+    let (y, w, h) = (220.0, 820.0, 780.0);
+    let left_box = frame_of(ui, 96.0, y, w, h);
+    let right_box = frame_of(ui, 1004.0, y, w, h);
+    let left = ui.show(Canvas {
+        space: Space::frame(96.0, y, w, h, 6.0),
+        children: children(|ui| {
+            let curve = ParametricFunction {
+                enter: Some(trace(0.0, 2.4)),
+                ..ParametricFunction::new(ui, lissajous, (0.0, std::f64::consts::TAU))
+            };
+            let (cx, cy) = curve.point(0.0);
+            let origin = ui.show(Dot {
+                cx,
+                cy,
+                radius: 10.0,
+                fill: Some(ui.theme.colors.highlight),
+                ..ui.defaults()
+            });
+            let curve = ui.show(curve);
+            svgr!(<g>{curve}{origin}</g>)
+        }),
+    });
+    let right = ui.show(Canvas {
+        space: Space::frame(1004.0, y, w, h, 6.0),
+        children: children(|ui| {
+            let axes = Axes {
+                x_range: Range::new(-3.0, 3.0, 1.0),
+                y_range: Range::new(-2.0, 2.0, 1.0),
+                x_length: 5.6,
+                y_length: 4.0,
+                x_numbers: integers(-3, 3, 1),
+                enter: Some(create(0.0)),
+                labels_enter: Some(fade(0.4)),
+                ..ui.defaults()
+            };
+            let graph = FunctionGraph {
+                enter: Some(trace(0.6, 1.6)),
+                ..axes.plot(ui, |x| 1.5 * (2.0 * x).sin() / (1.0 + x * x))
+            };
+            let axes = ui.show(axes);
+            let graph = ui.show(graph);
+            svgr!(<g>{axes}{graph}</g>)
+        }),
+    });
+    svgr!(<g>{head}{left_box}{right_box}{left}{right}</g>)
+}
+
+/// Five shapes arranged in a row and six in a grid, each group drawn with one `Create`.
+fn vgroup<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "VGroup");
+    let row = VGroup::new(vec![
+        Circle {
+            radius: 70.0,
+            ..ui.defaults()
+        }
+        .shape(),
+        Square {
+            side_length: 130.0,
+            ..ui.defaults()
+        }
+        .shape(),
+        Triangle {
+            radius: 80.0,
+            ..ui.defaults()
+        }
+        .shape(),
+        Star {
+            outer_radius: 80.0,
+            inner_radius: 34.0,
+            ..ui.defaults()
+        }
+        .shape(),
+        RegularPolygon {
+            radius: 70.0,
+            n: 6,
+            ..ui.defaults()
+        }
+        .shape(),
+    ])
+    .arrange(Anchor::Right, 60.0)
+    .move_to(960.0, 400.0);
+    let dots: Vec<Shape> = (0..6)
+        .map(|i| {
+            Dot {
+                radius: 20.0 + 6.0 * i as f32,
+                fill: Some(ui.theme.colors.highlight),
+                ..ui.defaults()
+            }
+            .shape()
+        })
+        .collect();
+    let grid = VGroup::new(dots)
+        .arrange_in_grid(3, (80.0, 40.0))
+        .move_to(960.0, 780.0);
+    let row = ui.show(VGroup {
+        enter: Some(create(0.0)),
+        ..row
+    });
+    let grid = ui.show(VGroup {
+        enter: Some(
+            GrowFromCenter {
+                delay: 0.8,
+                ..ui.defaults()
+            }
+            .into(),
+        ),
+        ..grid
+    });
+    svgr!(<g>{head}{row}{grid}</g>)
+}
+
+/// Leaders from three points of a curve, and three labels at almost one point spread so
+/// they do not overlap.
+fn labels<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Leader");
+    let axes = Axes {
+        x_range: Range::new(0.0, 6.0, 1.0),
+        y_range: Range::new(0.0, 4.0, 1.0),
+        x_length: 8.0,
+        y_length: 4.4,
+        center: (-2.2, -0.6),
+        tips: false,
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    };
+    let curve = FunctionGraph {
+        enter: Some(trace(0.3, 1.4)),
+        ..axes.plot(ui, |x| 2.0 + 1.5 * (x * 1.1).sin())
+    };
+    let leaders: Vec<Leader> = [
+        (1.4, "maximum", (70.0, -90.0)),
+        (4.3, "minimum", (70.0, 90.0)),
+        (5.6, "end", (100.0, 50.0)),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, (x, text, (dx, dy)))| {
+        let from = curve.point(x);
+        Leader {
+            from,
+            to: (from.0 + dx, from.1 + dy),
+            text: text.into(),
+            enter: Some(create(1.6 + 0.2 * i as f32)),
+            label_enter: Some(fade(1.9 + 0.2 * i as f32)),
+            ..ui.defaults()
+        }
+    })
+    .collect();
+    // three labels placed at nearly the same point, then spread apart
+    let mut stacked: Vec<Label> = ["first", "second", "third"]
+        .into_iter()
+        .enumerate()
+        .map(|(i, text)| Label {
+            text: text.into(),
+            x: 1400.0 + 6.0 * i as f32,
+            y: 420.0 + 4.0 * i as f32,
+            enter: Some(fade(0.4 + 0.3 * i as f32)),
+            ..ui.defaults()
+        })
+        .collect();
+    fframes_kit::label::spread(ui, &mut stacked, 12.0);
+    let axes = ui.show(axes);
+    let curve = ui.show(curve);
+    let leaders = ui.show(leaders);
+    let stacked = ui.show(stacked);
+    svgr!(<g>{head}{axes}{curve}{leaders}{stacked}</g>)
+}
+
+/// Angle and angular velocity of a damped pendulum, stepped every 1/240 s for 4 s.
+fn pendulum() -> &'static Sim<(f64, f64)> {
+    static SIM: std::sync::OnceLock<Sim<(f64, f64)>> = std::sync::OnceLock::new();
+    SIM.get_or_init(|| {
+        Sim::precompute(1.0 / 240.0, 960, (1.2, 0.0), |&(theta, omega), dt| {
+            // semi-implicit Euler: g / L = 9.81 / 1.5, light damping
+            let omega = omega + (-(9.81 / 1.5) * theta.sin() - 0.35 * omega) * dt;
+            (theta + omega * dt, omega)
+        })
+    })
+}
+
+/// A pendulum whose motion was simulated once and is sampled every frame.
+fn sim<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Sim");
+    let (theta, omega) = pendulum().sample(f64::from(ui.seconds()));
+    let pivot = ui.space.to_px(0.0, 2.6);
+    let bob = ui.space.to_px(3.6 * theta.sin(), 2.6 - 3.6 * theta.cos());
+    let rod = ui.show(Line {
+        x1: pivot.x as f32,
+        y1: pivot.y as f32,
+        x2: bob.x as f32,
+        y2: bob.y as f32,
+        stroke: Some(ui.theme.colors.muted),
+        ..ui.defaults()
+    });
+    let mass = ui.show(Dot {
+        cx: bob.x as f32,
+        cy: bob.y as f32,
+        radius: 36.0,
+        ..ui.defaults()
+    });
+    let reading = ui.show(Label {
+        text: format!("angle {theta:+.2} rad   speed {omega:+.2} rad/s").into(),
+        x: 960.0,
+        y: 1000.0,
+        direction: Anchor::Center,
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{rod}{mass}{reading}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("NumberLine", 3.0, number_line),
         GalleryScene::new("NumberPlane", 3.0, number_plane),
         GalleryScene::new("SinAndCosFunctionPlot", 4.5, sin_and_cos),
         GalleryScene::new("GraphAreaPlot", 3.5, graph_area),
+        GalleryScene::new("Canvas", 3.0, canvas),
+        GalleryScene::new("VGroup", 2.5, vgroup),
+        GalleryScene::new("Leader", 3.0, labels),
+        GalleryScene::new("Sim", 4.0, sim),
     ]
 }

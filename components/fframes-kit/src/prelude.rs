@@ -16,11 +16,11 @@ pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
 pub use crate::data::BarChart;
 pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
 pub use crate::explain::{
-    Area, Axes, AxesMap, Canvas, Func, FunctionGraph, NumberLine, NumberPlane, Range,
-    RiemannRectangles, SampleAt, Space,
+    Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, NumberLine, NumberPlane,
+    ParametricFunction, Range, RiemannRectangles, SampleAt, Space, VGroup,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
-pub use crate::label::Label;
+pub use crate::label::{Label, Leader};
 #[cfg(feature = "latex")]
 pub use crate::latex::{
     ChemEq, Formula, FormulaView, MathTex, Part, Tex, TexEngine, TexError, TexTemplate,
@@ -39,6 +39,7 @@ pub use crate::shapes::{
     DoubleArrow, Ellipse, Heart, Line, Pie, Polygon, Rect, Rectangle, RegularPolygon,
     RoundedRectangle, Sector, Spark, Square, Star, TextPath, Triangle, Vector,
 };
+pub use crate::sim::{Lerp, Sim};
 pub use crate::text::{
     Counter, FitText, HudLabel, LetterLook, Letters, Paragraph, RevealBy, TextAnchor, TextReveal,
     Typewriter,

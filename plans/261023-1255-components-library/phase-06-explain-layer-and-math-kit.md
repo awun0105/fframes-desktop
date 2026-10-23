@@ -94,7 +94,7 @@ phase ends, verify both builds; otherwise phase 5 adds the `math,latex` gallery 
 
 - [x] `Canvas` and `Space`
 - [x] `Axes`, `NumberPlane`, `NumberLine`, `FunctionGraph`
-- [ ] `VGroup`, `layout`, `label`, `sim`
+- [x] `VGroup`, `layout`, `label`, `sim`
 - [ ] `Matrix`, `Table`, `Brace`
 - [ ] The 12 math figures in table order
 - [ ] Plots

@@ -33,8 +33,13 @@ mod axes;
 mod canvas;
 mod graph;
 mod space;
+mod vgroup;
 
 pub use axes::{Axes, AxesMap, NumberLine, NumberPlane, Range};
 pub use canvas::Canvas;
-pub use graph::{Area, Func, FunctionGraph, RiemannRectangles, SampleAt, sample};
+pub use graph::{
+    Area, Curve, Func, FunctionGraph, ParametricFunction, RiemannRectangles, SampleAt, sample,
+    sample_curve,
+};
 pub use space::Space;
+pub use vgroup::VGroup;

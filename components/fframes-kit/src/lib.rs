@@ -64,6 +64,7 @@ pub mod overlay;
 pub mod paths;
 pub mod prelude;
 pub mod shapes;
+pub mod sim;
 pub mod text;
 pub mod text_outline;
 pub mod theme;

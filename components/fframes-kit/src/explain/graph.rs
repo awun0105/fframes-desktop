@@ -8,15 +8,23 @@ use std::{
 
 use kurbo::{BezPath, Point, Shape as _};
 
-use crate::shapes::{Paint, shape};
+use crate::{
+    shapes::{Paint, shape},
+    ui::Ui,
+};
 
-use super::AxesMap;
+use super::{AxesMap, Space};
 
 /// A function of one variable. A plain `fn` (or a closure that captures nothing), so a graph
 /// can cache its samples by the function's address.
 pub type Func = fn(f64) -> f64;
 
-type SampleKey = (usize, u64, u64, usize);
+/// A curve `t -> (x, y)`, a plain `fn` like [`Func`].
+pub type Curve = fn(f64) -> (f64, f64);
+
+/// What was sampled (a graph or a curve), the function's address, the range bits and the
+/// count.
+type SampleKey = (u8, usize, u64, u64, usize);
 
 /// Most sample runs kept; the cache starts over when it is full.
 const CACHE_ENTRIES: usize = 512;
@@ -28,11 +36,8 @@ fn sample_cache() -> &'static SampleCache {
     CACHE.get_or_init(Mutex::default)
 }
 
-/// `samples + 1` evenly spaced points `(x, f(x))` from `a` to `b`, in data units. They are
-/// computed once per function, range and count, so every frame of a graph reuses them.
-pub fn sample(f: Func, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
-    let samples = samples.max(1);
-    let key = (f as usize, a.to_bits(), b.to_bits(), samples);
+/// The cached points of `key`, computed by `points` the first time.
+fn cached(key: SampleKey, points: impl FnOnce() -> Arc<[(f64, f64)]>) -> Arc<[(f64, f64)]> {
     if let Some(hit) = sample_cache()
         .lock()
         .ok()
@@ -40,12 +45,7 @@ pub fn sample(f: Func, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
     {
         return hit;
     }
-    let points: Arc<[(f64, f64)]> = (0..=samples)
-        .map(|i| {
-            let x = a + (b - a) * i as f64 / samples as f64;
-            (x, f(x))
-        })
-        .collect();
+    let points = points();
     if let Ok(mut cache) = sample_cache().lock() {
         if cache.len() >= CACHE_ENTRIES {
             cache.clear();
@@ -55,6 +55,30 @@ pub fn sample(f: Func, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
     points
 }
 
+/// `samples + 1` evenly spaced points `(x, f(x))` from `a` to `b`, in data units. They are
+/// computed once per function, range and count, so every frame of a graph reuses them.
+pub fn sample(f: Func, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
+    let samples = samples.max(1);
+    cached((0, f as usize, a.to_bits(), b.to_bits(), samples), || {
+        (0..=samples)
+            .map(|i| {
+                let x = a + (b - a) * i as f64 / samples as f64;
+                (x, f(x))
+            })
+            .collect()
+    })
+}
+
+/// `samples + 1` points `f(t)` for evenly spaced `t` from `a` to `b`, cached like
+/// [`sample`].
+pub fn sample_curve(f: Curve, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
+    let samples = samples.max(1);
+    cached((1, f as usize, a.to_bits(), b.to_bits(), samples), || {
+        (0..=samples)
+            .map(|i| f(a + (b - a) * i as f64 / samples as f64))
+            .collect()
+    })
+}
 /// Values beyond this many units from the axes' range start a new piece of the curve, like
 /// a value that is not finite: `tan` near its poles.
 const FAR: f64 = 1e4;
@@ -125,6 +149,55 @@ impl FunctionGraph {
     }
 }
 
+shape! {
+    /// The curve `t -> f(t)` for `t` from `t_range.0` to `t_range.1` (Manim
+    /// `ParametricFunction`), in data units of `axes` when set, otherwise in units of
+    /// `space`. Build one with [`ParametricFunction::new`] to take `ui.space`, or with
+    /// [`Axes::plot_parametric`](super::Axes::plot_parametric). Its samples are cached.
+    #[allow(unpredictable_function_pointer_comparisons)] // equal props, not equal functions
+    ParametricFunction(t) {
+        f: Curve = |t| (t.cos(), t.sin()),
+        t_range: (f64, f64) = (0.0, std::f64::consts::TAU),
+        axes: Option<AxesMap> = None,
+        space: Space = Space::FULL_HD,
+        samples: usize = 256,
+    }
+    paint: Paint::outline(t);
+    path(s) {
+        let points = sample_curve(s.f, s.t_range.0, s.t_range.1, s.samples);
+        smooth(points.iter().map(|&(x, y)| s.px(x, y)))
+    }
+}
+
+impl ParametricFunction {
+    /// The curve of `f` over `t_range` in `ui.space`, with the theme's paint.
+    pub fn new(ui: &Ui<'_, '_, '_>, f: Curve, t_range: (f64, f64)) -> Self {
+        Self {
+            f,
+            t_range,
+            space: ui.space,
+            ..ui.defaults()
+        }
+    }
+
+    /// The pixel of a point of the curve, `None` when it is not finite.
+    fn px(&self, x: f64, y: f64) -> Option<Point> {
+        if !(x.is_finite() && y.is_finite()) {
+            return None;
+        }
+        Some(match &self.axes {
+            Some(map) => map.c2p(x, y),
+            None => self.space.to_px(x, y),
+        })
+    }
+
+    /// The pixel of the curve at `t`.
+    pub fn point(&self, t: f64) -> (f32, f32) {
+        let (x, y) = (self.f)(t);
+        let p = self.px(x, y).unwrap_or_default();
+        (p.x as f32, p.y as f32)
+    }
+}
 /// Where a Riemann rectangle takes its height.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SampleAt {
@@ -292,6 +365,42 @@ mod tests {
             .filter(|el| matches!(el, kurbo::PathEl::MoveTo(_)))
             .count();
         assert_eq!(moves, 2, "1/x is not drawn through x = 0");
+    }
+
+    #[test]
+    fn parametric_curves_map_through_the_space_or_the_axes() {
+        fn diagonal(t: f64) -> (f64, f64) {
+            (t, t)
+        }
+        let space = crate::explain::Space {
+            origin: (0.0, 0.0),
+            unit: 100.0,
+        };
+        let circle = ParametricFunction {
+            space,
+            samples: 64,
+            ..ParametricFunction::default()
+        };
+        let b = circle.path().bbox();
+        assert!(
+            (b.x0 + 100.0).abs() < 0.5 && (b.y1 - 100.0).abs() < 0.5,
+            "{b:?}"
+        );
+        // y up: t = pi/2 is the top of the circle
+        assert_eq!(circle.point(std::f64::consts::FRAC_PI_2).1.round(), -100.0);
+        let on_axes = ParametricFunction {
+            axes: Some(unit_axes()),
+            ..circle
+        };
+        // data (0, -1) on axes whose box (0..4 by 0..4) is centered on the origin
+        let p = on_axes.point(std::f64::consts::PI * 1.5);
+        assert!(
+            (p.0 + 200.0).abs() < 1e-3 && (p.1 - 300.0).abs() < 1e-3,
+            "{p:?}"
+        );
+        let a = sample_curve(diagonal, 0.0, 1.0, 4);
+        assert!(Arc::ptr_eq(&a, &sample_curve(diagonal, 0.0, 1.0, 4)));
+        assert_eq!(a[4], (1.0, 1.0));
     }
 
     #[test]

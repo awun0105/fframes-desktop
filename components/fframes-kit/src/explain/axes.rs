@@ -17,7 +17,7 @@ use crate::{
     ui::{Component, Themed, Ui},
 };
 
-use super::{Area, Func, FunctionGraph, RiemannRectangles, Space};
+use super::{Area, Curve, Func, FunctionGraph, ParametricFunction, RiemannRectangles, Space};
 
 /// A data range and its tick step, Manim's `[min, max, step]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -488,6 +488,18 @@ impl Axes<'_> {
         }
     }
 
+    /// The curve `t -> f(t)` in the axes' data units (Manim `plot_parametric_curve`).
+    pub fn plot_parametric(
+        &self,
+        ui: &Ui<'_, '_, '_>,
+        f: Curve,
+        t_range: (f64, f64),
+    ) -> ParametricFunction {
+        ParametricFunction {
+            axes: Some(self.map(ui)),
+            ..ParametricFunction::new(ui, f, t_range)
+        }
+    }
     /// A dashed line from the data point `(x, y)` straight down (or up) to the x-axis, in
     /// the highlight colour (Manim `get_vertical_line(c2p(x, y))`).
     pub fn vertical_line(&self, ui: &Ui<'_, '_, '_>, x: f64, y: f64) -> DashedLine {
