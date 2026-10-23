@@ -6,7 +6,10 @@
 
 use fframes::{Color, Svgr};
 
-use crate::ui::{Children, Component, Ui};
+use crate::{
+    theme::Theme,
+    ui::{Children, Component, Themed, Ui, no_children},
+};
 
 /// The local index inside a window that starts at frame `start` and lasts `length` frames
 /// (`None`: no end), or `None` outside it.
@@ -26,6 +29,17 @@ pub struct Sequence<'a> {
     /// Length in seconds; `None` runs until the parent ends.
     pub duration: Option<f32>,
     pub children: Children<'a>,
+}
+
+impl Themed for Sequence<'_> {
+    /// From 0 until the parent ends, with no children.
+    fn themed(_: &Theme) -> Self {
+        Self {
+            from: 0.0,
+            duration: None,
+            children: no_children(),
+        }
+    }
 }
 
 impl<'a> Component<'a> for Sequence<'a> {
@@ -98,6 +112,17 @@ fn loop_start(index: usize, period: usize, times: Option<usize>) -> Option<usize
     }
 }
 
+impl Themed for Loop<'_> {
+    /// Every second, forever, with no children.
+    fn themed(_: &Theme) -> Self {
+        Self {
+            duration: 1.0,
+            times: None,
+            children: no_children(),
+        }
+    }
+}
+
 impl<'a> Component<'a> for Loop<'a> {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         let period = ui.frames(self.duration);
@@ -115,6 +140,16 @@ pub struct Freeze<'a> {
     pub children: Children<'a>,
 }
 
+impl Themed for Freeze<'_> {
+    /// Frozen at 0 seconds, with no children.
+    fn themed(_: &Theme) -> Self {
+        Self {
+            at: 0.0,
+            children: no_children(),
+        }
+    }
+}
+
 impl<'a> Component<'a> for Freeze<'a> {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         let mut child = ui.shifted(0, ui.duration);
@@ -128,6 +163,16 @@ impl<'a> Component<'a> for Freeze<'a> {
 pub struct Fill<'a> {
     pub background: Option<Color>,
     pub children: Children<'a>,
+}
+
+impl Themed for Fill<'_> {
+    /// No background and no children.
+    fn themed(_: &Theme) -> Self {
+        Self {
+            background: None,
+            children: no_children(),
+        }
+    }
 }
 
 impl<'a> Component<'a> for Fill<'a> {

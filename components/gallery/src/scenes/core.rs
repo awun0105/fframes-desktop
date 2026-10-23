@@ -125,9 +125,15 @@ fn freeze<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 
 fn fade_in<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let head = title(ui, "FadeIn");
+    let cards = fade_in_cards(ui);
+    svgr!(<g>{head}{cards}</g>)
+}
+
+/// The three cards of `FadeIn`, fading in one after another.
+pub(crate) fn fade_in_cards<'a>(ui: &mut Ui<'a, '_, '_>) -> Vec<Svgr<'a>> {
     let c = ui.theme.colors;
     let step = ui.theme.motion.stagger.loose * 2.0;
-    let cards: Vec<Svgr<'a>> = [
+    [
         (96.0, "one", c.surface),
         (720.0, "two", c.accent),
         (1344.0, "three", c.muted),
@@ -142,8 +148,7 @@ fn fade_in<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         };
         fade.apply(ui, card(ui, x, label, fill))
     })
-    .collect();
-    svgr!(<g>{head}{cards}</g>)
+    .collect()
 }
 
 fn fade_out<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {

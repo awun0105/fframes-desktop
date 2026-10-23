@@ -639,7 +639,16 @@ name = "fframes-kit"
 version = "0.1.0"
 dependencies = [
  "fframes",
+ "fframes-kit-macros",
  "kurbo",
+]
+
+[[package]]
+name = "fframes-kit-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Phase 7: Component tags with the ui! macro"
-status: todo
+status: completed
 priority: P2
 effort: 3d
 dependencies: [2]
@@ -87,9 +87,9 @@ wraps `svgr!`; `svgr-macro` is not changed.
 
 ## Todo
 
-- [ ] Rewrite unit tests, including byte-identical pass-through
-- [ ] `ui!` in `fframes-kit-macros`, re-exported from `fframes-kit`
-- [ ] Tag form equals struct form (integration tests)
-- [ ] `compile_fail` doctests for error messages
-- [ ] Gallery `Tags` scene identical to struct-form snapshots
-- [ ] `components.md` tag form section
+- [x] Rewrite unit tests, including byte-identical pass-through
+- [x] `ui!` in `fframes-kit-macros`, re-exported from `fframes-kit`
+- [x] Tag form equals struct form (integration tests)
+- [x] `compile_fail` doctests for error messages
+- [x] Gallery `Tags` scene identical to struct-form snapshots
+- [x] `components.md` tag form section

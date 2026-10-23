@@ -4,7 +4,7 @@ use crate::{
     anim::RateFunc,
     motion::progress,
     theme::Theme,
-    ui::{Children, Component, Ui},
+    ui::{Children, Component, Themed, Ui, no_children},
 };
 
 /// Shows its children from `from` seconds on: they rise `rise` units into place, grow from
@@ -24,14 +24,21 @@ pub struct Appear<'a> {
     pub children: Children<'a>,
 }
 
+impl Themed for Appear<'_> {
+    /// From 0 seconds, scaling about the middle of a 1920x1080 canvas, with no children.
+    fn themed(t: &Theme) -> Self {
+        Self::with_theme(t, 0.0, (960.0, 540.0), no_children())
+    }
+}
+
 impl<'a> Appear<'a> {
     /// Times and motion from the theme: `motion.duration.enter` and `exit`, a 60 unit rise,
     /// scaling from 0.92.
     pub fn new(ui: &Ui<'a, '_, '_>, from: f32, center: (f32, f32), children: Children<'a>) -> Self {
-        Self::themed(ui.theme, from, center, children)
+        Self::with_theme(ui.theme, from, center, children)
     }
 
-    fn themed(t: &Theme, from: f32, center: (f32, f32), children: Children<'a>) -> Self {
+    fn with_theme(t: &Theme, from: f32, center: (f32, f32), children: Children<'a>) -> Self {
         Self {
             from,
             until: None,
@@ -95,7 +102,7 @@ mod tests {
     fn enters_then_leaves_before_the_end() {
         let a = Appear {
             rate_func: RateFunc::Linear,
-            ..Appear::themed(
+            ..Appear::with_theme(
                 &Theme::default(),
                 1.0,
                 (0.0, 0.0),

@@ -1,13 +1,17 @@
 [workspace]
 resolver = "2"
-members = ["fframes-kit", "gallery", "gallery/editor/editor-bridge"]
+members = ["fframes-kit", "fframes-kit-macros", "gallery", "gallery/editor/editor-bridge"]
 
 [workspace.dependencies]
 fframes = { path = "../fframes", version = "1.3.0" }
 fframes_skia_renderer = { path = "../fframes-skia-renderer", version = "1.3.0" }
 fframes-editor-controller = { path = "../fframes-editor-controller" }
 fframes-kit = { path = "fframes-kit" }
+fframes-kit-macros = { path = "fframes-kit-macros" }
 kurbo = "0.13"
+# Pinned like svgr-macro.
+proc-macro2 = "1"
+quote = "1.0.38"
 
 # Copied from the root workspace so the kit is held to the same bar.
 [workspace.lints.rust]

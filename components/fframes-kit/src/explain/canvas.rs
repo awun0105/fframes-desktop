@@ -1,6 +1,9 @@
 use fframes::Svgr;
 
-use crate::ui::{Children, Component, Ui};
+use crate::{
+    theme::Theme,
+    ui::{Children, Component, Themed, Ui, no_children},
+};
 
 use super::Space;
 
@@ -10,6 +13,16 @@ use super::Space;
 pub struct Canvas<'a> {
     pub space: Space,
     pub children: Children<'a>,
+}
+
+impl Themed for Canvas<'_> {
+    /// Manim's frame on a 1920x1080 canvas, with no children.
+    fn themed(_: &Theme) -> Self {
+        Self {
+            space: Space::FULL_HD,
+            children: no_children(),
+        }
+    }
 }
 
 impl<'a> Component<'a> for Canvas<'a> {

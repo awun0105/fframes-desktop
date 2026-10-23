@@ -26,6 +26,7 @@
 //! | `<TransitionSeries>`, `.Sequence`, `.Transition` | [`TransitionSeries`](transitions::TransitionSeries), `TransitionSeries::sequence`, `TransitionSeries::transition` |
 //! | `fade()`, `slide()`, `wipe()` | [`Fade`](transitions::Fade), [`Slide`](transitions::Slide), [`Wipe`](transitions::Wipe), or your own [`Presentation`](transitions::Presentation) |
 //! | `linearTiming`, `springTiming` | [`Timing::Linear`](transitions::Timing::Linear), [`Timing::Spring`](transitions::Timing::Spring) |
+//! | JSX: `<LowerThird name="Ada" />`, children between tags | [`ui!`](ui!): the same tags inside `svgr!` markup, expanded to `ui.show(LowerThird { name: "Ada".into(), ..ui.defaults() })` |
 //!
 //! | Manim | fframes-kit |
 //! | --- | --- |
@@ -81,6 +82,7 @@ pub mod time;
 pub mod transitions;
 pub mod ui;
 
+pub use fframes_kit_macros::ui;
 pub use kurbo;
 
 #[cfg(doctest)]

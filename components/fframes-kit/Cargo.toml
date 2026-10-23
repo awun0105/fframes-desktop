@@ -7,6 +7,7 @@ description = "Components for fframes videos: time containers, shapes, Manim-nam
 
 [dependencies]
 fframes = { workspace = true, default-features = false }
+fframes-kit-macros.workspace = true
 kurbo.workspace = true
 
 [features]

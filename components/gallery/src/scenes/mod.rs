@@ -8,6 +8,7 @@ pub mod latex;
 pub mod math;
 pub mod overlay;
 pub mod shapes;
+pub mod tags;
 pub mod text;
 pub mod transitions;
 
@@ -23,6 +24,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(latex::scenes());
     scenes.extend(explain::scenes());
     scenes.extend(math::scenes());
+    scenes.extend(tags::scenes());
     scenes.extend(shapes::bench_scenes());
     scenes.extend(latex::bench_scenes());
     scenes

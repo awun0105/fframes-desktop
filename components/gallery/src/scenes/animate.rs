@@ -5,10 +5,10 @@ use fframes_kit::prelude::*;
 use super::core::title;
 use crate::GalleryScene;
 
-const CX: f32 = 960.0;
-const CY: f32 = 580.0;
+pub(crate) const CX: f32 = 960.0;
+pub(crate) const CY: f32 = 580.0;
 
-fn square(ui: &Ui<'_, '_, '_>) -> Square {
+pub(crate) fn square(ui: &Ui<'_, '_, '_>) -> Square {
     Square {
         cx: CX,
         cy: CY,
@@ -17,7 +17,7 @@ fn square(ui: &Ui<'_, '_, '_>) -> Square {
     }
 }
 
-fn circle(ui: &Ui<'_, '_, '_>) -> Circle {
+pub(crate) fn circle(ui: &Ui<'_, '_, '_>) -> Circle {
     let c = ui.theme.colors;
     Circle {
         cx: CX,

@@ -61,4 +61,5 @@ pub use crate::transitions::{
     TransitionSeries, Wipe, scene_transition,
 };
 pub use crate::ui::{BoxedComponent, Children, Component, DynComponent, Themed, Ui, children};
+pub use fframes_kit_macros::ui;
 pub use kurbo::{BezPath, Point};

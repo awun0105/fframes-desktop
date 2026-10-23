@@ -83,6 +83,20 @@ pub fn children<'a>(f: impl Fn(&mut Ui<'a, '_, '_>) -> Svgr<'a> + 'a) -> Childre
     Box::new(f)
 }
 
+/// `value.into()` for a prop written as a tag attribute in `ui!`. A function, so a value
+/// that already has the field's type is not reported as a useless conversion in the
+/// caller's code.
+#[doc(hidden)]
+pub fn __prop<T: Into<U>, U>(value: T) -> U {
+    value.into()
+}
+
+/// Children that draw nothing: the default of a container's `children`, so containers fill
+/// their props with `..ui.defaults()` like other components.
+pub(crate) fn no_children<'a>() -> Children<'a> {
+    children(|_| Svgr::empty())
+}
+
 impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
     /// A `Ui` for a whole video: `duration` is the video's length in frames.
     pub fn new(frame: Frame, ctx: &'c FFramesContext<'a, 'm>, theme: &'a Theme) -> Self {

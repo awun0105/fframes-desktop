@@ -3,7 +3,8 @@ use fframes::Svgr;
 use crate::{
     anim::RateFunc,
     motion::clamp01,
-    ui::{Children, Component, Ui},
+    theme::Theme,
+    ui::{Children, Component, Themed, Ui, no_children},
 };
 
 use super::{Presentation, Side, Timing};
@@ -20,14 +21,24 @@ pub struct SceneFade<'a> {
     pub children: Children<'a>,
 }
 
+impl Themed for SceneFade<'_> {
+    /// Fades of the theme's `motion.duration.fast` with its standard easing, no children.
+    fn themed(t: &Theme) -> Self {
+        Self {
+            fade_in: t.motion.duration.fast,
+            fade_out: t.motion.duration.fast,
+            rate_func: t.motion.easing.standard,
+            children: no_children(),
+        }
+    }
+}
+
 impl<'a> SceneFade<'a> {
     /// Fades of the theme's `motion.duration.fast` with its standard easing.
     pub fn new(ui: &Ui<'a, '_, '_>, children: Children<'a>) -> Self {
         Self {
-            fade_in: ui.theme.motion.duration.fast,
-            fade_out: ui.theme.motion.duration.fast,
-            rate_func: ui.theme.motion.easing.standard,
             children,
+            ..Self::themed(ui.theme)
         }
     }
 

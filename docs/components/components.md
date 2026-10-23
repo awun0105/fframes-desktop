@@ -670,6 +670,72 @@ fn badges<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+## Tag form (`ui!`)
+
+`ui!` is `svgr!` markup that also takes component tags. Each tag is expanded to the struct
+form above, so the two forms draw the same frames. The struct form stays the main documented
+way. The tag form is shorter for markup that nests containers.
+
+- A tag whose name starts with an uppercase letter is a component; everything else is passed
+  to `svgr!` unchanged.
+- Attributes are fields:
+  - a quoted value or an `{expr}` goes through `.into()`: `name="Ada"`, `enter={fade}`;
+  - a number or `true`/`false` alone in braces is written as is, so the field's type decides
+    it: `x={60.0}`, `times={3}`;
+  - a bare attribute is `true`: `<Axes tips />`.
+
+  Quoted values suit text fields. A number field needs braces: `cx={320.0}`, not `cx="320"`.
+- Children fill the component's `children: Children` field. They are a closure over the
+  container's `ui`, so tags inside them see its local time.
+  - The closure runs every frame, so build what it draws inside it.
+  - A value it uses must be `Copy`, a reference, or `'a`. A `Svgr` made outside cannot be
+    moved in.
+  - Containers whose children are a `Vec` (`LaggedStart`, `AnimationGroup`) keep the
+    struct form.
+- Every component with theme defaults works as a tag, your own included. That is every
+  component that implements `Themed`; the time containers do too.
+- It needs a variable `ui: Ui` in scope.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn card<'a>(frame: Frame, ctx: &FFramesContext<'a, '_>, theme: &'a Theme) -> Svgr<'a> {
+    let mut ui = Ui::new(frame, ctx, theme);
+    let create: Option<EnterAnim> = Some(Create::default().into());
+    ui!(
+        <g>
+            <LowerThird name="Ada" role="Mathematician" min_width={300.0} />
+            <Sequence from={0.5} duration={Some(2.0)}>
+                <Circle cx={960.0} cy={540.0} radius={120.0} enter={create} />
+                <text x="96" y="140" fill="#fff">{format!("{:.1} s", ui.seconds())}</text>
+            </Sequence>
+        </g>
+    )
+}
+```
+
+A dashed attribute is an error that names the field (`min-width` is `min_width`):
+
+```rust,compile_fail
+use fframes_kit::prelude::*;
+
+fn card<'a>(frame: Frame, ctx: &FFramesContext<'a, '_>, theme: &'a Theme) -> Svgr<'a> {
+    let mut ui = Ui::new(frame, ctx, theme);
+    ui!(<LowerThird name="Ada" min-width={300.0} />)
+}
+```
+
+Without a `ui` in scope the compiler reports "cannot find value `ui`" at the first tag.
+Create one with `let mut ui = Ui::new(frame, ctx, &self.theme)`:
+
+```rust,compile_fail
+use fframes_kit::prelude::*;
+
+fn card<'a>(frame: Frame, ctx: &FFramesContext<'a, '_>, theme: &'a Theme) -> Svgr<'a> {
+    ui!(<LowerThird name="Ada" />)
+}
+```
+
 ## A whole video
 
 ```rust
