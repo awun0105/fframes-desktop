@@ -98,7 +98,7 @@ Manim enter animations that need geometry (`Create`, `Write`, `GrowFromCenter`,
 - [x] `Geometry` and `Shape`
 - [x] Manim shapes, then Remotion shapes
 - [x] `paths` functions with tests
-- [ ] `text_outline` with editor fallback
+- [x] `text_outline` with editor fallback
 - [x] `Create`, `Write`, grow, emphasis and `MoveAlongPath` animations
 - [x] `Transform` and `ReplacementTransform`
 - [x] `LaggedStart`, `AnimationGroup`, `Succession`

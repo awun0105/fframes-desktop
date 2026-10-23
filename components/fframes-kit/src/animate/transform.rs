@@ -11,6 +11,10 @@ use crate::{
 
 use super::enter_alpha;
 
+/// Cubic segments per subpath a morph runs on at least: a square's corners then meet a
+/// circle's diagonals.
+const MORPH_SEGMENTS: usize = 16;
+
 /// Paint between `a` and `b`; a missing paint is the other one, transparent.
 fn lerp_paint(a: Option<Color>, b: Option<Color>, t: f32) -> Option<Color> {
     match (a, b) {
@@ -65,7 +69,7 @@ impl<'a> Component<'a> for Transform {
         if p <= 0.0 {
             return self.from.draw();
         }
-        let (a, b) = paths::align_points(&self.from.path, &self.to.path, 0);
+        let (a, b) = paths::align_points(&self.from.path, &self.to.path, MORPH_SEGMENTS);
         morph(&self.from, &self.to, &a, &b, p).draw()
     }
 }
@@ -176,7 +180,7 @@ mod tests {
             fill: Some(Color::WHITE),
             ..square.clone()
         };
-        let (a, b) = paths::align_points(&square.path, &circle.path, 0);
+        let (a, b) = paths::align_points(&square.path, &circle.path, MORPH_SEGMENTS);
         let end = morph(&square, &circle, &a, &b, 1.0);
         assert!((paths::get_length(&end.path) - paths::get_length(&circle.path)).abs() < 1e-3);
         assert_eq!(end.fill, Some(Color::WHITE));

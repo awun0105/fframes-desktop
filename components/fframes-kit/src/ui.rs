@@ -1,7 +1,7 @@
 //! The component contract: [`Ui`], [`Component`], [`Themed`] and [`Children`].
 
 use fframes::{
-    BreakLinesOpts, FFramesContext, FontQuery, Frame, Svgr, TextOverflow,
+    BreakLinesOpts, FFramesContext, FontQuery, Frame, Scene, Svgr, TextOverflow,
     animation::{Animatable, KeyFramesAnimation},
     usvgr::svgtree::SvgAttributeValue,
 };
@@ -12,7 +12,7 @@ use crate::{anim::Anim, theme::Theme};
 /// the theme.
 ///
 /// A `Ui` lives on one render thread inside one `render_frame` call; build it at the top of
-/// `render_frame` (or a scene's) with [`Ui::new`].
+/// `render_frame` with [`Ui::new`], or at the top of a scene's with [`Ui::for_scene`].
 pub struct Ui<'a, 'c, 'm> {
     /// Local time: shifted by every enclosing time container, so it starts at 0 where the
     /// component starts.
@@ -81,11 +81,30 @@ pub fn children<'a>(f: impl Fn(&mut Ui<'a, '_, '_>) -> Svgr<'a> + 'a) -> Childre
 }
 
 impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
-    /// A `Ui` for a whole video or scene: `duration` is the context's length in frames.
+    /// A `Ui` for a whole video: `duration` is the video's length in frames.
     pub fn new(frame: Frame, ctx: &'c FFramesContext<'a, 'm>, theme: &'a Theme) -> Self {
         Self {
             frame,
             duration: Some(ctx.duration_in_frames),
+            ctx,
+            theme,
+        }
+    }
+
+    /// A `Ui` for `scene`: `duration` is the scene's own length, so exit animations end
+    /// with it. Scenes get the video's context, whose length is the whole video's.
+    pub fn for_scene<S: Scene>(
+        frame: Frame,
+        ctx: &'c FFramesContext<'a, 'm>,
+        theme: &'a Theme,
+        scene: &S,
+    ) -> Self {
+        let duration = ctx
+            .get_scene_info(scene)
+            .map_or(ctx.duration_in_frames, |info| info.duration_in_frames);
+        Self {
+            frame,
+            duration: Some(duration),
             ctx,
             theme,
         }

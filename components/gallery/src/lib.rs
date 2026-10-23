@@ -41,7 +41,7 @@ impl Scene for GalleryScene {
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
-        let mut ui = Ui::new(frame, ctx, &self.theme);
+        let mut ui = Ui::for_scene(frame, ctx, &self.theme, self);
         (self.draw)(&mut ui)
     }
 }

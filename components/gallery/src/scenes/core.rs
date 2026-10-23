@@ -21,7 +21,7 @@ pub fn scenes() -> Vec<GalleryScene> {
 }
 
 /// The scene's title in the top left corner.
-fn title<'a>(ui: &Ui<'a, '_, '_>, text: &'static str) -> Svgr<'a> {
+pub(crate) fn title<'a>(ui: &Ui<'a, '_, '_>, text: &'static str) -> Svgr<'a> {
     let c = ui.theme.colors;
     let s = ui.theme.typography.heading;
     svgr!(

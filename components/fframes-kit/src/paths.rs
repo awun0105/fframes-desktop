@@ -311,8 +311,43 @@ pub fn align_points(a: &BezPath, b: &BezPath, n: usize) -> (BezPath, BezPath) {
         let closed = x.closed && y.closed;
         x.closed = closed;
         y.closed = closed;
+        if closed {
+            match_loop(&x.cubics, &mut y.cubics);
+        }
     }
     (build(&sa), build(&sb))
+}
+
+/// Twice the signed area of a closed loop of cubics, from its end points.
+fn loop_area(cubics: &[CubicBez]) -> f64 {
+    cubics
+        .iter()
+        .map(|c| c.p0.x * c.p3.y - c.p3.x * c.p0.y)
+        .sum()
+}
+
+/// Turns the closed loop `b` to run the way `a` runs and to start where its points are
+/// nearest to `a`'s, so a morph between them does not twist through the middle.
+fn match_loop(a: &[CubicBez], b: &mut [CubicBez]) {
+    if a.len() != b.len() || b.is_empty() {
+        return;
+    }
+    if loop_area(a).signum() != loop_area(b).signum() {
+        b.reverse();
+        for c in b.iter_mut() {
+            *c = CubicBez::new(c.p3, c.p2, c.p1, c.p0);
+        }
+    }
+    let k = b.len();
+    let cost = |shift: usize| -> f64 {
+        (0..k)
+            .map(|i| a[i].p0.distance_squared(b[(i + shift) % k].p0))
+            .sum()
+    };
+    let best = (0..k)
+        .min_by(|&x, &y| cost(x).total_cmp(&cost(y)))
+        .unwrap_or(0);
+    b.rotate_left(best);
 }
 
 /// The path `t` of the way from `a` to `b` (0 is `a`'s shape, 1 is `b`'s).
@@ -393,6 +428,20 @@ mod tests {
         assert!((get_bounding_box(&start).area() - 100.0).abs() < 1e-6);
         let mid = interpolate_path(0.5, &a, &b);
         assert!(get_length(&mid) > get_length(&b) && get_length(&mid) < get_length(&a));
+    }
+
+    #[test]
+    fn square_to_circle_does_not_twist() {
+        // a square with its corners on the circle: the morph stays as wide as both
+        let square = parse_path("M-1 -1 L1 -1 L1 1 L-1 1 Z").unwrap();
+        let circle = reverse_path(&Circle::new((0.0, 0.0), 2f64.sqrt()).to_path(1e-6));
+        let (a, b) = align_points(&square, &circle, 16);
+        let mid = get_bounding_box(&lerp_aligned(0.5, &a, &b));
+        assert!(
+            mid.width() > 2.0 && mid.width() < 2.0 * 2f64.sqrt(),
+            "{mid:?}"
+        );
+        assert!(mid.center().distance(Point::ZERO) < 1e-6);
     }
 
     #[test]
