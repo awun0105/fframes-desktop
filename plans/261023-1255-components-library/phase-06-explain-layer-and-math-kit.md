@@ -97,5 +97,5 @@ phase ends, verify both builds; otherwise phase 5 adds the `math,latex` gallery 
 - [x] `VGroup`, `layout`, `label`, `sim`
 - [x] `Matrix`, `Table`, `Brace`
 - [ ] The 12 math figures in table order
-- [ ] Plots
+- [x] Plots
 - [ ] `math.md` doctested; e2e subset

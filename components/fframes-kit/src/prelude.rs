@@ -39,6 +39,7 @@ pub use crate::overlay::{
     ProgressBar,
 };
 pub use crate::paths;
+pub use crate::plot::{Heatmap, Histogram, LinePlot, ScatterPlot};
 pub use crate::shapes::{
     Annulus, Arc, Arrow, BlockArrow, Brace, Callout, Circle, CurvedArrow, DashedLine, Dot,
     DoubleArrow, Ellipse, Heart, Line, Pie, Polygon, Rect, Rectangle, RegularPolygon,

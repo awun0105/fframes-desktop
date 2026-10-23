@@ -363,6 +363,138 @@ fn matrix_view<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{view}</g>)
 }
 
+fn small_axes<'a>(ui: &Ui<'a, '_, '_>, center: (f64, f64), x: Range, y: Range) -> Axes<'a> {
+    Axes {
+        x_range: x,
+        y_range: y,
+        x_length: 5.6,
+        y_length: 2.6,
+        center,
+        tips: false,
+        number_style: ui.theme.typography.caption,
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    }
+}
+
+/// The four plots on their own axes: a line with its points, bars, a histogram and a
+/// heatmap.
+fn plots<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static SAMPLES: OnceLock<Vec<f64>> = OnceLock::new();
+    let samples = SAMPLES.get_or_init(|| {
+        // three spread-out sequences summed: a bell from [-3, 3]
+        (1..=600)
+            .map(|i| {
+                let i = f64::from(i);
+                ((i * 0.618_034).fract() + (i * 0.414_214).fract() + (i * 0.732_051).fract() - 1.5)
+                    * 2.0
+            })
+            .collect()
+    });
+    let head = title(ui, "Plots");
+    let line_axes = small_axes(
+        ui,
+        (-3.6, 1.5),
+        Range::new(0.0, 6.0, 1.0),
+        Range::new(0.0, 4.0, 1.0),
+    );
+    let points = vec![
+        (0.0, 1.0),
+        (1.0, 1.6),
+        (2.0, 1.2),
+        (3.0, 2.4),
+        (4.0, 2.1),
+        (5.0, 3.4),
+        (6.0, 3.0),
+    ];
+    let map = line_axes.map(ui);
+    let line = ui.show(LinePlot {
+        points: points.clone(),
+        axes: map,
+        enter: Some(create(0.5)),
+        ..ui.defaults()
+    });
+    let dots = ui.show(ScatterPlot {
+        points,
+        axes: map,
+        color: ui.theme.colors.highlight,
+        delay: 0.5,
+        stagger: 0.1,
+        ..ui.defaults()
+    });
+
+    let bar_axes = small_axes(
+        ui,
+        (3.6, 1.5),
+        Range::new(0.0, 4.0, 1.0),
+        Range::new(0.0, 40.0, 10.0),
+    );
+    let chart = BarChart {
+        delay: 0.6,
+        stagger: 0.15,
+        highlight: Some(2),
+        value_style: ui.theme.typography.caption,
+        ..fframes_kit::plot::bars(
+            ui,
+            &bar_axes.map(ui),
+            vec![
+                ("Q1".into(), 12.0),
+                ("Q2".into(), 19.0),
+                ("Q3".into(), 34.0),
+                ("Q4".into(), 27.0),
+            ],
+            0.6,
+        )
+    };
+    // the chart writes its values from the start; it comes in with its axes
+    let shown = motion::progress(ui.seconds(), 0.2, 0.6);
+    let chart = ui.show(chart);
+    let chart = svgr!(<g opacity={shown}>{chart}</g>);
+
+    let hist_axes = small_axes(
+        ui,
+        (-3.6, -2.3),
+        Range::new(-3.0, 3.0, 1.0),
+        Range::new(0.0, 0.5, 0.25),
+    );
+    let histogram = ui.show(Histogram {
+        values: fframes_kit::plot::bin(samples, (-3.0, 3.0), 24, true),
+        range: (-3.0, 3.0),
+        axes: hist_axes.map(ui),
+        delay: 0.8,
+        ..ui.defaults()
+    });
+
+    let heat_axes = small_axes(
+        ui,
+        (3.6, -2.3),
+        Range::new(0.0, 8.0, 1.0),
+        Range::new(0.0, 4.0, 1.0),
+    );
+    let values = (0..4)
+        .map(|r| {
+            (0..8)
+                .map(|c| (f64::from(c) * 0.7).sin() * (f64::from(r) * 0.9).cos())
+                .collect()
+        })
+        .collect();
+    let heatmap = ui.show(Heatmap {
+        values,
+        x_range: (0.0, 8.0),
+        y_range: (0.0, 4.0),
+        axes: heat_axes.map(ui),
+        low: ui.theme.colors.accent,
+        delay: 1.0,
+        ..ui.defaults()
+    });
+    let axes: Vec<Svgr> = [line_axes, bar_axes, hist_axes, heat_axes]
+        .into_iter()
+        .map(|a| ui.show(a))
+        .collect();
+    let axes: Svgr = axes.into();
+    svgr!(<g>{head}{heatmap}{axes}{line}{dots}{chart}{histogram}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("NumberLinePoint", 4.0, number_line_point),
@@ -376,5 +508,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Pythagoras", 4.0, pythagoras),
         GalleryScene::new("Fractions", 4.0, fractions),
         GalleryScene::new("MatrixView", 4.6, matrix_view),
+        GalleryScene::new("Plots", 4.0, plots),
     ]
 }

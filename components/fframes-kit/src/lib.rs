@@ -63,6 +63,7 @@ pub mod media;
 pub mod motion;
 pub mod overlay;
 pub mod paths;
+pub mod plot;
 pub mod prelude;
 pub mod shapes;
 pub mod sim;

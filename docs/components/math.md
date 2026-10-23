@@ -263,7 +263,7 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
             })
         })
         .collect();
-    let pie = ui.show(FractionPie { numerator: 3, denominator: 4, cx: 1500.0, ..ui.defaults() });
+    let pie = ui.show(FractionPie { numerator: 3, denominator: 4, cx: 1600.0, ..ui.defaults() });
     let bars: Svgr = bars.into();
     svgr!(<g>{bars}{pie}</g>)
 }
@@ -292,4 +292,51 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 
 let c = product(&[vec![1.0, 2.0]], &[vec![3.0], vec![4.0]]);
 assert_eq!(c, Some(vec![vec![11.0]]));
+```
+
+## Plots
+
+`fframes_kit::plot` draws data on axes. It needs no feature, and the plots come with the
+prelude. Like the overlays above, each plot takes the axes' mapping and draws only itself.
+Gallery scene: `Plots`.
+
+- `LinePlot`: a line through data points, straight or `smooth`. A point that is not finite
+  breaks it.
+- `ScatterPlot`: dots at data points that grow in one after another.
+- `Histogram`: bars of `values` across `range`, standing on the x-axis.
+  `bin(samples, range, bins, density)` counts samples into bins. With `density` the bars'
+  area is 1, so a probability density drawn over them fits.
+- `Heatmap`: a grid of cells coloured from `low` to `high`, with the first row at the top.
+- `plot::bars(ui, &axes, bars, 0.6)`: the `BarChart` component placed on axes, the bars
+  sharing the x span evenly.
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::plot::{bars, bin};
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>, samples: &[f64]) -> Svgr<'a> {
+    let axes = Axes {
+        x_range: Range::new(-3.0, 3.0, 1.0),
+        y_range: Range::new(0.0, 0.5, 0.25),
+        ..ui.defaults()
+    };
+    let map = axes.map(ui);
+    let histogram = ui.show(Histogram {
+        values: bin(samples, (-3.0, 3.0), 24, true),
+        range: (-3.0, 3.0),
+        axes: map,
+        ..ui.defaults()
+    });
+    let line = ui.show(LinePlot {
+        points: vec![(-3.0, 0.0), (0.0, 0.4), (3.0, 0.0)],
+        axes: map,
+        smooth: true,
+        ..ui.defaults()
+    });
+    let chart = ui.show(bars(ui, &map, vec![("a".into(), 0.2), ("b".into(), 0.4)], 0.6));
+    let axes = ui.show(axes);
+    svgr!(<g>{axes}{histogram}{line}{chart}</g>)
+}
+
+assert_eq!(bin(&[0.1, 0.2, 0.9], (0.0, 1.0), 2, false), vec![2.0, 1.0]);
 ```

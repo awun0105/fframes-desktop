@@ -85,7 +85,7 @@ const FAR: f64 = 1e4;
 
 /// A smooth curve through pixel points (Catmull-Rom as cubic Béziers), broken where a point
 /// is `None`.
-fn smooth(points: impl IntoIterator<Item = Option<Point>>) -> BezPath {
+pub(crate) fn smooth(points: impl IntoIterator<Item = Option<Point>>) -> BezPath {
     let mut path = BezPath::new();
     let mut run: Vec<Point> = Vec::new();
     let flush = |run: &mut Vec<Point>, path: &mut BezPath| {
@@ -117,7 +117,7 @@ fn smooth(points: impl IntoIterator<Item = Option<Point>>) -> BezPath {
 }
 
 /// The pixel of a data point, `None` when `y` is not drawable.
-fn graph_px(map: &AxesMap, x: f64, y: f64) -> Option<Point> {
+pub(crate) fn graph_px(map: &AxesMap, x: f64, y: f64) -> Option<Point> {
     let span = (map.y.max - map.y.min).abs().max(1.0);
     (y.is_finite() && (y - map.y.min).abs() < FAR * span).then(|| map.c2p(x, y))
 }

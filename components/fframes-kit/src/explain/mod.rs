@@ -43,6 +43,7 @@ pub use graph::{
     Area, Curve, Func, FunctionGraph, ParametricFunction, RiemannRectangles, SampleAt, sample,
     sample_curve,
 };
+pub(crate) use graph::{graph_px, smooth};
 pub use matrix::Matrix;
 pub use space::Space;
 pub use table::Table;
