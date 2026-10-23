@@ -5,14 +5,18 @@
 //! center (`cx`, `cy`) unless they are given by points (`Line`, `Arrow`, `Polygon`).
 //! Manim shapes are outlines in the accent colour by default, Remotion shapes are filled.
 //!
-//! ```ignore
-//! ui.show(Circle {
-//!     cx: 960.0,
-//!     cy: 540.0,
-//!     radius: 200.0,
-//!     enter: Some(Create::default().into()),
-//!     ..ui.defaults()
-//! })
+//! ```
+//! use fframes_kit::prelude::*;
+//!
+//! fn circle<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+//!     ui.show(Circle {
+//!         cx: 960.0,
+//!         cy: 540.0,
+//!         radius: 200.0,
+//!         enter: Some(Create::default().into()),
+//!         ..ui.defaults()
+//!     })
+//! }
 //! ```
 
 mod arrows;

@@ -33,7 +33,7 @@ const out = join(target, "e2e", renderer);
 
 // prettier-ignore
 const examples = [
-  { dir: "gallery", pkg: "components-gallery", bin: "components_gallery_bin", frames: "Sequence@50%,Series@50%,FadeIn@50%,Theme@50%" },
+  { dir: "gallery", pkg: "components-gallery", bin: "components_gallery_bin", frames: "Sequence@50%,Series@50%,FadeIn@50%,Theme@50%,SquareToCircle@45%,Write@30%,Create@50%,Flash@40%,CurvedArrow@end,Callout@end,Uncreate@90%" },
 ];
 
 const run = (command, args, cwd) =>

@@ -9,5 +9,6 @@ pub fn all() -> Vec<GalleryScene> {
     let mut scenes = core::scenes();
     scenes.extend(shapes::scenes());
     scenes.extend(animate::scenes());
+    scenes.extend(shapes::bench_scenes());
     scenes
 }

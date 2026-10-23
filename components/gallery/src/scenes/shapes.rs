@@ -99,3 +99,109 @@ pub fn scenes() -> Vec<GalleryScene> {
         "Spark" => |ui| Spark { cx: CX, cy: CY, size: 240.0, enter: Some(SpinInFromNothing::default().into()), ..ui.defaults() },
     ]
 }
+
+/// The shape bench: 60 static shapes on a grid that fade in one after another.
+pub fn bench_scenes() -> Vec<GalleryScene> {
+    vec![
+        GalleryScene::new("BenchShapesHandWritten", 5.0, bench_shapes_hand_written),
+        GalleryScene::new("BenchShapesKit", 5.0, bench_shapes_kit),
+    ]
+}
+
+const BENCH_SHAPES: usize = 60;
+
+/// Center of grid cell `i` (10 columns, 6 rows).
+fn cell(i: usize) -> (f32, f32) {
+    (
+        240.0 + 160.0 * (i % 10) as f32,
+        260.0 + 140.0 * (i / 10) as f32,
+    )
+}
+
+/// Star outlines written once, as a hand-written video keeps its path data.
+fn star_paths() -> &'static [String] {
+    static PATHS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    PATHS.get_or_init(|| {
+        (0..BENCH_SHAPES)
+            .map(|i| {
+                let (cx, cy) = cell(i);
+                let star = Star {
+                    cx,
+                    cy,
+                    outer_radius: 56.0,
+                    inner_radius: 24.0,
+                    ..Star::default()
+                };
+                star.path().to_svg()
+            })
+            .collect()
+    })
+}
+
+fn bench_shapes_hand_written<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let accent = ui.theme.colors.accent;
+    let seconds = ui.seconds();
+    (0..BENCH_SHAPES)
+        .map(|i| {
+            let start = motion::stagger(i, 0.05);
+            let opacity = RateFunc::Smooth.apply(motion::progress(seconds, start, start + 0.6), 0.6);
+            let (cx, cy) = cell(i);
+            let shape = match i % 3 {
+                0 => svgr!(<circle cx={cx} cy={cy} r="50" fill={accent} />),
+                1 => svgr!(<rect x={cx - 50.0} y={cy - 50.0} width="100" height="100" fill={accent} />),
+                _ => {
+                    let d = star_paths()[i].as_str();
+                    svgr!(<path d={d} fill={accent} />)
+                }
+            };
+            svgr!(<g opacity={opacity}>{shape}</g>)
+        })
+        .collect()
+}
+
+fn bench_shapes_kit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let accent = Some(ui.theme.colors.accent);
+    (0..BENCH_SHAPES)
+        .map(|i| {
+            let enter = Some(
+                FadeIn {
+                    delay: motion::stagger(i, 0.05),
+                    run_time: 0.6,
+                    ..ui.defaults()
+                }
+                .into(),
+            );
+            let (cx, cy) = cell(i);
+            match i % 3 {
+                0 => ui.show(Circle {
+                    cx,
+                    cy,
+                    radius: 50.0,
+                    fill: accent,
+                    stroke: None,
+                    enter,
+                    ..ui.defaults()
+                }),
+                1 => ui.show(Square {
+                    cx,
+                    cy,
+                    side_length: 100.0,
+                    fill: accent,
+                    stroke: None,
+                    enter,
+                    ..ui.defaults()
+                }),
+                _ => ui.show(Star {
+                    cx,
+                    cy,
+                    outer_radius: 56.0,
+                    inner_radius: 24.0,
+                    fill: accent,
+                    stroke: None,
+                    enter,
+                    ..ui.defaults()
+                }),
+            }
+        })
+        .collect()
+}

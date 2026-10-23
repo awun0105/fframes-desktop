@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Phase 2: Shapes, paths and enter animations"
-status: in-progress
+status: completed
 priority: P1
 effort: 3d
 dependencies: [1]
@@ -102,4 +102,4 @@ Manim enter animations that need geometry (`Create`, `Write`, `GrowFromCenter`,
 - [x] `Create`, `Write`, grow, emphasis and `MoveAlongPath` animations
 - [x] `Transform` and `ReplacementTransform`
 - [x] `LaggedStart`, `AnimationGroup`, `Succession`
-- [ ] Gallery scenes incl. `SquareToCircle`; docs tables; e2e frames
+- [x] Gallery scenes incl. `SquareToCircle`; docs tables; e2e frames

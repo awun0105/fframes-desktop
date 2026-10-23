@@ -17,8 +17,9 @@ The prelude also re-exports the fframes types a video needs (`Video`, `Frame`, `
 
 - A component is a props struct. `ui.show(component)` renders it at the current time and
   returns an `Svgr`, so it goes anywhere `{expr}` is allowed in `svgr!`.
-- Build a `Ui` once at the top of `render_frame` (of the video or a scene):
-  `let mut ui = Ui::new(frame, ctx, &self.theme);`.
+- Build a `Ui` once at the top of `render_frame`: `Ui::new(frame, ctx, &self.theme)` in a
+  video, `Ui::for_scene(frame, ctx, &self.theme, self)` in a scene. Scenes get the video's
+  context, so only `for_scene` knows the scene's length that exit animations end with.
 - **Time is local.** A component has no start time. Its parent places it with a
   `Sequence { from, duration, children }`; inside, `ui.seconds()` starts at 0 and
   `ui.duration` is the sequence's length in frames. Sequences nest and their offsets add up.
@@ -44,7 +45,7 @@ fn layout<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
-## Phase-one components
+## Time containers and fades
 
 | Component | Props | What it does |
 | --- | --- | --- |
@@ -67,6 +68,132 @@ use fframes_kit::prelude::*;
 assert_eq!(motion::progress(0.5, 0.0, 2.0), 0.25);
 assert_eq!(RateFunc::Linear.apply(0.3, 1.0), 0.3);
 assert_eq!(motion::noise(7, 1.25), motion::noise(7, 1.25));
+```
+
+## Shapes
+
+Every shape is a component with its geometry props, the paint props `fill`, `stroke`,
+`stroke_width`, `dash`, `opacity`, and the animation props `enter`, `exit`, `emphasis`.
+Positions are canvas pixels with `y` down, angles are radians, counterclockwise on screen as in
+Manim. Shapes are placed by their center (`cx`, `cy`) unless points give them. Manim shapes are
+accent outlines by default, Remotion shapes (and Manim's `Dot`, `Annulus`, `Sector`) are filled.
+
+| Shape | Props | Source |
+| --- | --- | --- |
+| `Circle` | `cx`, `cy`, `radius` | Manim, Remotion |
+| `Dot` | `cx`, `cy`, `radius` (8) | Manim |
+| `Ellipse` | `cx`, `cy`, `width`, `height` | Manim, Remotion |
+| `Arc` | `cx`, `cy`, `radius`, `start_angle`, `angle` | Manim |
+| `Annulus` | `cx`, `cy`, `inner_radius`, `outer_radius` | Manim |
+| `Sector` | `cx`, `cy`, `radius`, `start_angle`, `angle` | Manim |
+| `Line`, `DashedLine` | `x1`, `y1`, `x2`, `y2` (`dash` is `(12, 12)` on `DashedLine`) | Manim |
+| `Polygon` | `points: Vec<(f32, f32)>` | Manim, Remotion |
+| `RegularPolygon` | `cx`, `cy`, `radius`, `n`, `start_angle: Option<f32>` | Manim |
+| `Triangle` | `cx`, `cy`, `radius` (equilateral, pointing up) | Manim, Remotion |
+| `Rectangle`, `Square`, `RoundedRectangle` | `cx`, `cy`, `width`/`height` or `side_length`, `corner_radius` | Manim |
+| `Star` | `cx`, `cy`, `n`, `outer_radius`, `inner_radius` | Manim, Remotion |
+| `Arrow`, `DoubleArrow` | `x1`, `y1`, `x2`, `y2`, `tip_length`, `tip_width` | Manim |
+| `Vector` | `x`, `y`, `dx`, `dy`, `tip_length`, `tip_width` | Manim |
+| `CurvedArrow` | `x1`, `y1`, `x2`, `y2`, `angle`, `tip_length`, `tip_width` | Manim |
+| `Brace` | `x1`, `y1`, `x2`, `y2`, `depth`; `brace.tip()` places a label | Manim |
+| `Rect` | `cx`, `cy`, `width`, `height`, `corner_radius` | Remotion |
+| `BlockArrow` | `cx`, `cy`, `length`, `head_width`, `head_length`, `shaft_width`, `angle` | Remotion `Arrow` |
+| `Callout` | `cx`, `cy`, `width`, `height`, `corner_radius`, `tail_x`, `tail_y`, `tail_width` | Remotion |
+| `Heart` | `cx`, `cy`, `height` | Remotion |
+| `Pie` | `cx`, `cy`, `radius`, `progress`, `rotation`, `closed` | Remotion |
+| `Spark` | `cx`, `cy`, `size`, `points`, `inner` | Remotion |
+| `TextPath` | `text`, `x`, `y` (baseline start), `style: TextStyle` | Manim `Text` |
+
+`shape.shape()` gives the `Shape` (path and paint) and every shape implements `Geometry`
+(`path()`, `length()`, `bbox()`). The path is a `kurbo::BezPath`; `fframes_kit::kurbo` is
+re-exported. `TextPath` draws glyph outlines from the font files of the video's media and
+falls back to a `<text>` (faded in word by word by `Write`) when the family has none.
+
+## Geometry animations
+
+Animations are plain data. Put them into a shape's `enter`, `exit` or `emphasis` with
+`.into()`. Each has Manim's fields: `delay`, `run_time`, `rate_func`, plus its own.
+
+| Animation | Slot | What it does |
+| --- | --- | --- |
+| `FadeIn`, `FadeOut` | enter, exit | fade with an optional `shift` |
+| `Create`, `Uncreate` | enter, exit | draws the outline from its start (and fades the fill in), or back |
+| `DrawBorderThenFill` | enter | draws the outline, then fills (`run_time` 2) |
+| `Write` | enter | `DrawBorderThenFill` per glyph of a `TextPath`, `lag_ratio` |
+| `GrowFromCenter`, `GrowFromPoint { point }`, `GrowArrow` | enter | grows from nothing about the center, a point, or the path's start |
+| `SpinInFromNothing { angle }` | enter | grows while turning into place |
+| `Indicate { scale_factor, color }` | emphasis | scales up and tints, then back |
+| `Circumscribe { color, buff }` | emphasis | a rectangle runs once around the shape |
+| `Flash { point, num_lines, flash_radius, line_length }` | emphasis | lines shoot out once |
+| `Wiggle { scale_value, rotation_angle, n_wiggles }` | emphasis | shakes the shape |
+
+Enter and emphasis animations count from the start of the enclosing container plus `delay`;
+exit animations end `delay` seconds before its end. They change only the transform, opacity
+and drawn part of the outline, never the path.
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `Morph` (Manim `Transform`) | `from: Shape`, `to: Shape`, `delay`, `run_time`, `rate_func` | morphs path, paint and width; `Morph::new(from, to)` |
+| `ReplacementTransform` | the same | `Morph` that draws `to` itself once done |
+| `MoveAlongPath` | `path: BezPath`, `delay`, `run_time`, `rate_func` | `Enter`: moves content from the path's start to its end |
+| `LaggedStart` | `lag_ratio`, `run_time`, `children` | child `i` starts `i * lag_ratio * run_time` seconds in |
+| `AnimationGroup` | `children` | every child at once |
+| `Succession` | `run_time`, `children` | each child `run_time` after the one before |
+
+The prelude calls Manim's `Transform` `Morph`, because `Transform` there is the SVG transform;
+it is also `fframes_kit::animate::Transform`.
+
+```rust
+use fframes_kit::prelude::*;
+
+/// Manim's SquareToCircle: create a square, morph it into a circle, fade it out.
+fn square_to_circle<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let square = Square { cx: 960.0, cy: 540.0, side_length: 400.0, ..ui.defaults() };
+    let circle = Circle {
+        cx: 960.0,
+        cy: 540.0,
+        radius: 220.0,
+        fill: Some(ui.theme.colors.highlight),
+        ..ui.defaults()
+    };
+    let (from, to) = (square.shape(), circle.shape());
+    let create = ui.show(Sequence {
+        from: 0.0,
+        duration: Some(1.2),
+        children: children(move |ui| {
+            ui.show(Square { enter: Some(Create::default().into()), ..square.clone() })
+        }),
+    });
+    let morph = ui.show(Sequence {
+        from: 1.2,
+        duration: None,
+        children: children(move |ui| {
+            let morph = ui.show(Morph::new(from.clone(), to.clone()));
+            FadeOut { run_time: 0.8, ..ui.defaults() }.apply(ui, morph)
+        }),
+    });
+    svgr!(<g>{create}{morph}</g>)
+}
+```
+
+## Paths
+
+`fframes_kit::paths` has Remotion's `@remotion/paths` in snake_case over `kurbo::BezPath`:
+`get_length`, `get_point_at_length`, `get_tangent_at_length`, `evolve_path`,
+`interpolate_path`, `translate_path`, `scale_path`, `reverse_path`, `cut_path`, `warp_path`,
+`normalize_path`, `get_bounding_box`, `get_subpaths`, `extend_view_box`, `center_path`,
+`parse_path`, `serialize`, `reset_path`, `reduce_instructions`, and `align_points(a, b, n)`
+(the same number of subpaths and cubic segments in both, turned to start at the nearest
+points), which `Morph` runs on.
+
+```rust
+use fframes_kit::prelude::*;
+
+let square = paths::parse_path("M0 0 L10 0 L10 10 L0 10 Z").unwrap();
+assert_eq!(paths::get_length(&square), 40.0);
+assert_eq!(paths::get_length(&paths::cut_path(&square, 20.0)), 20.0);
+let half = paths::interpolate_path(0.5, &square, &paths::scale_path(&square, 2.0, 2.0));
+assert!((paths::get_bounding_box(&half).width() - 15.0).abs() < 1e-9);
 ```
 
 ## Animated props
