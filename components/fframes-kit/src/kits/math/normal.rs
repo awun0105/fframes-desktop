@@ -18,7 +18,8 @@ use crate::{
 use super::short;
 
 /// `n` samples of the normal distribution with `mean` and standard deviation `sd`, the same
-/// for the same `seed` on every machine (`SplitMix64` and the Box-Muller transform).
+/// for the same `seed` (`SplitMix64` and the Box-Muller transform). The random bits match on
+/// every machine; the transform's `ln`, `cos` and `sin` may differ in the last bit.
 pub fn normal_samples(seed: u64, n: usize, mean: f64, sd: f64) -> Vec<f64> {
     let mut state = seed;
     let mut uniform = move || {

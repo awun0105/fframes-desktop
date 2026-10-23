@@ -348,7 +348,8 @@ slice, and `shown` (a tracker) says how many of them are binned so far: `bins` b
 `range` as a density, no taller than the top of the y range. The curve has the mean and
 standard deviation of the samples shown and draws with `curve_enter`. With `stats` it writes
 `n = 1500   mean 0.03   sd 1.01` at `stats_at` (pixels). `normal_samples(seed, n, mean, sd)`
-gives the same samples for the same seed on every machine; `mean_sd` and `normal_pdf` are the
+gives the same samples for the same seed (the random bits match on every machine, the
+logarithm and cosine may differ in the last bit); `mean_sd` and `normal_pdf` are the
 numbers behind the curve. Gallery scene: `HistogramToNormal`.
 
 ```rust
