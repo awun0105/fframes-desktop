@@ -32,7 +32,9 @@
 mod axes;
 mod canvas;
 mod graph;
+mod matrix;
 mod space;
+mod table;
 mod vgroup;
 
 pub use axes::{Axes, AxesMap, NumberLine, NumberPlane, Range};
@@ -41,5 +43,7 @@ pub use graph::{
     Area, Curve, Func, FunctionGraph, ParametricFunction, RiemannRectangles, SampleAt, sample,
     sample_curve,
 };
+pub use matrix::Matrix;
 pub use space::Space;
+pub use table::Table;
 pub use vgroup::VGroup;

@@ -1,6 +1,7 @@
 //! Labels: [`Label`], a line of text placed next to a point (Manim's
 //! `label.next_to(point, UR)`); [`Leader`], a line from a point to a label; [`spread`], which
-//! moves labels apart until they no longer overlap. The elbow-line callout with a dot is
+//! moves labels apart until they no longer overlap; [`BraceLabel`], text at a brace's tip.
+//! The elbow-line callout with a dot is
 //! [`Annotation`](crate::overlay::Annotation).
 
 use std::borrow::Cow;
@@ -12,7 +13,7 @@ use crate::{
     anim::{Enter, Exit, FadeIn, FadeOut},
     animate::{EnterAnim, ExitAnim, draw_animated},
     layout::{self, Anchor},
-    shapes::{Dot, Line},
+    shapes::{Brace, Dot, Line},
     text::{TextAnchor, line, width},
     theme::{TextStyle, Theme},
     ui::{Component, Themed, Ui},
@@ -55,14 +56,18 @@ impl Default for Label<'_> {
     }
 }
 
+/// Width and height of one line of text: measured with the font when it resolves, otherwise
+/// estimated at 0.55 em per character. The height is the cap height.
+pub(crate) fn text_size(ui: &Ui<'_, '_, '_>, style: TextStyle, text: &str) -> (f32, f32) {
+    let em = style.size as f32;
+    let w = width(ui, style, text).unwrap_or_else(|| text.chars().count() as f32 * em * 0.55);
+    (w, em * 0.72)
+}
+
 impl Label<'_> {
-    /// Width and height of the text's box: measured with the font when it resolves,
-    /// otherwise estimated at 0.55 em per character. The height is the cap height.
+    /// Width and height of the text's box, see `text_size`.
     pub fn size(&self, ui: &Ui<'_, '_, '_>) -> (f32, f32) {
-        let em = self.style.size as f32;
-        let w = width(ui, self.style, &self.text)
-            .unwrap_or_else(|| self.text.chars().count() as f32 * em * 0.55);
-        (w, em * 0.72)
+        text_size(ui, self.style, &self.text)
     }
 
     /// The box the text is drawn in, in pixels.
@@ -217,9 +222,120 @@ impl<'a> Component<'a> for Leader<'a> {
     }
 }
 
+/// A [`Brace`] with text at its tip (Manim `BraceLabel`, `brace.get_text`). The label sits
+/// on the side the tip points to; the brace draws with its own `enter`, the text fades with
+/// `label_enter`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BraceLabel<'a> {
+    pub brace: Brace,
+    pub text: Cow<'a, str>,
+    pub style: TextStyle,
+    pub fill: Color,
+    pub buff: f32,
+    pub label_enter: Option<FadeIn>,
+    pub label_exit: Option<FadeOut>,
+}
+
+impl Themed for BraceLabel<'_> {
+    fn themed(t: &Theme) -> Self {
+        Self {
+            brace: Brace::themed(t),
+            text: Cow::Borrowed(""),
+            style: t.typography.body,
+            fill: t.colors.title,
+            buff: t.spacing.sm,
+            label_enter: None,
+            label_exit: None,
+        }
+    }
+}
+
+impl Default for BraceLabel<'_> {
+    fn default() -> Self {
+        Self::themed(&Theme::default())
+    }
+}
+
+impl<'a> BraceLabel<'a> {
+    /// The label at the tip, on the side the tip points to; centered on it for a brace of
+    /// zero length.
+    pub fn label(&self) -> Label<'a> {
+        let b = &self.brace;
+        let (tx, ty) = b.tip();
+        let (mx, my) = (f32::midpoint(b.x1, b.x2), f32::midpoint(b.y1, b.y2));
+        Label {
+            text: self.text.clone(),
+            x: tx,
+            y: ty,
+            direction: Anchor::toward(f64::from(tx - mx), f64::from(ty - my)),
+            buff: self.buff,
+            style: self.style,
+            fill: self.fill,
+            enter: self.label_enter,
+            exit: self.label_exit,
+        }
+    }
+}
+
+impl<'a> Component<'a> for BraceLabel<'a> {
+    fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let label = self.label();
+        let brace = ui.show(self.brace);
+        let label = ui.show(label);
+        fframes::svgr!(<g>{brace}{label}</g>)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn brace_labels_sit_beyond_the_tip() {
+        let under = BraceLabel {
+            brace: Brace {
+                x1: 0.0,
+                y1: 0.0,
+                x2: 200.0,
+                y2: 0.0,
+                depth: 24.0,
+                ..Brace::default()
+            },
+            buff: 4.0,
+            ..BraceLabel::default()
+        };
+        let label = under.label();
+        assert_eq!((label.x, label.y), (100.0, 24.0));
+        assert_eq!(label.direction, Anchor::Bottom);
+        assert_eq!(label.box_of(40.0, 10.0), Rect::new(80.0, 28.0, 120.0, 38.0));
+        // drawn bottom to top, the tip points right
+        let right = BraceLabel {
+            brace: Brace {
+                x1: 0.0,
+                y1: 100.0,
+                x2: 0.0,
+                y2: 0.0,
+                ..under.brace.clone()
+            },
+            ..under.clone()
+        };
+        assert_eq!(right.label().direction, Anchor::Right);
+        let point = BraceLabel {
+            brace: Brace {
+                x1: 5.0,
+                y1: 5.0,
+                x2: 5.0,
+                y2: 5.0,
+                ..under.brace.clone()
+            },
+            ..under
+        };
+        let label = point.label();
+        assert_eq!(
+            (label.x, label.y, label.direction),
+            (5.0, 5.0, Anchor::Center)
+        );
+    }
 
     #[test]
     fn leader_labels_sit_on_the_far_side_of_the_line() {

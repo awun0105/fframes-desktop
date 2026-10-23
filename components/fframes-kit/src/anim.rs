@@ -34,6 +34,25 @@ impl<'a, T: Animatable + Copy + Default> From<&'a KeyFramesAnimation<T>> for Ani
     }
 }
 
+/// Manim's `ValueTracker`: a number that changes over time and drives other props. Store a
+/// `timeline!` of the value in the video (Manim's `tracker.animate.set_value(..)` calls
+/// become its keyframes), read it with [`Ui::sample`] where Manim calls `get_value()`, and
+/// build what depends on it in `render_frame`, which runs every frame like
+/// `always_redraw`. A `DecimalNumber` is a `Label` with `format!("{value:.2}")`.
+///
+/// ```
+/// use fframes_kit::prelude::*;
+/// use fframes::animation::KeyFramesAnimation;
+///
+/// fn dot<'a>(ui: &mut Ui<'a, '_, '_>, x: &'a KeyFramesAnimation<f32>) -> Svgr<'a> {
+///     let x: ValueTracker = x.into();
+///     let value = ui.sample(&x);
+///     let at = ui.space.to_px(f64::from(value), 0.0);
+///     ui.show(Dot { cx: at.x as f32, cy: at.y as f32, ..ui.defaults() })
+/// }
+/// ```
+pub type ValueTracker<'a> = Anim<'a, f32>;
+
 /// How an animation's progress maps to time, with Manim's names. `Smooth` is the default.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum RateFunc {

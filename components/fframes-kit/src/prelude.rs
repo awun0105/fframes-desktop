@@ -5,7 +5,7 @@ pub use fframes::{
     TextAlign, Transform, Video, animation::Easing, svgr, timeline,
 };
 
-pub use crate::anim::{Anim, Enter, Exit, FadeIn, FadeOut, RateFunc};
+pub use crate::anim::{Anim, Enter, Exit, FadeIn, FadeOut, RateFunc, ValueTracker};
 pub use crate::animate::{
     AnimationGroup, Circumscribe, Create, DrawBorderThenFill, Emphasis, EnterAnim, ExitAnim, Flash,
     GrowArrow, GrowFromCenter, GrowFromPoint, Indicate, LaggedStart, MoveAlongPath,
@@ -16,11 +16,11 @@ pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
 pub use crate::data::BarChart;
 pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
 pub use crate::explain::{
-    Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, NumberLine, NumberPlane,
-    ParametricFunction, Range, RiemannRectangles, SampleAt, Space, VGroup,
+    Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, Matrix, NumberLine, NumberPlane,
+    ParametricFunction, Range, RiemannRectangles, SampleAt, Space, Table, VGroup,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
-pub use crate::label::{Label, Leader};
+pub use crate::label::{BraceLabel, Label, Leader};
 #[cfg(feature = "latex")]
 pub use crate::latex::{
     ChemEq, Formula, FormulaView, MathTex, Part, Tex, TexEngine, TexError, TexTemplate,

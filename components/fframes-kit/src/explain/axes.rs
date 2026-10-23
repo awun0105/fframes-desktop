@@ -200,7 +200,7 @@ fn number(v: f64, decimals: usize) -> String {
 }
 
 /// The text of labels and numbers through the optional enter and exit fades.
-fn fade<'a>(
+pub(super) fn fade<'a>(
     ui: &Ui<'a, '_, '_>,
     content: Svgr<'a>,
     enter: Option<&FadeIn>,

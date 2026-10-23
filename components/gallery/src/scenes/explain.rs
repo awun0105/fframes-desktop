@@ -473,6 +473,185 @@ fn sim<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{rod}{mass}{reading}</g>)
 }
 
+/// A highlight that fades in behind `area`.
+fn highlight(ui: &Ui<'_, '_, '_>, area: Option<fframes_kit::kurbo::Rect>, delay: f32) -> Rectangle {
+    let area = area.unwrap_or_default();
+    Rectangle {
+        cx: area.center().x as f32,
+        cy: area.center().y as f32,
+        width: area.width() as f32,
+        height: area.height() as f32,
+        fill: Some(ui.theme.colors.highlight),
+        stroke: None,
+        opacity: 0.3,
+        enter: Some(EnterAnim::FadeIn(fade(delay))),
+        ..ui.defaults()
+    }
+}
+
+/// A matrix times a vector, with one entry highlighted.
+fn matrix<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Matrix");
+    let entries = |rows: &[&[&'static str]]| -> Vec<Vec<std::borrow::Cow<'static, str>>> {
+        rows.iter()
+            .map(|row| row.iter().map(|&e| e.into()).collect())
+            .collect()
+    };
+    let a = Matrix {
+        entries: entries(&[&["2", "0", "-1"], &["1", "3", "4"], &["0", "5", "2"]]),
+        x: 640.0,
+        enter: Some(create(0.0)),
+        entries_enter: Some(fade(0.4)),
+        ..ui.defaults()
+    };
+    let v = Matrix {
+        entries: entries(&[&["x"], &["y"], &["z"]]),
+        x: 1060.0,
+        enter: Some(create(0.6)),
+        entries_enter: Some(fade(0.9)),
+        ..ui.defaults()
+    };
+    let name = a.bounds(ui).map(|b| Label {
+        text: "A =".into(),
+        x: b.x0 as f32,
+        y: b.center().y as f32,
+        direction: Anchor::Left,
+        buff: 24.0,
+        enter: Some(fade(0.2)),
+        ..ui.defaults()
+    });
+    let mark = highlight(ui, a.cell(ui, 1, 1), 1.6);
+    let mark = ui.show(mark);
+    let a = ui.show(a);
+    let v = ui.show(v);
+    let name = name.map_or_else(Svgr::empty, |l| ui.show(l));
+    svgr!(<g>{head}{mark}{a}{v}{name}</g>)
+}
+
+/// Manim's table example: labels on both sides, lines drawn with `Create`, a highlighted
+/// cell.
+fn table<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Table");
+    let table = Table {
+        rows: vec![
+            vec!["3.2".into(), "4.1".into(), "2.8".into()],
+            vec!["5.0".into(), "1.9".into(), "6.3".into()],
+        ],
+        col_labels: vec!["Mon".into(), "Tue".into(), "Wed".into()],
+        row_labels: vec!["North".into(), "South".into()],
+        y: 560.0,
+        enter: Some(trace(0.0, 1.2)),
+        entries_enter: Some(fade(0.8)),
+        ..ui.defaults()
+    };
+    let mark = highlight(ui, table.cell(ui, 1, 2), 1.8);
+    let mark = ui.show(mark);
+    let table = ui.show(table);
+    svgr!(<g>{head}{mark}{table}</g>)
+}
+
+/// A rectangle with braces labelling its width and height.
+fn brace_label<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "BraceLabel");
+    let (x0, y0, x1, y1) = (660.0, 380.0, 1160.0, 680.0);
+    let rect = ui.show(Rectangle {
+        cx: f32::midpoint(x0, x1),
+        cy: f32::midpoint(y0, y1),
+        width: x1 - x0,
+        height: y1 - y0,
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    });
+    let width = ui.show(BraceLabel {
+        brace: Brace {
+            x1: x0,
+            y1: y1 + 16.0,
+            x2: x1,
+            y2: y1 + 16.0,
+            depth: 36.0,
+            enter: Some(create(0.6)),
+            ..ui.defaults()
+        },
+        text: "width 5".into(),
+        label_enter: Some(fade(1.0)),
+        ..ui.defaults()
+    });
+    // drawn bottom to top, so the tip points right
+    let height = ui.show(BraceLabel {
+        brace: Brace {
+            x1: x1 + 16.0,
+            y1,
+            x2: x1 + 16.0,
+            y2: y0,
+            depth: 36.0,
+            enter: Some(create(1.2)),
+            ..ui.defaults()
+        },
+        text: "height 3".into(),
+        label_enter: Some(fade(1.6)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{rect}{width}{height}</g>)
+}
+
+/// `x` of the tracker: from -2 to 2.5, then back to 0.5.
+fn tracker() -> &'static fframes::animation::KeyFramesAnimation<f32> {
+    static X: std::sync::OnceLock<fframes::animation::KeyFramesAnimation<f32>> =
+        std::sync::OnceLock::new();
+    X.get_or_init(|| {
+        timeline!(
+            at 0.8 => 2.2, animate -2.0_f32 => 2.5, Easing::EaseInOut,
+            at 2.6 => 3.6, animate 2.5_f32 => 0.5, Easing::EaseInOut,
+        )
+    })
+}
+
+fn parabola(x: f64) -> f64 {
+    0.4 * x * x
+}
+
+/// A dot on a parabola that follows a `ValueTracker`, with its value as a number.
+fn value_tracker<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "ValueTracker");
+    let x: ValueTracker = tracker().into();
+    let x = f64::from(ui.sample(&x));
+    let axes = Axes {
+        x_range: Range::new(-3.0, 3.0, 1.0),
+        y_range: Range::new(0.0, 4.0, 1.0),
+        x_length: 9.0,
+        y_length: 5.0,
+        center: (0.0, -0.4),
+        tips: false,
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    };
+    let curve = FunctionGraph {
+        enter: Some(trace(0.2, 0.6)),
+        ..axes.plot(ui, parabola)
+    };
+    let (px, py) = curve.point(x);
+    let drop = axes.vertical_line(ui, x, parabola(x));
+    let dot = ui.show(Dot {
+        cx: px,
+        cy: py,
+        radius: 14.0,
+        fill: Some(ui.theme.colors.highlight),
+        ..ui.defaults()
+    });
+    let reading = ui.show(Label {
+        text: format!("x = {x:.2}").into(),
+        x: px,
+        y: py,
+        direction: Anchor::TopLeft,
+        buff: 16.0,
+        ..ui.defaults()
+    });
+    let axes = ui.show(axes);
+    let curve = ui.show(curve);
+    let drop = ui.show(drop);
+    svgr!(<g>{head}{axes}{curve}{drop}{dot}{reading}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("NumberLine", 3.0, number_line),
@@ -483,5 +662,9 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("VGroup", 2.5, vgroup),
         GalleryScene::new("Leader", 3.0, labels),
         GalleryScene::new("Sim", 4.0, sim),
+        GalleryScene::new("Matrix", 2.5, matrix),
+        GalleryScene::new("Table", 2.5, table),
+        GalleryScene::new("BraceLabel", 2.5, brace_label),
+        GalleryScene::new("ValueTracker", 4.0, value_tracker),
     ]
 }
