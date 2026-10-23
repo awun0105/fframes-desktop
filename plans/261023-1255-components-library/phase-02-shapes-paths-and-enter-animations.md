@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Phase 2: Shapes, paths and enter animations"
-status: todo
+status: in-progress
 priority: P1
 effort: 3d
 dependencies: [1]
@@ -95,11 +95,11 @@ Manim enter animations that need geometry (`Create`, `Write`, `GrowFromCenter`,
 
 ## Todo
 
-- [ ] `Geometry` and `Shape`
-- [ ] Manim shapes, then Remotion shapes
-- [ ] `paths` functions with tests
+- [x] `Geometry` and `Shape`
+- [x] Manim shapes, then Remotion shapes
+- [x] `paths` functions with tests
 - [ ] `text_outline` with editor fallback
-- [ ] `Create`, `Write`, grow, emphasis and `MoveAlongPath` animations
-- [ ] `Transform` and `ReplacementTransform`
-- [ ] `LaggedStart`, `AnimationGroup`, `Succession`
+- [x] `Create`, `Write`, grow, emphasis and `MoveAlongPath` animations
+- [x] `Transform` and `ReplacementTransform`
+- [x] `LaggedStart`, `AnimationGroup`, `Succession`
 - [ ] Gallery scenes incl. `SquareToCircle`; docs tables; e2e frames

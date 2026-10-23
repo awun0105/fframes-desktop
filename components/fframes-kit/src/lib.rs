@@ -30,11 +30,17 @@
 //! | `lag_ratio` | [`motion::stagger`] |
 
 pub mod anim;
+pub mod animate;
+pub mod geometry;
 pub mod motion;
+pub mod paths;
 pub mod prelude;
+pub mod shapes;
 pub mod theme;
 pub mod time;
 pub mod ui;
+
+pub use kurbo;
 
 #[cfg(doctest)]
 #[doc = include_str!("../../../docs/components/components.md")]
