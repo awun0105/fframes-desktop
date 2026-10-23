@@ -226,28 +226,41 @@ shape! {
     };
     path(s) {
         let mut path = BezPath::new();
-        let (a, b) = s.x_range;
-        if !(s.dx > 0.0 && b > a) {
-            return path;
-        }
-        let n = (((b - a) / s.dx).round() as usize).clamp(1, 10_000);
         let base = s.axes.x_axis_y();
-        for i in 0..n {
-            let x0 = a + s.dx * i as f64;
-            let x1 = x0 + s.dx;
-            let at = match s.sample_at {
-                SampleAt::Left => x0,
-                SampleAt::Center => f64::midpoint(x0, x1),
-                SampleAt::Right => x1,
-            };
-            let y = (s.f)(at);
-            if !y.is_finite() {
-                continue;
-            }
+        for (x0, x1, y) in s.rects() {
             let (p0, p1) = (s.axes.c2p(x0, base), s.axes.c2p(x1, y));
             path.extend(kurbo::Rect::from_points(p0, p1).path_elements(0.1));
         }
         path
+    }
+}
+
+impl RiemannRectangles {
+    /// Each rectangle's left and right edge and height, in data units; a height that is not
+    /// finite leaves its rectangle out.
+    fn rects(&self) -> impl Iterator<Item = (f64, f64, f64)> + '_ {
+        let (a, b) = self.x_range;
+        let n = if self.dx > 0.0 && b > a {
+            (((b - a) / self.dx).round() as usize).clamp(1, 10_000)
+        } else {
+            0
+        };
+        (0..n).filter_map(move |i| {
+            let x0 = a + self.dx * i as f64;
+            let x1 = x0 + self.dx;
+            let at = match self.sample_at {
+                SampleAt::Left => x0,
+                SampleAt::Center => f64::midpoint(x0, x1),
+                SampleAt::Right => x1,
+            };
+            let y = (self.f)(at);
+            y.is_finite().then_some((x0, x1, y))
+        })
+    }
+
+    /// The Riemann sum: the signed area of the rectangles, in data units.
+    pub fn sum(&self) -> f64 {
+        self.rects().map(|(x0, x1, y)| (x1 - x0) * y).sum()
     }
 }
 
@@ -415,6 +428,7 @@ mod tests {
         // left sums: 0 + 0.25 + 1 + 2.25 = 3.5 units * 0.5 wide = 1.75 square units
         let area = rects.path().area().abs() / 1e4;
         assert!((area - 1.75).abs() < 1e-9, "{area}");
+        assert!((rects.sum() - 1.75).abs() < 1e-12);
 
         let under = Area {
             f: square,

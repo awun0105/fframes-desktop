@@ -5,9 +5,8 @@ use std::borrow::Cow;
 use fframes::{Color, Svgr};
 use kurbo::{Point, Rect, Vec2};
 
-use super::axes::fade;
 use crate::{
-    anim::{FadeIn, FadeOut},
+    anim::{FadeIn, FadeOut, fade},
     animate::{EnterAnim, ExitAnim, draw_animated},
     geometry::Shape,
     label::text_size,

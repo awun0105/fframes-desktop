@@ -291,6 +291,8 @@ Rules:
   their glyphs over the whole `Write`.
 
 ```rust
+# #[cfg(feature = "latex")]
+# mod example {
 use std::sync::OnceLock;
 
 use fframes_kit::prelude::*;
@@ -328,8 +330,15 @@ fn solve<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ui.show(TransformMatchingTex { delay: 0.5, ..TransformMatchingTex::new(from, view(&f.solved)) })
 }
 
+# pub fn chem() {
 let reaction = ChemEq::new("CH4 + 2O2 -> CO2 + 2H2O");
 assert_eq!(fframes_kit::latex::chem_source(reaction.ce).matches("{{").count(), 4);
+# }
+# }
+# fn main() {
+# #[cfg(feature = "latex")]
+# example::chem();
+# }
 ```
 
 ## Shapes

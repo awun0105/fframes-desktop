@@ -6,7 +6,7 @@ use fframes::{Color, Svgr};
 use kurbo::{BezPath, Point, Vec2};
 
 use crate::{
-    anim::{Enter, Exit, FadeIn, FadeOut},
+    anim::{FadeIn, FadeOut, fade},
     animate::{Emphasis, EnterAnim, ExitAnim, draw_animated},
     geometry::Shape,
     label::Label,
@@ -196,23 +196,6 @@ fn number(v: f64, decimals: usize) -> String {
         s[1..].to_owned()
     } else {
         s
-    }
-}
-
-/// The text of labels and numbers through the optional enter and exit fades.
-pub(super) fn fade<'a>(
-    ui: &Ui<'a, '_, '_>,
-    content: Svgr<'a>,
-    enter: Option<&FadeIn>,
-    exit: Option<&FadeOut>,
-) -> Svgr<'a> {
-    let content = match enter {
-        Some(e) => e.apply(ui, content),
-        None => content,
-    };
-    match exit {
-        Some(x) => x.apply(ui, content),
-        None => content,
     }
 }
 

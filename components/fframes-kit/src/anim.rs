@@ -122,6 +122,23 @@ pub trait Exit {
     fn apply<'a>(&self, ui: &Ui<'a, '_, '_>, content: Svgr<'a>) -> Svgr<'a>;
 }
 
+/// `content` through the optional enter and exit fades.
+pub(crate) fn fade<'a>(
+    ui: &Ui<'a, '_, '_>,
+    content: Svgr<'a>,
+    enter: Option<&FadeIn>,
+    exit: Option<&FadeOut>,
+) -> Svgr<'a> {
+    let content = match enter {
+        Some(e) => e.apply(ui, content),
+        None => content,
+    };
+    match exit {
+        Some(x) => x.apply(ui, content),
+        None => content,
+    }
+}
+
 /// Fades content in while it moves by `shift` to its place (Manim's `FadeIn(shift=..)`).
 ///
 /// `shift` is in canvas units, `y` down: `(0.0, -40.0)` rises 40 units into place.

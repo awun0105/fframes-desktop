@@ -7,6 +7,7 @@ fframes-kit` from `components/`).
 | File | Covers |
 | --- | --- |
 | [components.md](components.md) | the import, the component model, time containers, fades, rate functions, `Anim`, `Theme`, writing your own component, a whole video |
+| [math.md](math.md) | the math kit (feature `math`): its figures, each with an example and its gallery scene |
 
 LaTeX formulas (feature `latex`) need a TeX installation: see [latex-setup.md](../latex-setup.md).
 

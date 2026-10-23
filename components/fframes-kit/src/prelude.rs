@@ -20,6 +20,10 @@ pub use crate::explain::{
     ParametricFunction, Range, RiemannRectangles, SampleAt, Space, Table, VGroup,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
+#[cfg(feature = "math")]
+pub use crate::kits::math::{
+    AreaUnder, FunctionPlot, Interval, NumberPoint, RiemannSum, Secant, Tangent,
+};
 pub use crate::label::{BraceLabel, Label, Leader};
 #[cfg(feature = "latex")]
 pub use crate::latex::{

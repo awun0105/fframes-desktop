@@ -3,12 +3,9 @@ use std::borrow::Cow;
 use fframes::{Color, Svgr};
 use kurbo::{BezPath, Rect};
 
-use super::{
-    axes::fade,
-    table::{Cell, TextGrid},
-};
+use super::table::{Cell, TextGrid};
 use crate::{
-    anim::{FadeIn, FadeOut},
+    anim::{FadeIn, FadeOut, fade},
     animate::{EnterAnim, ExitAnim, draw_animated},
     geometry::Shape,
     theme::{TextStyle, Theme},

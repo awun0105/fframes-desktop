@@ -54,6 +54,7 @@ pub mod data;
 pub mod decor;
 pub mod explain;
 pub mod geometry;
+pub mod kits;
 pub mod label;
 #[cfg(feature = "latex")]
 pub mod latex;
@@ -77,3 +78,7 @@ pub use kurbo;
 #[cfg(doctest)]
 #[doc = include_str!("../../../docs/components/components.md")]
 struct ComponentsDocs;
+
+#[cfg(all(doctest, feature = "math"))]
+#[doc = include_str!("../../../docs/components/math.md")]
+struct MathDocs;
