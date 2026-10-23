@@ -309,6 +309,60 @@ fn pythagoras<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+/// One half as halves, quarters and eighths lining up, and three quarters as a pie next to
+/// six eighths.
+fn fractions<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Fractions");
+    let bars: Vec<Svgr> = [2, 4, 8]
+        .into_iter()
+        .enumerate()
+        .map(|(row, d)| {
+            ui.show(FractionBar {
+                numerator: d / 2,
+                denominator: d,
+                x: 260.0,
+                y: 300.0 + row as f32 * 170.0,
+                width: 760.0,
+                enter: Some(create(row as f32 * 0.2)),
+                delay: 0.8 + row as f32 * 0.6,
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let pies: Vec<Svgr> = [(3, 4, 1290.0), (6, 8, 1640.0)]
+        .into_iter()
+        .map(|(n, d, cx)| {
+            ui.show(FractionPie {
+                numerator: n,
+                denominator: d,
+                cx,
+                cy: 470.0,
+                radius: 140.0,
+                enter: Some(create(0.3)),
+                delay: if d == 4 { 1.0 } else { 2.0 },
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let bars: Svgr = bars.into();
+    let pies: Svgr = pies.into();
+    svgr!(<g>{head}{bars}{pies}</g>)
+}
+
+/// A 2x3 times 3x2 product worked out entry by entry.
+fn matrix_view<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "MatrixView");
+    let view = ui.show(MatrixView {
+        a: vec![vec![1.0, 2.0, 0.0], vec![-1.0, 3.0, 1.0]],
+        b: vec![vec![2.0, 1.0], vec![0.0, 1.0], vec![4.0, -2.0]],
+        delay: 0.9,
+        step: 0.8,
+        matrices_enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{view}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("NumberLinePoint", 4.0, number_line_point),
@@ -320,5 +374,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("LinearTransform", 4.0, linear_transform),
         GalleryScene::new("VectorSum", 4.5, vector_sum),
         GalleryScene::new("Pythagoras", 4.0, pythagoras),
+        GalleryScene::new("Fractions", 4.0, fractions),
+        GalleryScene::new("MatrixView", 4.6, matrix_view),
     ]
 }

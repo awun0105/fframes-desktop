@@ -238,3 +238,58 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 
 assert_eq!(Pythagoras::default().areas(), [9.0, 16.0, 25.0]);
 ```
+
+## FractionBar and FractionPie
+
+A bar or a circle cut into `denominator` equal parts, of which the first `numerator` fill one
+after another (`stagger` seconds apart, from `delay`). Bars of the same width stacked under
+each other show equal fractions lining up. The fraction is written next to the bar or under
+the circle. Both are placed in pixels. Gallery scene: `Fractions`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let bars: Vec<Svgr> = [2, 4, 8]
+        .into_iter()
+        .enumerate()
+        .map(|(row, d)| {
+            ui.show(FractionBar {
+                numerator: d / 2,
+                denominator: d,
+                y: 300.0 + row as f32 * 170.0,
+                delay: row as f32 * 0.6,
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let pie = ui.show(FractionPie { numerator: 3, denominator: 4, cx: 1500.0, ..ui.defaults() });
+    let bars: Svgr = bars.into();
+    svgr!(<g>{bars}{pie}</g>)
+}
+```
+
+## MatrixView
+
+A matrix product worked out entry by entry: `a × b = c`, centered on `(x, y)`. From
+`delay`, every `step` seconds the next entry of the product is written, row by row, while its
+row of `a` and column of `b` are highlighted. `product(a, b)` is the multiplication, `None`
+when the sizes do not fit. Gallery scene: `MatrixView`.
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::kits::math::product;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(MatrixView {
+        a: vec![vec![1.0, 2.0, 0.0], vec![-1.0, 3.0, 1.0]],
+        b: vec![vec![2.0, 1.0], vec![0.0, 1.0], vec![4.0, -2.0]],
+        delay: 1.0,
+        step: 0.8,
+        ..ui.defaults()
+    })
+}
+
+let c = product(&[vec![1.0, 2.0]], &[vec![3.0], vec![4.0]]);
+assert_eq!(c, Some(vec![vec![11.0]]));
+```
