@@ -340,3 +340,45 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>, samples: &[f64]) -> Svgr<'a> {
 
 assert_eq!(bin(&[0.1, 0.2, 0.9], (0.0, 1.0), 2, false), vec![2.0, 1.0]);
 ```
+
+## NormalFit
+
+Samples pouring into a histogram, then the normal curve that fits them. `samples` is a
+slice, and `shown` (a tracker) says how many of them are binned so far: `bins` bars over
+`range` as a density, no taller than the top of the y range. The curve has the mean and
+standard deviation of the samples shown and draws with `curve_enter`. With `stats` it writes
+`n = 1500   mean 0.03   sd 1.01` at `stats_at` (pixels). `normal_samples(seed, n, mean, sd)`
+gives the same samples for the same seed on every machine; `mean_sd` and `normal_pdf` are the
+numbers behind the curve. Gallery scene: `HistogramToNormal`.
+
+```rust
+use fframes::animation::KeyFramesAnimation;
+use fframes_kit::prelude::*;
+use fframes_kit::kits::math::{mean_sd, normal_samples};
+
+fn figure<'a>(
+    ui: &mut Ui<'a, '_, '_>,
+    samples: &'a [f64],
+    shown: &'a KeyFramesAnimation<f32>,
+) -> Svgr<'a> {
+    let axes = Axes {
+        x_range: Range::new(-3.0, 3.0, 1.0),
+        y_range: Range::new(0.0, 0.5, 0.1),
+        ..ui.defaults()
+    };
+    let map = axes.map(ui);
+    let fit = ui.show(NormalFit {
+        samples,
+        shown: shown.into(),
+        axes: map,
+        curve_enter: Some(Create { delay: 3.0, ..Default::default() }.into()),
+        ..ui.defaults()
+    });
+    let axes = ui.show(axes);
+    svgr!(<g>{axes}{fit}</g>)
+}
+
+let samples = normal_samples(7, 1500, 0.0, 1.0);
+let (mean, sd) = mean_sd(&samples);
+assert!(mean.abs() < 0.1 && (sd - 1.0).abs() < 0.1);
+```

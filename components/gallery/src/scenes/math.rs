@@ -495,6 +495,47 @@ fn plots<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{heatmap}{axes}{line}{dots}{chart}{histogram}</g>)
 }
 
+/// 1500 seeded normal samples pouring into a histogram, then the normal curve that fits
+/// them.
+fn histogram_to_normal<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static SAMPLES: OnceLock<Vec<f64>> = OnceLock::new();
+    static SHOWN: OnceLock<KeyFramesAnimation<f32>> = OnceLock::new();
+    let samples =
+        SAMPLES.get_or_init(|| fframes_kit::kits::math::normal_samples(7, 1500, 0.0, 1.0));
+    let shown =
+        SHOWN.get_or_init(|| timeline!(at 0.6 => 3.0, animate 0.0_f32 => 1500.0, Easing::EaseIn));
+    let head = title(ui, "HistogramToNormal");
+    let axes = Axes {
+        x_range: Range::new(-3.0, 3.0, 1.0),
+        y_range: Range::new(0.0, 0.5, 0.1),
+        x_length: 10.0,
+        y_length: 5.0,
+        center: (-0.8, -0.6),
+        tips: false,
+        x_numbers: (-3..=3).map(f64::from).collect(),
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    };
+    let fit = ui.show(NormalFit {
+        samples,
+        shown: shown.into(),
+        axes: axes.map(ui),
+        curve_enter: Some(
+            Create {
+                delay: 3.1,
+                run_time: 0.9,
+                ..Create::default()
+            }
+            .into(),
+        ),
+        stats_at: (1600.0, 260.0),
+        stats_enter: Some(fade(0.6)),
+        ..ui.defaults()
+    });
+    let axes = ui.show(axes);
+    svgr!(<g>{head}{axes}{fit}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("NumberLinePoint", 4.0, number_line_point),
@@ -509,5 +550,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Fractions", 4.0, fractions),
         GalleryScene::new("MatrixView", 4.6, matrix_view),
         GalleryScene::new("Plots", 4.0, plots),
+        GalleryScene::new("HistogramToNormal", 4.6, histogram_to_normal),
     ]
 }

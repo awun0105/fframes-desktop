@@ -23,7 +23,7 @@ pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(feature = "math")]
 pub use crate::kits::math::{
     AreaUnder, FractionBar, FractionPie, FunctionPlot, Interval, LinearTransform, MatrixView,
-    NumberPoint, Pythagoras, RiemannSum, Secant, Tangent, UnitCircle, VectorSum,
+    NormalFit, NumberPoint, Pythagoras, RiemannSum, Secant, Tangent, UnitCircle, VectorSum,
 };
 pub use crate::label::{BraceLabel, Label, Leader};
 #[cfg(feature = "latex")]
