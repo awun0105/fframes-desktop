@@ -94,8 +94,9 @@ pub fn tip(terms: &[Term], turns: f64) -> (f64, f64) {
 /// the 3Blue1Brown Fourier series). `terms` come from [`fourier`], largest first, and are
 /// placed with the series' center at `center` (units of `ui.space`, y up), `scale` units
 /// for one unit of the series. `turns` (a tracker) is how far the series has turned; the
-/// trace is what the end drew in the last `trace_length` turns (1 keeps the whole drawing).
-/// The circles and vectors draw with `enter`.
+/// trace is what the end drew in the last `trace_length` turns (1 keeps one full turn, the
+/// whole drawing). The circles and vectors draw with `enter` and leave with `exit`; the trace
+/// stays, so wrap the figure in a fade to take it away too.
 #[derive(Debug, Clone)]
 pub struct Epicycles<'a> {
     pub terms: &'a [Term],
