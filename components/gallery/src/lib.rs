@@ -16,6 +16,8 @@ pub type Draw = for<'a, 'c, 'm> fn(&mut Ui<'a, 'c, 'm>) -> Svgr<'a>;
 pub struct GalleryScene {
     pub name: &'static str,
     pub seconds: f32,
+    /// Seconds this scene starts before the previous one ends (`Overlap::Previous`).
+    pub overlap: f32,
     pub theme: Theme,
     pub draw: Draw,
 }
@@ -25,8 +27,17 @@ impl GalleryScene {
         Self {
             name,
             seconds,
+            overlap: 0.0,
             theme: Theme::default(),
             draw,
+        }
+    }
+
+    /// Starts `seconds` before the previous scene ends.
+    pub fn with_overlap(self, seconds: f32) -> Self {
+        Self {
+            overlap: seconds,
+            ..self
         }
     }
 }
@@ -38,6 +49,14 @@ impl Scene for GalleryScene {
 
     fn name(&self) -> &'static str {
         self.name
+    }
+
+    fn overlap(&self) -> Overlap {
+        if self.overlap > 0.0 {
+            Overlap::Previous(self.overlap)
+        } else {
+            Overlap::None
+        }
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {

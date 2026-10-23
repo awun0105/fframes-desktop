@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Phase 3: Basic transitions"
-status: todo
+status: completed
 priority: P1
 effort: 2d
 dependencies: [1]
@@ -87,8 +87,8 @@ advanced presentations and the effects module wait for phase 11.
 
 ## Todo
 
-- [ ] `TransitionSeries` with frame arithmetic tests
-- [ ] `Presentation` trait, `Fade`, `Slide`, `Wipe`
-- [ ] `Timing::Linear` and `Timing::Spring`
-- [ ] `SceneFade` and `scene_transition` for core scenes
-- [ ] Gallery scenes, `components.md` transitions section, e2e frames
+- [x] `TransitionSeries` with frame arithmetic tests
+- [x] `Presentation` trait, `Fade`, `Slide`, `Wipe`
+- [x] `Timing::Linear` and `Timing::Spring`
+- [x] `SceneFade` and `scene_transition` for core scenes
+- [x] Gallery scenes, `components.md` transitions section, e2e frames

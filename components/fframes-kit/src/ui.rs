@@ -91,8 +91,9 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
         }
     }
 
-    /// A `Ui` for `scene`: `duration` is the scene's own length, so exit animations end
-    /// with it. Scenes get the video's context, whose length is the whole video's.
+    /// A `Ui` for `scene`: `duration` is the frames the scene renders, its own length plus
+    /// its overlaps, so exit animations end with it. Scenes get the video's context, whose
+    /// length is the whole video's.
     pub fn for_scene<S: Scene>(
         frame: Frame,
         ctx: &'c FFramesContext<'a, 'm>,
@@ -101,7 +102,10 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
     ) -> Self {
         let duration = ctx
             .get_scene_info(scene)
-            .map_or(ctx.duration_in_frames, |info| info.duration_in_frames);
+            .map_or(ctx.duration_in_frames, |info| {
+                info.duration_in_frames
+                    .max(info.end_frame - info.start_frame)
+            });
         Self {
             frame,
             duration: Some(duration),

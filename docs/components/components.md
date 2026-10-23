@@ -196,6 +196,119 @@ let half = paths::interpolate_path(0.5, &square, &paths::scale_path(&square, 2.0
 assert!((paths::get_bounding_box(&half).width() - 15.0).abs() < 1e-9);
 ```
 
+## Transitions
+
+`TransitionSeries` is Remotion's `<TransitionSeries>`: sequences one after another, with a
+transition between two of them. A transition overlaps its two sequences by its duration,
+so both show during it and the series is shorter than its sequences by the sum of the
+transitions. The entering sequence is drawn on top.
+
+| Item or component | Props | What it does |
+| --- | --- | --- |
+| `TransitionSeries` | `key: Option<&str>`, `items` | the series; `key` keeps clip ids apart when two series share a frame |
+| `TransitionSeries::sequence(seconds, children)` | | a sequence; inside, time starts at 0 and `ui.duration` is its length |
+| `TransitionSeries::transition(timing, presentation)` | | a transition between the sequences on either side |
+| `Fade` | `should_fade_out_exiting_scene` (false) | the entering sequence fades in over the exiting one (Remotion `fade()`) |
+| `Slide` | `direction` (`FromLeft`), `size` (1920 x 1080) | the entering sequence pushes the exiting one out (`slide()`) |
+| `Wipe` | `direction` (`FromLeft`), `size` | an edge moves across and uncovers the entering sequence (`wipe()`) |
+| `Timing::Linear` | `duration`, `easing: RateFunc` | Remotion's `linearTiming`; the theme default is `motion.duration.slow` with `motion.easing.standard` |
+| `Timing::Spring` | `mass`, `stiffness`, `damping`, `duration: Option<f32>` | `springTiming`: lasts until the spring settles, or is squeezed into `duration` |
+| `SceneFade` | `fade_in`, `fade_out`, `rate_func`, `children` | fades at both edges of the enclosing sequence or scene; `SceneFade::new(ui, children)` takes the theme's `motion.duration.fast` |
+
+`direction` is `FromLeft`, `FromRight`, `FromTop` or `FromBottom`. `size` is the canvas in
+view-box units. Change it when the view box is not 1920 x 1080. A transition that is longer
+than a sequence next to it is shortened to that sequence. A transition that is first, last
+or next to another transition is skipped. `inspect` warns about both.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn panel<'a>(ui: &mut Ui<'a, '_, '_>, background: Color) -> Svgr<'a> {
+    ui.show(Fill { background: Some(background), children: children(|_| Svgr::empty()) })
+}
+
+/// Two 1.5 s panels with a 0.8 s wipe: 2.2 s in all.
+fn wipe<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let c = ui.theme.colors;
+    let timing: Timing = ui.defaults();
+    ui.show(TransitionSeries {
+        key: None,
+        items: vec![
+            TransitionSeries::sequence(1.5, children(move |ui| panel(ui, c.surface))),
+            TransitionSeries::transition(timing, Wipe { direction: Direction::FromRight, ..Wipe::default() }),
+            TransitionSeries::sequence(1.5, children(move |ui| panel(ui, c.accent))),
+        ],
+    })
+}
+```
+
+A presentation of your own implements `Presentation`. `apply` gets the progress, 0 when the
+transition starts and 1 when it ends, for both sides. A spring may overshoot 1. `side` is
+`Side::Entering` or `Side::Exiting`, and `id` is unique to the transition in the frame, for
+clip paths, masks and gradients.
+
+```rust
+use fframes_kit::prelude::*;
+
+/// The entering sequence grows from the center of the canvas.
+struct Zoom;
+
+impl Presentation for Zoom {
+    fn apply<'a>(&self, progress: f32, side: Side, content: Svgr<'a>, _ui: &Ui<'a, '_, '_>, _id: &str) -> Svgr<'a> {
+        if side == Side::Exiting {
+            return content;
+        }
+        let s = motion::lerp(0.6, 1.0, progress);
+        let shift = Transform::translate(960.0 * (1.0 - s), 540.0 * (1.0 - s));
+        svgr!(
+            <g transform={shift} opacity={motion::clamp01(progress)}>
+                <g transform={Transform::scale(s)}>{content}</g>
+            </g>
+        )
+    }
+}
+
+let spring = Timing::Spring { mass: 1.0, stiffness: 100.0, damping: 10.0, duration: None };
+assert!(spring.duration() > 0.3);
+assert_eq!(spring.progress(0.0, spring.duration()), 0.0);
+assert_eq!(spring.progress(spring.duration(), spring.duration()), 1.0);
+```
+
+Core scenes can transition without a series through their `Overlap`. In `render_frame`, wrap
+the content with `scene_transition(ui, &presentation, timing, side, key, content)`, using a
+`Ui` made with `Ui::for_scene`. `Side::Entering` runs over the scene's first
+`timing.duration()` seconds, so give the scene `Overlap::Previous` of the same length.
+`Side::Exiting` runs over the last seconds, and goes on the scene before it.
+
+```rust
+use fframes_kit::prelude::*;
+
+#[derive(Debug)]
+struct Second {
+    theme: Theme,
+}
+
+const SLIDE: Timing = Timing::Linear { duration: 0.5, easing: RateFunc::Smooth };
+
+impl Scene for Second {
+    fn duration(&self) -> Duration<'_> {
+        Duration::Seconds(3.0)
+    }
+
+    fn overlap(&self) -> Overlap {
+        Overlap::Previous(0.5) // starts under the end of the scene before
+    }
+
+    fn render_frame<'a>(&'a self, frame: Frame, ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
+        let mut ui = Ui::for_scene(frame, ctx, &self.theme, self);
+        let content = ui.show(Fill { background: Some(ui.theme.colors.accent), children: children(|_| Svgr::empty()) });
+        let slide = Slide { direction: Direction::FromRight, ..Slide::default() };
+        scene_transition(&ui, &slide, SLIDE, Side::Entering, Some("second"), content)
+    }
+}
+# let _ = Second { theme: Theme::default() };
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`
