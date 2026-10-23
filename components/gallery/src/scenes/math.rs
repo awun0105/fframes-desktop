@@ -286,6 +286,7 @@ fn vector_sum<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         enter: Some(create(0.0)),
         resultant_enter: Some(create(2.9)),
         labels_enter: Some(fade(0.5)),
+        resultant_label_enter: Some(fade(3.4)),
         ..ui.defaults()
     });
     svgr!(<g>{head}{sum}</g>)

@@ -208,6 +208,7 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         resultant_label: "u + v".into(),
         delay: 3.5,
         resultant_enter: Some(Create { delay: 5.0, ..Create::default() }.into()),
+        resultant_label_enter: Some(FadeIn { delay: 5.5, ..FadeIn::default() }),
         ..ui.defaults()
     });
     svgr!(<g>{shear}{sum}</g>)

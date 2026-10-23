@@ -246,6 +246,8 @@ pub struct VectorSum<'a> {
     pub enter: Option<EnterAnim>,
     pub resultant_enter: Option<EnterAnim>,
     pub labels_enter: Option<FadeIn>,
+    /// The resultant's label also fades with this, to wait for the resultant.
+    pub resultant_label_enter: Option<FadeIn>,
 }
 
 impl Themed for VectorSum<'_> {
@@ -264,6 +266,7 @@ impl Themed for VectorSum<'_> {
             enter: None,
             resultant_enter: None,
             labels_enter: None,
+            resultant_label_enter: None,
         }
     }
 }
@@ -373,7 +376,10 @@ impl<'a> Component<'a> for VectorSum<'a> {
                 } else {
                     (b, a)
                 };
-                labels.push(side_label(ui, self.resultant_label.clone(), a, b));
+                labels.push(Label {
+                    enter: self.resultant_label_enter,
+                    ..side_label(ui, self.resultant_label.clone(), a, b)
+                });
             }
         }
         let labels: Vec<Svgr> = labels.into_iter().map(|l| ui.show(l)).collect();
