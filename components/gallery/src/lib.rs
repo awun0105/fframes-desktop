@@ -1,7 +1,7 @@
 //! The fframes-kit gallery: one scene per component, named after the component, so
 //! `frame Sequence@50%` shows `Sequence` and the e2e harness addresses scenes by name.
 
-use fframes::include_media_dir;
+use fframes::{AudioTimestamp, include_media_dir};
 use fframes_kit::prelude::*;
 
 pub mod scenes;
@@ -18,6 +18,8 @@ pub struct GalleryScene {
     pub seconds: f32,
     /// Seconds this scene starts before the previous one ends (`Overlap::Previous`).
     pub overlap: f32,
+    /// A file of the media that plays from the start of the scene.
+    pub audio: Option<&'static str>,
     pub theme: Theme,
     pub draw: Draw,
 }
@@ -28,8 +30,17 @@ impl GalleryScene {
             name,
             seconds,
             overlap: 0.0,
+            audio: None,
             theme: Theme::default(),
             draw,
+        }
+    }
+
+    /// Plays `file` from the start of the scene.
+    pub fn with_audio(self, file: &'static str) -> Self {
+        Self {
+            audio: Some(file),
+            ..self
         }
     }
 
@@ -57,6 +68,12 @@ impl Scene for GalleryScene {
         } else {
             Overlap::None
         }
+    }
+
+    fn audio(&self) -> AudioMap<'_> {
+        self.audio.map_or_else(AudioMap::none, |file| {
+            AudioMap::from([(file, AudioTimestamp::Second(0.0)..AudioTimestamp::Eof)])
+        })
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {

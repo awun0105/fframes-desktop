@@ -43,7 +43,11 @@
 
 pub mod anim;
 pub mod animate;
+pub mod audio;
+pub mod data;
+pub mod decor;
 pub mod geometry;
+pub mod media;
 pub mod motion;
 pub mod overlay;
 pub mod paths;

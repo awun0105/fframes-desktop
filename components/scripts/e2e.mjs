@@ -33,7 +33,7 @@ const out = join(target, "e2e", renderer);
 
 // prettier-ignore
 const examples = [
-  { dir: "gallery", pkg: "components-gallery", bin: "components_gallery_bin", frames: "Sequence@50%,Series@50%,FadeIn@50%,Theme@50%,SquareToCircle@45%,Write@30%,Create@50%,Flash@40%,CurvedArrow@end,Callout@end,Uncreate@90%,Fade@50%,Slide@50%,Wipe@50%,SceneOverlap@0.3s,FitText@50%,Letters@0.3s,TextReveal@0.5s,Typewriter@0.8s,Counter@40%,Paragraph@50%,Appear@50%,LowerThird@50%,Captions@50%,CaptionStack@50%,ChapterList@60%,Annotation@end,ProgressBar@50%,Check@end" },
+  { dir: "gallery", pkg: "components-gallery", bin: "components_gallery_bin", frames: "Sequence@50%,Series@50%,FadeIn@50%,Theme@50%,SquareToCircle@45%,Write@30%,Create@50%,Flash@40%,CurvedArrow@end,Callout@end,Uncreate@90%,Fade@50%,Slide@50%,Wipe@50%,SceneOverlap@0.3s,FitText@50%,Letters@0.3s,TextReveal@0.5s,Typewriter@0.8s,Counter@40%,Paragraph@50%,Appear@50%,LowerThird@50%,Captions@50%,CaptionStack@50%,ChapterList@60%,Annotation@end,ProgressBar@50%,Check@end,BarChart@end,SpectrumBars@50%,Waveform@50%,DrawOn@0.7s,CornerMarks@end,Glow@50%,DropShadow@50%,PhotoFrame@50%,KenBurns@end" },
 ];
 
 const run = (command, args, cwd) =>

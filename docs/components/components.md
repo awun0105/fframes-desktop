@@ -199,6 +199,54 @@ let list = ChapterList {
 assert_eq!(list.active(6.0), 1);
 ```
 
+## Data, audio, decoration and media
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `BarChart` | `bars: Vec<(Cow<str>, f64)>`, `x`, `y` (baseline), `bar_width` (126), `gap` (62), `max_height` (330), `max_value`, `radius`, `fill`, `highlight: Option<usize>`, `highlight_fill`, `value_style`, `value_fill`, `label_style`, `label_fill`, `decimals`, `delay`, `stagger`, `run_time`, `rate_func` | bars grow one after another, each value counting up above its bar and its label below; a bar starts as a hairline |
+| `SpectrumBars` | `values`, `x`, `y`, `width`, `bar_width`, `gain` (60), `min_height`, `max_height` (720), `radius` (`None`: round ends), `fill`, `align` (`BarAlign::Center`, `Bottom`) | one rounded bar per value, `value * gain` pixels high; NaN draws the shortest bar |
+| `Waveform` | `values`, `x`, `y` (baseline), `width`, `gain` (1200), `max_height` (600), `fill`, `stroke`, `stroke_width`, `opacity` | a smooth closed wave through the values, starting and ending on the baseline (`audio::wave_path` gives the path data) |
+| `DrawOn` | `DrawOn::new(ui, shape)`, then `delay`, `run_time`, `rate_func` | `Create` on any `Shape` you built: an underline, a tick, a hand-drawn arrow draws on from its start |
+| `CornerMarks` | `x`, `y`, `width`, `height`, `arm` (24), `color`, `stroke_width`, `enter: Option<EnterAnim>` | crop-mark corners around a rectangle, static or drawn on with `enter` |
+| `Glow` | `id` (`kit-glow`), `shadow` (`theme.shadow.glow`) | a filter definition; draw it in `<defs>`, then `filter={glow.url()}` |
+| `DropShadow` | `id` (`kit-card`), `shadow` (`theme.shadow.card`) | the same for the drop shadow under a card |
+| `PhotoFrame` | `image`, `key`, `x`, `y`, `width`, `height`, `radius`, `stroke`, `stroke_width` (12), `opacity` | an image of the media clipped to a rounded, stroked frame |
+| `KenBurns` | `image`, `key`, `x`, `y`, `width`, `height`, `from`, `zoom` (1.06), `zoom_per_second` (0.02), `drift`, `fade` | an image slowly pushed in and drifted sideways from `from` seconds, clipped to its box |
+
+`audio::spectrum(ui, file, SampleSize::S256, smooth)` gives the values for the audio
+components: the spectrum of `file` at the current frame, or `None` when the file is not in
+the video's or the scene's `fn audio`. The frame is the container's, so a scene's file
+should start with the scene. `PhotoFrame` and `KenBurns` draw nothing for a missing image;
+`key` names their clip path when two are in one frame.
+
+A level meter on a podcast cover, a highlighted word that gets underlined, and a glowing
+title:
+
+```rust
+use fframes_kit::prelude::*;
+
+fn cover<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let values = audio::spectrum(ui, "episode.mp3", fframes::SampleSize::S256, 4)
+        .map(|s| s.into_iter().take(48).collect())
+        .unwrap_or_default();
+    let meter = ui.show(SpectrumBars { values, x: 160.0, y: 820.0, width: 1600.0, ..ui.defaults() });
+
+    let path = BezPath::from_svg("M200 660 H820").unwrap_or_default();
+    let stroke = Some(ui.theme.colors.accent);
+    let underline = Shape { path, fill: None, stroke, stroke_width: 8.0, dash: None, opacity: 1.0 };
+    let underline = ui.show(DrawOn { delay: 0.4, ..DrawOn::new(ui, underline) });
+
+    let glow = Glow::default();
+    let url = glow.url();
+    let defs = ui.show(glow);
+    let title = ui.show(HudLabel { text: "Episode 12".into(), x: 200.0, y: 620.0, ..ui.defaults() });
+    svgr!(<g><defs>{defs}</defs><g filter={url}>{title}</g>{underline}{meter}</g>)
+}
+
+let chart = BarChart { bars: vec![("a".into(), 10.0), ("b".into(), 20.0)], ..BarChart::default() };
+assert_eq!(chart.grown(1, 0.0), 0.0);
+```
+
 ## Shapes
 
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,

@@ -12,7 +12,11 @@ pub use crate::animate::{
     ReplacementTransform, SpinInFromNothing, Succession, Transform as Morph, Uncreate, Wiggle,
     Write,
 };
+pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
+pub use crate::data::BarChart;
+pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
 pub use crate::geometry::{Geometry, Look, Shape};
+pub use crate::media::KenBurns;
 pub use crate::motion::{self, Beat};
 pub use crate::overlay::{
     Annotation, Appear, Caption, CaptionStack, Captions, ChapterList, Check, LowerThird,
