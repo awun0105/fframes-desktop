@@ -45,6 +45,7 @@ pub mod anim;
 pub mod animate;
 pub mod geometry;
 pub mod motion;
+pub mod overlay;
 pub mod paths;
 pub mod prelude;
 pub mod shapes;

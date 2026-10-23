@@ -100,7 +100,7 @@ Every component: themed defaults, `key`, text measured with `Ui::text_width`/`te
 
 - [x] Beat grid and `timecode` in `motion`
 - [x] Text components
-- [ ] Overlay components
+- [x] Overlay components
 - [ ] Data, audio, decoration and media components
 - [ ] Reference renders of `fframes-studio-intro` before migration
 - [ ] Migrate `fframes-studio-intro`; delete its `beat.rs`/`ui.rs`

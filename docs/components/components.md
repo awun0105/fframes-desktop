@@ -155,6 +155,50 @@ fn drop_in<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+## Overlays
+
+Overlays sit on top of a scene: who is speaking, what is said, where in the video we are.
+They take their times from the container they are shown in (`ui.seconds()` and
+`ui.duration`), so the same lower third works in any scene or `Sequence`, and the ones
+that leave do so before the container ends.
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `Appear` | `Appear::new(ui, from, center, children)`, then `until`, `rise` (60), `scale_from` (0.92), `enter`, `exit`, `rate_func` | children rise, grow about `center` and fade in at `from` seconds, and leave upward at `until` (or the end of the container); inside, time starts at `from` |
+| `LowerThird` | `name`, `role`, `x`, `y`, `name_style`, `role_style`, `name_fill`, `role_fill`, `bar`, `bar_width` (6), `background: Option<Color>`, `min_width`, `padding`, `delay`, `stagger`, `run_time`, `exit`, `rate_func` | an accent bar grows, then the name and the role slide out from behind it; all of it leaves in reverse order before the end. With `background`, a plate as wide as the longer line |
+| `Captions` | `file`, `x`, `y`, `width`, `style`, `fill`, `align`, `video_time` (true) | the cue of a WebVTT file that plays now, wrapped into `width`; cue times are video seconds, or container seconds with `video_time: false` |
+| `CaptionStack` | `items: Vec<Caption>` (`Caption::new(at, tag, line)`), `x`, `y`, `gap`, `tag_style`, `line_style`, `tag_fill`, `line_fill`, `tag_spacing`, `rise`, `enter`, `leave`, `rate_func` | timed captions without a file: each rises in at its `at` and leaves upward while the next comes in; the last stays |
+| `ChapterList` | `chapters: Vec<(f32, Cow<str>)>`, `x`, `y`, `width`, `row_height`, `gap`, `style`, `fill`, `active_fill`, `highlight`, `radius`, `spring` | an agenda whose highlight springs to the chapter playing now |
+| `Annotation` | `target`, `label`, `text`, `color`, `style`, `letter_spacing`, `stroke_width`, `delay`, `run_time`, `rate_func` | a dot on `target`, an elbow line to `label` and the text at its end; the line draws on, the text fades in |
+| `ProgressBar` | `x`, `y`, `width`, `height` (8), `radius`, `track`, `fill`, `progress: Option<f32>` | how far the container is (`None`), or a given value from 0 to 1 |
+| `Check` | `x`, `y`, `size`, `color`, `stroke_width` (5), `delay`, `run_time`, `rate_func` | a check mark that draws itself on |
+
+`Annotation` is the HUD callout with a line; `Callout` (under Shapes) is the speech bubble.
+`Captions` has no glow of its own: wrap it in a `<g filter=..>` with the `Glow` decoration.
+
+A speaker introduced over the first four seconds of a scene, with captions from a file
+under it and the video's progress at the bottom:
+
+```rust
+use fframes_kit::prelude::*;
+
+fn speaker<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let intro = Sequence { from: 0.5, duration: Some(4.0), children: children(|ui| {
+        ui.show(LowerThird { name: "Ada Lovelace".into(), role: "Analyst".into(), ..ui.defaults() })
+    }) };
+    let intro = ui.show(intro);
+    let captions = ui.show(Captions { file: "talk.vtt", y: 980.0, ..ui.defaults() });
+    let progress = ui.show(ProgressBar { y: 1064.0, height: 4.0, ..ui.defaults() });
+    svgr!(<g>{intro}{captions}{progress}</g>)
+}
+
+let list = ChapterList {
+    chapters: vec![(0.0, "Intro".into()), (5.0, "Demo".into())],
+    ..ChapterList::default()
+};
+assert_eq!(list.active(6.0), 1);
+```
+
 ## Shapes
 
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,

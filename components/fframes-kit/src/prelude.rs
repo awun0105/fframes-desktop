@@ -14,6 +14,10 @@ pub use crate::animate::{
 };
 pub use crate::geometry::{Geometry, Look, Shape};
 pub use crate::motion::{self, Beat};
+pub use crate::overlay::{
+    Annotation, Appear, Caption, CaptionStack, Captions, ChapterList, Check, LowerThird,
+    ProgressBar,
+};
 pub use crate::paths;
 pub use crate::shapes::{
     Annulus, Arc, Arrow, BlockArrow, Brace, Callout, Circle, CurvedArrow, DashedLine, Dot,

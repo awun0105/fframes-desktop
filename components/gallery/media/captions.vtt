@@ -1,0 +1,7 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:01.200
+Captions come from a subtitle file
+
+00:00:01.200 --> 00:00:03.000
+and wrap into the width they are given.
