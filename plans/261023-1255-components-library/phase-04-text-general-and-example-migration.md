@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Phase 4: Text, general layer and example migration"
-status: todo
+status: in-progress
 priority: P1
 effort: 5d
 dependencies: [2]
@@ -98,8 +98,8 @@ Every component: themed defaults, `key`, text measured with `Ui::text_width`/`te
 
 ## Todo
 
-- [ ] Beat grid and `timecode` in `motion`
-- [ ] Text components
+- [x] Beat grid and `timecode` in `motion`
+- [x] Text components
 - [ ] Overlay components
 - [ ] Data, audio, decoration and media components
 - [ ] Reference renders of `fframes-studio-intro` before migration

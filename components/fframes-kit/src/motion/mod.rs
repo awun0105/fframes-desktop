@@ -2,6 +2,12 @@
 //! a closed-form spring and deterministic noise. Everything is a pure function of its inputs,
 //! so the same frame always draws the same picture on every render thread.
 
+mod beat;
+mod format;
+
+pub use beat::Beat;
+pub use format::{TimecodeError, thousands, timecode};
+
 /// Clamps `x` to `0..=1`.
 pub fn clamp01(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
@@ -40,6 +46,41 @@ pub fn spring(t: f32, stiffness: f32, damping: f32) -> f32 {
     } else {
         1.0 - (1.0 + w0 * t) * (-w0 * t).exp()
     }
+}
+
+/// Exponential ease out of `t` in `0..=1`: fast, then a long settle.
+pub fn expo_out(t: f32) -> f32 {
+    let t = clamp01(t);
+    if t >= 1.0 {
+        1.0
+    } else {
+        1.0 - 2f32.powf(-10.0 * t)
+    }
+}
+
+/// Exponential ease in: a slow start, then fast.
+pub fn expo_in(t: f32) -> f32 {
+    let t = clamp01(t);
+    if t <= 0.0 {
+        0.0
+    } else {
+        2f32.powf(10.0 * t - 10.0)
+    }
+}
+
+/// Cubic ease in and out.
+pub fn cubic_in_out(t: f32) -> f32 {
+    let t = clamp01(t);
+    if t < 0.5 {
+        4.0 * t * t * t
+    } else {
+        1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+    }
+}
+
+/// Quartic ease out.
+pub fn quart_out(t: f32) -> f32 {
+    1.0 - (1.0 - clamp01(t)).powi(4)
 }
 
 /// Maps an integer to a pseudo-random value in `0..1`. The same input always gives the same
@@ -100,6 +141,17 @@ mod tests {
             .map(|i| spring(i as f32 * 0.01, 170.0, 10.0))
             .fold(0.0, f32::max);
         assert!(peak > 1.0);
+    }
+
+    #[test]
+    fn easing_curves_run_from_zero_to_one() {
+        for f in [expo_out, expo_in, cubic_in_out, quart_out] {
+            assert!(f(0.0).abs() < 1e-3);
+            assert_eq!(f(1.0), 1.0);
+            assert!((0.0..=1.0).contains(&f(0.5)));
+        }
+        assert_eq!(cubic_in_out(0.5), 0.5);
+        assert!(expo_out(0.2) > expo_in(0.2));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 pub use fframes::{
     AudioMap, Color, Duration, FFramesContext, FontQuery, Frame, Overlap, Scene, Scenes, Svgr,
-    Transform, Video, animation::Easing, svgr, timeline,
+    TextAlign, Transform, Video, animation::Easing, svgr, timeline,
 };
 
 pub use crate::anim::{Anim, Enter, Exit, FadeIn, FadeOut, RateFunc};
@@ -13,12 +13,16 @@ pub use crate::animate::{
     Write,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
-pub use crate::motion;
+pub use crate::motion::{self, Beat};
 pub use crate::paths;
 pub use crate::shapes::{
     Annulus, Arc, Arrow, BlockArrow, Brace, Callout, Circle, CurvedArrow, DashedLine, Dot,
     DoubleArrow, Ellipse, Heart, Line, Pie, Polygon, Rect, Rectangle, RegularPolygon,
     RoundedRectangle, Sector, Spark, Square, Star, TextPath, Triangle, Vector,
+};
+pub use crate::text::{
+    Counter, FitText, HudLabel, LetterLook, Letters, Paragraph, RevealBy, TextAnchor, TextReveal,
+    Typewriter,
 };
 pub use crate::theme::{
     Colors, Durations, Easings, Motion, Radius, Shadow, Shadows, Spacing, Stagger, Stroke,

@@ -75,7 +75,7 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 1 | [Core crate and contract](./phase-01-core-crate-and-contract.md) | none | 3d | Completed |
 | 2 | [Shapes, paths and enter animations](./phase-02-shapes-paths-and-enter-animations.md) | 1 | 3d | Completed |
 | 3 | [Basic transitions](./phase-03-basic-transitions.md) | 1 | 2d | Completed |
-| 4 | [Text, general layer and example migration](./phase-04-text-general-and-example-migration.md) | 2 | 5d | Pending |
+| 4 | [Text, general layer and example migration](./phase-04-text-general-and-example-migration.md) | 2 | 5d | In progress |
 | 5 | [LaTeX formulas](./phase-05-latex-formulas.md) | 2 | 4d | Pending |
 | 6 | [Explain layer and math kit](./phase-06-explain-layer-and-math-kit.md) | 2 (LaTeX labels when 5 is done) | 5d | Pending |
 | 7 | [Component tags with the ui! macro](./phase-07-component-tags-in-svgr.md) | 2 | 3d | Pending |

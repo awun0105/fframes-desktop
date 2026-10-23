@@ -48,6 +48,7 @@ pub mod motion;
 pub mod paths;
 pub mod prelude;
 pub mod shapes;
+pub mod text;
 pub mod text_outline;
 pub mod theme;
 pub mod time;

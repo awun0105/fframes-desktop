@@ -59,8 +59,9 @@ fn layout<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 
 `RateFunc` has Manim's names: `Smooth` (default), `Linear`, `RushInto`, `RushFrom`,
 `ThereAndBack`, `DoubleSmooth`, plus `Easing(fframes::animation::Easing)` for CSS curves and
-springs. `motion` has `progress`, `clamp01`, `lerp`, `stagger(i, step)`, `spring`, `hash` and
-`noise`.
+springs. `motion` has `progress`, `clamp01`, `lerp`, `stagger(i, step)`, `spring`, `hash`,
+`noise`, the easing curves `expo_in`, `expo_out`, `cubic_in_out` and `quart_out` on `0..=1`,
+`timecode(frames, fps)` (`hh:mm:ss:ff`, an error for 0 fps) and `thousands(n)` (`12,480`).
 
 ```rust
 use fframes_kit::prelude::*;
@@ -68,6 +69,90 @@ use fframes_kit::prelude::*;
 assert_eq!(motion::progress(0.5, 0.0, 2.0), 0.25);
 assert_eq!(RateFunc::Linear.apply(0.3, 1.0), 0.3);
 assert_eq!(motion::noise(7, 1.25), motion::noise(7, 1.25));
+assert_eq!(motion::timecode(3_725, 60).unwrap(), "00:01:02:05");
+assert_eq!(motion::thousands(12_480), "12,480");
+```
+
+For a video cut to music, `Beat { period, downbeat }` is the beat grid: beat 0 is the
+first downbeat, at `downbeat` seconds, and beats are `period` seconds apart. It stores the
+period rather than the BPM, so a measured period is used exactly; `Beat::from_bpm(bpm,
+downbeat)` makes one from a tempo. `time(beat)` and `frame(beat, fps)` place things on the
+grid (frames are rounded, so scene edges never drift), `beat_at(seconds)` reads it back, and
+`snap(beats)` and `soft(beats)` are springs released `beats` ago (their `(stiffness,
+damping)` are the fields `snap_spring` (320, 22) and `soft_spring` (170, 15)).
+`Beat::pulse(beat, sharpness)` is 1 on every beat and decays until the next.
+
+```rust
+use fframes_kit::prelude::*;
+
+const GRID: Beat = Beat::new(0.5, 2.0); // 120 BPM, first downbeat at 2 s
+
+assert_eq!(GRID.time(4.0), 4.0);
+assert_eq!(GRID.frame(4.0, 30), 120);
+assert_eq!(GRID.beat_at(3.0), 2.0);
+assert_eq!(Beat::pulse(3.0, 8.0), 1.0);
+```
+
+## Text
+
+Text components measure with the font files of the video's media, so a layout is the same
+in the editor and in the render. When a family cannot be measured (a system font, or the
+editor before fonts load), each falls back to a plain `<text>`, as listed. `text` is a
+`Cow<str>`: pass `"literal".into()` or `format!(..).into()`. `style` is a `TextStyle` from
+`theme.typography`, and its `family`, `size` and `weight` are what is measured and drawn.
+`anchor` is `TextAnchor::{Start, Middle, End}`.
+
+| Component | Props | What it does | Without a font |
+| --- | --- | --- | --- |
+| `FitText` | `text`, `x`, `y`, `style`, `max_width`, `min_size` (24), `step` (4), `fill`, `anchor`, `opacity` | one line at the largest size up to `style.size` that fits `max_width`; `fit.size(ui)` gives the size | `style.size` |
+| `Letters` | `text`, `x`, `y`, `style`, `fill`, `tracking`, `look: Box<dyn Fn(usize) -> LetterLook>` | each letter moved, faded and scaled about its center by `look(i)` (`LetterLook { dx, dy, opacity, scale }`) | one line with `look(0)` |
+| `TextReveal` | `text`, `x`, `y`, `style`, `fill`, `by` (`RevealBy::Word`, `Letter`), `shift`, `delay`, `stagger`, `run_time`, `rate_func` | words or letters fade in one after another while they move by `shift` into place | the whole line as unit 0 |
+| `Typewriter` | `text`, `x`, `y`, `style`, `fill`, `delay`, `chars_per_second` (24), `cursor: Option<Color>`, `cursor_width`, `blink` (0.5 s) | types one character at a time, with a cursor that blinks once the text is complete | no cursor |
+| `Counter` | `from`, `to`, `x`, `y`, `style`, `fill`, `anchor` (`End`), `decimals`, `thousands` (true), `prefix`, `suffix`, `delay`, `run_time`, `rate_func` | counts from `from` to `to`; right aligned, so the digits stay in place as the number grows | the same |
+| `Paragraph` | `text`, `x`, `y`, `width`, `style`, `fill`, `align: TextAlign`, `opacity` | wraps into lines of at most `width` pixels, `style.line_height` apart; `\n` starts a line | one unwrapped line |
+| `HudLabel` | `text`, `x`, `y`, `style` (caption), `fill` (muted), `anchor`, `letter_spacing` (2.5), `uppercase` (true), `opacity` | a small tracked label, like `01 / RENDER` | the same |
+
+```rust
+use fframes_kit::prelude::*;
+
+/// A stat: a label, then the number counting up under it.
+fn stat<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let label = ui.show(HudLabel { text: "frames rendered".into(), x: 96.0, y: 400.0, ..ui.defaults() });
+    let number = ui.show(Counter {
+        to: 12_480.0,
+        x: 96.0,
+        y: 520.0,
+        anchor: TextAnchor::Start,
+        delay: 0.2,
+        ..ui.defaults()
+    });
+    let title = ui.show(TextReveal { text: "Twelve thousand frames".into(), x: 96.0, y: 700.0, ..ui.defaults() });
+    svgr!(<g>{label}{number}{title}</g>)
+}
+
+let c = Counter { to: 1_000.0, decimals: 1, suffix: " ms".into(), ..Counter::default() };
+assert_eq!(c.format(c.value(100.0)), "1,000.0 ms");
+```
+
+`Letters` takes any per-letter animation. Here each letter drops in with a spring, 60 ms
+after the one before:
+
+```rust
+use fframes_kit::prelude::*;
+
+fn drop_in<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    ui.show(Letters {
+        text: "LAUNCH".into(),
+        x: 96.0,
+        y: 600.0,
+        look: Box::new(move |i| {
+            let s = motion::spring(t - motion::stagger(i, 0.06), 260.0, 18.0);
+            LetterLook { dy: (1.0 - s) * -120.0, opacity: motion::clamp01(s * 2.0), ..LetterLook::default() }
+        }),
+        ..ui.defaults()
+    })
+}
 ```
 
 ## Shapes
