@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Phase 5: LaTeX formulas"
-status: todo
+status: in-progress
 priority: P1
 effort: 4d
 dependencies: [2]
@@ -155,11 +155,11 @@ Editor fallback (wasm32):
 
 ## Todo
 
-- [ ] MiKTeX installed on the VM (approved 2026-10-23), auto-install enabled
-- [ ] Manual pipeline proof with the six samples
-- [ ] Parts marking chosen and tested on the three tricky cases
-- [ ] Discovery with fake-executable tests and per-OS install messages
-- [ ] Runner with timeout and log extraction; cache; SVG to glyphs
+- [x] MiKTeX installed on the VM (approved 2026-10-23), auto-install enabled
+- [x] Manual pipeline proof with the six samples
+- [x] Parts marking chosen and tested on the three tricky cases
+- [x] Discovery with fake-executable tests and per-OS install messages
+- [x] Runner with timeout and log extraction; cache; SVG to glyphs
 - [ ] `Formula` component, `TransformMatchingTex`, `ChemEq`
 - [ ] Gallery scenes and committed `tex-cache/`
 - [ ] Measurements recorded

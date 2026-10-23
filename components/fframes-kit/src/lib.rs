@@ -47,6 +47,8 @@ pub mod audio;
 pub mod data;
 pub mod decor;
 pub mod geometry;
+#[cfg(feature = "latex")]
+pub mod latex;
 pub mod media;
 pub mod motion;
 pub mod overlay;
