@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Phase 6: Explain layer and math kit"
-status: in-progress
+status: completed
 priority: P1
 effort: 5d
 dependencies: [2]
@@ -96,6 +96,6 @@ phase ends, verify both builds; otherwise phase 5 adds the `math,latex` gallery 
 - [x] `Axes`, `NumberPlane`, `NumberLine`, `FunctionGraph`
 - [x] `VGroup`, `layout`, `label`, `sim`
 - [x] `Matrix`, `Table`, `Brace`
-- [ ] The 12 math figures in table order
+- [x] The 12 math figures in table order
 - [x] Plots
-- [ ] `math.md` doctested; e2e subset
+- [x] `math.md` doctested; e2e subset
