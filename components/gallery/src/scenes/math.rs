@@ -536,6 +536,30 @@ fn histogram_to_normal<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{axes}{fit}</g>)
 }
 
+/// A chain of 40 turning circles drawing a heart from its Fourier series.
+fn epicycles<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TERMS: OnceLock<Vec<fframes_kit::kits::math::Term>> = OnceLock::new();
+    static TURNS: OnceLock<KeyFramesAnimation<f32>> = OnceLock::new();
+    let terms = TERMS.get_or_init(|| {
+        let heart = Heart {
+            height: 5.0,
+            ..Heart::default()
+        };
+        fframes_kit::kits::math::fourier(&heart.path(), 513, 40)
+    });
+    let turns =
+        TURNS.get_or_init(|| timeline!(at 0.8 => 4.8, animate 0.0_f32 => 1.0, Easing::Linear));
+    let head = title(ui, "Epicycles");
+    let chain = ui.show(Epicycles {
+        terms,
+        center: (0.0, -0.3),
+        turns: turns.into(),
+        enter: Some(EnterAnim::FadeIn(fade(0.0))),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{chain}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("NumberLinePoint", 4.0, number_line_point),
@@ -551,5 +575,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("MatrixView", 4.6, matrix_view),
         GalleryScene::new("Plots", 4.0, plots),
         GalleryScene::new("HistogramToNormal", 4.6, histogram_to_normal),
+        GalleryScene::new("Epicycles", 6.0, epicycles),
     ]
 }

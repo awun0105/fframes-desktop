@@ -383,3 +383,35 @@ let samples = normal_samples(7, 1500, 0.0, 1.0);
 let (mean, sd) = mean_sd(&samples);
 assert!(mean.abs() < 0.1 && (sd - 1.0).abs() < 0.1);
 ```
+## Epicycles
+
+A chain of turning circles whose end draws a closed path, as in the 3Blue1Brown Fourier
+series. `fourier(path, samples, terms)` resamples the path along its length and returns the
+largest terms first, centered on the path's mean point (y up). `Epicycles` places them at
+`center` in units of `ui.space`, with `scale` units per unit of the path. `turns` (a tracker)
+is how far the series has turned. The trace is what the end drew in the last `trace_length`
+turns (1 keeps the whole drawing); the circles and vectors draw with `enter`. Gallery scene:
+`Epicycles`.
+
+```rust
+use fframes::animation::KeyFramesAnimation;
+use fframes_kit::prelude::*;
+use fframes_kit::kits::math::{Term, fourier};
+
+fn figure<'a>(
+    ui: &mut Ui<'a, '_, '_>,
+    terms: &'a [Term],
+    turns: &'a KeyFramesAnimation<f32>,
+) -> Svgr<'a> {
+    ui.show(Epicycles {
+        terms,
+        turns: turns.into(),
+        ..ui.defaults()
+    })
+}
+
+let heart = Heart { height: 5.0, ..Heart::default() };
+let terms = fourier(&heart.path(), 513, 40);
+assert_eq!(terms.len(), 40);
+assert!(terms[0].amplitude() >= terms[1].amplitude());
+```
