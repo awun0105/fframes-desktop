@@ -458,7 +458,10 @@ mod tests {
         assert_eq!(parts[0], (Some(0), None));
         assert_eq!(parts.last().unwrap(), &(None, Some("rest".to_owned())));
         assert!(first.part_bbox(Part::Label("rest")).is_some());
-        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let cached: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().collect();
+        assert_eq!(cached.len(), 1);
+        let svg = std::fs::read_to_string(cached[0].path()).unwrap();
+        assert!(!svg.contains('\r'), "the cache uses \\n line ends");
         // the second time comes from the cache, even without TeX
         let offline = TexEngine::new(&dir).with_tools(TexTools::default());
         assert_eq!(first, MathTex::new(source).typeset(&offline).unwrap());

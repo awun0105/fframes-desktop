@@ -52,12 +52,12 @@ miktexsetup_standalone --local-package-repository=C:\miktex-repo --package-set=b
 ## Ubuntu: TeX Live (or MiKTeX)
 
 ```bash
-sudo apt install texlive-latex-extra texlive-science dvisvgm
+sudo apt install texlive-latex-extra texlive-science texlive-pictures dvisvgm
 latex --version && dvisvgm --version
 ```
 
-`texlive-science` brings mhchem, siunitx and physics. Add `texlive-pictures` for circuitikz,
-and `texlive-xetex` or `texlive-luatex` for the other compilers. MiKTeX for Linux works too
+`texlive-science` brings mhchem, siunitx and physics, `texlive-pictures` circuitikz. Add
+`texlive-xetex` or `texlive-luatex` for the other compilers. MiKTeX for Linux works too
 (<https://miktex.org/download>). Enable its automatic installation as on Windows.
 
 ## macOS: MacTeX
@@ -82,8 +82,12 @@ committed cache alone.
   - The file name is a hash of the compiler, the preamble and the source, so a changed
     formula gets a new file.
   - Old files stay until you delete them.
-- Commit the directory. Then CI and other machines render without TeX, and the same TeX
-  version reproduces the files byte for byte.
+- Commit the directory. Then CI and other machines render without TeX.
+- The same TeX and dvisvgm versions reproduce the files byte for byte on any system: the
+  kit writes `\n` line ends.
+- With `core.autocrlf` on (the Git for Windows default), put a `.gitattributes` with
+  `*.svg -text` into the cache directory. Otherwise git reports the files as changed after
+  every regeneration (see `components/gallery/tex-cache`).
 - When TeX is missing and a formula is not in the cache, `typeset` returns
   `TexError::NotInstalled`. The error names the formula and says how to install TeX for
   the current system.

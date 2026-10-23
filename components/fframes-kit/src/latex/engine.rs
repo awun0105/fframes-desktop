@@ -79,7 +79,10 @@ impl TexEngine {
         file: &Path,
     ) -> Result<String, TexError> {
         let (tex, dvisvgm) = self.tools().require(template.compiler, formula)?;
-        let svg = super::run::compile(tex, dvisvgm, template.compiler, document, self.timeout)?;
+        // dvisvgm ends lines as the platform does; one convention keeps the cache identical
+        // whichever system regenerates it
+        let svg = super::run::compile(tex, dvisvgm, template.compiler, document, self.timeout)?
+            .replace("\r\n", "\n");
         std::fs::create_dir_all(&self.cache_dir)?;
         std::fs::write(file, &svg)?;
         Ok(svg)
