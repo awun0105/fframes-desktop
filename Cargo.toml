@@ -59,7 +59,7 @@ members = [
     "examples/lottie-launch",
     "examples/svg-in-3d",
 ]
-exclude = ["desktop"]
+exclude = ["desktop", "components"]
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [

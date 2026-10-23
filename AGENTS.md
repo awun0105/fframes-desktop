@@ -242,6 +242,7 @@ cargo test -- --nocapture
 /e2e                       # End-to-end visual regression test
 /examples                  # Example video projects (each is a lib + bin + editor bridge)
 /desktop                   # fframes Studio: native GPUI desktop app, its own Cargo workspace
+/components                # fframes-kit component library, its own Cargo workspace (docs/components/)
 ```
 
 fframes Studio (`/desktop`) is documented in [docs/desktop/README.md](docs/desktop/README.md).

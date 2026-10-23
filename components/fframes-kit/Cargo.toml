@@ -1,0 +1,26 @@
+[package]
+name = "fframes-kit"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Components for fframes videos: time containers, shapes, Manim-named animations and explainer kits"
+
+[dependencies]
+fframes = { workspace = true, default-features = false }
+kurbo.workspace = true
+
+[features]
+default = []
+# Filled in by the phases that add them.
+latex = []
+math = []
+physics = []
+chemistry = []
+cs = []
+biology = []
+skia = []
+3d = []
+lottie = []
+
+[lints]
+workspace = true

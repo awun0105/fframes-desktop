@@ -1,0 +1,31 @@
+# fframes-kit tasks. Run from `components/` or as `just -f components/justfile <recipe>`.
+
+set windows-shell := ["bash", "-cu"]
+
+# Type-check the gallery's editor bridge for the web editor.
+check-wasm:
+  cd gallery/editor/editor-bridge && cargo check --lib --target wasm32-unknown-unknown
+
+# Render the gallery's key frames and compare them with gallery/snapshots.
+e2e renderer *ARGS:
+  node scripts/e2e.mjs {{renderer}} {{ARGS}}
+
+test:
+  cargo test -p fframes-kit --all-features
+  cargo test --release -p components-gallery
+
+clippy:
+  cargo clippy --all-targets -- -D warnings
+
+fmt:
+  cargo fmt --all
+
+# Kit commits that touched upstream-owned paths. Must print nothing.
+boundary:
+  cd .. && git log --no-merges --grep='(kit)' --name-only --format= cdf2f12a..HEAD -- \
+    fframes fframes-media fframes-editor fframes-editor-controller fframes-skia-renderer \
+    fframes-three-d fframes-native-player fframes-test-utils fframes-lyon-renderer svgr-macro \
+    media-dir-macro webvtt-parser cargo-fframes examples skills e2e scripts justfile render-bench \
+    package.json .github desktop fframes-studio-protocol fframes-studio-runtime \
+    ':!examples/fframes-studio-intro' ':!examples/vinuni-future-rises' | sort -u
+  cd .. && git log --no-merges --grep='(kit)' -p --format=%h cdf2f12a..HEAD -- Cargo.toml AGENTS.md
