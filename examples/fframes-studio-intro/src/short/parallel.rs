@@ -6,8 +6,8 @@ use fframes::{Color, Duration, FFramesContext, Frame, Scene, ShaderUniforms, Svg
 
 use super::qr::{CX, CY, QR_SIZE, TILE};
 use crate::beat::*;
+use crate::brand::*;
 use crate::shaders::SHADERS;
-use crate::ui::*;
 use crate::wall::wall;
 
 short_scene!(ParallelScene, Some(super::PARALLEL_AT), super::END_AT);

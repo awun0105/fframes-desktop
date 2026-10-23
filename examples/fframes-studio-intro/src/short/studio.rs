@@ -7,9 +7,9 @@ use fframes::{Color, Duration, FFramesContext, Frame, Scene, ShaderUniforms, Svg
 
 use super::create::{self, spinner};
 use crate::beat::*;
+use crate::brand::*;
 use crate::scenes::install::check;
 use crate::shaders::SHADERS;
-use crate::ui::*;
 
 short_scene!(StudioScene, Some(super::STUDIO_AT), super::FAST_AT);
 

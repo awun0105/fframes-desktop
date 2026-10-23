@@ -219,6 +219,10 @@ the video's or the scene's `fn audio`. The frame is the container's, so a scene'
 should start with the scene. `PhotoFrame` and `KenBurns` draw nothing for a missing image;
 `key` names their clip path when two are in one frame.
 
+`HudLabel::draw()`, `CornerMarks::draw()` (the static marks) and `Annotation::draw(progress)`
+need no `Ui`, so helpers of a video that only have a `Frame` can draw them too
+(`examples/fframes-studio-intro/src/brand.rs` does).
+
 A level meter on a podcast cover, a highlighted word that gets underlined, and a glowing
 title:
 

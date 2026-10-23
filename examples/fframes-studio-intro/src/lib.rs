@@ -10,13 +10,14 @@
 //! `cargo run --release -p fframes-studio-intro -- timeline` lists the scenes.
 
 pub mod beat;
+pub mod brand;
 pub mod facts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod render_cli;
 pub mod scenes;
 pub mod shaders;
 pub mod short;
-pub mod ui;
+
 pub mod wall;
 
 use fframes::{
@@ -25,9 +26,9 @@ use fframes::{
 };
 
 use beat::*;
+use brand::*;
 use scenes::*;
 use shaders::SHADERS;
-use ui::*;
 
 include_media_dir!(pub struct StudioIntroMedia, "examples/fframes-studio-intro/media");
 

@@ -383,7 +383,7 @@ fn scrub(frame: &Frame, ctx: &FFramesContext<'_, '_>, lb: f32) -> Svgr<'static> 
     } else {
         Svgr::empty()
     };
-    let tc = crate::ui::timecode(pos);
+    let tc = fframes_kit::motion::timecode((pos * 60.0).max(0.0) as usize, FPS).unwrap_or_default();
     fframes::svgr!(
         <g opacity={o * leave(lb, 39.6)} transform={at(0.0, d)}>
             {rounded("scrub-player", (x, y, w, h), RADIUS, player)}

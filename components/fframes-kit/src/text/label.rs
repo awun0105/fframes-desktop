@@ -47,8 +47,9 @@ impl Default for HudLabel<'_> {
     }
 }
 
-impl<'a> Component<'a> for HudLabel<'a> {
-    fn render(self, _ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+impl<'a> HudLabel<'a> {
+    /// The label as a `<text>` element; it needs no `Ui`, so it can be drawn anywhere.
+    pub fn draw(self) -> Svgr<'a> {
         let text = if self.uppercase {
             Cow::Owned(self.text.to_uppercase())
         } else {
@@ -64,5 +65,11 @@ impl<'a> Component<'a> for HudLabel<'a> {
             self.opacity,
             text,
         )
+    }
+}
+
+impl<'a> Component<'a> for HudLabel<'a> {
+    fn render(self, _ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        self.draw()
     }
 }

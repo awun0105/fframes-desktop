@@ -3,8 +3,8 @@
 use fframes::{Color, Duration, FFramesContext, Frame, Scene, ShaderUniforms, Svgr};
 
 use crate::beat::*;
+use crate::brand::*;
 use crate::shaders::SHADERS;
-use crate::ui::*;
 
 beat_scene!(ProjectScene, Some(80.0), Some(96.0));
 

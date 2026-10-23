@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Phase 4: Text, general layer and example migration"
-status: in-progress
+status: completed
 priority: P1
 effort: 5d
 dependencies: [2]
@@ -102,7 +102,7 @@ Every component: themed defaults, `key`, text measured with `Ui::text_width`/`te
 - [x] Text components
 - [x] Overlay components
 - [x] Data, audio, decoration and media components
-- [ ] Reference renders of `fframes-studio-intro` before migration
-- [ ] Migrate `fframes-studio-intro`; delete its `beat.rs`/`ui.rs`
-- [ ] Key frames unchanged or differences explained
-- [ ] `components.md` recipes
+- [x] Reference renders of `fframes-studio-intro` before migration
+- [x] Migrate `fframes-studio-intro`; delete its `beat.rs`/`ui.rs` (kept as a facade and `brand.rs`, see the report)
+- [x] Key frames unchanged or differences explained
+- [x] `components.md` recipes

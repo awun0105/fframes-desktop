@@ -4,9 +4,9 @@
 use fframes::{Color, Duration, FFramesContext, Frame, Scene, ShaderUniforms, Svgr};
 
 use crate::beat::*;
+use crate::brand::*;
 use crate::facts::*;
 use crate::shaders::SHADERS;
-use crate::ui::*;
 
 short_scene!(FastScene, Some(super::FAST_AT), super::PARALLEL_AT);
 

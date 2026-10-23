@@ -4,9 +4,9 @@ use fframes::{Color, Duration, FFramesContext, Frame, Scene, ShaderUniforms, Svg
 
 use super::parallel::{QR_AT, QR_PX};
 use crate::beat::*;
+use crate::brand::*;
 use crate::shaders::SHADERS;
 use crate::short::qr::{QR_SIZE, TILE, tile};
-use crate::ui::*;
 
 beat_scene!(OutroScene, Some(96.0), Some(112.0));
 beat_scene!(EndScene, Some(208.0), None);

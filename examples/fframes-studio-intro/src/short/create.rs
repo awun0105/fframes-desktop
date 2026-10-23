@@ -5,8 +5,8 @@
 use fframes::Svgr;
 
 use crate::beat::*;
+use crate::brand::*;
 use crate::scenes::install::check;
-use crate::ui::*;
 
 pub const TITLE: &str = "VinUni Career Tech Day 2026";
 const DESC: [&str; 2] = [

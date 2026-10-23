@@ -327,11 +327,13 @@ fn bench_hand_written<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let (o1, t1) = fade(0.0);
     let (o2, t2) = fade(0.1);
     let (o3, t3) = fade(0.2);
+    let extra = bench_extra_hand_written(ui);
     svgr!(
         <g>
             <g opacity={o1} transform={t1}>{bench_bar(c)}</g>
             <g opacity={o2} transform={t2}>{bench_name(c)}</g>
             <g opacity={o3} transform={t3}>{bench_role(c)}</g>
+            {extra}
         </g>
     )
 }
@@ -346,7 +348,7 @@ fn bench_kit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ..ui.defaults()
     };
     let parts: [fn(Colors) -> Svgr<'a>; 3] = [bench_bar, bench_name, bench_role];
-    parts
+    let card: Svgr<'a> = parts
         .into_iter()
         .enumerate()
         .map(|(i, part)| {
@@ -356,7 +358,63 @@ fn bench_kit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
                 children: children(move |ui| fade.apply(ui, part(c))),
             })
         })
-        .collect()
+        .collect();
+    let extra = bench_extra_kit(ui);
+    svgr!(<g>{card}{extra}</g>)
+}
+
+/// A lower third and a counter next to the card, in plain `svgr!` and `timeline!`: the
+/// same work `LowerThird` and `Counter` do in `BenchKit`.
+fn bench_extra_hand_written<'a>(ui: &Ui<'a, '_, '_>) -> Svgr<'a> {
+    let c = ui.theme.colors;
+    let frame = &ui.frame;
+    let ramp = |start: f32, len: f32| {
+        frame
+            .animate(&timeline!(at start => start + len, animate 0.0_f32 => 1.0, Easing::EaseInOut))
+    };
+    let shown = |i: f32| ramp(i * 0.12, 0.6) * (1.0 - ramp(5.0 - (2.0 - i) * 0.06 - 0.4, 0.4));
+    let (bar, name, role) = (shown(0.0), shown(1.0), shown(2.0));
+    let bar_height = 140.4 * bar;
+    let slide = |p: f32| Transform::translate(-40.0 * (1.0 - p), 0.0);
+    let (name_t, role_t) = (slide(name), slide(role));
+    let digits = ((12_480.0 * ramp(0.0, 1.6)).round() as u64).to_string();
+    let mut count = String::new();
+    for (i, d) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            count.push(',');
+        }
+        count.push(d);
+    }
+    svgr!(
+        <g>
+            <rect x="1100" y="760" width="6" height={bar_height} fill={c.accent} />
+            <g transform={name_t} opacity={name}>
+                <text x="1122" y="824" font-family="DM Sans" font-size="56" font-weight="600" fill={c.title}>"Grace Hopper"</text>
+            </g>
+            <g transform={role_t} opacity={role}>
+                <text x="1122" y="874.4" font-family="DM Sans" font-size="36" font-weight="400" fill={c.muted}>"Rear admiral"</text>
+            </g>
+            <text x="1800" y="400" text-anchor="end" font-family="DM Sans" font-size="96" font-weight="700" fill={c.title}>{count}</text>
+        </g>
+    )
+}
+
+/// `LowerThird` and `Counter`, the kit half of the bench's second part.
+fn bench_extra_kit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let lower = ui.show(LowerThird {
+        name: "Grace Hopper".into(),
+        role: "Rear admiral".into(),
+        x: 1100.0,
+        y: 760.0,
+        ..ui.defaults()
+    });
+    let counter = ui.show(Counter {
+        to: 12_480.0,
+        x: 1800.0,
+        y: 400.0,
+        ..ui.defaults()
+    });
+    svgr!(<g>{lower}{counter}</g>)
 }
 
 /// A surface card at (x, y) with a drop shadow, its filter id built from `key`.

@@ -59,6 +59,12 @@ impl CornerMarks {
             y3 = self.y + self.height,
         )
     }
+
+    /// The static marks (`enter` is ignored), as one `<path>`; it needs no `Ui`.
+    pub fn draw<'a>(&self) -> Svgr<'a> {
+        let d = self.d();
+        fframes::svgr!(<path d={d} fill="none" stroke={self.color} stroke-width={self.stroke_width} />)
+    }
 }
 
 impl Geometry for CornerMarks {
@@ -70,10 +76,7 @@ impl Geometry for CornerMarks {
 impl<'a> Component<'a> for CornerMarks {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         match &self.enter {
-            None => {
-                let d = self.d();
-                fframes::svgr!(<path d={d} fill="none" stroke={self.color} stroke-width={self.stroke_width} />)
-            }
+            None => self.draw(),
             Some(enter) => {
                 let shape = Shape {
                     path: self.path(),

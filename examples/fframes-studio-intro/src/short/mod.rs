@@ -46,9 +46,9 @@ use fframes::{
 };
 
 use crate::beat::*;
+use crate::brand::*;
 use crate::scenes::portrait::HookScene;
 use crate::shaders::SHADERS;
-use crate::ui::*;
 
 pub const WIDTH: usize = 1080;
 pub const HEIGHT: usize = 1920;

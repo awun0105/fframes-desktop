@@ -7,8 +7,8 @@ use fframes::{Color, Duration, FFramesContext, Frame, Scene, ShaderUniforms, Svg
 use super::install::{self, STEPS};
 use super::studio;
 use crate::beat::*;
+use crate::brand::*;
 use crate::shaders::SHADERS;
-use crate::ui::*;
 
 pub const WIDTH: usize = 1080;
 pub const HEIGHT: usize = 1920;

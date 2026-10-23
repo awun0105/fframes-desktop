@@ -5,9 +5,9 @@
 use fframes::{Color, Duration, FFramesContext, Frame, Scene, ShaderUniforms, Svgr};
 
 use crate::beat::*;
+use crate::brand::*;
 use crate::shaders::SHADERS;
 use crate::short::qr::{QR_SIZE, TILE};
-use crate::ui::*;
 use crate::wall::wall;
 
 beat_scene!(ParallelScene, Some(198.0), Some(208.0));

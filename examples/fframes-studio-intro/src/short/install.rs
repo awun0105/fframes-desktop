@@ -3,9 +3,9 @@
 use fframes::{Color, Duration, FFramesContext, Frame, Scene, ShaderUniforms, Svgr};
 
 use crate::beat::*;
+use crate::brand::*;
 use crate::scenes::install::{bar, check};
 use crate::shaders::SHADERS;
-use crate::ui::*;
 
 short_scene!(InstallScene, Some(0.0), 12.0);
 

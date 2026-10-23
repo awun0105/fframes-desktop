@@ -1,9 +1,11 @@
-//! Palette, type and the small pieces of HUD every scene shares.
+//! Palette, type, text measurement and the brand's slam-in title. The HUD pieces
+//! (`label`, `corners`) draw the components of fframes-kit.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
-use fframes::{FFramesContext, FontQuery, FontStyle, Frame, Svgr};
+use fframes::{Color, FFramesContext, FontQuery, FontStyle, Frame, Svgr};
+use fframes_kit::prelude::{CornerMarks, HudLabel, TextAnchor, TextStyle};
 
 pub const BG: &str = "#0b0b0b";
 pub const BONE: &str = "#ece8e1";
@@ -66,18 +68,17 @@ pub fn measure(
 
 /// Crop-mark corners around a rectangle.
 pub fn corners(x: f32, y: f32, w: f32, h: f32, arm: f32, color: &str, width: f32) -> Svgr<'static> {
-    let d = format!(
-        "M{x} {y1} V{y} H{x1} M{x2} {y} H{x3} V{y1} M{x3} {y2} V{y3} H{x2} M{x1} {y3} H{x} V{y2}",
-        x = x,
-        y = y,
-        x1 = x + arm,
-        x2 = x + w - arm,
-        x3 = x + w,
-        y1 = y + arm,
-        y2 = y + h - arm,
-        y3 = y + h,
-    );
-    fframes::svgr!(<path d={d} fill="none" stroke={color.to_owned()} stroke-width={width} />)
+    CornerMarks {
+        x,
+        y,
+        width: w,
+        height: h,
+        arm,
+        color: Color::hex(color),
+        stroke_width: width,
+        enter: None,
+    }
+    .draw()
 }
 
 /// A small mono label, uppercase tracking like engineering drawings.
@@ -89,114 +90,27 @@ pub fn label(
     size: f32,
     anchor: &'static str,
 ) -> Svgr<'static> {
-    fframes::svgr!(
-        <text x={x} y={y} font-family={MONO} font-weight="500" font-size={size} letter-spacing="2.5"
-              fill={color.to_owned()} text-anchor={anchor}>{text}</text>
-    )
-}
-
-/// An annotation: a dot on the target, an elbow line and a label.
-#[allow(clippy::too_many_arguments)]
-pub fn callout(
-    tx: f32,
-    ty: f32,
-    lx: f32,
-    ly: f32,
-    text: String,
-    color: &str,
-    progress: f32,
-) -> Svgr<'static> {
-    if progress <= 0.0 {
-        return Svgr::empty();
+    HudLabel {
+        text: text.into(),
+        x,
+        y,
+        style: TextStyle {
+            family: MONO,
+            size: size as usize,
+            weight: 500,
+            line_height: 1.2,
+        },
+        fill: Color::hex(color),
+        anchor: match anchor {
+            "middle" => TextAnchor::Middle,
+            "end" => TextAnchor::End,
+            _ => TextAnchor::Start,
+        },
+        letter_spacing: 2.5,
+        uppercase: false,
+        opacity: 1.0,
     }
-    let p = progress.clamp(0.0, 1.0);
-    let mx = lx;
-    let my = ty;
-    // draw-on: first leg then second
-    let l1 = (mx - tx).abs() + 0.01;
-    let l2 = (ly - my).abs() + 0.01;
-    let total = l1 + l2;
-    let drawn = total * p;
-    let path = format!("M{tx} {ty} H{mx} V{ly}");
-    let dash = format!("{drawn} {total}");
-    let anchor = if lx >= tx { "start" } else { "end" };
-    let text_x = if lx >= tx { lx + 10.0 } else { lx - 10.0 };
-    let text_opacity = ((p - 0.6) / 0.4).clamp(0.0, 1.0);
-    fframes::svgr!(
-        <g>
-            <circle cx={tx} cy={ty} r="5" fill={color.to_owned()} opacity={p.min(1.0)} />
-            <circle cx={tx} cy={ty} r="12" fill="none" stroke={color.to_owned()} stroke-width="1.5" opacity={p * 0.6} />
-            <path d={path} fill="none" stroke={color.to_owned()} stroke-width="1.5" stroke-dasharray={dash} />
-            <text x={text_x} y={ly + 6.0} font-family={MONO} font-weight="500" font-size="20" letter-spacing="2"
-                  fill={color.to_owned()} text-anchor={anchor} opacity={text_opacity}>{text}</text>
-        </g>
-    )
-}
-
-/// Timecode `mm:ss:ff` at 60 fps.
-pub fn timecode(seconds: f32) -> String {
-    let total_frames = (seconds * 60.0).max(0.0) as u32;
-    let ff = total_frames % 60;
-    let s = (total_frames / 60) % 60;
-    let m = total_frames / 3600;
-    format!("00:{m:02}:{s:02}:{ff:02}")
-}
-
-pub fn thousands(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
-
-/// Horizontal strip of text drawn letter by letter with per-letter offsets:
-/// `f(i) -> (dx, dy, opacity, scale)` for every character.
-#[allow(clippy::too_many_arguments)]
-pub fn letters<F>(
-    frame: &mut Frame,
-    ctx: &FFramesContext,
-    x: f32,
-    y: f32,
-    text: &str,
-    family: &'static str,
-    size: usize,
-    weight: u16,
-    fill: &str,
-    tracking: f32,
-    f: F,
-) -> Svgr<'static>
-where
-    F: Fn(usize) -> (f32, f32, f32, f32),
-{
-    let mut out = Vec::new();
-    let chars: Vec<char> = text.chars().collect();
-    for (i, c) in chars.iter().enumerate() {
-        let prefix: String = chars[..i].iter().collect();
-        let px = measure(frame, ctx, family, size, weight, false, &prefix) + tracking * i as f32;
-        let (dx, dy, o, s) = f(i);
-        if o <= 0.001 {
-            continue;
-        }
-        let cw = measure(frame, ctx, family, size, weight, false, &c.to_string());
-        let cx = x + px + cw / 2.0;
-        let t = format!(
-            "translate({} {}) scale({}) translate({} 0)",
-            cx + dx,
-            y + dy,
-            s.max(0.001),
-            -cw / 2.0
-        );
-        let ch = c.to_string();
-        out.push(fframes::svgr!(
-            <text transform={t} font-family={family} font-weight={weight} font-size={size} fill={fill.to_owned()} opacity={o}>{ch}</text>
-        ));
-    }
-    fframes::svgr!(<g>{out}</g>)
+    .draw()
 }
 
 /// A word that slams in with a spring from `(dx, dy)` and leaves a motion
