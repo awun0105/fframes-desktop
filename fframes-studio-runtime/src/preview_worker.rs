@@ -26,6 +26,11 @@ pub struct PreviewWorkerConfig {
     pub initial_timing: Option<(u64, fframes::TimingDoc)>,
     /// The renderer asked for with `--renderer` on the worker's command line.
     pub renderer: RendererPreference,
+    /// How the video's editable props are changed. Without it the worker does not offer
+    /// `set_props_v1`.
+    pub props: Option<crate::PropsHooks>,
+    /// Props applied before the first request, with their generation.
+    pub initial_props: Option<(u64, PropsDocument)>,
 }
 impl PreviewWorkerConfig {
     pub fn new(
@@ -41,7 +46,33 @@ impl PreviewWorkerConfig {
             preparation_deadline: Duration::from_secs(120),
             initial_timing: None,
             renderer: RendererPreference::from_args(&std::env::args().collect::<Vec<_>>()),
+            props: None,
+            initial_props: None,
         }
+    }
+
+    /// Lets Studio edit the video's props: the worker offers `set_props_v1` and hands
+    /// `SetProps` and `PropsInfo` requests to `hooks`.
+    pub fn with_props(mut self, hooks: crate::PropsHooks) -> Self {
+        self.props = Some(hooks);
+        self
+    }
+
+    /// Reads the startup props passed as `--props-file <path> --props-generation <n>`. A
+    /// missing file or flag leaves the code's values; a malformed document is reported on
+    /// stderr and also leaves them, like a malformed startup timing.
+    pub fn with_props_args(mut self, args: &[String]) -> Self {
+        let Some(path) = crate::props::arg(args, "--props-file") else {
+            return self;
+        };
+        let generation = crate::props::arg(args, "--props-generation")
+            .and_then(|generation| generation.parse().ok())
+            .unwrap_or(0);
+        match crate::read_props_file(std::path::Path::new(path)) {
+            Ok(doc) => self.initial_props = doc.map(|doc| (generation, doc)),
+            Err(error) => eprintln!("startup props ignored: {error}"),
+        }
+        self
     }
 
     /// Reads the startup timing passed as `--timing-file <path> --timing-generation <n>`.
@@ -345,6 +376,16 @@ pub fn serve_preview_worker<V: Video>(
             Err(error) => eprintln!("startup timing ignored: {error}"),
         }
     }
+    let mut props_generation = 0;
+    if let (Some(hooks), Some((generation, doc))) = (&config.props, &config.initial_props) {
+        hooks.apply(Some(doc.clone()));
+        props_generation = *generation;
+    }
+    let offers = |capability: &str| {
+        PREVIEW_CAPABILITIES.contains(&capability)
+            || OPTIONAL_PREVIEW_CAPABILITIES.contains(&capability)
+            || (capability == SET_PROPS_CAPABILITY && config.props.is_some())
+    };
     // Selected before Hello so it reports the backend that actually renders. Skia contexts
     // are made at the size of a full-window playback frame.
     let fit = (MAX_PREVIEW_WIDTH as f64 / V::WIDTH as f64)
@@ -452,10 +493,7 @@ pub fn serve_preview_worker<V: Video>(
                 let gaps: Vec<_> = req
                     .required_capabilities
                     .iter()
-                    .filter(|capability| {
-                        !PREVIEW_CAPABILITIES.contains(&capability.as_str())
-                            && !OPTIONAL_PREVIEW_CAPABILITIES.contains(&capability.as_str())
-                    })
+                    .filter(|capability| !offers(capability))
                     .cloned()
                     .collect();
                 if !req.offered_versions.contains(&PREVIEW_CONTRACT_VERSION) || !gaps.is_empty() {
@@ -483,6 +521,7 @@ pub fn serve_preview_worker<V: Video>(
                     capabilities: PREVIEW_CAPABILITIES
                         .iter()
                         .chain(OPTIONAL_PREVIEW_CAPABILITIES)
+                        .chain(config.props.as_ref().map(|_| &SET_PROPS_CAPABILITY))
                         .map(|s| (*s).into())
                         .collect(),
                     capability_gaps: renderer.choice().capability_gaps(),
@@ -811,6 +850,66 @@ pub fn serve_preview_worker<V: Video>(
                     ))?,
                 }
             }
+            PreviewRequest::SetProps(req) => {
+                if let Err(e) = req.envelope.validate(&config.identity) {
+                    transport.write_control_message(&error(
+                        Some(req.envelope),
+                        "INVALID_ENVELOPE",
+                        e,
+                    ))?;
+                    continue;
+                }
+                let Some(hooks) = &config.props else {
+                    transport.write_control_message(&error(
+                        Some(req.envelope),
+                        "PROPS_UNSUPPORTED",
+                        "this video has no editable props",
+                    ))?;
+                    continue;
+                };
+                match req
+                    .props_json
+                    .as_deref()
+                    .map(PropsDocument::parse)
+                    .transpose()
+                {
+                    Ok(doc) => {
+                        hooks.apply(doc);
+                        props_generation = req.props_generation;
+                        transport.write_control_message(&PreviewResponse::PropsApplied(
+                            PropsAppliedResponse {
+                                envelope: req.envelope,
+                                props_generation,
+                            },
+                        ))?
+                    }
+                    Err(e) => transport.write_control_message(&error(
+                        Some(req.envelope),
+                        "INVALID_PROPS",
+                        e,
+                    ))?,
+                }
+            }
+            PreviewRequest::PropsInfo(req) => {
+                if let Err(e) = req.envelope.validate(&config.identity) {
+                    transport.write_control_message(&error(
+                        Some(req.envelope),
+                        "INVALID_ENVELOPE",
+                        e,
+                    ))?;
+                    continue;
+                }
+                let info = config
+                    .props
+                    .as_ref()
+                    .and_then(|hooks| hooks.info(&req.identity));
+                transport.write_control_message(&PreviewResponse::PropsInfo(PropsInfoResponse {
+                    envelope: req.envelope,
+                    identity: req.identity,
+                    props_generation,
+                    info,
+                }))?
+            }
             PreviewRequest::Shutdown(env) => {
                 if let Err(e) = env.validate(&config.identity) {
                     transport.write_control_message(&error(Some(env), "INVALID_ENVELOPE", e))?;
@@ -951,6 +1050,8 @@ fn request_identity(request: &PreviewRequest) -> (u64, Option<&PreviewEnvelope>)
         PreviewRequest::ReadAudio(r) => &r.envelope,
         PreviewRequest::CancelAudio(r) | PreviewRequest::ReleaseAudio(r) => &r.envelope,
         PreviewRequest::SetTiming(r) => &r.envelope,
+        PreviewRequest::SetProps(r) => &r.envelope,
+        PreviewRequest::PropsInfo(r) => &r.envelope,
     };
     (envelope.request_id, Some(envelope))
 }

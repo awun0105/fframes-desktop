@@ -657,6 +657,8 @@ pub enum PreviewRequest {
     CancelAudio(ArtifactRequest),
     ReleaseAudio(ArtifactRequest),
     SetTiming(SetTimingRequest),
+    SetProps(super::props::SetPropsRequest),
+    PropsInfo(super::props::PropsInfoRequest),
     Shutdown(PreviewEnvelope),
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -669,6 +671,8 @@ pub enum PreviewResponse {
     PreparedAudio(PreparedAudioDescriptor),
     AudioRead(AudioReadResponse),
     TimingApplied(TimingAppliedResponse),
+    PropsApplied(super::props::PropsAppliedResponse),
+    PropsInfo(super::props::PropsInfoResponse),
     Ack(PreviewAck),
     Error(PreviewError),
 }

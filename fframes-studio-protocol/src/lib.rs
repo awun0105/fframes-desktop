@@ -3,7 +3,9 @@ use std::fmt;
 
 pub mod export;
 pub mod preview;
+pub mod props;
 pub use preview::*;
+pub use props::*;
 
 pub const CURRENT_PROTOCOL_VERSION: u32 = 1;
 pub const MAX_FRAME_PAYLOAD_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
