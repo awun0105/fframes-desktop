@@ -20,9 +20,10 @@ Files next to this draft:
   outline;
 - `fframes-repro.rs`: an fframes video that shows the bug with `--renderer cpu` against
   `--renderer skia-cpu`;
-- `fix.patch`: the minimal change, made against svgr 0.50.2 (the same lines on svgr's `main`).
-  This is the version that was tested. The diff in the PR text adds the parameter renames and
-  comments of resvg#1157; either can go into the PR;
+- `fix.patch`: the source change of the svgr commit `025e5e93` on branch
+  `fix/displacement-map-scale` in `C:\Users\Administrator\svgr` (`git format-patch`). The
+  commit itself is authoritative; it also adds the tests;
+- `pr-body.md`: the PR description alone, for `gh pr create --body-file`;
 - `before-after.png`: the fframes CPU render before and after the fix, with Skia below.
 
 ---

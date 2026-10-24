@@ -1,27 +1,80 @@
+From 025e5e932d2787693bb1cff986abba2f415577b7 Mon Sep 17 00:00:00 2001
+From: khanhthanhdev <thanhkt27507@gmail.com>
+Date: Sat, 24 Oct 2026 20:55:43 +0700
+Subject: [PATCH] fix(svgr): apply the feDisplacementMap scale once and read
+ the map unpremultiplied
+
+scale_coordinates() already turns `scale` into pixels, and
+displacement_map::apply() multiplied the offset by `scale` again, so
+pixels moved by scale squared and mostly left the filter region. The map
+was also read with premultiplied colors, which Filter Effects 1 forbids,
+so semi-transparent maps such as feTurbulence output pulled every offset
+toward the top left.
+
+Same fix as linebender/resvg#1157. Adds a uniform-map and a
+semi-transparent-map test, each with the expected outline drawn in.
+---
+ crates/svgr/src/filter/displacement_map.rs | 11 ++++++-----
+ crates/svgr/src/filter/mod.rs              |  6 +++++-
+ 2 files changed, 11 insertions(+), 6 deletions(-)
+
 diff --git a/crates/svgr/src/filter/displacement_map.rs b/crates/svgr/src/filter/displacement_map.rs
+index 2ba5528d..ccc2cfe1 100644
 --- a/crates/svgr/src/filter/displacement_map.rs
 +++ b/crates/svgr/src/filter/displacement_map.rs
-@@ -45,8 +45,8 @@ pub fn apply(
+@@ -10,15 +10,16 @@ use usvgr::filter::{ColorChannel, DisplacementMap};
+ /// - `map` pixels should have a **unpremultiplied alpha**.
+ /// - `src` pixels can have any alpha method.
+ ///
+-/// `sx` and `sy` indicate canvas scale.
++/// `scale_x` and `scale_y` are the `scale` attribute already converted
++/// into the canvas coordinate system, i.e. the maximum displacement in pixels.
+ ///
+ /// # Panics
+ ///
+ /// When `src`, `map` and `dest` have different sizes.
+ pub fn apply(
+     fe: &DisplacementMap,
+-    sx: f32,
+-    sy: f32,
++    scale_x: f32,
++    scale_y: f32,
+     src: ImageRef,
+     map: ImageRef,
+     dest: ImageRefMut,
+@@ -45,8 +46,8 @@ pub fn apply(
  
          let dx = calc_offset(fe.x_channel_selector());
          let dy = calc_offset(fe.y_channel_selector());
 -        let ox = (x as f32 + dx * sx * fe.scale()).round() as i32;
 -        let oy = (y as f32 + dy * sy * fe.scale()).round() as i32;
-+        let ox = (x as f32 + dx * sx).round() as i32;
-+        let oy = (y as f32 + dy * sy).round() as i32;
++        let ox = (x as f32 + dx * scale_x).round() as i32;
++        let oy = (y as f32 + dy * scale_y).round() as i32;
  
          // TODO: we should use some kind of anti-aliasing when offset is on a pixel border
  
 diff --git a/crates/svgr/src/filter/mod.rs b/crates/svgr/src/filter/mod.rs
+index 92441eb5..70fab9c5 100644
 --- a/crates/svgr/src/filter/mod.rs
 +++ b/crates/svgr/src/filter/mod.rs
-@@ -1081,7 +1081,8 @@ fn apply_displacement_map(
+@@ -1081,12 +1081,16 @@ fn apply_displacement_map(
      pixmap_pool: &crate::cache::PixmapPool,
  ) -> Result<Image, Error> {
      let pixmap1 = input1.into_color_space(cs)?.take()?;
 -    let pixmap2 = input2.into_color_space(cs)?.take()?;
 +    let mut pixmap2 = input2.into_color_space(cs)?.take()?;
++
++    // The displacement map must be read using non-premultiplied color values.
 +    demultiply_alpha(pixmap2.data_mut().as_rgba_mut());
  
      let mut pixmap = pixmap_pool
          .take_or_allocate(region.width(), region.height())
+         .ok_or(Error::NoResults)?;
+ 
++    // `scale` is in user units, convert it into pixels.
+     let (sx, sy) = match scale_coordinates(fe.scale(), fe.scale(), ts) {
+         Some(v) => v,
+         None => return Ok(Image::from_image(pixmap1, cs)),
+-- 
+2.56.0.windows.2
+
