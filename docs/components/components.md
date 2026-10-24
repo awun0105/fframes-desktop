@@ -568,8 +568,35 @@ fn tables<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
-## Shapes
+### Cameras
 
+`MovingCamera` is Manim's `MovingCameraScene`: `center` and `width` (units of `ui.space`)
+say which part of the canvas fills the picture, and both are `Anim`s, so the frame pans and
+zooms. `full_frame_width(space)` is the frame of the whole canvas (14.2 units on 1080p);
+`auto_zoom(space, &boxes, margin)` returns the center and width that show some pixel boxes,
+like `self.camera.auto_zoom`. `ZoomedInset` is Manim's `ZoomedScene`: the children, plus a
+copy of what is inside `frame` magnified into `display`, popping out of the frame over
+`run_time` (0 shows it at once). Both are `<g transform>`s; the inset renders its children
+twice.
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::{explain::{auto_zoom, full_frame_width}, kurbo::Rect};
+
+fn zoom_on_a_box<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let full = full_frame_width(ui.space);
+    let (center, width) = auto_zoom(ui.space, &[Rect::new(1200.0, 400.0, 1500.0, 700.0)], 0.5)
+        .unwrap_or(((0.0, 0.0), full));
+    let p = RateFunc::Smooth.apply(motion::progress(ui.seconds(), 0.0, 1.0), 1.0);
+    ui.show(MovingCamera {
+        center: (center.0 * p, center.1 * p).into(),
+        width: motion::lerp(full, width, p).into(),
+        children: children(|ui| ui.show(Circle { cx: 1350.0, cy: 550.0, radius: 150.0, ..ui.defaults() })),
+    })
+}
+```
+
+## Shapes
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,
 `stroke_width`, `dash`, `opacity`, and the animation props `enter`, `exit`, `emphasis`.
 Positions are canvas pixels with `y` down, angles are radians, counterclockwise on screen as in

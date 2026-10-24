@@ -19,6 +19,7 @@ pub mod shapes;
 pub mod shapes_ii;
 pub mod tags;
 pub mod text;
+pub mod three;
 pub mod transitions;
 
 /// Every gallery scene in play order.
@@ -28,6 +29,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(shapes_ii::scenes());
     scenes.extend(animate::scenes());
     scenes.extend(animate_ii::scenes());
+    scenes.extend(three::scenes());
     scenes.extend(transitions::scenes());
     scenes.extend(effects::scenes());
     scenes.extend(effects_ii::scenes());

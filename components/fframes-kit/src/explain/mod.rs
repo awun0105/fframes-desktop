@@ -30,6 +30,7 @@
 //! ```
 
 mod axes;
+mod camera;
 mod canvas;
 mod complex_plane;
 mod graph;
@@ -47,6 +48,7 @@ mod vector_field;
 mod vgroup;
 
 pub use axes::{Axes, AxesMap, NumberLine, NumberPlane, Range, Scaling};
+pub use camera::{MovingCamera, ZoomedInset, auto_zoom, full_frame_width};
 pub use canvas::Canvas;
 pub use complex_plane::{ComplexPlane, format_complex};
 pub use graph::{

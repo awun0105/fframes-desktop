@@ -103,6 +103,8 @@
 //! | `MathTex`, `Tex`, `TexTemplate` (feature `latex`) | `latex::MathTex`, `latex::Tex`, `latex::TexTemplate`, typeset with a `latex::TexEngine` and drawn by `latex::FormulaView` |
 //! | `TransformMatchingTex` (feature `latex`) | `latex::TransformMatchingTex` |
 //! | the frame: 8 units tall, `y` up, origin in the middle | [`Space`](explain::Space) in `ui.space`, [`Canvas`](explain::Canvas) for another one |
+//! | `MovingCameraScene`, `self.camera.frame`, `camera.auto_zoom` | [`MovingCamera`](explain::MovingCamera) `{ center, width, children }`, [`auto_zoom`](explain::auto_zoom) |
+//! | `ZoomedScene` (`zoomed_camera`, `zoomed_display`, `get_zoomed_display_pop_out_animation`) | [`ZoomedInset`](explain::ZoomedInset) `{ frame, display, delay, run_time, children }` |
 //! | `NumberLine`, `Axes`, `NumberPlane` | [`explain`]: the same names, `x_range: Range::new(min, max, step)` |
 //! | `LinearBase`, `LogBase` (`scaling=`) | [`Scaling`](explain::Scaling) in `Axes::x_scaling`, `y_scaling`, `NumberLine::scaling`; the range in exponents |
 //! | `UnitInterval` | [`NumberLine::unit_interval`](explain::NumberLine::unit_interval) |

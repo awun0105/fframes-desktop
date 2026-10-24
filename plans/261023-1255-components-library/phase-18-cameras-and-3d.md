@@ -1,7 +1,7 @@
 ---
 phase: 18
 title: "Phase 18: Cameras and 3D"
-status: todo
+status: in-progress
 priority: P2
 effort: 5d
 dependencies: [6]
@@ -110,7 +110,7 @@ Add Manim's camera scenes and its 3D mobjects:
 
 ## Todo
 
-- [ ] 2D cameras
+- [x] 2D cameras
 - [ ] 3D view, camera mapping and overlays, measured cost
 - [ ] Solids, polyhedra, surfaces and 3D axes
 - [ ] 3D enter animations

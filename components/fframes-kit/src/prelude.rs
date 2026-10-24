@@ -45,9 +45,9 @@ pub use crate::explain::{
     Area, ArrowVectorField, Axes, AxesMap, AzimuthDirection, AzimuthUnits, Canvas, ComplexPlane,
     Curve, DecimalMatrix, DecimalTable, DiGraph, EdgeStyle, Flow, Func, FunctionGraph, Implicit,
     ImplicitFunction, IntegerMatrix, IntegerTable, Matrix, Mobject, MobjectMatrix, MobjectTable,
-    NumberLine, NumberPlane, ParametricFunction, PolarPlane, Range, RiemannRectangles, SampleAt,
-    SampleColumn, SampleRow, SampleSpace, Scaling, Space, StreamLines, Table, VGroup, VectorField,
-    VertexStyle,
+    MovingCamera, NumberLine, NumberPlane, ParametricFunction, PolarPlane, Range,
+    RiemannRectangles, SampleAt, SampleColumn, SampleRow, SampleSpace, Scaling, Space, StreamLines,
+    Table, VGroup, VectorField, VertexStyle, ZoomedInset,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(all(feature = "biology", feature = "3d"))]
