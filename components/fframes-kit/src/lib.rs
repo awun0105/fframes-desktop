@@ -92,6 +92,7 @@
 //! | `m.next_to(point, UR)` | [`Label`](label::Label) `{ direction: Anchor::TopRight, .. }` |
 //! | `ParametricFunction` | [`ParametricFunction`](explain::ParametricFunction) |
 //! | `VGroup(..).arrange(RIGHT, buff)`, `arrange_in_grid` | [`VGroup`](explain::VGroup) `::arrange`, `::arrange_in_grid`; boxes alone with [`layout::arrange`], `row`, `column`, `grid` |
+//! | `VDict` (a `VGroup` with keys) | a `BTreeMap<&str, Shape>` of your own: look a part up by its key, draw them all with `VGroup::new(parts.values().cloned().collect())` |
 //! | `DecimalMatrix`, `IntegerMatrix`, `MobjectMatrix` | [`DecimalMatrix`](explain::DecimalMatrix), [`IntegerMatrix`](explain::IntegerMatrix), [`MobjectMatrix`](explain::MobjectMatrix) of [`Mobject`](explain::Mobject)s, each with a `matrix: Matrix` for the look |
 //! | `DecimalTable`, `IntegerTable`, `MobjectTable`, `MathTable` (feature `latex`) | [`DecimalTable`](explain::DecimalTable), [`IntegerTable`](explain::IntegerTable), [`MobjectTable`](explain::MobjectTable), `explain::MathTable` of typeset formulas, each with a `table: Table` for the labels and look |
 //! | `Matrix`, `Table`, `BraceLabel` | [`Matrix`](explain::Matrix), [`Table`](explain::Table), [`BraceLabel`](label::BraceLabel) |

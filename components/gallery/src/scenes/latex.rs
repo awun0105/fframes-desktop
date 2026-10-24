@@ -28,6 +28,8 @@ pub(super) struct Formulas {
     solved: Formula,
     water: Formula,
     tikz: Formula,
+    /// Functions and their derivatives, row by row.
+    derivatives: Vec<[Formula; 2]>,
 }
 
 /// Typesets `tex`, or keeps its source to draw as text when TeX is missing and the cache
@@ -57,6 +59,15 @@ impl Formulas {
             pythagoras: math("{{a}}^2 + {{b}}^2 = {{c}}^2"),
             solved: math("{{a}}^2 = {{c}}^2 - {{b}}^2"),
             water: typeset(water, ChemEq::new(water).typeset(&engine)),
+            derivatives: [
+                ["x^2", "2x"],
+                ["\\sin x", "\\cos x"],
+                ["e^{x}", "e^{x}"],
+                ["\\ln x", "\\frac{1}{x}"],
+            ]
+            .into_iter()
+            .map(|row| row.map(math))
+            .collect(),
             tikz: typeset(
                 tikz,
                 Tex::new(tikz)
@@ -201,6 +212,22 @@ pub fn scenes() -> Vec<GalleryScene> {
                 ..centered(ui, &formulas().water, 130.0)
             };
             ui.show(view)
+        },
+        "MathTable", 2.0 => |ui| {
+            let rows = formulas().derivatives.iter().map(|row| row.iter().collect()).collect();
+            let table = MathTable {
+                formulas: rows,
+                size: 46.0,
+                table: Table {
+                    col_labels: vec!["f(x)".into(), "f'(x)".into()],
+                    y: 600.0,
+                    outer_lines: true,
+                    enter: Some(Create::default().into()),
+                    ..ui.defaults()
+                },
+                ..ui.defaults()
+            };
+            ui.show(table)
         },
         "TikzDiagram", 2.5 => |ui| {
             let view = FormulaView {

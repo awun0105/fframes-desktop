@@ -1,7 +1,7 @@
 ---
 phase: 17
 title: "Phase 17: Coordinate systems, fields, graphs, tables and text mobjects"
-status: in-progress
+status: completed
 priority: P1
 effort: 6d
 dependencies: [6]
@@ -136,7 +136,7 @@ Add the remaining 2D mobjects of the Manim CE reference:
 - [x] Implicit functions, vector fields, stream lines
 - [x] Graph layouts, `Graph` and `DiGraph`
 - [x] Typed matrices and tables
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] Gallery scenes, e2e frames, docs and mapping rows
 
 ## Notes
 
@@ -192,8 +192,11 @@ Add the remaining 2D mobjects of the Manim CE reference:
   `MobjectMatrix` and `MobjectTable` take `Mobject { svgr, width, height }` cells, drawn around
   the origin (`Mobject::from_shapes` centers and measures shapes); they hold `Svgr`, which has
   no `PartialEq`, so they derive no studio props. `MathTable` (feature `latex`) takes formulas
-  typeset beforehand and draws them through `MobjectTable`; the gallery has no TeX engine, so
-  it is covered by the type check and the docs, not by a frame.
+  typeset beforehand and draws them through `MobjectTable`. Its gallery scene sits with the
+  other formula scenes in `scenes/latex.rs`, typeset from the committed `gallery/tex-cache`.
 - `Matrix` and `Table` draw through a shared `draw(ui, grid, body)` now; their frames stayed at
   0.000%.
-- Extra e2e frame: `TypedTables@end`.
+- Extra e2e frames: `TypedTables@end`, `MathTable@end`.
+- `Variable` lives in `text/decimal.rs` with `DecimalNumber` and `Integer`, not in its own
+  `text/variable.rs` as the file list says. `VDict` is a mapping row: a keyed list of shapes kept
+  by the caller and drawn with `VGroup::new`.
