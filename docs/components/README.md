@@ -10,6 +10,7 @@ fframes-kit` from `components/`).
 | [math.md](math.md) | the math kit (feature `math`): its figures, each with an example and its gallery scene; the plots of `fframes_kit::plot` (no feature) |
 | [physics.md](physics.md) | the physics kit (feature `physics`): its figures, simulations stepped once in the constructor, each with an example and its gallery scene |
 | [chemistry.md](chemistry.md) | the chemistry kit (feature `chemistry`): Bohr atoms, element tiles and the periodic table from `mendeleev`, skeletal formulas by hand or from SMILES with `chematic`, reactions, titrations, states of matter and equilibria, and 3D molecules and orbitals with `3d`, each with an example and its gallery scene |
+| [cs.md](cs.md) | the computer science kit (feature `cs`): algorithms recorded once as steps and sampled by time, arrays, sorts and searches, with the tidy tree and layered graph layouts, each with an example and its gallery scene |
 
 LaTeX formulas (feature `latex`) need a TeX installation: see [latex-setup.md](../latex-setup.md).
 

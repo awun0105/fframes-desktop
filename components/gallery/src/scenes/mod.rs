@@ -3,6 +3,7 @@ use crate::GalleryScene;
 pub mod animate;
 pub mod chemistry;
 pub mod core;
+pub mod cs;
 pub mod explain;
 pub mod general;
 pub mod latex;
@@ -28,6 +29,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(math::scenes());
     scenes.extend(physics::scenes());
     scenes.extend(chemistry::scenes());
+    scenes.extend(cs::scenes());
     scenes.extend(tags::scenes());
     scenes.extend(shapes::bench_scenes());
     scenes.extend(latex::bench_scenes());

@@ -214,6 +214,146 @@ fn overlaps(a: Rect, b: Rect, gap: f64) -> bool {
     a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 + gap && b.y0 < a.y1 + gap
 }
 
+/// Positions of a tree's nodes, the tidy way: `x` in slots (siblings are at least one slot
+/// apart, and so are neighbouring subtrees at every depth), `y` the depth (the root is 0).
+/// `children[i]` lists the children of node `i` from left to right. Each parent sits midway
+/// between its first and last child, and the leftmost node is at `x = 0`. Nodes not reached
+/// from `root` stay at `(0, 0)`; a node reached twice is placed the first time only.
+pub fn tidy_tree(children: &[Vec<usize>], root: usize) -> Vec<(f64, f64)> {
+    /// Places the subtree of `node`: sets its children's offsets and returns its extent at
+    /// each depth, relative to `node`.
+    fn place(
+        node: usize,
+        children: &[Vec<usize>],
+        offset: &mut [f64],
+        seen: &mut [bool],
+        kept: &mut [Vec<usize>],
+    ) -> Vec<(f64, f64)> {
+        // claim the children before descending, so no deeper node takes them
+        let mut kids = Vec::new();
+        for &c in &children[node] {
+            if c < children.len() && !seen[c] {
+                seen[c] = true;
+                kids.push(c);
+            }
+        }
+        let mut merged: Vec<(f64, f64)> = Vec::new();
+        let mut xs = Vec::with_capacity(kids.len());
+        for &c in &kids {
+            let contour = place(c, children, offset, seen, kept);
+            // the child moves right until it clears every depth both subtrees reach
+            let shift = if merged.is_empty() {
+                0.0
+            } else {
+                merged
+                    .iter()
+                    .zip(&contour)
+                    .map(|(m, k)| m.1 - k.0 + 1.0)
+                    .fold(f64::NEG_INFINITY, f64::max)
+            };
+            for (d, &(l, r)) in contour.iter().enumerate() {
+                match merged.get_mut(d) {
+                    Some(m) => m.1 = r + shift,
+                    None => merged.push((l + shift, r + shift)),
+                }
+            }
+            xs.push(shift);
+        }
+        let middle = match (xs.first(), xs.last()) {
+            (Some(a), Some(b)) => f64::midpoint(*a, *b),
+            _ => 0.0,
+        };
+        for (&c, x) in kids.iter().zip(&xs) {
+            offset[c] = x - middle;
+        }
+        kept[node] = kids;
+        let mut contour = vec![(0.0, 0.0)];
+        contour.extend(merged.into_iter().map(|(l, r)| (l - middle, r - middle)));
+        contour
+    }
+    let n = children.len();
+    let mut positions = vec![(0.0, 0.0); n];
+    if root >= n {
+        return positions;
+    }
+    // the offset of every node from its parent, and each subtree's extent per depth
+    let mut offset = vec![0.0_f64; n];
+    let mut seen = vec![false; n];
+    // the children each node keeps: a node listed twice belongs to its first parent
+    let mut kept: Vec<Vec<usize>> = vec![Vec::new(); n];
+    seen[root] = true;
+    place(root, children, &mut offset, &mut seen, &mut kept);
+    // absolute positions from the root down
+    let mut stack = vec![(root, 0.0, 0.0)];
+    let mut placed = vec![false; n];
+    while let Some((node, x, y)) = stack.pop() {
+        placed[node] = true;
+        positions[node] = (x, y);
+        for &c in &kept[node] {
+            stack.push((c, x + offset[c], y + 1.0));
+        }
+    }
+    let left = (0..n)
+        .filter(|&i| placed[i])
+        .map(|i| positions[i].0)
+        .fold(f64::INFINITY, f64::min);
+    for (i, p) in positions.iter_mut().enumerate() {
+        if placed[i] {
+            p.0 -= left;
+        }
+    }
+    positions
+}
+
+/// Positions of a directed graph's `count` nodes in layers (Sugiyama's method, through
+/// `rust-sugiyama`): `y` is the layer (sources at 0, edges point down), `x` the slot in the
+/// layer (neighbours at least one apart), with crossings reduced. Cycles are fine. The
+/// connected parts sit side by side, one slot apart, in the order the layout returns them,
+/// and nodes without edges follow in layer 0. Self-loops and edges to missing nodes are
+/// left out. The result is the same on every run and machine.
+#[cfg(any(feature = "cs", feature = "biology"))]
+pub fn layered(count: usize, edges: &[(usize, usize)]) -> Vec<(f64, f64)> {
+    use rust_sugiyama::configure::Config;
+
+    let mut positions = vec![(0.0, 0.0); count];
+    let edges: Vec<(u32, u32)> = edges
+        .iter()
+        .filter(|(a, b)| a != b && *a < count && *b < count)
+        .filter_map(|&(a, b)| Some((u32::try_from(a).ok()?, u32::try_from(b).ok()?)))
+        .collect();
+    // the defaults, never the environment, so every machine lays out the same
+    let config = Config::default();
+    let spacing = config.vertex_spacing;
+    let mut placed = vec![false; count];
+    let mut next = 0.0_f64;
+    if !edges.is_empty() {
+        for (part, _, _) in rust_sugiyama::from_edges(&edges, &config) {
+            let left = part
+                .iter()
+                .map(|(_, (x, _))| *x)
+                .fold(f64::INFINITY, f64::min);
+            let mut right = next;
+            for (id, (x, y)) in part {
+                if let Some(p) = positions.get_mut(id) {
+                    let x = next + (x - left) / spacing;
+                    *p = (x, y / spacing);
+                    placed[id] = true;
+                    right = right.max(x);
+                }
+            }
+            next = right + 1.0;
+        }
+    }
+    for (p, _) in positions
+        .iter_mut()
+        .zip(&placed)
+        .filter(|(_, placed)| !**placed)
+    {
+        *p = (next, 0.0);
+        next += 1.0;
+    }
+    positions
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,5 +455,79 @@ mod tests {
             Anchor::Center.next_to(100.0, 100.0, 10.0, 4.0, 2.0),
             (95.0, 98.0)
         );
+    }
+
+    #[test]
+    fn tidy_trees_center_parents_and_keep_subtrees_apart() {
+        // 0 has children 1, 2; 1 has 3, 4; 2 has 5
+        let children = vec![vec![1, 2], vec![3, 4], vec![5], vec![], vec![], vec![]];
+        let p = tidy_tree(&children, 0);
+        assert_eq!(p[3], (0.0, 2.0));
+        assert_eq!(p[4], (1.0, 2.0));
+        // the parents sit over the middle of their children
+        assert_eq!(p[1], (0.5, 1.0));
+        assert_eq!(p[5].0, p[2].0);
+        assert_eq!(p[0].0, f64::midpoint(p[1].0, p[2].0));
+        // no two nodes at a depth are closer than one slot
+        for a in 0..6 {
+            for b in a + 1..6 {
+                if p[a].1 == p[b].1 {
+                    assert!((p[a].0 - p[b].0).abs() >= 1.0 - 1e-9, "{a} {b} {p:?}");
+                }
+            }
+        }
+        // deterministic, and the same again
+        assert_eq!(p, tidy_tree(&children, 0));
+    }
+
+    #[test]
+    fn tidy_trees_clear_deep_neighbours() {
+        // two chains under a root: the left one grows a wide bottom, which must not touch
+        // the right one
+        let children = vec![
+            vec![1, 2],
+            vec![3],
+            vec![4],
+            vec![5, 6, 7],
+            vec![8],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        ];
+        let p = tidy_tree(&children, 0);
+        assert!(p[8].0 - p[7].0 >= 1.0 - 1e-9, "{p:?}");
+        // a child listed under two parents stays with the first
+        let shared = vec![vec![1, 2], vec![2, 3], vec![], vec![]];
+        let r = tidy_tree(&shared, 0);
+        assert_eq!((r[2].1, r[3].1), (1.0, 2.0));
+        // a cycle or an unreachable node does not loop or move
+        let odd = vec![vec![1], vec![0, 1], vec![]];
+        let q = tidy_tree(&odd, 0);
+        assert_eq!(q, vec![(0.0, 0.0), (0.0, 1.0), (0.0, 0.0)]);
+    }
+
+    #[cfg(any(feature = "cs", feature = "biology"))]
+    #[test]
+    fn layered_graphs_point_down_and_keep_every_node() {
+        let edges = [(0, 1), (0, 2), (1, 3), (2, 3), (3, 1), (5, 6), (4, 4)];
+        let p = layered(8, &edges);
+        assert_eq!(p.len(), 8);
+        assert_eq!(p[0].1, 0.0);
+        assert!(p[1].1 > p[0].1 && p[2].1 > p[0].1);
+        // the second part sits right of the first, the lone nodes after both
+        let first = [0, 1, 2, 3].map(|i| p[i].0).into_iter().fold(0.0, f64::max);
+        assert!(p[5].0 > first && p[6].0 > first, "{p:?}");
+        assert!(p[4].0 > p[5].0.max(p[6].0) && p[7].0 > p[4].0, "{p:?}");
+        assert_eq!((p[4].1, p[7].1), (0.0, 0.0));
+        // nodes in a layer are a slot apart
+        for a in 0..8 {
+            for b in a + 1..8 {
+                if p[a].1 == p[b].1 {
+                    assert!((p[a].0 - p[b].0).abs() >= 1.0 - 1e-9, "{a} {b} {p:?}");
+                }
+            }
+        }
+        assert_eq!(p, layered(8, &edges));
     }
 }

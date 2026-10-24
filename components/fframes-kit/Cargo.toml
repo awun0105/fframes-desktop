@@ -13,6 +13,7 @@ fframes-studio-protocol = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 chematic = { workspace = true, optional = true }
 mendeleev = { workspace = true, optional = true }
+rust-sugiyama = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -21,8 +22,9 @@ latex = []
 math = []
 physics = []
 chemistry = ["dep:chematic", "dep:mendeleev"]
-cs = []
-biology = []
+# The layered graph layout of `layout::layered` is shared by both kits.
+cs = ["dep:rust-sugiyama"]
+biology = ["dep:rust-sugiyama"]
 skia = []
 3d = ["fframes/3d"]
 lottie = []

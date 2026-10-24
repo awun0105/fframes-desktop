@@ -1,7 +1,7 @@
 ---
 phase: 10
 title: "Phase 10: CS and biology kits"
-status: todo
+status: in-progress
 priority: P2
 effort: 6d
 dependencies: [6]
@@ -73,7 +73,7 @@ gallery scene and a skill reference.
 
 ## Todo
 
-- [ ] Tidy tree and layered layout
+- [x] Tidy tree and layered layout
 - [ ] CS figures in table order
 - [ ] Biology figures in table order
 - [ ] `cs.md` and `biology.md` doctested

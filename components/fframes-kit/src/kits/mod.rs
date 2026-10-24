@@ -2,6 +2,8 @@
 
 #[cfg(feature = "chemistry")]
 pub mod chemistry;
+#[cfg(feature = "cs")]
+pub mod cs;
 #[cfg(feature = "math")]
 pub mod math;
 #[cfg(feature = "physics")]

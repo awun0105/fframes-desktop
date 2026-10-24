@@ -30,6 +30,10 @@ pub use crate::kits::chemistry::{
     EnergyProfile, Equilibrium, EquilibriumModel, MatterState, Molecule, Molecule2D, PeriodicTable,
     PhScale, Reaction, SmilesError, StatesOfMatter, Structure, Titration, TitrationCurve, Trend,
 };
+#[cfg(feature = "cs")]
+pub use crate::kits::cs::{
+    ArrayStep, ArrayTrace, ArrayView, BinarySearch, CellColors, SortVisualizer,
+};
 #[cfg(feature = "math")]
 pub use crate::kits::math::{
     AreaUnder, Epicycles, FractionBar, FractionPie, FunctionPlot, Interval, LinearTransform,
