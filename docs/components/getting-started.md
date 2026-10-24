@@ -33,8 +33,9 @@ fframes-kit = { path = "/path/to/fframes-desktop/components/fframes-kit" }
 fframes-kit = { git = "https://github.com/khanhthanhdev/fframes-desktop" }
 ```
 
-The kit is 0.x: its API may still change between versions. Pin a `rev` in the git form to
-keep a project on one version. Explainer kits are features, for example
+The kit is 0.x: its API may still change between versions. To keep a project on one version
+in the git form, pin the same `rev` on the `fframes-kit` line and on every `fframes` line;
+different revisions are two copies of fframes again. Explainer kits are features, for example
 `fframes-kit = { ..., features = ["math"] }`; see [components.md](components.md).
 
 ## 3. A first video

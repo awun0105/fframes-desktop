@@ -1,8 +1,8 @@
 # fframes-kit references
 
 Agent and author references for `fframes-kit`, the component library in `components/` (its
-own Cargo workspace). Each file is compiled as doctests of the kit (`cargo test -p
-fframes-kit` from `components/`).
+own Cargo workspace). Each file except the getting started guide is compiled as doctests of
+the kit (`cargo test -p fframes-kit` from `components/`).
 
 | File | Covers |
 | --- | --- |

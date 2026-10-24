@@ -1,7 +1,7 @@
 ---
 phase: 12
 title: "Phase 12: Getting started and packaging"
-status: todo
+status: completed
 priority: P2
 effort: 1d
 dependencies: [4]
@@ -52,6 +52,6 @@ without changing the upstream scaffolder, the release scripts or fframes Studio.
 
 ## Todo
 
-- [ ] `docs/components/getting-started.md`, proven on a scratchpad project
-- [ ] `package` recipe and dry run
-- [ ] Docs index line
+- [x] `docs/components/getting-started.md`, proven on a scratchpad project
+- [x] `package` recipe and dry run
+- [x] Docs index line
