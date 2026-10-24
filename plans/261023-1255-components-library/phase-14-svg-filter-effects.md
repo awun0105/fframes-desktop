@@ -1,7 +1,7 @@
 ---
 phase: 14
 title: "Phase 14: SVG-filter effects"
-status: todo
+status: in-progress
 priority: P2
 effort: 5d
 dependencies: [11]
@@ -141,7 +141,7 @@ wrappers around children.
 ## Todo
 
 - [x] Renderer checks: `feTurbulence` agrees, `feDisplacementMap` deferred
-- [ ] Colour group and matrix composition
+- [x] Colour group and matrix composition
 - [ ] Edges and shape
 - [ ] Noise, noise functions
 - [ ] Patterns and overlays, halftone

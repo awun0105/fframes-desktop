@@ -17,7 +17,11 @@ pub use crate::data::BarChart;
 pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
 #[cfg(feature = "skia")]
 pub use crate::effects::ShaderNoise;
-pub use crate::effects::{Blur, CameraMotionBlur, LightLeak, Noise, Trail};
+pub use crate::effects::{
+    Blur, Brightness, CameraMotionBlur, ColorCorrection, ColorKey, ColorMatrix, ColorStack,
+    Contrast, Curves, Duotone, Exposure, Grayscale, HueRotate, Invert, Levels, LightLeak, Lut,
+    Noise, Saturation, ShadowsHighlights, ThermalVision, Tint, Trail, Vibrance, WhiteBalance,
+};
 pub use crate::explain::{
     Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, Matrix, NumberLine, NumberPlane,
     ParametricFunction, Range, RiemannRectangles, SampleAt, Space, Table, VGroup,

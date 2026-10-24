@@ -693,6 +693,63 @@ fn shot<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 let blur = CameraMotionBlur { samples: 4, ..CameraMotionBlur::themed(&Theme::default()) };
 assert_eq!(blur.offsets(30).len(), 4);
 ```
+### Colour effects
+
+Each colour effect is a wrapper, `Effect { children, ..ui.defaults() }`, drawn through one SVG
+filter in sRGB, so the CPU and Skia backends agree. The main amount is an `Anim<f32>`; to
+drive it from time, compute it from `ui.seconds()` and pass `Anim::Fixed`. `key` names the
+filter when two effects of one kind share a frame.
+
+| Component | Props (defaults) | What it does |
+| --- | --- | --- |
+| `Brightness` | `amount` (1.3) | CSS `brightness()`: the colours times `amount` |
+| `Contrast` | `amount` (1.4) | CSS `contrast()` about mid grey |
+| `Saturation` | `amount` (1.6) | SVG `saturate`: 0 grey, 1 unchanged |
+| `HueRotate` | `degrees` (90) | the hues turned round the colour wheel (Remotion's hue) |
+| `Grayscale` | `amount` (1) | CSS `grayscale()` |
+| `Invert` | `amount` (1) | CSS `invert()` |
+| `Tint` | `color` (accent), `amount` (0.8) | the picture in shades of `color` |
+| `Duotone` | `dark` (background), `light` (accent), `amount` (1) | dark tones `dark`, light tones `light` |
+| `Exposure` | `stops` (0.5) | every stop doubles the light |
+| `WhiteBalance` | `temperature` (0.5, -1 cold to 1 warm), `tint` (0, -1 green to 1 magenta) | gains of up to a fifth on red, green and blue |
+| `Vibrance` | `amount` (0.8) | half as strong as `Saturation`; approximate, a matrix cannot spare colours that are already saturated |
+| `ColorCorrection` | `brightness` (1), `contrast` (1.1), `saturation` (1.2), `hue` (0) | the four in that order, one matrix |
+| `ColorStack` | `matrices: Vec<ColorMatrix>` | several matrices composed into one `feColorMatrix`: a stack costs one filter |
+| `Levels` | `input` (0.08, 0.92), `gamma` (1.2), `output` (0, 1) | Photoshop's levels on every channel |
+| `Curves` | `points` (an S curve), `red`, `green`, `blue` (`None`) | a smooth monotone curve through the points, then per channel |
+| `Lut` | `red`, `green`, `blue` (lists of outputs) | a 1D table per channel; approximate, a `.cube` LUT maps colours in 3D |
+| `ShadowsHighlights` | `shadows` (0.6), `highlights` (0.3) | lifts dark tones, pulls light ones down; approximate, a curve on the pixel's own value |
+| `ThermalVision` | `palette` (`THERMAL_PALETTE`) | the luminance mapped onto the palette, cold to hot |
+| `ColorKey` | `color` (green), `tolerance` (0.4), `softness` (0.2) | a chroma key; linear in the colour, so it suits saturated screens |
+
+`ColorMatrix` holds the matrix maths (`brightness`, `contrast`, `exposure`, `saturation`,
+`grayscale`, `hue_rotate`, `invert`, `tint`, `duotone`, `white_balance`, `vibrance`, `mix`,
+`then`, `apply`). `a.then(b)` is one matrix that does `a`, then `b`. Unlike two nested
+effects, it does not clamp the colours in between. The table effects (`Levels`, `Curves`,
+`Lut`, `ShadowsHighlights`, `ThermalVision`, `ColorKey`) do not reduce to a matrix: nest them
+around or inside a stack, one filter each.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn photo<'a>(_ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    svgr!(<rect x="0" y="0" width="1920" height="1080" fill="#f08a4b" />)
+}
+
+// curves inside a two-matrix stack that warms up over two seconds: two filters
+fn graded<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let warmth = motion::clamp01(ui.seconds() / 2.0);
+    ui.show(ColorStack {
+        matrices: vec![ColorMatrix::exposure(0.3), ColorMatrix::white_balance(warmth, 0.0)],
+        children: children(|ui| ui.show(Curves { children: children(photo), ..ui.defaults() })),
+        ..ui.defaults()
+    })
+}
+
+let red = ColorMatrix::grayscale(1.0).apply([1.0, 0.0, 0.0, 1.0]);
+assert!((red[0] - 0.213).abs() < 1e-6);
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`

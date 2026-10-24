@@ -6,6 +6,7 @@ pub mod chemistry;
 pub mod core;
 pub mod cs;
 pub mod effects;
+pub mod effects_ii;
 pub mod explain;
 pub mod general;
 pub mod latex;
@@ -24,6 +25,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(animate::scenes());
     scenes.extend(transitions::scenes());
     scenes.extend(effects::scenes());
+    scenes.extend(effects_ii::scenes());
     scenes.extend(text::scenes());
     scenes.extend(overlay::scenes());
     scenes.extend(general::scenes());
