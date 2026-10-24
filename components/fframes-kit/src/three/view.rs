@@ -236,7 +236,6 @@ mod tests {
             ..ThreeDView::themed(&Theme::default())
         };
         let camera = view.camera(space, 0.0);
-        let renderer = Renderer::new(1920, 1080);
         let accent = Theme::default().colors.accent;
         let frame = || {
             let mut scene = stage();
@@ -248,7 +247,7 @@ mod tests {
                 (accent, Some(darker(accent))),
             );
             scene.add(Node::mesh(g, m));
-            renderer.render(&scene, &camera)
+            Renderer::new(1920, 1080).render(&scene, &camera)
         };
         drop(frame());
         let runs = 10;
@@ -257,7 +256,9 @@ mod tests {
             drop(frame());
         }
         let mean = start.elapsed().as_secs_f64() * 1000.0 / f64::from(runs);
-        println!("one sphere, 1920x1080, CPU: {mean:.1} ms per frame (scene built each frame)");
+        println!(
+            "one sphere, 1920x1080, CPU: {mean:.1} ms per frame (scene and renderer built each frame)"
+        );
     }
     impl ThreeDView<'_> {
         fn projector_at(&self, space: Space, seconds: f32) -> Projector {

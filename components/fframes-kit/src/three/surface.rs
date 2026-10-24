@@ -57,7 +57,8 @@ pub(crate) fn parametric(
 
 /// Manim's `Surface`: the points `func(u, v)` over `u_range` and `v_range`, cut into
 /// `resolution` pieces (32 by 32) and coloured as a checkerboard of `checkerboard_colors`,
-/// or all `fill_color` without them. `center` moves it, and `enter` animates it.
+/// or all `fill_color` without them. `center` moves it, and `enter` animates it about
+/// `center`: give ranges around 0 to grow it from its middle.
 #[derive(Debug, Clone, Copy)]
 pub struct Surface {
     pub func: fn(f32, f32) -> Point3,

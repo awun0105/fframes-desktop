@@ -1,7 +1,7 @@
 ---
 phase: 18
 title: "Phase 18: Cameras and 3D"
-status: in-progress
+status: completed
 priority: P2
 effort: 5d
 dependencies: [6]
@@ -115,3 +115,9 @@ Add Manim's camera scenes and its 3D mobjects:
 - [x] Solids, polyhedra, surfaces and 3D axes
 - [x] 3D enter animations
 - [x] Gallery scenes, e2e frames, docs and mapping rows
+
+## Notes
+
+- One checkerboard sphere at 1080p costs 55.4 ms per CPU frame (`plans/reports/kit-phase-18-261025-0423.md`).
+- Under `Create`, a `Polyhedron`'s faces grow about its center while each vertex dot grows in place. The gallery fades polyhedra in.
+- `Surface` grows about `center`, so Manim's default ranges (0 to 1) grow it from a corner.
