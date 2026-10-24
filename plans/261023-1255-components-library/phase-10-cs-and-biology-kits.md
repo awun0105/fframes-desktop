@@ -1,7 +1,7 @@
 ---
 phase: 10
 title: "Phase 10: CS and biology kits"
-status: in-progress
+status: completed
 priority: P2
 effort: 6d
 dependencies: [6]
@@ -75,6 +75,6 @@ gallery scene and a skill reference.
 
 - [x] Tidy tree and layered layout
 - [x] CS figures in table order
-- [ ] Biology figures in table order
-- [ ] `cs.md` and `biology.md` doctested
-- [ ] e2e subset
+- [x] Biology figures in table order
+- [x] `cs.md` and `biology.md` doctested
+- [x] e2e subset
