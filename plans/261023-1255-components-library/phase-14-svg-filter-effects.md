@@ -144,7 +144,7 @@ wrappers around children.
 - [x] Colour group and matrix composition
 - [x] Edges and shape
 - [x] Noise, noise functions
-- [ ] Patterns and overlays, halftone
+- [x] Patterns and overlays, halftone
 - [ ] Geometry and reveals
 - [ ] Blur group with measured cost
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
