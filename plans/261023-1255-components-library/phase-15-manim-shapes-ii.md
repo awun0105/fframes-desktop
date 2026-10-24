@@ -68,8 +68,8 @@ geometry name maps to a kit construct.
     animated.
 - **Boolean operations:**
   - `Union`, `Intersection`, `Difference`, `Exclusion` on `kurbo::BezPath`.
-  - The crate is chosen in step 1. `i_overlay` is the candidate; it works on polygons, so
-    curves are flattened to a stated tolerance first.
+  - They use `i_overlay` (see step 1). It works on polygons, so curves are flattened at
+    0.25 px first.
 - **SVG import:**
   - `SvgShape`, Manim `SVGMobject`: an SVG file from media, drawn as `svgr` with its parts
     addressable by id or index.
@@ -97,12 +97,15 @@ geometry name maps to a kit construct.
 
 ## Tasks & Steps
 
-1. **Pick the boolean-ops crate.**
-   - Check `i_overlay` for its licence, its wasm32 build, and what it does with curves.
-     Check one alternative as well.
-   - Record the choice in the phase report.
-   - If neither builds for wasm32, put the boolean operations behind a feature that the
-     editor bridge leaves off. Record that too.
+1. **Boolean-ops crate: `i_overlay` 9.1.** Chosen on 2026-10-24, and the probe passed:
+   - Licence MIT or Apache-2.0. It builds for wasm32. The union of two overlapping 2×2
+     squares gives the exact area 7.0.
+   - API: `SingleFloatOverlay::overlay(&other, OverlayRule::Union, FillRule::EvenOdd)`
+     returns a `Vec` of shapes. A shape is a `Vec` of contours: contour 0 is the outer ring,
+     and the rest are holes.
+   - Flatten curves at 0.25 px before the operation; the result is lines.
+   - Fallback: `flo_curves` 0.8 (Apache-2.0, builds), which keeps Bézier curves. Use it only
+     if flattened results look wrong under `Create`.
 2. Matchers and dashes.
 3. Arcs, curves, dots and labels.
 4. Angles, polygrams and tips.
@@ -130,7 +133,7 @@ geometry name maps to a kit construct.
 
 ## Todo
 
-- [ ] Boolean-ops crate chosen and recorded
+- [x] Boolean-ops crate chosen and recorded
 - [ ] Matchers and dashes
 - [ ] Arcs, curves, dots and labels
 - [ ] Angles, polygrams and tips

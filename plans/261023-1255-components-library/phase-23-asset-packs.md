@@ -92,7 +92,15 @@ Add the three asset packs the user chose (2026-10-24):
    - Check that `play_lottie` draws one real Noto file.
    - The test file is downloaded for local verification only and is not committed.
    - Record the result in the phase report.
-3. **Find CC0 sound files.**
+3. **Find CC0 sound files.** Start from the sources confirmed on 2026-10-24:
+   - Kenney "Interface Sounds" (<https://kenney.nl/assets/interface-sounds>, CC0, 100
+     files): click, switch and pop.
+   - qubodup's bamboo swooshes on OpenGameArt (<https://opengameart.org/node/2242>, CC0):
+     whoosh.
+   - Ding and shutter have no source yet. Look first in Kenney's other CC0 packs ("UI
+     Audio", "Digital Audio", "Impact Sounds").
+
+   Then for each file:
    - Record each file's origin and licence in `sfx/LICENSE.md` and the phase report.
    - Trim each file to under 2 s. Normalise it with the kit's audio chain, or with ffmpeg
      before committing.

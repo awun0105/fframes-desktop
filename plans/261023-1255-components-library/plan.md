@@ -248,15 +248,21 @@ Status words: the table uses `Pending`, `In progress`, `Completed`, `Blocked`, `
 - Pushing for phases 13 to 23: the loop rule above pushes after each phase, but the user has
   not yet confirmed it for this extension, and the fix commits `9149af84` and `b892569f` are
   still local. Confirm before starting the loop.
-- The boolean-operations crate (`i_overlay` is the candidate) and its wasm32 build (phase 15,
-  step 1).
-- `rapier2d` on wasm32 and its determinism (phase 19, step 1).
-- Whether CC0 sources exist for each planned sound (phase 23, step 3); missing sounds are
-  left out and reported.
-- The CPU and Skia renders of `feDisplacementMap` and `feTurbulence` may differ (phase 14,
-  step 1).
-- Remotion's `<Gif>` (4,258 files in the sweep) needs a GIF decoder that fframes does not
-  have; adding one is a core change, so it is not planned.
+- Resolved 2026-10-24 by probes (details in the phase files):
+  - **boolean operations** use `i_overlay` 9.1 (phase 15);
+  - **rigid bodies** use `rapier2d` 0.36 with `enhanced-determinism` (phase 19). Both crates
+    build for wasm32;
+  - **`feTurbulence`** renders the same on CPU and Skia-CPU (0.0016% of pixels differ);
+  - **CC0 sounds**: sources exist for click, switch, pop and whoosh (phase 23).
+- Still open:
+  - `feDisplacementMap` on CPU against Skia (phase 14, step 1);
+  - a CC0 source for the ding and shutter sounds (phase 23, step 3).
+- Remotion's `<Gif>` (4,258 files in the sweep) needs no core change. The kit could decode
+  frames with the `image` crate's `gif` feature and draw them through
+  `fframes::svgr_image::rendered_image`. Adding a `Gif` component waits for the user's
+  answer.
+- The five reports in "Which report is authoritative" (items 1 to 5) were never committed.
+  The links work locally but not on origin. Committing them waits for the user's answer.
 
 ## Validation Log
 

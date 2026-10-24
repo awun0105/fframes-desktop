@@ -83,8 +83,16 @@ kit (feature `physics`).
 
 ## Tasks & Steps
 
-1. **Check `rapier2d`.** Check its version, its wasm32 build, and determinism with a fixed
-   timestep. Record the result in the phase report.
+1. **`rapier2d` 0.36 with `features = ["enhanced-determinism"]`.** Chosen on 2026-10-24,
+   and the probe passed:
+   - Licence Apache-2.0. It builds for wasm32.
+   - 20 bouncing balls over 600 steps give identical positions in two runs. That proves
+     same-machine repeatability. `enhanced-determinism` is what rapier offers for results
+     that match across machines.
+   - The 0.36 API differs from older docs: `step` takes `Vector::new(..)` by value, uses
+     `BroadPhaseBvh`, and needs a `SoftBodySet` argument. Pin `rapier2d = "0.36"`.
+   - Size: `rapier2d` and `i_overlay` together add 2.07 MB of unstripped wasm. Document
+     this; it does not block anything.
 2. Electrostatics and magnetostatics.
 3. Lenses and rays.
 4. Rigid bodies and `MultiPendulum`.
@@ -106,14 +114,14 @@ kit (feature `physics`).
 
 ## Risks
 
-- **`rapier2d` size and wasm.** If it does not build for wasm32, put `RigidWorld` behind a
-  feature the editor leaves off, and record it.
+- **`rapier2d` size.** It builds for wasm32, but it adds to the editor bundle. If the size
+  matters, put `RigidWorld` behind a feature that the editor leaves off.
 - **Wire routing.** Keep it simple: right angles with the path given as corners. No
   automatic router.
 
 ## Todo
 
-- [ ] `rapier2d` checked and recorded
+- [x] `rapier2d` checked and recorded
 - [ ] Electrostatics and magnetostatics
 - [ ] Lenses and rays
 - [ ] Rigid bodies and multi-pendulum

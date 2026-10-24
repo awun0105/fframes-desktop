@@ -85,11 +85,11 @@ wrappers around children.
 
 ## Tasks & Steps
 
-1. **Pick the first group.** Pick one effect from each group, write it, and check that the
-   CPU and Skia-CPU renders agree.
-   - Skia-CPU works on this VM: `--renderer skia-cpu` needs no GPU.
-   - Compare the two renders with the e2e snapshot difference.
-   - Record the result in the phase report.
+1. **Check `feDisplacementMap` across renderers.** Write the first displacement effect and
+   compare its CPU and Skia-CPU renders with the e2e difference (`--renderer skia-cpu` needs
+   no GPU). Record the result in the phase report.
+   - `feTurbulence` is already checked (2026-10-24). On the gallery's `Noise@50%`, 34 pixels
+     (0.0016%) differ at the e2e threshold of 0.15, against a limit of 0.5%.
 2. The colour group and the colour-matrix composition helper.
 3. Edges and shape, noise and distortion, then the noise functions.
 4. Patterns and overlays, halftone, geometry, reveals.
@@ -109,8 +109,8 @@ wrappers around children.
 
 ## Risks
 
-- **Renderer differences.** resvg and Skia may differ in `feDisplacementMap` and
-  `feTurbulence`. Step 1 measures this before the bulk of the work.
+- **Renderer differences.** resvg and Skia may differ in `feDisplacementMap`. Step 1
+  measures this before the bulk of the work. `feTurbulence` already agrees.
 - **Cost.** Progressive blur and long shadows draw many copies. Cap the counts and document
   the cost per effect.
 - **Effects in the editor.** The editor draws through the browser's SVG. It supports these
@@ -118,7 +118,7 @@ wrappers around children.
 
 ## Todo
 
-- [ ] Renderer agreement checked on one effect per group
+- [ ] `feDisplacementMap` renderer agreement checked (`feTurbulence` done)
 - [ ] Colour group and matrix composition
 - [ ] Edges and shape
 - [ ] Noise and distortion, noise functions

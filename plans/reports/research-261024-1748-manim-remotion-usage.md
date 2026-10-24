@@ -146,8 +146,9 @@ The sweep counts how many TSX files mention each name together with "remotion".
   `random` 8,891 are common words.
 - **What the counts show.** Among missing component names, the noise functions and the
   TikTok captions are used most. Phases 14 and 22 do them early inside their phases.
-- **`Gif`** is used in 4,258 files. fframes has no GIF decoder, and adding one would be a
-  core change. It is recorded as not covered.
+- **`Gif`** is used in 4,258 files. fframes has no GIF decoder, but the kit can decode the
+  frames itself (the `image` crate) and draw them through `rendered_image`, with no core
+  change. It is not planned until the user decides.
 - The sweep script and its CSV are in the session scratchpad (`usage-sweep.ps1`,
   `usage.csv`).
 
@@ -416,9 +417,20 @@ Feasibility was checked without a core change:
 
 ## Unresolved questions
 
-- The SFX pack has no source yet. Each file must be CC0 with a recorded origin, or the pack
-  ships empty with helpers only.
-- `NamedMolecule` needs a name table. Its size and source (PubChem names are not offline) are
-  open.
-- The boolean-operations crate (`i_overlay` is a candidate; it works on polygons, so curves
-  are flattened first) is checked in the phase that adds them.
+- **SFX sources.** CC0 sources were found for most sounds:
+  - Kenney "Interface Sounds" for click, switch and pop;
+  - qubodup's bamboo swooshes on OpenGameArt for whoosh.
+
+  Ding and shutter have no source yet.
+- **`NamedMolecule`** will use a small embedded table of about 100 names, written from
+  public facts.
+- **Settled by probes on 2026-10-24:**
+  - boolean operations use `i_overlay` 9.1;
+  - rigid bodies use `rapier2d` 0.36;
+  - both build for wasm32;
+  - `feTurbulence` agrees across the two renderers.
+
+  `feDisplacementMap` is still unchecked.
+- **`<Gif>`** can be done in the kit without a core change: decode the frames with the
+  `image` crate, then draw them through `rendered_image`. Whether to add it is the user's
+  call.
