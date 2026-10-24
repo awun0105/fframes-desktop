@@ -7,7 +7,9 @@ mod callouts;
 mod cell;
 mod dna;
 mod expression;
+mod mitosis;
 
 pub use cell::{Cell, CellKind, CellPalette, Organelle};
 pub use dna::{BaseColors, DnaHelix, complement};
 pub use expression::{Transcription, Translation, amino_acid, reading_frame, transcribe};
+pub use mitosis::{MitosisStage, MitosisStages};

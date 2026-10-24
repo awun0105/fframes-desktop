@@ -66,6 +66,16 @@ fn translation<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+fn mitosis<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "MitosisStages");
+    let figure = ui.show(MitosisStages {
+        delay: 0.6,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight parts half a second apart from 0.6 s, the last name at about 5.1 s
@@ -77,5 +87,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Transcription", 8.5, transcription),
         // six codons of 1.2 s from 0.6 s, the last one the stop codon
         GalleryScene::new("Translation", 8.5, translation),
+        // six stages of 1.6 s from 0.6 s
+        GalleryScene::new("MitosisStages", 11.0, mitosis),
     ]
 }

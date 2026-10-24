@@ -122,3 +122,36 @@ fn protein<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
+## MitosisStages
+
+`MitosisStages` shows one cell dividing into two, `size` pixels from its centre to its side.
+From `delay` it goes through the six stages of `MitosisStage::ALL`, each `stage_time` seconds
+long, and names each one above the cell (`label`):
+
+- **Interphase:** the `chromosomes` lie loose and thin in the nucleus (`seed` places them).
+- **Prophase:** they condense into X-shaped pairs of sister chromatids, the nuclear envelope
+  breaks down and the centrosomes move to the poles.
+- **Metaphase:** spindle fibres line them up across the middle.
+- **Anaphase:** the sisters are pulled to opposite poles and the cell stretches.
+- **Telophase:** a nucleus forms around each group and the chromosomes loosen.
+- **Cytokinesis:** the cell pinches into two.
+
+Chromosomes come in homologous pairs of one length, one of each pair coloured from each
+parent (`colors`). `stage_at(seconds)` says which stage shows at a time. Gallery scene:
+`MitosisStages`.
+
+```rust
+use fframes_kit::prelude::*;
+
+let figure = MitosisStages { delay: 1.0, stage_time: 2.0, ..MitosisStages::default() };
+assert_eq!(figure.stage_at(4.0), MitosisStage::Prophase);
+assert_eq!(MitosisStage::ALL[5].name(), "Cytokinesis");
+
+fn division<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(MitosisStages {
+        chromosomes: 6,
+        stage_time: 2.0,
+        ..ui.defaults()
+    })
+}
+```
