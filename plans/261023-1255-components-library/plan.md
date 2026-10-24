@@ -80,7 +80,7 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 5 | [LaTeX formulas](./phase-05-latex-formulas.md) | 2 | 4d | Completed |
 | 6 | [Explain layer and math kit](./phase-06-explain-layer-and-math-kit.md) | 2 (LaTeX labels when 5 is done) | 5d | Completed |
 | 7 | [Component tags with the ui! macro](./phase-07-component-tags-in-svgr.md) | 2 | 3d | Completed |
-| 8 | [Studio props panel](./phase-08-studio-props-panel.md) | 3, 4, 6, 7 | 5d | In progress |
+| 8 | [Studio props panel](./phase-08-studio-props-panel.md) | 3, 4, 6, 7 | 5d | Completed |
 | 9 | [Physics and chemistry kits](./phase-09-physics-and-chemistry-kits.md) | 6 | 6d | Pending |
 | 10 | [CS and biology kits](./phase-10-cs-and-biology-kits.md) | 6 | 6d | Pending |
 | 11 | [Effects and more transitions](./phase-11-effects-and-more-transitions.md) | 3 | 3d | Pending |

@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "Phase 8: Studio props panel"
-status: in-progress
+status: completed
 priority: P2
 effort: 5d
 dependencies: [3, 4, 6, 7]
@@ -174,7 +174,9 @@ with closures, so neither Studio nor the runtime knows the kit.
 - [x] Kit `props` module and `#[derive(Props)]`
 - [x] `Editable`, `Ui::with_props`, `editable=` tag attribute
 - [x] Runtime hooks, `SetProps`, `PropsInfo`, startup and export
-- [ ] Studio engine props module and controller
-- [ ] Props panel UI
-- [ ] Derive on existing components, docs
-- [ ] End-to-end check with the fixture
+- [x] Studio engine props module and controller
+- [x] Props panel UI (the manual run in the app was skipped: see the report's Unresolved list)
+- [x] Derive on existing components, docs
+- [x] End-to-end check with the fixture (preview round trip test and a manual export)
+
+Report: [kit-phase-08-261024-0805.md](../reports/kit-phase-08-261024-0805.md)
