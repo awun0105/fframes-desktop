@@ -829,6 +829,8 @@ Animations are plain data. Put them into a shape's `enter`, `exit` or `emphasis`
 | `Wiggle { scale_value, rotation_angle, n_wiggles }` | emphasis | shakes the shape |
 | `Blink { blinks, time_on, time_off, hide_at_end }` | emphasis | on, then off, `blinks` times (a step: no `rate_func`) |
 | `FocusOn { point, color, opacity }` | emphasis | a frame-sized disc shrinks onto the point and vanishes |
+| `Rotate { angle, about_point }` | emphasis | turns by `angle` (a half turn; positive is counterclockwise, as in Manim) and stays |
+| `Rotating { angle, about_point, forever }` | emphasis | turns at an even speed, `angle` per `run_time` (a full turn in 5 s), once or `forever` |
 
 Enter and emphasis animations count from the start of the enclosing container plus `delay`;
 exit animations end `delay` seconds before its end. They change only the transform, opacity
@@ -849,6 +851,16 @@ for the second.
 | `Broadcast` | `point`, `radius`, `color`, `n_mobs`, `lag_ratio`, opacities, timing | rings grow out of a point one after another and fade |
 | `AnimatedBoundary` | `shape`, `colors`, `max_stroke_width`, `cycle_rate`, `back_and_forth` | the outline redraws itself in one colour after another, forever; `::new(shape, colors)` |
 | `ApplyWave` | `shape`, `direction`, `amplitude` (px), `ripples`, `time_width`, timing | a wave crosses the shape left to right and bends it; `::new(shape)` |
+| `Homotopy`, `SmoothedVectorizedHomotopy` | `shape`, `homotopy: fn(x, y, t) -> (x, y)`, timing | moves every point while `t` runs from 0 to 1, in `ui.space` units; the smoothed one redraws the handles |
+| `ComplexHomotopy` | `shape`, `homotopy: fn((re, im), t) -> (re, im)`, timing | the same on complex numbers |
+| `PhaseFlow` | `shape`, `function: fn(x, y) -> (dx, dy)`, `virtual_time`, timing | the points flow along a field for `virtual_time` |
+| `TracedPath` | `point: &dyn Fn(f32) -> (f32, f32)`, `stroke`, `stroke_width`, `dissipating_time`, `delay` | the line a moving point has drawn so far |
+
+The homotopies cut the path into about `HOMOTOPY_SEGMENTS` (256) pieces and map every point
+each frame; `PhaseFlow` takes up to `PHASE_FLOW_STEPS` (120) Runge-Kutta steps per point.
+`TracedPath` calls `point` again for every frame of the trail, at most `MAX_TRACE_SAMPLES`
+(240) times, on a fixed grid of times so the drawn part does not shimmer; keep `point`
+cheap, or give it a `dissipating_time`.
 | `LaggedStart` | `lag_ratio`, `run_time`, `children` | child `i` starts `i * lag_ratio * run_time` seconds in |
 | `AnimationGroup` | `children` | every child at once |
 | `Succession` | `run_time`, `children` | each child `run_time` after the one before |

@@ -12,9 +12,12 @@ mod create;
 mod emphasis;
 mod group;
 mod grow;
+mod homotopy;
 mod indicate_ii;
+mod rotate;
 mod subsets;
 mod text_by;
+mod traced_path;
 mod transform;
 mod write;
 
@@ -22,12 +25,18 @@ pub use create::{Create, DrawBorderThenFill, Uncreate};
 pub use emphasis::{Circumscribe, Flash, Indicate, Wiggle};
 pub use group::{AnimationGroup, LaggedStart, Succession};
 pub use grow::{GrowArrow, GrowFromCenter, GrowFromEdge, GrowFromPoint, SpinInFromNothing};
+pub use homotopy::{
+    ComplexHomotopy, HOMOTOPY_SEGMENTS, Homotopy, PHASE_FLOW_STEPS, PhaseFlow,
+    SmoothedVectorizedHomotopy,
+};
 pub use indicate_ii::{
     AnimatedBoundary, ApplyWave, Blink, Broadcast, FocusOn, ShowPassingFlash,
     ShowPassingFlashWithThinningStrokeWidth,
 };
+pub use rotate::{Rotate, Rotating};
 pub use subsets::{ShowIncreasingSubsets, ShowPartial, ShowSubmobjectsOneByOne, SpiralIn};
 pub use text_by::{AddTextLetterByLetter, RemoveTextLetterByLetter};
+pub use traced_path::{MAX_TRACE_SAMPLES, TracedPath};
 #[cfg(feature = "latex")]
 pub(crate) use transform::{MORPH_SEGMENTS, lerp_paint, morph};
 pub use transform::{MoveAlongPath, ReplacementTransform, Transform};
@@ -166,6 +175,8 @@ pub enum Emphasis {
     Wiggle(Wiggle),
     Blink(Blink),
     FocusOn(FocusOn),
+    Rotate(Rotate),
+    Rotating(Rotating),
 }
 
 macro_rules! slot {
@@ -214,7 +225,7 @@ macro_rules! slot {
 
 slot!(EnterAnim: FadeIn, Create, DrawBorderThenFill, Write, GrowFromCenter, GrowFromPoint, GrowArrow, SpinInFromNothing, ShowPartial, ShowIncreasingSubsets, ShowSubmobjectsOneByOne, SpiralIn, AddTextLetterByLetter, GrowFromEdge);
 slot!(ExitAnim: FadeOut, Uncreate, Unwrite, RemoveTextLetterByLetter);
-slot!(Emphasis: Indicate, Circumscribe, Flash, Wiggle, Blink, FocusOn);
+slot!(Emphasis: Indicate, Circumscribe, Flash, Wiggle, Blink, FocusOn, Rotate, Rotating);
 
 /// Draws `parts` (the glyphs of a text, or one shape) with the animation props applied.
 /// Animations whose [`ShapeAnimation::per_part`] is set (`Write`) give each part its own

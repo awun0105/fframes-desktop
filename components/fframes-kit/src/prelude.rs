@@ -10,11 +10,13 @@ pub use crate::anim::{
 };
 pub use crate::animate::{
     AddTextLetterByLetter, AnimatedBoundary, AnimationGroup, ApplyWave, Blink, Broadcast,
-    Circumscribe, Create, DrawBorderThenFill, Emphasis, EnterAnim, ExitAnim, Flash, FocusOn,
-    GrowArrow, GrowFromCenter, GrowFromEdge, GrowFromPoint, Indicate, LaggedStart, MoveAlongPath,
-    RemoveTextLetterByLetter, ReplacementTransform, ShowIncreasingSubsets, ShowPartial,
-    ShowPassingFlash, ShowPassingFlashWithThinningStrokeWidth, ShowSubmobjectsOneByOne,
-    SpinInFromNothing, SpiralIn, Succession, Transform as Morph, Uncreate, Unwrite, Wiggle, Write,
+    Circumscribe, ComplexHomotopy, Create, DrawBorderThenFill, Emphasis, EnterAnim, ExitAnim,
+    Flash, FocusOn, GrowArrow, GrowFromCenter, GrowFromEdge, GrowFromPoint, Homotopy, Indicate,
+    LaggedStart, MoveAlongPath, PhaseFlow, RemoveTextLetterByLetter, ReplacementTransform, Rotate,
+    Rotating, ShowIncreasingSubsets, ShowPartial, ShowPassingFlash,
+    ShowPassingFlashWithThinningStrokeWidth, ShowSubmobjectsOneByOne, SmoothedVectorizedHomotopy,
+    SpinInFromNothing, SpiralIn, Succession, TracedPath, Transform as Morph, Uncreate, Unwrite,
+    Wiggle, Write,
 };
 pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
 pub use crate::data::BarChart;

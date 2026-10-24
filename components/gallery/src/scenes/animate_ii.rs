@@ -74,6 +74,41 @@ fn dot_cluster<'a>(ui: &Ui<'a, '_, '_>, enter: EnterAnim) -> Svgr<'a> {
     fframes_kit::animate::draw_animated(ui, &parts, Some(&enter), None, None)
 }
 
+fn bar(ui: &Ui<'_, '_, '_>, emphasis: Emphasis) -> Rectangle {
+    Rectangle {
+        cx: CX,
+        cy: CY,
+        width: 520.0,
+        height: 160.0,
+        fill: Some(ui.theme.colors.accent),
+        emphasis: Some(emphasis),
+        ..ui.defaults()
+    }
+}
+
+/// A 3 by 3 unit square around the origin of `ui.space`, outlined.
+fn unit_square(ui: &Ui<'_, '_, '_>) -> Shape {
+    let o = ui.space.to_px(0.0, 0.0);
+    let side = ui.space.px(3.0) as f32;
+    Square {
+        cx: o.x as f32,
+        cy: o.y as f32,
+        side_length: side,
+        stroke: Some(ui.theme.colors.highlight),
+        stroke_width: 6.0,
+        ..ui.defaults()
+    }
+    .shape()
+}
+
+fn wave_homotopy(x: f64, y: f64, t: f64) -> (f64, f64) {
+    (x + 0.5 * t * (2.0 * y).sin(), y + 0.3 * t * (3.0 * x).cos())
+}
+
+fn lissajous(t: f32) -> (f32, f32) {
+    (CX + 420.0 * (1.4 * t).sin(), CY + 240.0 * (2.1 * t).sin())
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn scenes() -> Vec<GalleryScene> {
     scenes![
@@ -158,6 +193,51 @@ pub fn scenes() -> Vec<GalleryScene> {
                 return Svgr::empty();
             };
             ui.show(ApplyWave { delay: 0.25, amplitude: 60.0, ..ApplyWave::new(whole) })
+        },
+        "Rotate", 2.0 => |ui| {
+            let r = Rotate { angle: std::f32::consts::FRAC_PI_2, delay: 0.25, ..ui.defaults() };
+            ui.show(bar(ui, r.into()))
+        },
+        "Rotating", 3.0 => |ui| {
+            let r = Rotating { run_time: 2.0, forever: true, ..ui.defaults() };
+            ui.show(bar(ui, r.into()))
+        },
+        "Homotopy", 2.0 => |ui| {
+            let h = Homotopy { delay: 0.25, run_time: 1.5, ..Homotopy::new(unit_square(ui), wave_homotopy) };
+            ui.show(h)
+        },
+        "SmoothedVectorizedHomotopy", 2.0 => |ui| {
+            let h = Homotopy { delay: 0.25, run_time: 1.5, ..Homotopy::new(unit_square(ui), wave_homotopy) };
+            ui.show(SmoothedVectorizedHomotopy { homotopy: h })
+        },
+        "ComplexHomotopy", 2.0 => |ui| {
+            // from z to z squared, scaled down to stay on the canvas
+            let h = ComplexHomotopy {
+                delay: 0.25,
+                run_time: 1.5,
+                ..ComplexHomotopy::new(unit_square(ui), |(re, im), t| {
+                    let (sq_re, sq_im) = ((re * re - im * im) / 2.0, re * im);
+                    (re + (sq_re - re) * t, im + (sq_im - im) * t)
+                })
+            };
+            ui.show(h)
+        },
+        "PhaseFlow", 2.0 => |ui| {
+            let o = ui.space.to_px(1.5, 0.0);
+            let dot = Circle { cx: o.x as f32, cy: o.y as f32, radius: 70.0, fill: Some(ui.theme.colors.accent), ..ui.defaults() };
+            let flow = PhaseFlow {
+                virtual_time: std::f32::consts::PI,
+                delay: 0.25,
+                run_time: 1.5,
+                ..PhaseFlow::new(dot.shape(), |x, y| (-y, x))
+            };
+            ui.show(flow)
+        },
+        "TracedPath", 3.0 => |ui| {
+            let trace = ui.show(TracedPath { point: &lissajous, stroke_width: 6.0, ..ui.defaults() });
+            let (x, y) = lissajous(ui.seconds());
+            let dot = ui.show(Dot { cx: x, cy: y, radius: 20.0, ..ui.defaults() });
+            svgr!(<g>{trace}{dot}</g>)
         },
     ]
 }

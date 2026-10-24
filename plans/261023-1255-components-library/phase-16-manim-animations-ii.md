@@ -128,7 +128,7 @@ exist.
 - [x] Mapping rows and doc examples for the imperative names
 - [x] Creation animations
 - [x] Growth and indication
-- [ ] Movement and `TracedPath`
+- [x] Movement and `TracedPath`
 - [ ] Transforms and shape matching
 - [ ] Numbers and time
 - [ ] Gallery scenes, e2e frames, docs

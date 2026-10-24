@@ -77,6 +77,9 @@
 //! | `Indicate`, `Circumscribe`, `Flash`, `Wiggle` | [`animate`], `emphasis` |
 //! | `GrowFromEdge` | [`GrowFromEdge`](animate::GrowFromEdge) `{ edge: Anchor::Bottom, .. }`, `enter` |
 //! | `Blink`, `FocusOn` | [`Blink`](animate::Blink), [`FocusOn`](animate::FocusOn), `emphasis` |
+//! | `Rotate`, `Rotating` | [`Rotate`](animate::Rotate), [`Rotating`](animate::Rotating), `emphasis` (a positive angle turns counterclockwise) |
+//! | `Homotopy`, `ComplexHomotopy`, `SmoothedVectorizedHomotopy`, `PhaseFlow` | the same names in [`animate`], components over a shape's points in `ui.space` units |
+//! | `TracedPath` | [`TracedPath`](animate::TracedPath) `{ point: &\|t\| .., .. }`, sampled at most [`MAX_TRACE_SAMPLES`](animate::MAX_TRACE_SAMPLES) times |
 //! | `ShowPassingFlash`, `ShowPassingFlashWithThinningStrokeWidth`, `Broadcast`, `AnimatedBoundary`, `ApplyWave` | the same names in [`animate`], components that take a [`Shape`](geometry::Shape) (`Broadcast` a point) |
 //! | `Transform`, `ReplacementTransform` | [`animate::Transform`] (`Morph` in the prelude), [`ReplacementTransform`](animate::ReplacementTransform) |
 //! | `MoveAlongPath` | [`MoveAlongPath`](animate::MoveAlongPath) |
