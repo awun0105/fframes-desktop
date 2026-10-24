@@ -69,3 +69,56 @@ fn replication<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
+
+## Transcription
+
+`Transcription` copies a gene into mRNA. The DNA of `coding` (its coding strand on top, the
+template strand under it) lies across the figure, `spacing` pixels per base. From `delay`
+RNA polymerase moves along it, one base every `base_time` seconds: the strands open into a
+bubble around it, the template base it reads lights up in `lit_color`, and the matching RNA
+base (`U` across from `A`) drops onto the growing mRNA below. The mRNA is the coding strand
+with `U` for `T` (`transcribe(coding)`). With `labels` the rows and the polymerase are
+named. Gallery scene: `Transcription`.
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::kits::biology::transcribe;
+
+assert_eq!(transcribe("ATGGCTTAA"), "AUGGCUUAA");
+
+fn gene<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Transcription {
+        coding: "ATGAAACGCTAG".into(),
+        base_time: 0.3,
+        ..ui.defaults()
+    })
+}
+```
+
+## Translation
+
+`Translation` reads `mrna` into a protein. The ribosome slides onto the strand at the first
+`AUG` and reads the reading frame (`reading_frame(mrna)`) one codon every `codon_time`
+seconds from `delay`: a tRNA with the matching anticodon drops in carrying its amino acid
+(`amino_acid(codon)`), the chain moves over onto it and gains a bond, and the empty tRNA
+leaves. At the stop codon the ribosome comes apart and lets the chain go. The names of the
+chain (`Met-Ala-Ser`) are written under the ribosome as it grows. Gallery scene:
+`Translation`.
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::kits::biology::{amino_acid, reading_frame};
+
+assert_eq!(amino_acid("AUG"), Some("Met"));
+assert_eq!(amino_acid("UAA"), None); // a stop codon
+let (start, codons) = reading_frame("GCAUGUUUUGAC");
+assert_eq!((start, codons), (2, vec!["AUG".into(), "UUU".into(), "UGA".into()]));
+
+fn protein<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Translation {
+        mrna: "GAUGUUUGGCUAAC".into(),
+        codon_time: 1.0,
+        ..ui.defaults()
+    })
+}
+```

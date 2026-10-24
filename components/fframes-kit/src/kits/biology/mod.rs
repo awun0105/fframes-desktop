@@ -6,6 +6,8 @@
 mod callouts;
 mod cell;
 mod dna;
+mod expression;
 
 pub use cell::{Cell, CellKind, CellPalette, Organelle};
 pub use dna::{BaseColors, DnaHelix, complement};
+pub use expression::{Transcription, Translation, amino_acid, reading_frame, transcribe};
