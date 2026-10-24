@@ -11,10 +11,12 @@ dependencies: [11]
 
 ## Goal
 
-Add the three asset packs the user chose (2026-10-24):
+Add the asset packs the user chose (2026-10-24):
 - a drawn cursor with click and drag animations;
 - animated emoji played from user-supplied Noto Lottie files;
-- a small CC0 sound-effect pack with helpers that place hits on transitions and beats.
+- a small CC0 sound-effect pack with helpers that place hits on transitions and beats;
+- a `Gif` component that plays animated GIFs (user, 2026-10-24: "just implement Gif if
+  not touch the fframes core").
 
 ## Context
 
@@ -39,6 +41,16 @@ Add the three asset packs the user chose (2026-10-24):
 - **Embedding.** Embedded audio is decoded at compile time by `include_media_dir!`. The
   pack is a folder the user copies or points to. The kit does not embed it into every
   build.
+- **GIF.**
+  - Remotion's `<Gif>` (`@remotion/gif`) is used in 4,258 files of the sweep.
+  - It needs no core change. The `image` crate's `gif` feature decodes the frames, and
+    `fframes::rendered_image(width, height, rgba)` turns premultiplied RGBA pixels into an
+    image for `<image href>`.
+  - `rendered_image` exists only off wasm32
+    (`#[cfg(not(target_arch = "wasm32"))]` in `fframes-media/src/images.rs`). The editor
+    gets no GIF frames.
+  - `rendered_image` gives every call a new id, so a cache keyed by the id never hits
+    when it is called per frame. Build each frame's image once.
 
 ## Requirements
 
@@ -68,18 +80,31 @@ Add the three asset packs the user chose (2026-10-24):
     way.
   - `sfx::on_clicks(cursor_path)` returns one track for each cursor click.
   - Each `Sfx` names its file, so the user can replace a file with their own.
-- Each of the three packs gets a section in `docs/components/components.md`, and each
+- **GIF:**
+  - `Gif::decode(bytes)` decodes every frame once, in the user's constructor: the
+    composited RGBA frames and their delays (`GifDecoder::into_frames()`), converted to
+    premultiplied alpha and turned into images once.
+  - `Gif { gif, x, y, width, height, fit, start, speed, looping }` picks the frame for the
+    local time from the delays and draws it as `<image>`. Without `looping` the last frame
+    stays.
+  - In the editor (wasm32) it draws a placeholder rectangle of the same size, and the
+    docs say so.
+  - The `image` dependency sits behind a new kit feature `gif`.
+- Each of the packs gets a section in `docs/components/components.md`, and each
   Remotion package has a row in the mapping table in `lib.rs`.
 
 ## Files
 
 - Create:
-  - `components/fframes-kit/src/assets/{mod.rs,cursor.rs,emoji.rs,sfx.rs}`;
+  - `components/fframes-kit/src/assets/{mod.rs,cursor.rs,emoji.rs,sfx.rs,gif.rs}`;
+  - a small GIF made for the gallery (drawn frames, no third-party file) in
+    `components/gallery/media/`;
   - `components/fframes-kit/sfx/` (audio files and `LICENSE.md`);
   - `components/gallery/src/scenes/assets.rs`.
 - Modify:
-  - `components/fframes-kit/Cargo.toml` (`lottie` forwards `fframes/lottie`; the `include`
-    list for the SFX folder);
+  - `components/fframes-kit/Cargo.toml` (`lottie` forwards `fframes/lottie`; a `gif`
+    feature with the `image` crate's `gif` feature; the `include` list for the SFX
+    folder);
   - `components/fframes-kit/src/{lib.rs,prelude.rs}`;
   - `components/gallery/{Cargo.toml,src/scenes/mod.rs}`;
   - `components/scripts/e2e.mjs`;
@@ -92,32 +117,44 @@ Add the three asset packs the user chose (2026-10-24):
    - Check that `play_lottie` draws one real Noto file.
    - The test file is downloaded for local verification only and is not committed.
    - Record the result in the phase report.
-3. **Find CC0 sound files.** Start from the sources confirmed on 2026-10-24:
-   - Kenney "Interface Sounds" (<https://kenney.nl/assets/interface-sounds>, CC0, 100
-     files): click, switch and pop.
-   - qubodup's bamboo swooshes on OpenGameArt (<https://opengameart.org/node/2242>, CC0):
+3. **Fetch the CC0 sound files.** Every sound has a source, all checked as CC0 on
+   2026-10-24:
+   - Kenney "Interface Sounds" (<https://kenney.nl/assets/interface-sounds>, 100 files):
+     click, switch and pop.
+   - qubodup's bamboo swooshes on OpenGameArt (<https://opengameart.org/node/2242>):
      whoosh.
-   - Ding and shutter have no source yet. Look first in Kenney's other CC0 packs ("UI
-     Audio", "Digital Audio", "Impact Sounds").
+   - Ding: "Pleasing Bell Sound Effect" by Spring Spring on OpenGameArt
+     (<https://opengameart.org/content/pleasing-bell-sound-effect>, `pleasing-bell.wav`).
+   - Shutter: "Camera" by themightyglider on OpenGameArt
+     (<https://opengameart.org/node/73696>, `photo.ogg`, made from a CC0 file at
+     archive.org/details/CameraShutterSound).
+     - Alternative: Freesound 539136, "DSLR Shutter fast 006" by ristooooo1, the file
+       Remotion uses. Freesound downloads need a logged-in account, so the loop cannot
+       fetch it unattended.
+   - Check each page's licence again when downloading.
 
    Then for each file:
    - Record each file's origin and licence in `sfx/LICENSE.md` and the phase report.
    - Trim each file to under 2 s. Normalise it with the kit's audio chain, or with ffmpeg
      before committing.
 4. SFX helpers.
-5. Gallery scenes (cursor clicks with SFX, emoji with a missing-file warning, transitions
-   with whooshes) and e2e frames (`Cursor@50%`, `Click@end`).
+5. `Gif`: decoding, frame timing, the editor placeholder.
+6. Gallery scenes (cursor clicks with SFX, emoji with a missing-file warning, transitions
+   with whooshes, a looping GIF) and e2e frames (`Cursor@50%`, `Click@end`, `Gif@50%`).
+7. A mapping row for `@remotion/gif` in `lib.rs`.
 
 ## Verification
 
 - `cargo test -p fframes-kit`:
   - `on_transitions` gives one track per transition at the overlap start;
   - `on_beats` matches the beat grid;
-  - `CursorPath` reaches each point at its time.
+  - `CursorPath` reaches each point at its time;
+  - `Gif` picks the right frame from the delays, loops, and holds the last frame without
+    `looping`.
 - `audio analyze` on the gallery's SFX scene: no clipping, true peak below -1 dBTP.
 - `inspect` warns about the missing emoji file with its URL.
-- `just -f components/justfile e2e cpu`, `check-wasm` (with and without `lottie`), `clippy`
-  and `boundary`.
+- `just -f components/justfile e2e cpu`, `check-wasm` (with and without `lottie`, and with
+  `gif`), `clippy` and `boundary`.
 
 ## Risks
 
@@ -132,4 +169,5 @@ Add the three asset packs the user chose (2026-10-24):
 - [ ] Emoji wrapper and name table, one real file checked locally
 - [ ] CC0 sound files with recorded origins
 - [ ] SFX helpers
+- [ ] `Gif` component
 - [ ] Gallery scenes, e2e frames, docs and mapping rows

@@ -29,6 +29,18 @@ wrappers around children.
   `color-interpolation-filters` rule, so the CPU and Skia renders match.
 - Deferred, do not implement: the per-pixel effects of the report's "Deferred" list
   (fisheye, pixelate, chromatic aberration, zoom blur, page turn, shatter and others).
+- **Also deferred: every `feDisplacementMap` effect** (wave, waves, zigzag, noise
+  displacement, turbulent displace). Checked on 2026-10-24 with a scratch video:
+  - A flat `#c0c0c0` map at scale 29 should shift the picture by about 7 px. Skia-CPU does
+    that, as the SVG spec says. The CPU backend draws garbage: 42% to 66% of the pixels
+    differ at scales 15 and 29.
+  - The fault is in the `svgr` crate (0.50.2, pinned by the root `Cargo.toml`), the CPU
+    backend's filter code. Its `displacement_map::apply` is the same as resvg's; the
+    difference is in the filter plumbing around it.
+  - e2e renders on `cpu`, so any displacement effect would snapshot as garbage.
+  - Do not patch the dependency and do not displace pixels in the kit (that is a per-pixel
+    effect, which the user deferred). The fix belongs upstream; the effects come back when
+    a fixed `svgr` arrives through the regular pull.
 
 ## Requirements
 
@@ -48,8 +60,8 @@ wrappers around children.
      shrinkwrap.
   3. **Noise and distortion:**
      - white noise and fractal noise, next to the existing `Noise`;
-     - noise displacement, turbulent displace;
-     - wave, waves, zigzag, through `feDisplacementMap` with generated maps.
+     - not noise displacement, turbulent displace, wave, waves or zigzag: they need
+       `feDisplacementMap` (see Context).
   4. **Patterns and overlays:**
      - scanlines, dot grid, checkerboard, gridlines, lines, rings;
      - pattern, paper, burlap, flannel, speckle;
@@ -65,7 +77,8 @@ wrappers around children.
 - **`noise2D`, `noise3D`, `noise4D`** as plain functions (Remotion `@remotion/noise`), for
   driving motion. Each one is seeded and deterministic.
 - The effects section of `docs/components/components.md` lists the deferred per-pixel
-  effects (the report's "Deferred" list) as not yet available.
+  effects (the report's "Deferred" list) and the displacement effects as not yet
+  available. It says why the displacement effects wait.
 - Add the new rows to the Remotion mapping table in `lib.rs`. Include the
   `@remotion/animation-utils` names as rows with doc examples:
   - `makeTransform` maps onto `fframes::Transform`;
@@ -85,11 +98,12 @@ wrappers around children.
 
 ## Tasks & Steps
 
-1. **Check `feDisplacementMap` across renderers.** Write the first displacement effect and
-   compare its CPU and Skia-CPU renders with the e2e difference (`--renderer skia-cpu` needs
-   no GPU). Record the result in the phase report.
-   - `feTurbulence` is already checked (2026-10-24). On the gallery's `Noise@50%`, 34 pixels
-     (0.0016%) differ at the e2e threshold of 0.15, against a limit of 0.5%.
+1. **Renderer checks: done (2026-10-24).**
+   - `feTurbulence` agrees. On the gallery's `Noise@50%`, 34 pixels (0.0016%) differ at
+     the e2e threshold of 0.15, against a limit of 0.5%.
+   - `feDisplacementMap` does not agree, so its effects are deferred (see Context).
+   - Every other new primitive is compared when its group's gallery scene renders
+     (Verification).
 2. The colour group and the colour-matrix composition helper.
 3. Edges and shape, noise and distortion, then the noise functions.
 4. Patterns and overlays, halftone, geometry, reveals.
@@ -109,8 +123,9 @@ wrappers around children.
 
 ## Risks
 
-- **Renderer differences.** resvg and Skia may differ in `feDisplacementMap`. Step 1
-  measures this before the bulk of the work. `feTurbulence` already agrees.
+- **Renderer differences.** `feDisplacementMap` differs and is deferred; `feTurbulence`
+  agrees. Another primitive may differ too: the per-scene comparison finds it, and the
+  effect is then documented or deferred the same way.
 - **Cost.** Progressive blur and long shadows draw many copies. Cap the counts and document
   the cost per effect.
 - **Effects in the editor.** The editor draws through the browser's SVG. It supports these
@@ -118,10 +133,10 @@ wrappers around children.
 
 ## Todo
 
-- [ ] `feDisplacementMap` renderer agreement checked (`feTurbulence` done)
+- [x] Renderer checks: `feTurbulence` agrees, `feDisplacementMap` deferred
 - [ ] Colour group and matrix composition
 - [ ] Edges and shape
-- [ ] Noise and distortion, noise functions
+- [ ] Noise, noise functions
 - [ ] Patterns and overlays, halftone
 - [ ] Geometry and reveals
 - [ ] Blur group with measured cost

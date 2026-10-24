@@ -245,24 +245,18 @@ Status words: the table uses `Pending`, `In progress`, `Completed`, `Blocked`, `
   later.
 - Whether `chematic` exposes 2D coordinates (phase 9 checks first).
 - Remotion transition names beyond `fade`, `slide`, `wipe` are unverified (phase 11 checks).
-- Pushing for phases 13 to 23: the loop rule above pushes after each phase, but the user has
-  not yet confirmed it for this extension, and the fix commits `9149af84` and `b892569f` are
-  still local. Confirm before starting the loop.
-- Resolved 2026-10-24 by probes (details in the phase files):
+- Resolved 2026-10-24 (details in the phase files):
+  - **pushing**: the user confirmed it for phases 13 to 23; the loop pushes after each
+    phase as above;
   - **boolean operations** use `i_overlay` 9.1 (phase 15);
   - **rigid bodies** use `rapier2d` 0.36 with `enhanced-determinism` (phase 19). Both crates
     build for wasm32;
   - **`feTurbulence`** renders the same on CPU and Skia-CPU (0.0016% of pixels differ);
-  - **CC0 sounds**: sources exist for click, switch, pop and whoosh (phase 23).
-- Still open:
-  - `feDisplacementMap` on CPU against Skia (phase 14, step 1);
-  - a CC0 source for the ding and shutter sounds (phase 23, step 3).
-- Remotion's `<Gif>` (4,258 files in the sweep) needs no core change. The kit could decode
-  frames with the `image` crate's `gif` feature and draw them through
-  `fframes::svgr_image::rendered_image`. Adding a `Gif` component waits for the user's
-  answer.
-- The five reports in "Which report is authoritative" (items 1 to 5) were never committed.
-  The links work locally but not on origin. Committing them waits for the user's answer.
+  - **`feDisplacementMap`** does not: the CPU backend's `svgr` 0.50.2 draws it wrongly. Its
+    effects are deferred until a fixed `svgr` arrives upstream (phase 14);
+  - **CC0 sounds**: every sound has a source, ding and shutter from OpenGameArt (phase 23);
+  - **`Gif`**: added to phase 23, kit only, through `fframes::rendered_image`;
+  - **the five reports** of "Which report is authoritative" are committed.
 
 ## Validation Log
 
@@ -320,5 +314,13 @@ the code: the kit module folders named in the new phases (`transitions/`, `effec
 `components/fframes-kit/Cargo.toml`, the gallery's `media/` folder, the one-figure
 `Circuit`, and `ctx.render_svgr` at `fframes/src/fframes_context.rs:179` (for the deferred
 tier). Plugin inventories were read from the plugin source trees, not their READMEs.
+
+Round 7 (2026-10-24, user direction): "push the current commits, prepare for loop", then
+"also commit" (the five reports), "just implement Gif if not touch the fframes core" and
+"how to solve it" (the displacement filter and the missing sounds). A scratch video showed
+`feDisplacementMap` drawn wrongly by the CPU backend (42% to 66% of pixels differ from
+Skia-CPU; a flat map that should shift 7 px draws garbage), so phase 14 defers those effects.
+Ding and shutter sources were found on OpenGameArt and their CC0 pages read. `Gif` joins
+phase 23, after checking that `rendered_image` is public in `fframes` and native only.
 
 Note: the plan directory is named `components-library`; the crate it builds is `fframes-kit`.
