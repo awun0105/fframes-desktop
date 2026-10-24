@@ -7,7 +7,8 @@
 //! [`ColorStack`] composes several colour matrices into one filter. [`Outline`],
 //! [`Emboss`], [`BevelAlpha`], [`LongShadows`], [`RoughenEdges`] and [`Shrinkwrap`] work on
 //! the alpha edges of their children. [`WhiteNoise`] and [`FractalNoise`] draw noise over
-//! them. [`Scanlines`] to [`Vignette`] lay patterns and gradients over them.
+//! them. [`Scanlines`] to [`Vignette`] lay patterns and gradients over them;
+//! [`Pattern`] tiles them and [`Paper`], [`Burlap`], [`Flannel`] and [`Speckle`] texture them.
 
 use fframes::Svgr;
 
@@ -151,6 +152,7 @@ mod light_leak;
 mod motion_blur;
 mod noise;
 mod patterns;
+mod textures;
 
 pub use blur::Blur;
 pub use color::{
@@ -169,3 +171,4 @@ pub use patterns::{
     Checkerboard, DotGrid, Gridlines, LineDirection, LinearGradient, LinearGradientTint, Lines,
     MAX_PATTERN_SHAPES, MAX_RINGS, Rings, Scanlines, Vignette, VignetteMode,
 };
+pub use textures::{Burlap, Flannel, MAX_TILES, Paper, Pattern, Speckle};

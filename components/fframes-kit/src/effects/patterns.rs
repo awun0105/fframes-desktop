@@ -22,7 +22,7 @@ pub const MAX_PATTERN_SHAPES: usize = 20_000;
 
 /// `layer` over `content`, inside the area and only where `shape` is opaque when there is
 /// one.
-fn draw_over<'a>(
+pub(super) fn draw_over<'a>(
     content: Svgr<'a>,
     layer: Svgr<'a>,
     shape: Option<Svgr<'a>>,
@@ -53,7 +53,7 @@ fn draw_over<'a>(
 /// small tile to whole pixels differently, so the repeats drift apart across the picture.
 ///
 /// The steps `k` for which `start + k * pitch` reaches from `lo - pitch` to `hi`.
-fn steps(lo: f32, hi: f32, start: f32, pitch: f32) -> std::ops::RangeInclusive<i64> {
+pub(super) fn steps(lo: f32, hi: f32, start: f32, pitch: f32) -> std::ops::RangeInclusive<i64> {
     let first = ((lo - start) / pitch).floor() as i64 - 1;
     let last = ((hi - start) / pitch).ceil() as i64;
     first..=last
@@ -61,7 +61,7 @@ fn steps(lo: f32, hi: f32, start: f32, pitch: f32) -> std::ops::RangeInclusive<i
 
 /// How much to scale a pattern whose `cells` repeat in `dims` directions so it stays below
 /// [`MAX_PATTERN_SHAPES`].
-fn coarsen(cells: f32, dims: i32) -> f32 {
+pub(super) fn coarsen(cells: f32, dims: i32) -> f32 {
     let limit = MAX_PATTERN_SHAPES as f32;
     if cells <= limit {
         1.0
@@ -112,7 +112,12 @@ fn paths<'a>(colors: &[Color], d: Vec<String>) -> Svgr<'a> {
 
 /// `content` shown only where the luminance of `mask` (drawn over the `w` by `h` area from
 /// the origin) is white.
-fn masked<'a>(content: Svgr<'a>, mask: Svgr<'a>, id: &str, (w, h): (f32, f32)) -> Svgr<'a> {
+pub(super) fn masked<'a>(
+    content: Svgr<'a>,
+    mask: Svgr<'a>,
+    id: &str,
+    (w, h): (f32, f32),
+) -> Svgr<'a> {
     let url = format!("url(#{id})");
     let id = id.to_owned();
     fframes::svgr!(

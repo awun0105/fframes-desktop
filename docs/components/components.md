@@ -885,6 +885,57 @@ fn crt<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Textures
+
+| Component | Props (defaults) | What it does |
+| --- | --- | --- |
+| `Pattern` | `scale` (0.1), `crop` (left, top, right, bottom insets), `gap_x`, `gap_y`, `offset_u`, `offset_v`, `row_offset`, `row_offset_every` (0: never repeats), `column_offset`, `column_offset_every`, `origin` (0, 0), `wrap` (true) | the children repeated as a grid of small copies, staggered by row or column |
+| `Speckle` | `density` (0.08), `size` (4), `randomness` (1) | small round holes punched through the children |
+| `Flannel` | `amount` (0.7), `size` (96), `softness` (0.18), `base_color`, `stripe_color` | plaid cloth printed on the children, shaded by their brightness |
+| `Burlap` | `amount` (0.55), `size` (5), `roughness` (0.7), `seed`, `color` (black) | woven sacking: strand gaps and blotches darken the picture |
+| `Paper` | `amount` (1), `color_front`, `color_back`, `contrast` (0.3), `roughness` (0.4), `fiber` (0.3), `fiber_size` (0.2), `crumples` (0.3), `crumple_size` (0.35), `folds` (0.65), `fold_count` (5), `seed` (6), `scale` (0.6) | a lit relief of fibres, crumples and creases shading and tinting the picture |
+
+`Pattern` renders the children once and places the copies with `<use>`, at most `MAX_TILES`
+(1,024); a smaller `scale` is drawn larger. It replaces the children and is transparent
+between the tiles. The other textures keep the children's alpha.
+
+These are approximations of Remotion's per-pixel shaders:
+
+- `Flannel` leaves out the pixel-sized thread ripple.
+- `Burlap` leaves out the over and under weave, the strand jitter and the dashes; its strands
+  are repeating gradients.
+- `Paper` lights a relief built from `feTurbulence` and drawn creases. It does not displace the
+  picture along the folds (that needs `feDisplacementMap`), its tint uses the average light,
+  and `drops` and `fade` are not available.
+
+Keep strands, fibres and holes a few output pixels wide, as with noise. `Paper`'s strong light
+magnifies how differently the CPU and Skia backends sample `feTurbulence`: the gallery's paper
+differs in about 1% of the pixels at full size and 6.6% at half size. That is why it has no e2e
+frame.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn photo<'a>(_: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    svgr!(<rect x="0" y="0" width="1920" height="1080" fill="#f6d365" />)
+}
+
+fn wallpaper<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Paper {
+        children: children(|ui| {
+            ui.show(Pattern {
+                scale: 0.2,
+                row_offset: 192.0,
+                row_offset_every: 2,
+                children: children(photo),
+                ..ui.defaults()
+            })
+        }),
+        ..ui.defaults()
+    })
+}
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`

@@ -15,6 +15,10 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("NoiseEffects", 2.0, noise_effects),
         // the scanlines roll, the grid turns and the rings expand over the scene
         GalleryScene::new("OverlayEffects", 2.0, overlay_effects),
+        // the staggered pattern slides over the scene
+        GalleryScene::new("TextureEffects", 2.0, texture_effects),
+        // paper on its own, large enough for its fibres
+        GalleryScene::new("PaperEffects", 1.0, paper_effects),
     ]
 }
 
@@ -544,5 +548,95 @@ fn overlay_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ];
     let figure = grid(ui, 4, cells);
     let head = title(ui, "Pattern overlays");
+    svgr!(<g>{figure}{head}</g>)
+}
+
+fn texture_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    let cells = vec![
+        (
+            "Pattern",
+            ui.show(Pattern {
+                scale: 0.25,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Pattern staggered",
+            on_backdrop(ui.show(Pattern {
+                scale: 0.2,
+                gap_x: 40.0,
+                gap_y: 40.0,
+                row_offset: 200.0,
+                row_offset_every: 2,
+                offset_u: 0.05 * t,
+                key: Some("staggered"),
+                children: children(logo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Speckle",
+            on_backdrop(ui.show(Speckle {
+                density: 0.25,
+                size: 40.0,
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Flannel",
+            ui.show(Flannel {
+                size: 240.0,
+                softness: 0.5,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Burlap",
+            ui.show(Burlap {
+                amount: Anim::Fixed(0.8),
+                size: 40.0,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        ("original", photo(ui)),
+    ];
+    let figure = grid(ui, 3, cells);
+    let head = title(ui, "Textures");
+    svgr!(<g>{figure}{head}</g>)
+}
+
+/// Paper in two large cells: its fibres need more pixels than a small thumbnail has.
+fn paper_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let cells = vec![
+        (
+            "Paper",
+            ui.show(Paper {
+                scale: 2.0,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Paper crumpled",
+            ui.show(Paper {
+                scale: 2.0,
+                contrast: 0.5,
+                crumples: 0.8,
+                folds: 1.0,
+                fold_count: 8,
+                seed: 3,
+                key: Some("crumpled"),
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+    ];
+    let figure = grid(ui, 2, cells);
+    let head = title(ui, "Paper");
     svgr!(<g>{figure}{head}</g>)
 }
