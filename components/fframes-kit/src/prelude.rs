@@ -83,11 +83,12 @@ pub use crate::kits::math::{
 };
 #[cfg(feature = "physics")]
 pub use crate::kits::physics::{
-    Charge, ChargeGlow, Circuit, Collision1D, Connection, Doppler, ElectricField, EnergyBars,
-    Field, FieldLines, Force, FreeBody, GasBox, GasMotion, GasSetup, Heat, Lens, LensShape,
-    MagneticField, MultiPendulum, MultiPendulumMotion, Optic, OpticalBench, Orbit, Pendulum,
-    PendulumMotion, Pin, Projectile, RadialWave, Ray, RayDiagram, Refraction, Schematic,
-    SpringMass, SpringMotion, Symbol, SymbolKind, Wave, WaveKind, Wire,
+    Body, BodyShape, BodyView, Charge, ChargeGlow, Circuit, Collision1D, Connection, Doppler,
+    ElectricField, EnergyBars, Field, FieldLines, Force, FreeBody, GasBox, GasMotion, GasSetup,
+    Heat, Lens, LensShape, MagneticField, MultiPendulum, MultiPendulumMotion, Optic, OpticalBench,
+    Orbit, Pendulum, PendulumMotion, Pin, Pose, Projectile, RadialWave, Ray, RayDiagram,
+    Refraction, RigidMotion, RigidWorld, Schematic, SpringMass, SpringMotion, Symbol, SymbolKind,
+    Wave, WaveKind, Wire,
 };
 pub use crate::label::{BraceLabel, Label, Leader};
 #[cfg(feature = "latex")]

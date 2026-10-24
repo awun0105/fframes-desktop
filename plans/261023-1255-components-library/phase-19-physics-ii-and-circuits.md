@@ -124,7 +124,7 @@ kit (feature `physics`).
 - [x] `rapier2d` checked and recorded
 - [x] Electrostatics and magnetostatics
 - [x] Lenses and rays
-- [ ] Rigid bodies and multi-pendulum
+- [x] Rigid bodies and multi-pendulum
 - [x] Waves
 - [x] Circuit symbols and schematic
 - [ ] Gallery scenes, e2e frames, docs and mapping rows

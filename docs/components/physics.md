@@ -78,6 +78,48 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+## RigidWorld
+
+Manim-physics' `Space` and `SpaceScene`. `RigidMotion::new(bodies, gravity, seconds)` runs
+[rapier](https://rapier.rs) once at 60 steps a second, in the video's constructor. The same
+bodies give the same motion every time (`enhanced-determinism`). A `Body` is
+`Body::circle`, `Body::rect`, `Body::polygon` (the convex hull of its points) or
+`Body::wall(a, b, thickness)`, which is fixed. It is set up with `velocity`, `spin`,
+`angle`, `fixed`, `restitution`, `friction`, `density` and `color`. `poses(t)` gives every
+body's `Pose` (`x`, `y`, and an `angle` that counts whole turns). `RigidWorld` draws the
+bodies, filled and outlined, with a radius on circles that shows them turning. Its `draw`
+closure gets a `BodyView` (index, center in pixels, rotation in degrees for SVG `rotate()`,
+pixels per unit) and returns its own drawing, or `None` to keep the default. Rapier adds
+about 2 MB to an editor bridge built with `physics`. Gallery scene: `RigidWorld`.
+
+```rust
+use fframes_kit::prelude::*;
+
+struct Video {
+    world: RigidMotion,
+}
+
+impl Video {
+    fn new() -> Self {
+        let bodies = vec![
+            Body::wall((-6.0, -3.0), (6.0, -3.0), 0.3),
+            Body::circle(-2.0, 2.0, 0.4).velocity(1.5, 0.0).restitution(0.8),
+            Body::rect(1.0, 1.0, 1.0, 0.6).angle(0.4),
+        ];
+        Self {
+            world: RigidMotion::new(bodies, (0.0, -9.81), 5.0),
+        }
+    }
+
+    fn figure<'a>(&'a self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        ui.show(RigidWorld {
+            motion: Some(&self.world),
+            ..ui.defaults()
+        })
+    }
+}
+```
+
 ## MultiPendulum
 
 `MultiPendulumMotion::new(lengths, masses, angles, seconds)` solves a chain of point masses

@@ -120,6 +120,58 @@ fn multi_pendulum<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{double}{triple}{head}</g>)
 }
 
+/// Balls, boxes and polygons dropped into a box with a ramp, bouncing and settling.
+fn rigid_world<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static MOTION: OnceLock<RigidMotion> = OnceLock::new();
+    let (accent, highlight) = (ui.theme.colors.accent, ui.theme.colors.highlight);
+    let motion = MOTION.get_or_init(|| {
+        let mut bodies = vec![
+            Body::wall((-6.6, -3.4), (6.6, -3.4), 0.3),
+            Body::wall((-6.6, -3.4), (-6.6, 2.2), 0.3),
+            Body::wall((6.6, -3.4), (6.6, 2.2), 0.3),
+            Body::wall((-6.2, 0.4), (-2.2, -1.2), 0.25),
+        ];
+        for i in 0..6 {
+            let x = -5.4 + 0.75 * f64::from(i);
+            bodies.push(Body::circle(x, 1.6 + 0.4 * f64::from(i % 2), 0.32).color(highlight));
+        }
+        for i in 0..4 {
+            let x = 0.6 + 1.3 * f64::from(i);
+            bodies
+                .push(Body::rect(x, 1.2 + 0.7 * f64::from(i), 0.9, 0.6).angle(0.25 * f64::from(i)));
+        }
+        let corners = |n: u32, r: f64| {
+            (0..n).map(move |k| {
+                let a = std::f64::consts::TAU * f64::from(k) / f64::from(n) + 0.3;
+                (r * a.cos(), r * a.sin())
+            })
+        };
+        bodies.push(
+            Body::polygon(2.6, 3.0, corners(3, 0.55))
+                .spin(2.0)
+                .color(accent),
+        );
+        bodies.push(
+            Body::polygon(4.8, 3.2, corners(5, 0.5))
+                .restitution(0.8)
+                .color(highlight),
+        );
+        bodies.push(
+            Body::circle(-0.6, 3.0, 0.5)
+                .velocity(2.5, 0.0)
+                .restitution(0.9),
+        );
+        RigidMotion::new(bodies, (0.0, -9.81), 4.5)
+    });
+    let head = title(ui, "RigidWorld");
+    let figure = ui.show(RigidWorld {
+        motion: Some(motion),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{figure}{head}</g>)
+}
+
 /// Two sources a few wavelengths apart: their rings cross where the waves add up.
 fn radial_wave<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let head = title(ui, "RadialWave");
@@ -232,6 +284,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("ElectricField", 4.0, electric_field),
         GalleryScene::new("MagneticField", 2.0, magnetic_field),
         GalleryScene::new("Lens", 3.5, lens),
+        GalleryScene::new("RigidWorld", 4.0, rigid_world),
         GalleryScene::new("MultiPendulum", 4.0, multi_pendulum),
         GalleryScene::new("RadialWave", 4.0, radial_wave),
         GalleryScene::new("Schematic", 3.5, schematic),
