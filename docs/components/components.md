@@ -482,6 +482,11 @@ transitions. The entering sequence is drawn on top.
 | `Fade` | `should_fade_out_exiting_scene` (false) | the entering sequence fades in over the exiting one (Remotion `fade()`) |
 | `Slide` | `direction` (`FromLeft`), `size` (1920 x 1080) | the entering sequence pushes the exiting one out (`slide()`) |
 | `Wipe` | `direction` (`FromLeft`), `size` | an edge moves across and uncovers the entering sequence (`wipe()`) |
+| `Flip` | `direction` (`FromLeft`), `size` | the exiting sequence turns half a turn and the entering one is on its back (`flip()`); drawn flat as a scale, so `direction` only picks the axis and there is no perspective |
+| `ClockWipe` | `size` | a hand sweeps clockwise from twelve o'clock and uncovers the entering sequence (`clockWipe()`) |
+| `Iris` | `size` | the entering sequence shows through a circle that opens from the middle (`iris()`) |
+| `CircleWipe` | `center` (0.5, 0.5, a share of `size`), `color` (`colors.title`), `size` | a disc of `color` grows from `center` over the exiting sequence, then the entering one opens from the same point |
+| `SlantWipe` | `color` (`colors.background`), `edge` (`colors.highlight`), `back` (`colors.accent`), `skew` (320), `size` | a slanted panel with a stripe in front and behind sweeps across, covers everything at the middle and leaves the entering sequence behind it |
 | `Timing::Linear` | `duration`, `easing: RateFunc` | Remotion's `linearTiming`; the theme default is `motion.duration.slow` with `motion.easing.standard` |
 | `Timing::Spring` | `mass`, `stiffness`, `damping`, `duration: Option<f32>` | `springTiming`: lasts until the spring settles, or is squeezed into `duration` |
 | `SceneFade` | `fade_in`, `fade_out`, `rate_func`, `children` | fades at both edges of the enclosing sequence or scene; `SceneFade::new(ui, children)` takes the theme's `motion.duration.fast` |
@@ -580,6 +585,51 @@ impl Scene for Second {
 # let _ = Second { theme: Theme::default() };
 ```
 
+## Effects
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `Trail` | `samples` (6), `spacing` (0.05 s), `opacity` (0.5), `children` | the children at earlier times behind themselves, each copy fainter (Remotion's `<Trail>`) |
+| `CameraMotionBlur` | `shutter_angle` (180°), `samples` (10), `children` | the children averaged over the time the shutter is open before the frame (`<CameraMotionBlur>`) |
+| `LightLeak` | `seed`, `hue_shift` (degrees), `length` (`None`: the container's), `opacity` (0.85), `size`, `key` | warm blobs of light flare up and fade out over `length` seconds, in screen blending (`<LightLeak>`) |
+| `Blur` | `radius: Anim<f32>` (8), `key`, `children` | the children blurred by a Gaussian; animate `radius` for a focus pull |
+| `Noise` | `seed`, `opacity` (0.12), `frequency` (0.8), `octaves` (2), `animated` (true), `size`, `key` | film grain from `feTurbulence`; `animated` moves the seed every frame |
+| `ShaderNoise` | `seed`, `opacity`, `scale` (2 px), `animated`, `size` | the grain as an SkSL shader on the GPU (feature `skia`); the CPU backend draws nothing and the editor a placeholder |
+
+`Trail` and `CameraMotionBlur` render their children once per copy, at most
+`effects::MAX_SAMPLES` (16) times a frame. The bench card behind an eight-copy `Trail`
+(`BenchTrail` in the gallery) renders its five seconds in about 1.8 times the time of
+`BenchKit` on the CPU backend. The copies run at a finer frame rate than the video's, so the
+children should count in local seconds (`ui.seconds()`, `ui.frames()`);
+`frame.global_index` keeps the video frame. Before the local start there is nothing to repeat.
+`key` names the SVG ids when two of the same effect share a frame. The glow and the drop
+shadow are the `Glow` and `DropShadow` filter definitions above.
+
+A ball with a trail over a light leak, and a title that comes into focus:
+
+```rust
+use fframes_kit::prelude::*;
+
+fn ball<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let x = 200.0 + 600.0 * motion::clamp01(ui.seconds() / 2.0);
+    svgr!(<circle cx={x} cy="540" r="40" fill={ui.theme.colors.accent} />)
+}
+
+fn shot<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let leak = ui.show(LightLeak { seed: 3, length: Some(3.0), ..ui.defaults() });
+    let trail = ui.show(Trail { samples: 8, children: children(ball), ..ui.defaults() });
+    let focus = motion::clamp01(ui.seconds() - 0.5);
+    let title = ui.show(Blur {
+        radius: Anim::Fixed(16.0 * (1.0 - focus)),
+        key: Some("title"),
+        children: children(|ui| ui.show(HudLabel { text: "Launch".into(), x: 200.0, y: 300.0, ..ui.defaults() })),
+    });
+    svgr!(<g>{trail}{leak}{title}</g>)
+}
+
+let blur = CameraMotionBlur { samples: 4, ..CameraMotionBlur::themed(&Theme::default()) };
+assert_eq!(blur.offsets(30).len(), 4);
+```
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`

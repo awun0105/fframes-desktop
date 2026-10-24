@@ -63,6 +63,7 @@ pub mod animate;
 pub mod audio;
 pub mod data;
 pub mod decor;
+pub mod effects;
 pub mod explain;
 pub mod geometry;
 pub mod kits;

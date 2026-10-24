@@ -5,6 +5,7 @@ pub mod biology;
 pub mod chemistry;
 pub mod core;
 pub mod cs;
+pub mod effects;
 pub mod explain;
 pub mod general;
 pub mod latex;
@@ -22,6 +23,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(shapes::scenes());
     scenes.extend(animate::scenes());
     scenes.extend(transitions::scenes());
+    scenes.extend(effects::scenes());
     scenes.extend(text::scenes());
     scenes.extend(overlay::scenes());
     scenes.extend(general::scenes());
@@ -35,5 +37,6 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(tags::scenes());
     scenes.extend(shapes::bench_scenes());
     scenes.extend(latex::bench_scenes());
+    scenes.extend(effects::bench_scenes());
     scenes
 }

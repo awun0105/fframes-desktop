@@ -15,6 +15,14 @@ chematic = { workspace = true, optional = true }
 mendeleev = { workspace = true, optional = true }
 rust-sugiyama = { workspace = true, optional = true }
 
+# Compiles the kit's shaders in tests/shaders.rs (feature `skia`), with the gallery's Skia
+# features so both use the same prebuilt Skia.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+fframes_skia_renderer = { workspace = true, features = ["metal"] }
+
+[target.'cfg(not(any(target_os = "macos", target_arch = "wasm32")))'.dev-dependencies]
+fframes_skia_renderer = { workspace = true, features = ["vulkan"] }
+
 [features]
 default = []
 # Filled in by the phases that add them.
@@ -25,6 +33,7 @@ chemistry = ["dep:chematic", "dep:mendeleev"]
 # The layered graph layout of `layout::layered` is shared by both kits.
 cs = ["dep:rust-sugiyama"]
 biology = []
+# ShaderNoise (SkSL grain); its shader compile tests build the Skia renderer.
 skia = []
 3d = ["fframes/3d"]
 lottie = []

@@ -344,7 +344,7 @@ fn bench_hand_written<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 
 /// The same card with `Sequence` and `FadeIn`.
-fn bench_kit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+pub(crate) fn bench_kit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let c = ui.theme.colors;
     let fade = FadeIn {
         shift: (0.0, -30.0),

@@ -733,6 +733,7 @@ dependencies = [
  "fframes",
  "fframes-kit-macros",
  "fframes-studio-protocol",
+ "fframes_skia_renderer",
  "kurbo",
  "mendeleev",
  "rust-sugiyama",

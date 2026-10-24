@@ -168,6 +168,21 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
         }
     }
 
+    /// A `Ui` `seconds` earlier in local time, or `None` before the local start. To land
+    /// between frames its frame rate is `SUBFRAMES` times the video's, with the index and
+    /// `duration` scaled to match: children that count in seconds see the right time, while
+    /// `frame.global_index` keeps the video frame and so `into_global` is wrong inside.
+    pub(crate) fn earlier(&self, seconds: f32) -> Option<Ui<'a, 'c, 'm>> {
+        const SUBFRAMES: usize = 8;
+        let fps = self.frame.fps * SUBFRAMES;
+        let back = (seconds.max(0.0) * fps as f32).round() as usize;
+        let index = (self.frame.index * SUBFRAMES).checked_sub(back)?;
+        let mut ui = self.shifted(0, self.duration.map(|d| d * SUBFRAMES));
+        ui.frame.fps = fps;
+        ui.frame.index = index;
+        Some(ui)
+    }
+
     /// A `Ui` at the same time whose explain components measure in `space`.
     pub fn with_space(&self, space: Space) -> Ui<'a, 'c, 'm> {
         Ui {
