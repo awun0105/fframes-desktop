@@ -503,7 +503,8 @@ use fframes_kit::prelude::*;
 
 fn corner<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let (a, b) = (((400.0, 600.0), (800.0, 600.0)), ((400.0, 600.0), (700.0, 380.0)));
-    let theta = ui.show(Angle { line1: a, line2: b, label: "θ".into(), ..ui.defaults() });
+    // a Greek letter needs a font that has it, or a formula with the `latex` feature
+    let theta = ui.show(Angle { line1: a, line2: b, label: "a".into(), ..ui.defaults() });
     let arrow = ui.show(Arrow {
         x1: 900.0,
         y1: 600.0,
