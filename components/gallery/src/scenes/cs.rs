@@ -134,6 +134,116 @@ fn binary_search<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+fn linked_list<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<ListTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        ListTrace::record(&[3, 8, 1])
+            .insert(2, 5)
+            .find(1)
+            .remove(1)
+            .reverse()
+            .finish()
+    });
+    let head = title(ui, "LinkedList");
+    let figure = ui.show(LinkedList {
+        trace: Some(trace),
+        delay: 0.6,
+        step_time: 0.75,
+        center: (0.0, 0.5),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn stack<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<ListTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        ListTrace::record(&[4])
+            .push(7)
+            .push(2)
+            .peek()
+            .pop()
+            .push(9)
+            .pop()
+            .pop()
+            .finish()
+    });
+    let head = title(ui, "Stack");
+    let figure = ui.show(Stack {
+        trace: Some(trace),
+        delay: 0.6,
+        center: (0.0, -0.2),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn queue<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<ListTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        ListTrace::record(&[4])
+            .enqueue(7)
+            .enqueue(2)
+            .peek_front()
+            .dequeue()
+            .enqueue(9)
+            .dequeue()
+            .finish()
+    });
+    let head = title(ui, "Queue");
+    let figure = ui.show(Queue {
+        trace: Some(trace),
+        delay: 0.6,
+        center: (0.0, 0.4),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn tree_view<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<TreeTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        TreeTrace::bst(&[50, 30, 70, 20, 40, 60, 80])
+            .insert(35)
+            .search(60)
+            .remove(30)
+            .finish()
+    });
+    let head = title(ui, "TreeView");
+    let figure = ui.show(TreeView {
+        trace: Some(trace),
+        delay: 0.6,
+        step_time: 0.8,
+        center: (0.0, 0.1),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn heap<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<TreeTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        TreeTrace::max_heap(&[40, 25, 30, 10, 15])
+            .push(45)
+            .pop()
+            .finish()
+    });
+    let head = title(ui, "Heap");
+    let figure = ui.show(TreeView {
+        trace: Some(trace),
+        delay: 0.6,
+        step_time: 0.8,
+        center: (0.0, 0.1),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight steps of a second from 0.6 s
@@ -141,5 +251,10 @@ pub fn scenes() -> Vec<GalleryScene> {
         // bubble sort, the longest of the four, ends at about 7.4 s
         GalleryScene::new("SortVisualizer", 8.5, sort_visualizer),
         GalleryScene::new("BinarySearch", 9.0, binary_search),
+        GalleryScene::new("LinkedList", 12.5, linked_list),
+        GalleryScene::new("Stack", 9.0, stack),
+        GalleryScene::new("Queue", 7.5, queue),
+        GalleryScene::new("TreeView", 13.0, tree_view),
+        GalleryScene::new("Heap", 10.0, heap),
     ]
 }

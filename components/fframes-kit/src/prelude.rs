@@ -32,7 +32,8 @@ pub use crate::kits::chemistry::{
 };
 #[cfg(feature = "cs")]
 pub use crate::kits::cs::{
-    ArrayStep, ArrayTrace, ArrayView, BinarySearch, CellColors, SortVisualizer,
+    ArrayStep, ArrayTrace, ArrayView, BinarySearch, CellColors, LinkedList, ListTrace, Queue,
+    SortVisualizer, Stack, TreeTrace, TreeView,
 };
 #[cfg(feature = "math")]
 pub use crate::kits::math::{

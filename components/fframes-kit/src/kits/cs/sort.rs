@@ -12,7 +12,8 @@ use crate::{
 };
 
 use super::{
-    array::{CellColors, notes, travel},
+    array::{CellColors, travel},
+    keyed::notes,
     trace::ArrayTrace,
 };
 
@@ -165,7 +166,9 @@ impl<'a> Component<'a> for SortVisualizer<'a> {
             let below = if self.values { 2.6 } else { 1.4 };
             let y = base + below * self.small_style.size as f64 + 12.0;
             parts.push(notes(
-                &at,
+                &at.previous.note,
+                &at.step.note,
+                at.into,
                 middle.x as f32,
                 y as f32,
                 self.small_style,

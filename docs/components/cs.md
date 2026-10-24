@@ -123,3 +123,96 @@ fn race<'a>(ui: &mut Ui<'a, '_, '_>, quick: &'a ArrayTrace) -> Svgr<'a> {
     })
 }
 ```
+
+## ListTrace
+
+`ListTrace` holds the steps of a linked list, a stack or a queue. Each `ListStep` has the
+items in order, each with an id that stays with it from step to step (so the figures can
+move, add and remove items smoothly), the links when they are not simply each item to the
+next, the highlighted items, a found item, named pointers and a note.
+`ListTrace::record(&values)` starts a `ListRecorder`; every operation adds the steps that
+show it, and `finish` gives the trace:
+
+- stack: `push`, `pop` (the item lights up, then leaves), `peek`;
+- queue: `enqueue`, `dequeue`, `peek_front`;
+- linked list: `insert(index, value)` and `remove(index)` walk a `cur` pointer to the node
+  before, `find(value)` walks until it finds the value, and `reverse` walks `prev`, `cur`
+  and `next` along while each link turns back, then puts the nodes in their new order;
+- `note` replaces the note of the last step.
+
+```rust
+use fframes_kit::prelude::*;
+
+let list = ListTrace::record(&[3, 8, 1]).insert(2, 5).remove(0).reverse().finish();
+assert_eq!(list.result(), ["1", "5", "8"]);
+
+let stack = ListTrace::record(&[4]).push(7).pop().finish();
+assert_eq!(stack.result(), ["4"]);
+```
+
+## LinkedList, Stack and Queue
+
+`LinkedList` draws a `ListTrace` as boxes with a value and a link cell, `node` by `height`
+pixels and `gap` apart. Links are arrows from the link cell to the next node; a link back to
+a node on the left dips under the nodes, and a node without a link shows a slash. New nodes
+drop in, removed ones drop out, and nodes that pass each other (when a reversed list takes
+its new order) swing apart. The pointers, with `head` on the first node, sit above the nodes.
+Gallery scene: `LinkedList` (an insert, a find, a remove and a reversal).
+
+`Stack` piles the items up in a container `capacity` boxes tall, the last item on top with a
+`top` marker; pushed boxes drop in, popped ones rise out. `Queue` lines the items up in a
+channel `capacity` boxes long, the front at the left, with `front` and `back` markers;
+enqueued boxes slide in from the right and dequeued ones leave to the left. Gallery scenes:
+`Stack`, `Queue`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn queue<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a ListTrace) -> Svgr<'a> {
+    // trace = ListTrace::record(&[4]).enqueue(7).dequeue().finish(), built once
+    ui.show(Queue {
+        trace: Some(trace),
+        delay: 0.5,
+        step_time: 0.7,
+        capacity: 5,
+        ..ui.defaults()
+    })
+}
+```
+
+## TreeTrace and TreeView
+
+`TreeTrace` holds the steps of a binary tree. Each `TreeStep` has the nodes (an id, a label
+and the ids of the left and right child), the root, the highlighted nodes, the path walked
+to them, a found node and a note. Every step is laid out once when the trace is made, with
+`layout::tidy_tree`; a node with one child leans it to its side.
+
+- `TreeTrace::bst(&values)` starts a search tree with the values inserted. `insert`, `search`
+  and `remove` walk down from the root one node a step, noting which way they go; `remove`
+  replaces a node with two children by the smallest node on its right.
+- `TreeTrace::max_heap(&values)` and `min_heap` start a heap. `push` adds at the bottom and
+  sifts up, `pop` takes the root and sifts the last node down, a compare and a swap a step.
+  Nodes keep their values, so swapped nodes trade places.
+
+`TreeView` draws the trace as round nodes `radius` pixels, `spacing` pixels between slots and
+`level` pixels between depths. Highlighted nodes light up, the path is outlined, a found node
+turns green, nodes slide to their new places (two swapped nodes pass side by side), new ones
+drop in and removed ones fade. Gallery scenes: `TreeView` (a search tree: an insert, a search
+and a remove), `Heap` (a push and a pop).
+
+```rust
+use fframes_kit::prelude::*;
+
+let bst = TreeTrace::bst(&[50, 30, 70]).insert(40).remove(30).finish();
+let last = bst.steps().last().unwrap();
+assert_eq!(last.nodes.len(), 3);
+assert_eq!(last.note, "40 moves up");
+
+fn tree<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a TreeTrace) -> Svgr<'a> {
+    ui.show(TreeView {
+        trace: Some(trace),
+        step_time: 0.8,
+        ..ui.defaults()
+    })
+}
+```

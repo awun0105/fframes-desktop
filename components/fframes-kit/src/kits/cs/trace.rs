@@ -86,14 +86,7 @@ impl ArrayTrace {
     /// The step `seconds` after the start, one step every `step_time` seconds. Before the
     /// start it is step 0, after the end the last step.
     pub fn at(&self, seconds: f32, step_time: f32) -> Option<TraceAt<'_>> {
-        let last = self.steps.len().checked_sub(1)?;
-        let step_time = step_time.max(1e-3);
-        let (index, into) = if seconds <= 0.0 {
-            (0, 0.0)
-        } else {
-            let index = ((seconds / step_time) as usize).min(last);
-            (index, seconds - index as f32 * step_time)
-        };
+        let (index, into) = super::keyed::locate(self.steps.len(), seconds, step_time)?;
         Some(TraceAt {
             index,
             step: &self.steps[index],

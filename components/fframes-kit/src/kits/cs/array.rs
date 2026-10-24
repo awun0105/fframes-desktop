@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 
 use fframes::{Color, Svgr, animation::Animatable};
-use kurbo::{BezPath, RoundedRect};
+use kurbo::RoundedRect;
 
 use crate::{
     anim::{FadeIn, FadeOut, fade},
@@ -12,7 +12,10 @@ use crate::{
     ui::{Component, Themed, Ui},
 };
 
-use super::trace::{ArrayStep, ArrayTrace, TraceAt};
+use super::{
+    keyed::{markers, notes},
+    trace::{ArrayStep, ArrayTrace, TraceAt},
+};
 
 /// The colours of the cells in each state.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -94,122 +97,6 @@ pub(super) fn travel(at: &TraceAt<'_>, k: usize, move_time: f32) -> (f64, f64) {
         (PI * p).sin() * (k as f64 - from as f64).signum()
     };
     (slot, lift)
-}
-
-/// The note of the step, cross-faded from the previous one over `blend` seconds.
-pub(super) fn notes<'a>(
-    at: &TraceAt<'_>,
-    x: f32,
-    y: f32,
-    style: TextStyle,
-    fill: Color,
-    blend: f32,
-) -> Svgr<'a> {
-    let p = progress(at.into, 0.0, blend);
-    let (old, new) = (&at.previous.note, &at.step.note);
-    // the old note fades out in the first half, the new one in during the second
-    let (text, opacity) = if old == new {
-        (new, 1.0)
-    } else if p < 0.5 {
-        (old, 1.0 - 2.0 * p)
-    } else {
-        (new, 2.0 * p - 1.0)
-    };
-    if text.is_empty() || opacity <= 0.0 {
-        return Svgr::empty();
-    }
-    line(
-        x,
-        y,
-        style,
-        fill,
-        TextAnchor::Middle,
-        0.0,
-        opacity,
-        text.into(),
-    )
-}
-
-/// The markers under the cells: a small arrow up to the cell and its name, moving with the
-/// pointer from step to step, fading in and out when it appears or goes. `slot_x` gives the
-/// centre of a slot, `top` the arrow tip.
-pub(super) fn pointers<'a>(
-    at: &TraceAt<'_>,
-    slot_x: impl Fn(f64) -> f64,
-    top: f64,
-    style: TextStyle,
-    color: Color,
-    move_time: f32,
-) -> Svgr<'a> {
-    let p = f64::from(cubic_in_out(progress(at.into, 0.0, move_time)));
-    let find = |step: &ArrayStep, name: &str| {
-        step.pointers
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, i)| *i)
-    };
-    // pointers sharing a cell stack downwards in the order the step lists them
-    let row_of = |step: &ArrayStep, name: &str| {
-        let i = find(step, name)?;
-        Some(
-            step.pointers
-                .iter()
-                .take_while(|(n, _)| n != name)
-                .filter(|(_, j)| *j == i)
-                .count() as f64,
-        )
-    };
-    // (name, slot, opacity, row), each moving from the previous step to this one
-    let mut marks: Vec<(String, f64, f64, f64)> = Vec::new();
-    for (name, i) in &at.step.pointers {
-        let row = row_of(at.step, name).unwrap_or(0.0);
-        let (slot, opacity, row) = match (find(at.previous, name), row_of(at.previous, name)) {
-            (Some(was), Some(was_row)) => (
-                was as f64 + (*i as f64 - was as f64) * p,
-                1.0,
-                was_row + (row - was_row) * p,
-            ),
-            _ => (*i as f64, p, row),
-        };
-        marks.push((name.clone(), slot, opacity, row));
-    }
-    for (name, was) in &at.previous.pointers {
-        if find(at.step, name).is_none() && p < 1.0 {
-            let row = row_of(at.previous, name).unwrap_or(0.0);
-            marks.push((name.clone(), *was as f64, 1.0 - p, row));
-        }
-    }
-    let row_height = style.size as f64 * 1.15;
-    let mut drawn = Vec::new();
-    for (name, slot, opacity, below) in &marks {
-        let x = slot_x(*slot);
-        let mut arrow = BezPath::new();
-        arrow.move_to((x, top));
-        arrow.line_to((x - 9.0, top + 14.0));
-        arrow.line_to((x + 9.0, top + 14.0));
-        arrow.close_path();
-        let shape = Shape {
-            path: arrow,
-            fill: Some(color),
-            stroke: None,
-            stroke_width: 0.0,
-            dash: None,
-            opacity: *opacity as f32,
-        };
-        drawn.push(shape.draw());
-        let baseline = top + 18.0 + style.size as f64 * 0.8 + below * row_height;
-        drawn.push(line(
-            x as f32,
-            baseline as f32,
-            style,
-            color,
-            TextAnchor::Middle,
-            0.0,
-            *opacity as f32,
-            name.as_str().into(),
-        ));
-    }
-    drawn.into()
 }
 
 /// An array as a row of cells with its values, placed around `center` (units of
@@ -350,13 +237,20 @@ impl<'a> Component<'a> for ArrayView<'a> {
             below += (self.small_style.size as f64) * 1.2;
         }
         parts.push(cells.into());
-        parts.push(pointers(
-            &at,
-            |slot| self.slot_x(middle.x, n, slot),
+        let marks = |step: &'a ArrayStep| -> Vec<(&'a str, f64)> {
+            step.pointers
+                .iter()
+                .map(|(name, i)| (name.as_str(), self.slot_x(middle.x, n, *i as f64)))
+                .collect()
+        };
+        parts.push(markers(
+            &marks(at.previous),
+            &marks(at.step),
+            f64::from(cubic_in_out(progress(at.into, 0.0, move_time))),
             below + 4.0,
+            true,
             self.small_style,
             self.pointer_color,
-            move_time,
         ));
         if self.notes {
             let rows = 1.0
@@ -367,7 +261,9 @@ impl<'a> Component<'a> for ArrayView<'a> {
                     .min(3) as f64;
             let y = below + 30.0 + rows * (self.small_style.size as f64) * 1.2;
             parts.push(notes(
-                &at,
+                &at.previous.note,
+                &at.step.note,
+                at.into,
                 middle.x as f32,
                 y as f32,
                 self.small_style,
