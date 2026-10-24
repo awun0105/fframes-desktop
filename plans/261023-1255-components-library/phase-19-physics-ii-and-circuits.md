@@ -132,7 +132,7 @@ kit (feature `physics`).
 ## Notes
 
 - Measurements are in `plans/reports/kit-phase-19-261025-0557.md`.
-- `MultiPendulum` loses 2.2e-7 of its energy over 4 s on the steps; between steps the
+- A double pendulum loses 2.2e-7 of its energy over 10 s on the steps; between steps the
   interpolation adds up to 1.1e-3.
 - `rapier2d` turns a free spinning body about 0.2% short of `spin * t`; the test allows for it.
 - `RigidWorld@50%` differs by 0.012% on `skia-cpu`, under the tolerance.
