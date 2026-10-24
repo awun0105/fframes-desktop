@@ -25,6 +25,7 @@ mod typewriter;
 
 pub use bulleted_list::BulletedList;
 pub use counter::Counter;
+pub(crate) use decimal::format_number;
 pub use decimal::{DecimalNumber, Integer, Variable};
 pub use fit::FitText;
 pub use label::HudLabel;

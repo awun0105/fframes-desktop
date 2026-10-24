@@ -80,7 +80,7 @@ impl<'a> Matrix<'a> {
         (cells, columns)
     }
 
-    fn grid(&self, ui: &Ui<'_, '_, '_>) -> (Vec<Cell<'a>>, TextGrid) {
+    pub(super) fn grid(&self, ui: &Ui<'_, '_, '_>) -> (Vec<Cell<'a>>, TextGrid) {
         let (cells, columns) = self.cells();
         let grid = TextGrid::measure(ui, &cells, columns, self.buff, (self.x, self.y));
         (cells, grid)
@@ -124,9 +124,14 @@ impl<'a> Matrix<'a> {
     }
 }
 
-impl<'a> Component<'a> for Matrix<'a> {
-    fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
-        let (cells, grid) = self.grid(ui);
+impl<'a> Matrix<'a> {
+    /// The brackets around `grid` and the entries' `body`, each with its animation.
+    pub(super) fn draw(
+        &self,
+        ui: &mut Ui<'a, '_, '_>,
+        grid: &TextGrid,
+        body: Svgr<'a>,
+    ) -> Svgr<'a> {
         let Some(extent) = grid.extent() else {
             return Svgr::empty();
         };
@@ -141,11 +146,19 @@ impl<'a> Component<'a> for Matrix<'a> {
         let drawn = draw_animated(ui, &brackets, self.enter.as_ref(), self.exit.as_ref(), None);
         let texts = fade(
             ui,
-            grid.texts(cells),
+            body,
             self.entries_enter.as_ref(),
             self.entries_exit.as_ref(),
         );
         fframes::svgr!(<g>{drawn}{texts}</g>)
+    }
+}
+
+impl<'a> Component<'a> for Matrix<'a> {
+    fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let (cells, grid) = self.grid(ui);
+        let body = grid.texts(cells);
+        self.draw(ui, &grid, body)
     }
 }
 

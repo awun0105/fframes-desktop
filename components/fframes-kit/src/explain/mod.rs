@@ -41,6 +41,8 @@ mod sample_space;
 mod space;
 mod stream_lines;
 mod table;
+mod typed_matrix;
+mod typed_table;
 mod vector_field;
 mod vgroup;
 
@@ -60,5 +62,9 @@ pub use sample_space::{SampleColumn, SampleRow, SampleSpace};
 pub use space::Space;
 pub use stream_lines::{Flow, StreamLines};
 pub use table::Table;
+pub use typed_matrix::{DecimalMatrix, IntegerMatrix, Mobject, MobjectMatrix};
+#[cfg(feature = "latex")]
+pub use typed_table::MathTable;
+pub use typed_table::{DecimalTable, IntegerTable, MobjectTable};
 pub use vector_field::{ArrowVectorField, Field, VectorField, sigmoid_length};
 pub use vgroup::VGroup;

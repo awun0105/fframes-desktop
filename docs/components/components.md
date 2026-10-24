@@ -525,6 +525,49 @@ fn graphs<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Typed matrices and tables
+
+Each wraps the explain layer's `Matrix` or `Table`, which gives the place, gaps, labels,
+lines and animations; the wrapper fills the entries.
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `DecimalMatrix`, `DecimalTable` | `values: Vec<Vec<f64>>`, `num_decimal_places` (1), `include_sign`, `matrix` or `table` | numbers written like `DecimalNumber` (`1,234.5`); `to_matrix()` / `to_table()` give the text version, for `cell` and `bounds` |
+| `IntegerMatrix`, `IntegerTable` | `values: Vec<Vec<i64>>`, `matrix` or `table` | whole numbers |
+| `MobjectMatrix`, `MobjectTable` | `entries: Vec<Vec<Mobject>>`, `matrix` or `table` | drawn entries, each in the middle of its cell, a column as wide as its widest entry; a table's labels stay text. `cell(..)` gives a cell's area |
+| `Mobject` | `svgr`, `width`, `height` | something drawn around the origin and the box it takes; `Mobject::from_shapes(&shapes)` centers shapes and measures them |
+| `MathTable` (feature `latex`) | `formulas: Vec<Vec<&Formula>>`, `size`, `color`, `table` | typeset formulas in a table; typeset them once with a `TexEngine`, like `MathTex` |
+
+```rust
+use fframes_kit::prelude::*;
+
+fn tables<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let odds = ui.show(DecimalTable {
+        values: vec![vec![0.25, 0.75], vec![0.6, 0.4]],
+        num_decimal_places: 2,
+        table: Table {
+            col_labels: vec!["heads".into(), "tails".into()],
+            row_labels: vec!["fair".into(), "bent".into()],
+            ..ui.defaults()
+        },
+        ..ui.defaults()
+    });
+    let dot = Mobject::from_shapes(&[Shape {
+        path: kurbo::Shape::to_path(&kurbo::Circle::new((0.0, 0.0), 20.0), 0.1),
+        fill: Some(ui.theme.colors.accent),
+        stroke: None,
+        stroke_width: 0.0,
+        dash: None,
+        opacity: 1.0,
+    }]);
+    let shapes = ui.show(MobjectMatrix {
+        entries: vec![vec![dot.clone(), dot]],
+        matrix: Matrix { x: 1400.0, ..ui.defaults() },
+    });
+    svgr!(<g>{odds}{shapes}</g>)
+}
+```
+
 ## Shapes
 
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,

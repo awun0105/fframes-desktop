@@ -135,7 +135,7 @@ Add the remaining 2D mobjects of the Manim CE reference:
 - [x] Coordinate systems and `LogBase`
 - [x] Implicit functions, vector fields, stream lines
 - [x] Graph layouts, `Graph` and `DiGraph`
-- [ ] Typed matrices and tables
+- [x] Typed matrices and tables
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
 
 ## Notes
@@ -187,3 +187,13 @@ Add the remaining 2D mobjects of the Manim CE reference:
   The kit's shared drawing helpers (`kits/draw.rs`) are now compiled without the CS and biology
   features.
 - Extra e2e frame: `DiGraph@end`.
+- The typed matrices and tables wrap `Matrix` and `Table` (`matrix: Matrix`, `table: Table`, like
+  `DiGraph { graph }`); the numbers are written by `DecimalNumber`'s formatting, with commas.
+  `MobjectMatrix` and `MobjectTable` take `Mobject { svgr, width, height }` cells, drawn around
+  the origin (`Mobject::from_shapes` centers and measures shapes); they hold `Svgr`, which has
+  no `PartialEq`, so they derive no studio props. `MathTable` (feature `latex`) takes formulas
+  typeset beforehand and draws them through `MobjectTable`; the gallery has no TeX engine, so
+  it is covered by the type check and the docs, not by a frame.
+- `Matrix` and `Table` draw through a shared `draw(ui, grid, body)` now; their frames stayed at
+  0.000%.
+- Extra e2e frame: `TypedTables@end`.

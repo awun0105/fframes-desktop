@@ -37,6 +37,8 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("GraphLayouts", 2.0, graph_layouts),
         // a labelled directed graph with styled and curved edges
         GalleryScene::new("DiGraph", 2.0, di_graph),
+        // numbers and drawn shapes in matrices and tables
+        GalleryScene::new("TypedTables", 2.0, typed_tables),
     ]
 }
 
@@ -435,4 +437,88 @@ fn di_graph<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         },
     });
     svgr!(<g>{head}{graph}</g>)
+}
+
+fn typed_tables<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "TypedTables");
+    let base = Matrix {
+        enter: Some(create()),
+        ..ui.defaults()
+    };
+    let look = |x: f32, y: f32| Matrix {
+        x,
+        y,
+        ..base.clone()
+    };
+    let decimal = ui.show(DecimalMatrix {
+        values: vec![vec![0.5, -1.25], vec![3.875, 2.0]],
+        num_decimal_places: 2,
+        matrix: look(420.0, 360.0),
+        ..ui.defaults()
+    });
+    let integer = ui.show(IntegerMatrix {
+        values: vec![vec![1, 0, -3], vec![12, 7, 4]],
+        matrix: look(960.0, 360.0),
+    });
+    // a circle, a square and a triangle drawn at their own size
+    let shape = |path: kurbo::BezPath, color| {
+        Mobject::from_shapes(&[Shape {
+            path,
+            fill: Some(color),
+            stroke: None,
+            stroke_width: 0.0,
+            dash: None,
+            opacity: 1.0,
+        }])
+    };
+    let (accent, highlight) = (ui.theme.colors.accent, ui.theme.colors.highlight);
+    let circle = || {
+        shape(
+            kurbo::Shape::to_path(&kurbo::Circle::new((0.0, 0.0), 22.0), 0.1),
+            accent,
+        )
+    };
+    let square = || {
+        shape(
+            kurbo::Shape::to_path(&kurbo::Rect::new(0.0, 0.0, 40.0, 40.0), 0.1),
+            highlight,
+        )
+    };
+    let triangle = || {
+        let mut path = kurbo::BezPath::new();
+        path.move_to((0.0, 40.0));
+        path.line_to((24.0, 0.0));
+        path.line_to((48.0, 40.0));
+        path.close_path();
+        shape(path, accent)
+    };
+    let shapes = ui.show(MobjectMatrix {
+        entries: vec![vec![circle(), square()], vec![triangle(), circle()]],
+        matrix: look(1500.0, 360.0),
+    });
+    let table = ui.show(DecimalTable {
+        values: vec![vec![0.25, 0.75], vec![0.6, 0.4]],
+        num_decimal_places: 2,
+        table: Table {
+            col_labels: vec!["heads".into(), "tails".into()],
+            row_labels: vec!["fair".into(), "bent".into()],
+            x: 620.0,
+            y: 780.0,
+            enter: Some(create()),
+            ..ui.defaults()
+        },
+        ..ui.defaults()
+    });
+    let drawn = ui.show(MobjectTable {
+        entries: vec![vec![circle(), square(), triangle()]],
+        table: Table {
+            col_labels: vec!["circle".into(), "square".into(), "triangle".into()],
+            x: 1380.0,
+            y: 780.0,
+            outer_lines: true,
+            enter: Some(create()),
+            ..ui.defaults()
+        },
+    });
+    svgr!(<g>{head}{decimal}{integer}{shapes}{table}{drawn}</g>)
 }

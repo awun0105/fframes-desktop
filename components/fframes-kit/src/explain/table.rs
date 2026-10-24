@@ -25,6 +25,17 @@ pub(super) struct Cell<'a> {
     pub fill: Color,
 }
 
+/// The size of every cell's text in pixels.
+pub(super) fn text_sizes(ui: &Ui<'_, '_, '_>, cells: &[Cell<'_>]) -> Vec<(f64, f64)> {
+    cells
+        .iter()
+        .map(|c| {
+            let (w, h) = text_size(ui, c.style, &c.text);
+            (f64::from(w), f64::from(h))
+        })
+        .collect()
+}
+
 /// Boxes of text cells on [`layout::grid`], row by row around a center, with the span of
 /// every column and row in pixels.
 #[derive(Debug, Clone, PartialEq)]
@@ -74,15 +85,8 @@ impl TextGrid {
         gap: (f32, f32),
         center: (f32, f32),
     ) -> Self {
-        let sizes: Vec<(f64, f64)> = cells
-            .iter()
-            .map(|c| {
-                let (w, h) = text_size(ui, c.style, &c.text);
-                (f64::from(w), f64::from(h))
-            })
-            .collect();
         Self::new(
-            &sizes,
+            &text_sizes(ui, cells),
             columns,
             (f64::from(gap.0), f64::from(gap.1)),
             (f64::from(center.0), f64::from(center.1)),
@@ -224,7 +228,7 @@ impl Default for Table<'_> {
 
 impl<'a> Table<'a> {
     /// Rows and columns taken by the labels.
-    fn label_offsets(&self) -> (usize, usize) {
+    pub(super) fn label_offsets(&self) -> (usize, usize) {
         (
             usize::from(!self.col_labels.is_empty()),
             usize::from(!self.row_labels.is_empty()),
@@ -232,7 +236,7 @@ impl<'a> Table<'a> {
     }
 
     /// Every cell row by row, labels included, and the number of columns.
-    fn cells(&self) -> (Vec<Cell<'a>>, usize) {
+    pub(super) fn cells(&self) -> (Vec<Cell<'a>>, usize) {
         let (label_rows, label_cols) = self.label_offsets();
         let body_cols = self
             .rows
@@ -289,13 +293,14 @@ impl<'a> Table<'a> {
     }
 }
 
-impl<'a> Component<'a> for Table<'a> {
-    fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
-        let (cells, columns) = self.cells();
-        if cells.is_empty() {
-            return Svgr::empty();
-        }
-        let grid = self.grid(ui, &cells, columns);
+impl<'a> Table<'a> {
+    /// The lines of `grid` and the cells' `body`, each with its animation.
+    pub(super) fn draw(
+        &self,
+        ui: &mut Ui<'a, '_, '_>,
+        grid: &TextGrid,
+        body: Svgr<'a>,
+    ) -> Svgr<'a> {
         let lines: Vec<Shape> = grid
             .lines(self.outer_lines)
             .into_iter()
@@ -315,11 +320,23 @@ impl<'a> Component<'a> for Table<'a> {
         let drawn = draw_animated(ui, &lines, self.enter.as_ref(), self.exit.as_ref(), None);
         let texts = fade(
             ui,
-            grid.texts(cells),
+            body,
             self.entries_enter.as_ref(),
             self.entries_exit.as_ref(),
         );
         fframes::svgr!(<g>{drawn}{texts}</g>)
+    }
+}
+
+impl<'a> Component<'a> for Table<'a> {
+    fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let (cells, columns) = self.cells();
+        if cells.is_empty() {
+            return Svgr::empty();
+        }
+        let grid = self.grid(ui, &cells, columns);
+        let body = grid.texts(cells);
+        self.draw(ui, &grid, body)
     }
 }
 

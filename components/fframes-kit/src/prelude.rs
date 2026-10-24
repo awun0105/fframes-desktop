@@ -31,9 +31,12 @@ pub use crate::effects::{
     Translate, TvSignalOff, VenetianBlinds, Vibrance, Vignette, VignetteMode, WhiteBalance,
     WhiteNoise,
 };
+#[cfg(feature = "latex")]
+pub use crate::explain::MathTable;
 pub use crate::explain::{
     Area, ArrowVectorField, Axes, AxesMap, AzimuthDirection, AzimuthUnits, Canvas, ComplexPlane,
-    Curve, DiGraph, EdgeStyle, Flow, Func, FunctionGraph, Implicit, ImplicitFunction, Matrix,
+    Curve, DecimalMatrix, DecimalTable, DiGraph, EdgeStyle, Flow, Func, FunctionGraph, Implicit,
+    ImplicitFunction, IntegerMatrix, IntegerTable, Matrix, Mobject, MobjectMatrix, MobjectTable,
     NumberLine, NumberPlane, ParametricFunction, PolarPlane, Range, RiemannRectangles, SampleAt,
     SampleColumn, SampleRow, SampleSpace, Scaling, Space, StreamLines, Table, VGroup, VectorField,
     VertexStyle,
