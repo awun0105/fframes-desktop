@@ -142,7 +142,7 @@ wrappers around children.
 
 - [x] Renderer checks: `feTurbulence` agrees, `feDisplacementMap` deferred
 - [x] Colour group and matrix composition
-- [ ] Edges and shape
+- [x] Edges and shape
 - [ ] Noise, noise functions
 - [ ] Patterns and overlays, halftone
 - [ ] Geometry and reveals

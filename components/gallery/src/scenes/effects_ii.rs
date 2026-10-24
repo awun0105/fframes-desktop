@@ -1,7 +1,7 @@
 //! The SVG-filter effects, one scene per group: every effect of the group on the same
 //! picture, in a grid of labelled thumbnails.
 
-use fframes_kit::prelude::*;
+use fframes_kit::{motion, prelude::*};
 
 use crate::{GalleryScene, scenes::core::title};
 
@@ -9,6 +9,8 @@ pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // the hue turns and the tint fades in over the scene
         GalleryScene::new("ColorEffects", 2.0, color_effects),
+        // the outline grows and the long shadows stretch out over the scene
+        GalleryScene::new("EdgeEffects", 2.0, edge_effects),
     ]
 }
 
@@ -38,24 +40,26 @@ fn photo<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     )
 }
 
-/// `cells` as a grid of five columns of labelled thumbnails under the title.
-fn grid<'a>(ui: &Ui<'a, '_, '_>, cells: Vec<(&'static str, Svgr<'a>)>) -> Svgr<'a> {
-    const COLUMNS: usize = 5;
-    const SCALE: f32 = 0.17;
+/// `cells` as a grid of `columns` labelled thumbnails under the title.
+fn grid<'a>(ui: &Ui<'a, '_, '_>, columns: usize, cells: Vec<(&'static str, Svgr<'a>)>) -> Svgr<'a> {
     let c = ui.theme.colors;
     let s = ui.theme.typography.caption;
+    let pitch = 1760.0 / columns as f32;
+    let scale = (pitch - 32.0) / 1920.0;
+    let row = 1080.0 * scale + 52.0;
     let thumbs: Vec<Svgr<'a>> = cells
         .into_iter()
         .enumerate()
         .map(|(i, (label, cell))| {
-            let x = 96.0 + (i % COLUMNS) as f32 * 352.0;
-            let y = 190.0 + (i / COLUMNS) as f32 * 222.0;
+            let x = 96.0 + (i % columns) as f32 * pitch;
+            let y = 190.0 + (i / columns) as f32 * row;
             let place = Transform::translate(x, y);
-            let shrink = Transform::scale(SCALE);
+            let shrink = Transform::scale(scale);
+            let label_y = 1080.0 * scale + 38.0;
             svgr!(
                 <g transform={place}>
                     <g transform={shrink}>{cell}</g>
-                    <text x="0" y="208" font-family={s.family} font-size={s.size}
+                    <text x="0" y={label_y} font-family={s.family} font-size={s.size}
                           font-weight={s.weight} fill={c.text}>
                         {label}
                     </text>
@@ -206,7 +210,7 @@ fn color_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ),
         ("original", photo(ui)),
     ];
-    let figure = grid(ui, cells);
+    let figure = grid(ui, 5, cells);
     let head = title(ui, "Colour effects");
     svgr!(<g>{figure}{head}</g>)
 }
@@ -230,4 +234,90 @@ fn color_key<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
             {keyed}
         </g>
     )
+}
+
+/// A logo and a word on a transparent background, for the effects that work on alpha edges.
+fn logo<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let s = ui.theme.typography.title;
+    svgr!(
+        <g>
+            <circle cx="520" cy="540" r="250" fill="#e63946" />
+            <path d="M520 360 L575 480 L705 490 L605 575 L640 705 L520 635 L400 705 L435 575 L335 490 L465 480 Z"
+                  fill="#ffe29a" />
+            <text x="1300" y="660" text-anchor="middle" font-family={s.family} font-size="340"
+                  font-weight="700" fill="#2a9d8f">
+                "kit"
+            </text>
+        </g>
+    )
+}
+
+/// `effect` over a light backdrop.
+fn on_backdrop(effect: Svgr<'_>) -> Svgr<'_> {
+    svgr!(
+        <g>
+            <rect x="0" y="0" width="1920" height="1080" fill="#e9e4da" />
+            {effect}
+        </g>
+    )
+}
+
+fn edge_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let p = motion::clamp01(ui.seconds() / 2.0);
+    let cells = vec![
+        (
+            "Outline",
+            ui.show(Outline {
+                width: Anim::Fixed(4.0 + 12.0 * p),
+                color: Color::rgb(38, 70, 83),
+                children: children(logo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Emboss",
+            ui.show(Emboss {
+                children: children(logo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "BevelAlpha",
+            ui.show(BevelAlpha {
+                edge_thickness: Anim::Fixed(14.0),
+                light_intensity: 0.7,
+                children: children(logo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "LongShadows",
+            ui.show(LongShadows {
+                length: Anim::Fixed(60.0 + 180.0 * p),
+                children: children(logo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "RoughenEdges",
+            ui.show(RoughenEdges {
+                children: children(logo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Shrinkwrap",
+            ui.show(Shrinkwrap {
+                children: children(logo),
+                ..ui.defaults()
+            }),
+        ),
+        ("original", logo(ui)),
+    ]
+    .into_iter()
+    .map(|(label, cell)| (label, on_backdrop(cell)))
+    .collect();
+    let figure = grid(ui, 4, cells);
+    let head = title(ui, "Edges and shape");
+    svgr!(<g>{figure}{head}</g>)
 }

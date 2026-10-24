@@ -1,5 +1,6 @@
 use fframes::{Color, Svgr};
 
+use super::Region;
 use crate::{anim::Anim, motion::clamp01};
 
 /// Luminance weights of the SVG `saturate` and `hueRotate` matrices.
@@ -298,7 +299,7 @@ pub(crate) fn curve(points: &[(f32, f32)], x: f32) -> f32 {
 
 filter_effect!(
     /// Its children brighter or darker (CSS `brightness()`): `amount` 1 unchanged, 0 black.
-    Brightness("brightness", pad 0.05) { amount: Anim<'a, f32> = Anim::Fixed(1.3) }
+    Brightness("brightness", Region::Pad(0.05)) { amount: Anim<'a, f32> = Anim::Fixed(1.3) }
     themed(t)
     primitives(|this, ui| ColorMatrix::brightness(ui.sample(&this.amount)).primitive())
 );
@@ -306,14 +307,14 @@ filter_effect!(
 filter_effect!(
     /// Its children with more or less contrast (CSS `contrast()`): `amount` 1 unchanged, 0
     /// flat grey.
-    Contrast("contrast", pad 0.05) { amount: Anim<'a, f32> = Anim::Fixed(1.4) }
+    Contrast("contrast", Region::Pad(0.05)) { amount: Anim<'a, f32> = Anim::Fixed(1.4) }
     themed(t)
     primitives(|this, ui| ColorMatrix::contrast(ui.sample(&this.amount)).primitive())
 );
 
 filter_effect!(
     /// Its children more or less saturated (SVG `saturate`): `amount` 1 unchanged, 0 grey.
-    Saturation("saturation", pad 0.05) { amount: Anim<'a, f32> = Anim::Fixed(1.6) }
+    Saturation("saturation", Region::Pad(0.05)) { amount: Anim<'a, f32> = Anim::Fixed(1.6) }
     themed(t)
     primitives(|this, ui| ColorMatrix::saturation(ui.sample(&this.amount)).primitive())
 );
@@ -321,28 +322,28 @@ filter_effect!(
 filter_effect!(
     /// Its children with their hues turned round the colour wheel by `degrees` (SVG
     /// `hueRotate`), Remotion's hue effect.
-    HueRotate("hue", pad 0.05) { degrees: Anim<'a, f32> = Anim::Fixed(90.0) }
+    HueRotate("hue", Region::Pad(0.05)) { degrees: Anim<'a, f32> = Anim::Fixed(90.0) }
     themed(t)
     primitives(|this, ui| ColorMatrix::hue_rotate(ui.sample(&this.degrees)).primitive())
 );
 
 filter_effect!(
     /// Its children in grey (CSS `grayscale()`): `amount` 1 fully grey.
-    Grayscale("grayscale", pad 0.05) { amount: Anim<'a, f32> = Anim::Fixed(1.0) }
+    Grayscale("grayscale", Region::Pad(0.05)) { amount: Anim<'a, f32> = Anim::Fixed(1.0) }
     themed(t)
     primitives(|this, ui| ColorMatrix::grayscale(ui.sample(&this.amount)).primitive())
 );
 
 filter_effect!(
     /// Its children as a negative (CSS `invert()`): `amount` 1 fully inverted.
-    Invert("invert", pad 0.05) { amount: Anim<'a, f32> = Anim::Fixed(1.0) }
+    Invert("invert", Region::Pad(0.05)) { amount: Anim<'a, f32> = Anim::Fixed(1.0) }
     themed(t)
     primitives(|this, ui| ColorMatrix::invert(ui.sample(&this.amount)).primitive())
 );
 
 filter_effect!(
     /// Its children in shades of `color`, mixed with the original by `amount`.
-    Tint("tint", pad 0.05) {
+    Tint("tint", Region::Pad(0.05)) {
         color: Color = t.colors.accent,
         amount: Anim<'a, f32> = Anim::Fixed(0.8),
     }
@@ -353,7 +354,7 @@ filter_effect!(
 filter_effect!(
     /// Its children in two colours: dark tones turn `dark` and light tones `light`, mixed
     /// with the original by `amount`.
-    Duotone("duotone", pad 0.05) {
+    Duotone("duotone", Region::Pad(0.05)) {
         dark: Color = t.colors.background,
         light: Color = t.colors.accent,
         amount: Anim<'a, f32> = Anim::Fixed(1.0),
@@ -366,7 +367,7 @@ filter_effect!(
 
 filter_effect!(
     /// Its children exposed brighter or darker by `stops`: every stop doubles the light.
-    Exposure("exposure", pad 0.05) { stops: Anim<'a, f32> = Anim::Fixed(0.5) }
+    Exposure("exposure", Region::Pad(0.05)) { stops: Anim<'a, f32> = Anim::Fixed(0.5) }
     themed(t)
     primitives(|this, ui| ColorMatrix::exposure(ui.sample(&this.stops)).primitive())
 );
@@ -374,7 +375,7 @@ filter_effect!(
 filter_effect!(
     /// Its children warmer or colder: `temperature` from -1 (blue) to 1 (orange) and `tint`
     /// from -1 (green) to 1 (magenta).
-    WhiteBalance("white-balance", pad 0.05) {
+    WhiteBalance("white-balance", Region::Pad(0.05)) {
         temperature: Anim<'a, f32> = Anim::Fixed(0.5),
         tint: f32 = 0.0,
     }
@@ -387,7 +388,7 @@ filter_effect!(
 filter_effect!(
     /// Its children with gentler extra saturation than [`Saturation`]; see
     /// [`ColorMatrix::vibrance`] for how it approximates vibrance.
-    Vibrance("vibrance", pad 0.05) { amount: Anim<'a, f32> = Anim::Fixed(0.8) }
+    Vibrance("vibrance", Region::Pad(0.05)) { amount: Anim<'a, f32> = Anim::Fixed(0.8) }
     themed(t)
     primitives(|this, ui| ColorMatrix::vibrance(ui.sample(&this.amount)).primitive())
 );
@@ -395,7 +396,7 @@ filter_effect!(
 filter_effect!(
     /// A basic colour correction in one matrix: `brightness`, then `contrast`, then
     /// `saturation` (1 leaves each unchanged), then the hues turned by `hue` degrees.
-    ColorCorrection("color-correction", pad 0.05) {
+    ColorCorrection("color-correction", Region::Pad(0.05)) {
         brightness: f32 = 1.0,
         contrast: f32 = 1.1,
         saturation: f32 = 1.2,
@@ -433,7 +434,7 @@ filter_effect!(
     ///     })
     /// }
     /// ```
-    ColorStack("color-stack", pad 0.05) { matrices: Vec<ColorMatrix> = Vec::new() }
+    ColorStack("color-stack", Region::Pad(0.05)) { matrices: Vec<ColorMatrix> = Vec::new() }
     themed(t)
     primitives(|this, _ui| {
         this.matrices
@@ -447,7 +448,7 @@ filter_effect!(
     /// Photoshop's levels on every colour channel: the `input` black and white points
     /// stretch to 0 and 1, `gamma` bends the mid tones (above 1 brighter), and the result
     /// lands between the `output` black and white points.
-    Levels("levels", pad 0.05) {
+    Levels("levels", Region::Pad(0.05)) {
         input: (f32, f32) = (0.08, 0.92),
         gamma: Anim<'a, f32> = Anim::Fixed(1.2),
         output: (f32, f32) = (0.0, 1.0),
@@ -469,7 +470,7 @@ filter_effect!(
     /// Tone curves: a smooth curve through `points` (input, output, both 0 to 1, sorted by
     /// input) on every colour channel, then the optional per-channel curves `red`, `green`
     /// and `blue`. The default is a gentle S curve that adds contrast.
-    Curves("curves", pad 0.05) {
+    Curves("curves", Region::Pad(0.05)) {
         points: &'a [(f32, f32)] = &[(0.0, 0.0), (0.25, 0.2), (0.75, 0.82), (1.0, 1.0)],
         red: Option<&'a [(f32, f32)]> = None,
         green: Option<&'a [(f32, f32)]> = None,
@@ -492,7 +493,7 @@ filter_effect!(
     /// evenly spaced inputs from 0 to 1 (an empty list leaves the channel unchanged). An
     /// approximation of a LUT file: a `.cube` LUT maps colours in 3D, these tables map each
     /// channel on its own, so they hold curves and colour casts but not hue-dependent looks.
-    Lut("lut", pad 0.05) {
+    Lut("lut", Region::Pad(0.05)) {
         red: &'a [f32] = &[0.05, 0.3, 0.62, 0.86, 1.0],
         green: &'a [f32] = &[0.02, 0.27, 0.56, 0.82, 0.97],
         blue: &'a [f32] = &[0.12, 0.3, 0.5, 0.72, 0.88],
@@ -515,7 +516,7 @@ filter_effect!(
     /// `highlights` pulls the light tones down, through a curve on every channel. An
     /// approximation: the real effect looks at each pixel's neighbourhood, this curve only at
     /// the pixel's own value.
-    ShadowsHighlights("shadows-highlights", pad 0.05) {
+    ShadowsHighlights("shadows-highlights", Region::Pad(0.05)) {
         shadows: Anim<'a, f32> = Anim::Fixed(0.6),
         highlights: f32 = 0.3,
     }
@@ -547,7 +548,7 @@ pub const THERMAL_PALETTE: [Color; 7] = [
 filter_effect!(
     /// Its children as a thermal camera sees them: the luminance mapped onto `palette`, cold
     /// to hot, evenly spaced (the default is [`THERMAL_PALETTE`]).
-    ThermalVision("thermal", pad 0.05) { palette: &'a [Color] = &THERMAL_PALETTE }
+    ThermalVision("thermal", Region::Pad(0.05)) { palette: &'a [Color] = &THERMAL_PALETTE }
     themed(t)
     primitives(|this, _ui| {
         let channel = |pick: fn(Color) -> u8| {
@@ -579,7 +580,7 @@ filter_effect!(
     /// Colours whose share of that hue is within `tolerance` of the key's vanish, and
     /// `softness` is the width of the fade into opaque. Linear in the colour, so it works
     /// best on saturated screens; a grey `color` keys nothing.
-    ColorKey("color-key", pad 0.05) {
+    ColorKey("color-key", Region::Pad(0.05)) {
         color: Color = Color::rgb(0, 255, 0),
         tolerance: f32 = 0.4,
         softness: f32 = 0.2,

@@ -750,6 +750,46 @@ let red = ColorMatrix::grayscale(1.0).apply([1.0, 0.0, 0.0, 1.0]);
 assert!((red[0] - 0.213).abs() < 1e-6);
 ```
 
+### Edges and shape
+
+These work on the alpha edges of their children: text, logos and shapes on a transparent
+background. Lengths are in the children's user units; props follow Remotion's names and
+defaults.
+
+| Component | Props (defaults) | What it does |
+| --- | --- | --- |
+| `Outline` | `width` (8), `color` (white), `opacity` (1), `outline_only` (false) | a solid outline from `feMorphology`; the region grows a tenth of the box, wider outlines are cut |
+| `Emboss` | `amount` (0.7), `size` (26), `line_width` (7), `depth` (0.75), `angle` (0), `light_angle` (135, from the top left), `offset` (0), `area` | Remotion's raised dash relief: a lit and shaded dash pattern masked by the children's alpha; renders the children twice |
+| `BevelAlpha` | `edge_thickness` (2), `light_angle` (-60, clockwise from above), `light_color` (white), `light_intensity` (0.4) | highlights and shadows along the alpha edges, from the slope of the blurred alpha |
+| `LongShadows` | `length` (240), `angle` (45, clockwise from the right), `color` (`#777777`), `opacity` (1), `area` | the silhouette as a solid directional shadow, clipped to `area` |
+| `RoughenEdges` | `amount` (1), `border` (26.5), `scale` (0.07), `seed` (231.2) | a torn-paper edge: blurred alpha shifted by noise and cut at a threshold |
+| `Shrinkwrap` | `amount` (1), `highlight_intensity` (0.75), `wrinkle_density` (0.42), `edge_tension` (0.45), `seed` | plastic wrap glints on `feTurbulence` wrinkles and a highlight along the edges |
+
+`LongShadows` doubles its copies: at most eight merges give 256 copies, one unit apart for a
+shadow up to 255 units long. Overlapping copies of a semi-transparent silhouette add up.
+`BevelAlpha` and `Shrinkwrap` measure slopes with `feConvolveMatrix` over neighbouring
+device pixels, so a draft render at a smaller scale shows a stronger bevel. The SVG lighting
+filters would scale correctly, but at half size the CPU and Skia backends draw them about
+0.6% apart. Remotion's `shrinkwrap()` also displaces the picture along the wrinkles. That
+needs `feDisplacementMap`, so it waits with the other displacement effects.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn logo<'a>(_ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    svgr!(<circle cx="960" cy="540" r="200" fill="#e63946" />)
+}
+
+fn badge<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let grow = motion::clamp01(ui.seconds());
+    ui.show(LongShadows {
+        length: Anim::Fixed(240.0 * grow),
+        children: children(|ui| ui.show(Outline { width: Anim::Fixed(6.0), children: children(logo), ..ui.defaults() })),
+        ..ui.defaults()
+    })
+}
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`
