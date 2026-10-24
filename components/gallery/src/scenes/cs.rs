@@ -244,6 +244,137 @@ fn heap<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+/// Seven nodes in three layers, with a cycle through E.
+fn search_graph() -> Graph {
+    Graph::new(
+        &["A", "B", "C", "D", "E", "F", "G"],
+        &[
+            (0, 1),
+            (0, 2),
+            (1, 3),
+            (1, 4),
+            (2, 5),
+            (4, 5),
+            (3, 6),
+            (4, 6),
+        ],
+        false,
+    )
+}
+
+fn graph_view<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACES: OnceLock<[GraphTrace; 2]> = OnceLock::new();
+    let traces = TRACES.get_or_init(|| {
+        let graph = search_graph();
+        [GraphTrace::bfs(&graph, 0), GraphTrace::dfs(&graph, 0)]
+    });
+    let head = title(ui, "GraphView");
+    let figures: Vec<_> = traces
+        .iter()
+        .zip([-3.6, 3.6])
+        .map(|(trace, x)| {
+            ui.show(GraphView {
+                trace: Some(trace),
+                delay: 0.6,
+                step_time: 0.55,
+                center: (x, 0.5),
+                spacing: 150.0,
+                level: 140.0,
+                radius: 30.0,
+                enter: Some(fade(0.0)),
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    svgr!(<g>{head}{figures}</g>)
+}
+
+fn dijkstra<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<GraphTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        let graph = Graph::weighted(
+            &["S", "A", "B", "C", "T"],
+            &[
+                (0, 1, 4.0),
+                (0, 2, 1.0),
+                (2, 1, 2.0),
+                (1, 3, 1.0),
+                (2, 3, 5.0),
+                (3, 4, 3.0),
+                (1, 4, 6.0),
+            ],
+            true,
+        )
+        // left to right from S to T
+        .at(&[(0.0, 0.5), (1.3, 0.0), (0.8, 1.0), (2.0, 0.5), (3.0, 0.5)]);
+        GraphTrace::dijkstra(&graph, 0)
+    });
+    let head = title(ui, "Dijkstra");
+    let figure = ui.show(GraphView {
+        trace: Some(trace),
+        delay: 0.6,
+        step_time: 0.7,
+        center: (0.0, 0.6),
+        spacing: 280.0,
+        level: 280.0,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn hash_table<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<HashTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        HashTrace::record(5, &[12, 7, 3, 20])
+            .insert(17)
+            .find(3)
+            .insert(22)
+            .remove(7)
+            .finish()
+    });
+    let head = title(ui, "HashTable");
+    let figure = ui.show(HashTable {
+        trace: Some(trace),
+        delay: 0.6,
+        step_time: 0.6,
+        center: (0.0, 0.4),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn state_machine<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<MachineTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        // binary numbers divisible by three: the state is the remainder so far
+        let machine = Machine::new(
+            &["0", "1", "2"],
+            &[
+                (0, 0, "0"),
+                (0, 1, "1"),
+                (1, 0, "1"),
+                (1, 2, "0"),
+                (2, 1, "0"),
+                (2, 2, "1"),
+            ],
+            0,
+            &[0],
+        );
+        MachineTrace::run(&machine, "10010")
+    });
+    let head = title(ui, "StateMachine");
+    let figure = ui.show(StateMachine {
+        trace: Some(trace),
+        delay: 0.6,
+        center: (0.0, 0.6),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight steps of a second from 0.6 s
@@ -256,5 +387,9 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Queue", 7.5, queue),
         GalleryScene::new("TreeView", 13.0, tree_view),
         GalleryScene::new("Heap", 10.0, heap),
+        GalleryScene::new("GraphView", 10.5, graph_view),
+        GalleryScene::new("Dijkstra", 13.0, dijkstra),
+        GalleryScene::new("HashTable", 12.5, hash_table),
+        GalleryScene::new("StateMachine", 8.5, state_machine),
     ]
 }

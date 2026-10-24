@@ -17,8 +17,7 @@ use crate::{
 
 use super::{
     array::CellColors,
-    keyed::{StepAt, find, mix, notes, sample, tween, tween_links},
-    list::stroke,
+    keyed::{StepAt, find, mix, notes, sample, stroke, tween, tween_links},
 };
 
 /// A node of a binary tree, with an id that stays with it from step to step.

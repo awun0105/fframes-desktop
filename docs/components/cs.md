@@ -216,3 +216,86 @@ fn tree<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a TreeTrace) -> Svgr<'a> {
     })
 }
 ```
+
+## Graph, GraphTrace and GraphView
+
+`Graph` holds named nodes and edges, directed or not. `Graph::new(&names, &edges, directed)`
+gives every edge weight 1; `Graph::weighted` takes `(from, to, weight)` and shows the
+weights. Nodes are placed in layers along the edges with `layout::layered`; `at` places
+them yourself, in the same slots and layers (fractions are fine).
+
+`GraphTrace` records a search over a graph, one `GraphStep` per visit or discovery: the
+current node, the frontier, the finished nodes, the tree edges that reached each node, the
+edge being looked at, the distances and a note.
+
+- `GraphTrace::bfs(&graph, start)` keeps a queue and visits by distance in edges;
+- `GraphTrace::dfs(&graph, start)` keeps a stack, goes deep first and backs out;
+- `GraphTrace::dijkstra(&graph, start)` takes the closest unfinished node each time and
+  notes each relaxation (`T: 3 + 5 is not below 4`).
+
+`order()` is the order nodes were finished in. `GraphView` draws the trace: the frontier,
+current and finished nodes in the cell colours, tree edges in `tree_color`, the active edge
+in `active_color`, distances above the nodes (`∞` until reached) for Dijkstra, and the
+frontier (`queue: B, C`) and the note under the graph. Gallery scenes: `GraphView` (BFS
+and DFS side by side), `Dijkstra`.
+
+```rust
+use fframes_kit::prelude::*;
+
+let graph = Graph::new(&["A", "B", "C", "D"], &[(0, 1), (0, 2), (1, 3)], false);
+let bfs = GraphTrace::bfs(&graph, 0);
+assert_eq!(bfs.order(), [0, 1, 2, 3]);
+
+fn search<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a GraphTrace) -> Svgr<'a> {
+    ui.show(GraphView {
+        trace: Some(trace),
+        step_time: 0.6,
+        ..ui.defaults()
+    })
+}
+```
+
+## HashTrace and HashTable
+
+`HashTrace::record(buckets, &keys)` starts a table with separate chaining: a key goes to
+bucket `key mod buckets` (Euclidean, so negative keys land in a bucket too) and is added to
+the end of its chain. `insert`, `find` and `remove` show the hash, walk the chain one entry
+a step and note each comparison; a key that is already there is not added twice. `HashTable`
+draws the buckets as a column of index cells with each chain to its right, linked by
+arrows. Gallery scene: `HashTable`.
+
+```rust
+use fframes_kit::prelude::*;
+
+let table = HashTrace::record(5, &[12, 7, 3]).insert(17).find(9).finish();
+let last = table.steps().last().unwrap();
+assert_eq!(last.buckets[2].len(), 3);
+assert_eq!(last.note, "9 is not there");
+```
+
+## Machine, MachineTrace and StateMachine
+
+`Machine::new(&states, &transitions, start, &accepting)` is a finite state machine. A
+transition `(from, to, "0,1")` reads any of its comma separated symbols. States are placed in
+columns by their distance from the start (`at` places them yourself). `MachineTrace::run(&machine,
+input)` reads the input one character a step and stops when no transition matches;
+`accepted()` says whether it ended in an accepting state.
+
+`StateMachine` draws the states as circles (accepting states with an inner ring), an arrow
+into the start state, the transitions as labelled arrows (a state's own loops above it), a
+token that travels along the transition taken, the input tape with the symbol being read
+lit, and the note. The last state turns green when the input is accepted and red when it is
+not. Gallery scene: `StateMachine` (multiples of three in binary).
+
+```rust
+use fframes_kit::prelude::*;
+
+let even = Machine::new(
+    &["even", "odd"],
+    &[(0, 1, "1"), (1, 0, "1"), (0, 0, "0"), (1, 1, "0")],
+    0,
+    &[0],
+);
+assert!(MachineTrace::run(&even, "1001").accepted());
+assert!(!MachineTrace::run(&even, "1000").accepted());
+```

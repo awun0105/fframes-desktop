@@ -4,15 +4,21 @@
 //! pixels. `docs/components/cs.md` has an example of each with its gallery scene.
 
 mod array;
+mod graph;
+mod hash;
 mod keyed;
 mod list;
+mod machine;
 mod sort;
 mod trace;
 mod tree;
 
 pub use array::{ArrayView, BinarySearch, CellColors};
+pub use graph::{Graph, GraphStep, GraphTrace, GraphView};
+pub use hash::{HashRecorder, HashStep, HashTable, HashTrace};
 pub use keyed::StepAt;
 pub use list::{LinkedList, ListRecorder, ListStep, ListTrace, Queue, Stack};
+pub use machine::{Machine, MachineStep, MachineTrace, StateMachine};
 pub use sort::SortVisualizer;
 pub use trace::{ArrayStep, ArrayTrace, TraceAt};
 pub use tree::{BstRecorder, HeapRecorder, TreeNode, TreeStep, TreeTrace, TreeView};

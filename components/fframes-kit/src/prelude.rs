@@ -32,8 +32,9 @@ pub use crate::kits::chemistry::{
 };
 #[cfg(feature = "cs")]
 pub use crate::kits::cs::{
-    ArrayStep, ArrayTrace, ArrayView, BinarySearch, CellColors, LinkedList, ListTrace, Queue,
-    SortVisualizer, Stack, TreeTrace, TreeView,
+    ArrayStep, ArrayTrace, ArrayView, BinarySearch, CellColors, Graph, GraphTrace, GraphView,
+    HashTable, HashTrace, LinkedList, ListTrace, Machine, MachineTrace, Queue, SortVisualizer,
+    Stack, StateMachine, TreeTrace, TreeView,
 };
 #[cfg(feature = "math")]
 pub use crate::kits::math::{

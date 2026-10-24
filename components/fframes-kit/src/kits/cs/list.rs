@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
     array::CellColors,
-    keyed::{StepAt, Tween, find, markers, mix, notes, sample, tween, tween_links},
+    keyed::{StepAt, Tween, find, markers, mix, notes, sample, stroke, tip, tween, tween_links},
 };
 
 /// One step of a list, a stack or a queue.
@@ -385,7 +385,12 @@ fn fill_of(colors: &CellColors, step: &ListStep, id: u32) -> Color {
 }
 
 /// A tweened item's fill, blended from the previous step over `blend` seconds.
-fn blended_fill(colors: &CellColors, at: &StepAt<'_, ListStep>, t: &Tween, blend: f32) -> Color {
+pub(super) fn blended_fill(
+    colors: &CellColors,
+    at: &StepAt<'_, ListStep>,
+    t: &Tween,
+    blend: f32,
+) -> Color {
     let now = fill_of(colors, at.step, t.id);
     match (t.from, t.to) {
         (Some(_), Some(_)) => mix(
@@ -408,7 +413,7 @@ fn label_of<'s>(at: &StepAt<'s, ListStep>, t: &Tween) -> &'s str {
 
 /// A box with a value, as an item of a list, a stack or a queue.
 #[allow(clippy::too_many_arguments)]
-fn item<'a>(
+pub(super) fn item<'a>(
     center: Point,
     width: f64,
     height: f64,
@@ -445,35 +450,6 @@ fn item<'a>(
         label.to_owned().into(),
     );
     fframes::svgr!(<g>{body.draw()}{text}</g>)
-}
-
-pub(super) fn stroke(path: BezPath, color: Color, width: f32, opacity: f32) -> Shape {
-    Shape {
-        path,
-        fill: None,
-        stroke: Some(color),
-        stroke_width: width,
-        dash: None,
-        opacity,
-    }
-}
-
-fn tip(at: Point, dir: Vec2, length: f64, color: Color, opacity: f32) -> Shape {
-    let side = Vec2::new(-dir.y, dir.x) * (length * 0.45);
-    let base = at - dir * length;
-    let mut path = BezPath::new();
-    path.move_to(at);
-    path.line_to(base + side);
-    path.line_to(base - side);
-    path.close_path();
-    Shape {
-        path,
-        fill: Some(color),
-        stroke: None,
-        stroke_width: 0.0,
-        dash: None,
-        opacity,
-    }
 }
 
 /// A linked list: each node a box with its value and a link cell, `node` by `height` pixels
