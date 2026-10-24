@@ -1,6 +1,8 @@
 //! The physics kit's second set: fields of charges and currents, lenses, rigid bodies,
 //! waves and circuit symbols.
 
+use std::sync::OnceLock;
+
 use fframes_kit::prelude::*;
 
 use super::core::title;
@@ -87,6 +89,35 @@ fn lens<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ..ui.defaults()
     });
     svgr!(<g>{figure}{head}</g>)
+}
+
+/// A double and a triple pendulum released high, the last bobs leaving trails.
+fn multi_pendulum<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static DOUBLE: OnceLock<MultiPendulumMotion> = OnceLock::new();
+    static TRIPLE: OnceLock<MultiPendulumMotion> = OnceLock::new();
+    let double =
+        DOUBLE.get_or_init(|| MultiPendulumMotion::new(&[1.4, 1.1], &[1.0, 1.0], &[2.2, 2.6], 4.0));
+    let triple = TRIPLE.get_or_init(|| {
+        MultiPendulumMotion::new(&[1.0, 0.9, 0.8], &[1.0, 1.0, 1.0], &[1.8, 2.4, 2.9], 4.0)
+    });
+    let head = title(ui, "MultiPendulum");
+    let double = ui.show(MultiPendulum {
+        motion: Some(double),
+        pivot: (-3.2, 0.6),
+        enter: Some(Create::default().into()),
+        parts_enter: Some(fade(0.2)),
+        delay: 0.5,
+        ..ui.defaults()
+    });
+    let triple = ui.show(MultiPendulum {
+        motion: Some(triple),
+        pivot: (3.2, 0.6),
+        enter: Some(Create::default().into()),
+        parts_enter: Some(fade(0.2)),
+        delay: 0.5,
+        ..ui.defaults()
+    });
+    svgr!(<g>{double}{triple}{head}</g>)
 }
 
 /// Two sources a few wavelengths apart: their rings cross where the waves add up.
@@ -201,6 +232,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("ElectricField", 4.0, electric_field),
         GalleryScene::new("MagneticField", 2.0, magnetic_field),
         GalleryScene::new("Lens", 3.5, lens),
+        GalleryScene::new("MultiPendulum", 4.0, multi_pendulum),
         GalleryScene::new("RadialWave", 4.0, radial_wave),
         GalleryScene::new("Schematic", 3.5, schematic),
     ];

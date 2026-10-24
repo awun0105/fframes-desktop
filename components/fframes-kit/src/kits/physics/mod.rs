@@ -18,6 +18,7 @@ mod free_body;
 mod gas;
 mod lens;
 mod magneto;
+mod multi_pendulum;
 mod optics;
 mod orbit;
 mod pendulum;
@@ -37,6 +38,7 @@ pub use free_body::{Force, FreeBody};
 pub use gas::{GasBox, GasMotion, GasSetup, Heat};
 pub use lens::{Lens, LensShape, OpticalBench, Ray};
 pub use magneto::{MagneticField, Wire, magnetic_field};
+pub use multi_pendulum::{MultiPendulum, MultiPendulumMotion};
 pub use optics::{Optic, RayDiagram, Refraction};
 pub use orbit::{Orbit, eccentric_anomaly};
 pub use pendulum::{Pendulum, PendulumMotion};
@@ -74,12 +76,23 @@ pub(crate) fn rk4<const N: usize>(
     dt: f64,
     f: impl Fn([f64; N]) -> [f64; N],
 ) -> [f64; N] {
-    let add = |a: [f64; N], b: [f64; N], s: f64| std::array::from_fn(|i| a[i] + b[i] * s);
+    let next = rk4_slice(&y, dt, |s| f(std::array::from_fn(|i| s[i])).to_vec());
+    std::array::from_fn(|i| next[i])
+}
+
+/// [`rk4`] for a state whose length is known only at run time; `f` returns as many values
+/// as it is given.
+pub(crate) fn rk4_slice(y: &[f64], dt: f64, f: impl Fn(&[f64]) -> Vec<f64>) -> Vec<f64> {
+    let add = |a: &[f64], b: &[f64], s: f64| -> Vec<f64> {
+        a.iter().zip(b).map(|(a, b)| a + b * s).collect()
+    };
     let k1 = f(y);
-    let k2 = f(add(y, k1, dt / 2.0));
-    let k3 = f(add(y, k2, dt / 2.0));
-    let k4 = f(add(y, k3, dt));
-    std::array::from_fn(|i| y[i] + dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]))
+    let k2 = f(&add(y, &k1, dt / 2.0));
+    let k3 = f(&add(y, &k2, dt / 2.0));
+    let k4 = f(&add(y, &k3, dt));
+    (0..y.len())
+        .map(|i| y[i] + dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]))
+        .collect()
 }
 
 pub(crate) fn line(ui: &Ui<'_, '_, '_>, a: Point, b: Point, color: Color, width: f32) -> Shape {

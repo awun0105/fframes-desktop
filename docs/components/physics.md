@@ -78,6 +78,42 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+## MultiPendulum
+
+`MultiPendulumMotion::new(lengths, masses, angles, seconds)` solves a chain of point masses
+on massless rods released at rest, a double pendulum with two links, from the Lagrangian with
+Runge-Kutta at 240 steps a second. Keep it in the video, built once. Over 10 s a chaotic
+double pendulum keeps its energy within 1e-6 on the steps. Sampled between two steps, the
+blended state is off by about 1e-3, which does not show. `state(t)`, `positions(t)` (meters
+from the pivot, `y` up) and `energy(t)` give the numbers. `MultiPendulum` draws it from
+`pivot`, `scale` units per meter. With `trail` the last bob leaves a trail, sampled like
+`TracedPath`, over the last `trail_time` seconds. Gallery scene: `MultiPendulum`.
+
+```rust
+use fframes_kit::prelude::*;
+
+struct Video {
+    chain: MultiPendulumMotion,
+}
+
+impl Video {
+    fn new() -> Self {
+        Self {
+            chain: MultiPendulumMotion::new(&[1.4, 1.1], &[1.0, 1.0], &[2.2, 2.6], 10.0),
+        }
+    }
+
+    fn figure<'a>(&'a self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        ui.show(MultiPendulum {
+            motion: Some(&self.chain),
+            pivot: (0.0, 1.0),
+            trail_time: Some(2.0),
+            ..ui.defaults()
+        })
+    }
+}
+```
+
 ## SpringMass
 
 `SpringMotion::new(stiffness, mass, x0, seconds)` lets a block go from rest `x0` meters from
