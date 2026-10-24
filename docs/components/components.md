@@ -836,6 +836,55 @@ not yet available. They need `feDisplacementMap`, which the CPU backend draws wr
 `svgr` crate applies its `scale` twice and reads the map premultiplied (resvg issue 1160).
 They come back when a fixed `svgr` arrives with an upstream update.
 
+### Pattern overlays
+
+| Component | Props (defaults) | What it does |
+| --- | --- | --- |
+| `Scanlines` | `amount` (0.15), `spacing` (4), `thickness` (1), `offset`, `premultiply`, `area` | CRT lines: the lines light the picture and the gaps darken it; animate `offset` to roll them |
+| `DotGrid` | `dot_size` (16), `grid_size` (20), `invert` | the children seen through round holes, or with the holes cut out |
+| `Checkerboard` | `colors` (two pale blues), `cell_size` (80), `gap` (0), `angle`, `offset_x`, `offset_y`, `mask_to_source_alpha` | cells over the children |
+| `Gridlines` | `grid_size` (64), `line_width` (2), `line_color` (white), `background_color` (transparent), `rotation`, `offset_x`, `offset_y`, `mask_to_source_alpha` | a square grid over the children |
+| `Lines` | `colors`, `direction` (`Horizontal` or `Vertical`), `thickness` (40), `gap` (0), `angle`, `offset`, `mask_to_source_alpha` | stripes over the children |
+| `Rings` | `colors`, `center` (0.5, 0.5), `thickness` (40), `gap` (0), `offset`, `mask_to_source_alpha` | concentric rings; animate `offset` to make them expand |
+| `LinearGradientTint` | `start` (0, 0.5), `end` (1, 0.5), `start_color` (black), `end_color` (white), `amount` (0.5) | the colours pulled towards a gradient, the alpha kept |
+| `LinearGradient` | `start`, `end`, `start_color`, `end_color` | a gradient filling the area; it replaces the layer, so it has no children |
+| `Vignette` | `amount` (0.5), `radius` (0.65), `center`, `feather` (0.35), `roundness` (1), `color` (black), `mode` (`Color` or `Alpha`) | darkened edges, or edges fading out with `Alpha` |
+
+Positions such as `start`, `end` and `center` run from 0 to 1 across `area` (1920 by 1080
+by default). With `mask_to_source_alpha` a pattern covers only the opaque parts of the
+children, which then render twice; without it, it covers the whole area.
+
+The patterns are drawn as paths, not SVG `<pattern>` tiles: the backends round a small tile
+to whole pixels differently, so its repeats drift apart across the picture. One pattern draws
+at most `MAX_PATTERN_SHAPES` (20,000) stripes, cells or dots, and a finer one is drawn
+coarser. `Rings` draws at most `MAX_RINGS` (1,024). As with noise, keep the lines and dots at
+a few output pixels where the backends must agree.
+
+`Vignette` is drawn with gradients, so it needs no filter. Its curve is a smoothstep sampled
+at 16 points. Between `roundness` 0 and 1 the rectangle and the ellipse are mixed; Remotion
+mixes the distances instead, so those shapes differ a little. `Gridlines` cannot tilt in 3D:
+Remotion's `rotationX`, `rotationY` and `perspective` are not available.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn crt<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let roll = 8.0 * ui.seconds();
+    ui.show(Vignette {
+        amount: Anim::Fixed(0.7),
+        children: children(move |ui| {
+            ui.show(Scanlines {
+                amount: Anim::Fixed(0.3),
+                offset: roll,
+                children: children(|_| svgr!(<rect x="0" y="0" width="1920" height="1080" fill="#2a9d8f" />)),
+                ..ui.defaults()
+            })
+        }),
+        ..ui.defaults()
+    })
+}
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`

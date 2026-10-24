@@ -13,6 +13,8 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("EdgeEffects", 2.0, edge_effects),
         // the static flickers, the clouds evolve and the dots ride the noise
         GalleryScene::new("NoiseEffects", 2.0, noise_effects),
+        // the scanlines roll, the grid turns and the rings expand over the scene
+        GalleryScene::new("OverlayEffects", 2.0, overlay_effects),
     ]
 }
 
@@ -399,5 +401,148 @@ fn noise_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ];
     let figure = grid(ui, 4, cells);
     let head = title(ui, "Noise");
+    svgr!(<g>{figure}{head}</g>)
+}
+
+fn overlay_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    let stripes = vec![
+        Color::rgba(255, 255, 255, 150),
+        Color::rgba(29, 78, 137, 150),
+    ];
+    let cells = vec![
+        (
+            "Scanlines",
+            ui.show(Scanlines {
+                amount: Anim::Fixed(0.5),
+                spacing: 36.0,
+                thickness: 14.0,
+                offset: 36.0 * t,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "DotGrid",
+            ui.show(DotGrid {
+                dot_size: 44.0,
+                grid_size: 56.0,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "DotGrid invert",
+            on_backdrop(ui.show(DotGrid {
+                dot_size: 44.0,
+                grid_size: 56.0,
+                invert: true,
+                key: Some("invert"),
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Checkerboard",
+            on_backdrop(ui.show(Checkerboard {
+                cell_size: 90.0,
+                gap: 14.0,
+                angle: 15.0,
+                mask_to_source_alpha: true,
+                children: children(logo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Gridlines",
+            ui.show(Gridlines {
+                grid_size: 140.0,
+                line_width: 10.0,
+                rotation: 10.0 * t,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Lines",
+            ui.show(Lines {
+                colors: stripes,
+                thickness: 50.0,
+                gap: 40.0,
+                angle: -30.0,
+                offset: 45.0 * t,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Rings",
+            on_backdrop(ui.show(Rings {
+                gap: 24.0,
+                offset: 64.0 * t,
+                mask_to_source_alpha: true,
+                children: children(logo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "LinearGradientTint",
+            ui.show(LinearGradientTint {
+                start_color: Color::rgb(230, 57, 70),
+                end_color: Color::rgb(29, 78, 137),
+                amount: Anim::Fixed(0.6),
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "LinearGradient",
+            ui.show(LinearGradient {
+                start: (0.0, 0.0),
+                end: (1.0, 1.0),
+                start_color: Color::rgb(42, 157, 143),
+                end_color: Color::rgb(246, 211, 101),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Vignette",
+            ui.show(Vignette {
+                amount: Anim::Fixed(0.9),
+                radius: 0.4,
+                feather: 0.5,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Vignette square",
+            ui.show(Vignette {
+                amount: Anim::Fixed(1.0),
+                radius: 0.6,
+                feather: 0.3,
+                roundness: 0.0,
+                color: Color::rgb(230, 57, 70),
+                key: Some("square"),
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Vignette alpha",
+            on_backdrop(ui.show(Vignette {
+                amount: Anim::Fixed(1.0),
+                radius: 0.3,
+                feather: 0.6,
+                roundness: 0.5,
+                mode: VignetteMode::Alpha,
+                key: Some("alpha"),
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+    ];
+    let figure = grid(ui, 4, cells);
+    let head = title(ui, "Pattern overlays");
     svgr!(<g>{figure}{head}</g>)
 }

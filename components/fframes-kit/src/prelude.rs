@@ -18,11 +18,12 @@ pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
 #[cfg(feature = "skia")]
 pub use crate::effects::ShaderNoise;
 pub use crate::effects::{
-    BevelAlpha, Blur, Brightness, CameraMotionBlur, ColorCorrection, ColorKey, ColorMatrix,
-    ColorStack, Contrast, Curves, Duotone, Emboss, Exposure, FractalNoise, FractalType, Grayscale,
-    HueRotate, Invert, Levels, LightLeak, LongShadows, Lut, Noise, Outline, RoughenEdges,
-    Saturation, ShadowsHighlights, Shrinkwrap, ThermalVision, Tint, Trail, Vibrance, WhiteBalance,
-    WhiteNoise,
+    BevelAlpha, Blur, Brightness, CameraMotionBlur, Checkerboard, ColorCorrection, ColorKey,
+    ColorMatrix, ColorStack, Contrast, Curves, DotGrid, Duotone, Emboss, Exposure, FractalNoise,
+    FractalType, Grayscale, Gridlines, HueRotate, Invert, Levels, LightLeak, LineDirection,
+    LinearGradient, LinearGradientTint, Lines, LongShadows, Lut, Noise, Outline, Rings,
+    RoughenEdges, Saturation, Scanlines, ShadowsHighlights, Shrinkwrap, ThermalVision, Tint, Trail,
+    Vibrance, Vignette, VignetteMode, WhiteBalance, WhiteNoise,
 };
 pub use crate::explain::{
     Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, Matrix, NumberLine, NumberPlane,
