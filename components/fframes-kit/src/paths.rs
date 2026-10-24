@@ -221,6 +221,27 @@ pub fn parse_path(d: &str) -> Result<BezPath, kurbo::SvgParseError> {
     BezPath::from_svg(d)
 }
 
+/// A parsed SVG path with its absolute transform applied, and that transform.
+pub(crate) fn from_usvgr(path: &fframes::usvgr::Path) -> (BezPath, Affine) {
+    use fframes::usvgr::tiny_skia_path::PathSegment;
+
+    let t = path.abs_transform();
+    let at = Affine::new([t.sx, t.ky, t.kx, t.sy, t.tx, t.ty].map(f64::from));
+    let p =
+        |p: fframes::usvgr::tiny_skia_path::Point| at * Point::new(f64::from(p.x), f64::from(p.y));
+    let mut out = BezPath::new();
+    for segment in path.data().segments() {
+        match segment {
+            PathSegment::MoveTo(a) => out.move_to(p(a)),
+            PathSegment::LineTo(a) => out.line_to(p(a)),
+            PathSegment::QuadTo(a, b) => out.quad_to(p(a), p(b)),
+            PathSegment::CubicTo(a, b, c) => out.curve_to(p(a), p(b), p(c)),
+            PathSegment::Close => out.close_path(),
+        }
+    }
+    (out, at)
+}
+
 /// SVG path data (`d`) for the path.
 pub fn serialize(path: &BezPath) -> String {
     path.to_svg()

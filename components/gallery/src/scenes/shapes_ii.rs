@@ -1,6 +1,9 @@
 //! Manim's second set of shapes, one scene per group.
 
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::{
+    f32::consts::{FRAC_PI_2, PI},
+    sync::OnceLock,
+};
 
 use fframes_kit::{kurbo, prelude::*, shapes::Segment};
 
@@ -19,6 +22,12 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Angles", 2.0, angles),
         // the polygrams are created and the label is written into the widest place
         GalleryScene::new("Polygrams", 2.0, polygrams),
+        // the braces are created and their labels fade in at the tips
+        GalleryScene::new("Braces", 2.0, braces),
+        // a circle and a square combined four ways, the results grow from their centers
+        GalleryScene::new("Boolean", 2.0, boolean),
+        // one SVG file drawn three ways and a path from path data, written on
+        GalleryScene::new("SvgShape", 2.0, svg_shape),
     ]
 }
 
@@ -507,4 +516,236 @@ fn polygrams<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     .map(|(text, x, y)| caption(ui, text, x, y))
     .collect();
     svgr!(<g>{head}{polygram}{star}{hull}{dots}{cutout}{screen}{labeled}{captions}</g>)
+}
+
+fn braces<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Braces");
+    let enter = Some(create());
+    let muted = ui.theme.colors.muted;
+    let line = ui.show(Line {
+        x1: 160.0,
+        y1: 400.0,
+        x2: 760.0,
+        y2: 400.0,
+        stroke: Some(muted),
+        ..ui.defaults()
+    });
+    let below = ui.show(BraceLabel {
+        brace: Brace {
+            x1: 160.0,
+            y1: 430.0,
+            x2: 760.0,
+            y2: 430.0,
+            depth: 30.0,
+            enter,
+            ..ui.defaults()
+        },
+        text: "BraceLabel, BraceText".into(),
+        label_enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    let above = ui.show(BraceLabel {
+        brace: Brace {
+            x1: 160.0,
+            y1: 370.0,
+            x2: 460.0,
+            y2: 370.0,
+            depth: -30.0,
+            enter,
+            ..ui.defaults()
+        },
+        text: "depth < 0".into(),
+        label_enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    // between two points at an angle
+    let slanted = ui.show(Brace {
+        x1: 240.0,
+        y1: 900.0,
+        x2: 640.0,
+        y2: 640.0,
+        depth: 30.0,
+        enter,
+        ..ui.defaults()
+    });
+    let (a, b) = (
+        ui.show(Dot {
+            cx: 240.0,
+            cy: 900.0,
+            ..ui.defaults()
+        }),
+        ui.show(Dot {
+            cx: 640.0,
+            cy: 640.0,
+            ..ui.defaults()
+        }),
+    );
+    let circle = ui.show(Circle {
+        cx: 1300.0,
+        cy: 560.0,
+        radius: 200.0,
+        stroke: Some(muted),
+        ..ui.defaults()
+    });
+    let outer = ArcBrace {
+        cx: 1300.0,
+        cy: 560.0,
+        radius: 200.0,
+        start_angle: 0.3,
+        angle: 1.6,
+        depth: 30.0,
+        enter,
+        ..ui.defaults()
+    };
+    let inner = ArcBrace {
+        start_angle: 3.6,
+        angle: 1.4,
+        inside: true,
+        ..outer.clone()
+    };
+    let labels: Vec<Svgr<'a>> = [(&outer, "ArcBrace"), (&inner, "inside")]
+        .into_iter()
+        .map(|(brace, text)| {
+            let (x, y) = brace.tip();
+            // beyond the tip: outward, or toward the center for the inside brace
+            let side = if brace.inside { -1.0 } else { 1.0 };
+            ui.show(Label {
+                text: text.into(),
+                x,
+                y,
+                direction: Anchor::toward(
+                    side * f64::from(x - 1300.0),
+                    side * f64::from(y - 560.0),
+                ),
+                enter: Some(FadeIn::default()),
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let (outer, inner) = (ui.show(outer), ui.show(inner));
+    let captions: Vec<Svgr<'a>> = [("Brace between two points", 440.0, 960.0)]
+        .into_iter()
+        .map(|(text, x, y)| caption(ui, text, x, y))
+        .collect();
+    svgr!(<g>{head}{line}{below}{above}{slanted}{a}{b}{circle}{outer}{inner}{labels}{captions}</g>)
+}
+
+fn boolean<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Boolean operations");
+    let muted = ui.theme.colors.muted;
+    let enter = Some(GrowFromCenter::default().into());
+    let inputs = |x: f32| {
+        let circle = Circle {
+            cx: x - 40.0,
+            cy: 520.0,
+            radius: 110.0,
+            ..Circle::default()
+        }
+        .path();
+        let square = kurbo::Rect::new(f64::from(x) - 30.0, 450.0, f64::from(x) + 150.0, 630.0);
+        (circle, kurbo::Shape::to_path(&square, 0.1))
+    };
+    let mut drawn: Vec<Svgr<'a>> = Vec::new();
+    for (i, name) in ["Union", "Intersection", "Difference", "Exclusion"]
+        .into_iter()
+        .enumerate()
+    {
+        let x = 260.0 + i as f32 * 440.0;
+        let (a, b) = inputs(x);
+        drawn.push(match name {
+            "Union" => ui.show(Union {
+                paths: vec![a.clone(), b.clone()],
+                enter,
+                ..ui.defaults()
+            }),
+            "Intersection" => ui.show(Intersection {
+                paths: vec![a.clone(), b.clone()],
+                enter,
+                ..ui.defaults()
+            }),
+            "Difference" => ui.show(Difference {
+                subject: a.clone(),
+                clip: b.clone(),
+                enter,
+                ..ui.defaults()
+            }),
+            _ => ui.show(Exclusion {
+                subject: a.clone(),
+                clip: b.clone(),
+                enter,
+                ..ui.defaults()
+            }),
+        });
+        for path in [a, b] {
+            drawn.push(ui.show(DashedVMobject {
+                path,
+                num_dashes: 40,
+                stroke: Some(muted),
+                ..ui.defaults()
+            }));
+        }
+        drawn.push(caption(ui, name, x + 20.0, 720.0));
+    }
+    svgr!(<g>{head}{drawn}</g>)
+}
+
+/// The sample drawing, parsed once.
+fn lighthouse() -> &'static SvgShape {
+    static LIGHTHOUSE: OnceLock<SvgShape> = OnceLock::new();
+    LIGHTHOUSE.get_or_init(|| SvgShape::parse(include_str!("lighthouse.svg")).unwrap_or_default())
+}
+
+fn svg_shape<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "SVG shapes");
+    let c = ui.theme.colors;
+    let write = Some(Write::default().into());
+    let file = ui.show(SvgShape {
+        cx: 300.0,
+        cy: 520.0,
+        height: Some(400.0),
+        enter: write,
+        ..lighthouse().clone()
+    });
+    let painted = lighthouse()
+        .clone()
+        .fill_part("stripes", c.accent)
+        .fill_part("roof", c.accent)
+        .fill_part("light", c.highlight);
+    let painted = ui.show(SvgShape {
+        cx: 760.0,
+        cy: 520.0,
+        height: Some(400.0),
+        enter: write,
+        ..painted
+    });
+    let tower = lighthouse()
+        .clone()
+        .only(|_, p| !matches!(p.id.as_str(), "sea" | "beam"));
+    let tower = ui.show(SvgShape {
+        cx: 1180.0,
+        cy: 520.0,
+        height: Some(400.0),
+        stroke: None,
+        enter: write,
+        ..tower.stroke_part("tower", c.muted)
+    });
+    let heart = paths::parse_path(
+        "M1600 420 C1600 360 1680 340 1700 400 C1720 340 1800 360 1800 420 C1800 500 1700 560 1700 600 C1700 560 1600 500 1600 420 Z",
+    )
+    .unwrap_or_default();
+    let heart = ui.show(SvgPath {
+        path: heart,
+        enter: Some(create()),
+        ..ui.defaults()
+    });
+    let captions: Vec<Svgr<'a>> = [
+        ("SvgShape", 300.0, 790.0),
+        ("fill_part(\"stripes\", ..)", 760.0, 790.0),
+        ("only(..), stroke_part", 1180.0, 790.0),
+        ("SvgPath", 1700.0, 790.0),
+    ]
+    .into_iter()
+    .map(|(text, x, y)| caption(ui, text, x, y))
+    .collect();
+    svgr!(<g>{head}{file}{painted}{tower}{heart}{captions}</g>)
 }

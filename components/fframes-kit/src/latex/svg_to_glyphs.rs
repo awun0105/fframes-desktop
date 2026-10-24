@@ -1,7 +1,7 @@
 //! The SVG from `dvisvgm --no-fonts` as one path per glyph, rule and stroke.
 
-use fframes::usvgr::{self, Node, Paint, fontdb, tiny_skia_path::PathSegment};
-use kurbo::{Affine, BezPath, Point};
+use fframes::usvgr::{self, Node, Paint, fontdb};
+use kurbo::BezPath;
 
 use super::TexError;
 
@@ -30,21 +30,6 @@ fn rgb(paint: &Paint) -> [u8; 3] {
     }
 }
 
-fn to_bez(path: &usvgr::tiny_skia_path::Path, at: Affine) -> BezPath {
-    let p = |p: usvgr::tiny_skia_path::Point| at * Point::new(f64::from(p.x), f64::from(p.y));
-    let mut out = BezPath::new();
-    for segment in path.segments() {
-        match segment {
-            PathSegment::MoveTo(a) => out.move_to(p(a)),
-            PathSegment::LineTo(a) => out.line_to(p(a)),
-            PathSegment::QuadTo(a, b) => out.quad_to(p(a), p(b)),
-            PathSegment::CubicTo(a, b, c) => out.curve_to(p(a), p(b), p(c)),
-            PathSegment::Close => out.close_path(),
-        }
-    }
-    out
-}
-
 fn walk(group: &usvgr::Group, part: Option<usize>, label: Option<&str>, out: &mut Vec<TexGlyph>) {
     let part = group
         .id()
@@ -56,11 +41,10 @@ fn walk(group: &usvgr::Group, part: Option<usize>, label: Option<&str>, out: &mu
         match node {
             Node::Group(g) => walk(g, part, label, out),
             Node::Path(path) => {
-                let t = path.abs_transform();
-                let at = Affine::new([t.sx, t.ky, t.kx, t.sy, t.tx, t.ty].map(f64::from));
+                let (bez, at) = crate::paths::from_usvgr(path);
                 let scale = at.determinant().abs().sqrt() as f32;
                 out.push(TexGlyph {
-                    path: to_bez(path.data(), at),
+                    path: bez,
                     fill: path.fill().map(|f| rgb(f.paint())),
                     stroke: path
                         .stroke()

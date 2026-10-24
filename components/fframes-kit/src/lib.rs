@@ -63,6 +63,10 @@
 //! | `TangentLine` | [`TangentLine`](shapes::TangentLine) for any path; `kits::math::Tangent` (feature `math`) for a function graph on `Axes` |
 //! | `Polygram`, `RegularPolygram`, `ConvexHull`, `Cutout`, `ScreenRectangle`, `FullScreenRectangle`, `LabeledPolygram` | the same names in [`shapes`] ([`convex_hull`](shapes::convex_hull), [`polylabel`](shapes::polylabel)) |
 //! | `ArrowTriangleTip`, `ArrowTriangleFilledTip`, `ArrowCircleTip`, `ArrowCircleFilledTip`, `ArrowSquareTip`, `ArrowSquareFilledTip`, `StealthTip` | [`ArrowTip`](shapes::ArrowTip) `::Triangle`, `::TriangleFilled`, `::Circle`, `::CircleFilled`, `::Square`, `::SquareFilled`, `::Stealth` in an arrow's `tip_start` / `tip_end` |
+//! | `BraceBetweenPoints`, `BraceText`, `ArcBrace` | [`Brace`](shapes::Brace) (between its two points; a negative `depth` turns it over), [`BraceLabel`](label::BraceLabel), [`ArcBrace`](shapes::ArcBrace) with [`ArcBrace::tip`](shapes::ArcBrace::tip) |
+//! | `Union`, `Intersection`, `Difference`, `Exclusion` | the same names in [`shapes`]; [`boolean`](shapes::boolean) for one path (nonzero fill, curves flattened at 0.25 px) |
+//! | `SVGMobject`, `VMobjectFromSVGPath` | [`SvgShape`](shapes::SvgShape) from [`SvgShape::parse`](shapes::SvgShape::parse), parts by id or index; [`SvgPath`](shapes::SvgPath) with [`paths::parse_path`] |
+//! | `ImageMobject` | `<image href={ctx.get_image(..)?.href()} ..>`, framed by [`PhotoFrame`](decor::PhotoFrame), zoomed by [`KenBurns`](media::KenBurns) |
 //! | `Text` as a `VMobject` | [`TextPath`](shapes::TextPath) (glyph outlines) |
 //! | `Create`, `Uncreate`, `DrawBorderThenFill`, `Write` | [`animate`], in a shape's `enter` / `exit` prop |
 //! | `GrowFromCenter`, `GrowFromPoint`, `GrowArrow`, `SpinInFromNothing` | [`animate`], `enter` |

@@ -137,5 +137,5 @@ geometry name maps to a kit construct.
 - [x] Matchers and dashes
 - [x] Arcs, curves, dots and labels
 - [x] Angles, polygrams and tips (with `LabeledPolygram`, which needs `Polygram`)
-- [ ] Braces, boolean operations, SVG import, image mapping
+- [x] Braces, boolean operations, SVG import, image mapping
 - [ ] Gallery scenes, e2e frames, docs and mapping rows

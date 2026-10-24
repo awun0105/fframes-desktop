@@ -17,6 +17,8 @@ kurbo = "0.13"
 # The chemistry kit: SMILES to 2D depictions, and the periodic table's data.
 chematic = { version = "1.2.1", default-features = false, features = ["smiles", "depict"] }
 rust-sugiyama = "0.4.0"
+# Boolean operations on shapes (Union, Intersection, Difference, Exclusion).
+i_overlay = "9.1"
 mendeleev = { version = "0.8.4", default-features = false, features = ["symbol", "name", "atomic_number", "atomic_weight", "period", "group_number", "element_list", "electronic_configuration", "atomic_radius", "ionization_energy"] }
 # Pinned like svgr-macro.
 proc-macro2 = "1"

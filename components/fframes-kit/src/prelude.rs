@@ -90,14 +90,15 @@ pub use crate::props::{Editable, EditableExt};
 #[cfg(feature = "studio")]
 pub use crate::props::{PropChoice, PropValue, Props, PropsStore};
 pub use crate::shapes::{
-    Angle, AnnotationDot, AnnularSector, Annulus, Arc, ArcBetweenPoints, ArcPolygon,
-    ArcPolygonFromArcs, Arrow, ArrowTip, BackgroundRectangle, BlockArrow, Brace, Callout, Circle,
-    ConvexHull, Cross, CubicBezier, CurvedArrow, CurvedDoubleArrow, CurvesAsSubmobjects, Cutout,
-    DashedLine, DashedVMobject, Dot, DoubleArrow, Elbow, Ellipse, FullScreenRectangle, Heart,
-    LabeledArrow, LabeledDot, LabeledLine, LabeledPolygram, Line, Pie, Polygon, Polygram, Rect,
-    Rectangle, RegularPolygon, RegularPolygram, RightAngle, RoundedRectangle, SMALL_BUFF,
-    ScreenRectangle, Sector, ShapeLabel, Spark, Square, Star, SurroundingRectangle, TangentLine,
-    TangentialArc, TextPath, Triangle, Underline, Vector,
+    Angle, AnnotationDot, AnnularSector, Annulus, Arc, ArcBetweenPoints, ArcBrace, ArcPolygon,
+    ArcPolygonFromArcs, Arrow, ArrowTip, BackgroundRectangle, BlockArrow, BooleanOp, Brace,
+    Callout, Circle, ConvexHull, Cross, CubicBezier, CurvedArrow, CurvedDoubleArrow,
+    CurvesAsSubmobjects, Cutout, DashedLine, DashedVMobject, Difference, Dot, DoubleArrow, Elbow,
+    Ellipse, Exclusion, FullScreenRectangle, Heart, Intersection, LabeledArrow, LabeledDot,
+    LabeledLine, LabeledPolygram, Line, Pie, Polygon, Polygram, Rect, Rectangle, RegularPolygon,
+    RegularPolygram, RightAngle, RoundedRectangle, SMALL_BUFF, ScreenRectangle, Sector, ShapeLabel,
+    Spark, Square, Star, SurroundingRectangle, SvgPath, SvgShape, TangentLine, TangentialArc,
+    TextPath, Triangle, Underline, Union, Vector,
 };
 pub use crate::sim::{Lerp, Sim};
 pub use crate::text::{

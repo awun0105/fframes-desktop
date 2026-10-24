@@ -23,12 +23,14 @@ mod angles;
 mod arcs;
 mod arrows;
 mod basic;
+mod boolean;
 mod brace;
 mod dashed;
 mod labeled;
 mod matchers;
 mod polygram;
 mod remotion;
+mod svg_import;
 
 pub use crate::text_outline::TextPath;
 pub use angles::{Angle, Elbow, RightAngle, Segment, TangentLine};
@@ -42,7 +44,10 @@ pub use basic::{
     Annulus, Arc, Circle, DashedLine, Dot, Ellipse, Line, Polygon, Rectangle, RegularPolygon,
     RoundedRectangle, Sector, Square, Star, Triangle,
 };
-pub use brace::Brace;
+pub use boolean::{
+    BOOLEAN_TOLERANCE, BooleanOp, Difference, Exclusion, Intersection, Union, boolean,
+};
+pub use brace::{ArcBrace, Brace};
 pub use dashed::{CurvesAsSubmobjects, DashedVMobject, curves, dash_path};
 pub use labeled::{
     AnnotationDot, LabeledArrow, LabeledDot, LabeledLine, LabeledPolygram, ShapeLabel,
@@ -53,6 +58,7 @@ pub use polygram::{
     convex_hull, polylabel,
 };
 pub use remotion::{BlockArrow, Callout, Heart, Pie, Rect, Spark};
+pub use svg_import::{PartKey, SvgError, SvgPart, SvgPath, SvgShape, parse_svg};
 
 use fframes::Color;
 use kurbo::Point;

@@ -520,6 +520,63 @@ fn corner<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Braces, boolean operations, SVG and images
+
+| Shape | Props (defaults) | Source |
+| --- | --- | --- |
+| `ArcBrace` | `cx`, `cy`, `radius` (135), `start_angle` (-1), `angle` (2), `depth` (24), `inside` | Manim |
+| `Union`, `Intersection` | `paths: Vec<BezPath>`; filled | Manim |
+| `Difference`, `Exclusion` | `subject`, `clip`; filled | Manim |
+| `SvgShape` | `parts` (from `SvgShape::parse`), `cx`, `cy` (the canvas centre), `height` (270), `fill`, `stroke` | Manim `SVGMobject` |
+| `SvgPath` | `path` (from `paths::parse_path`) | Manim `VMobjectFromSVGPath` |
+
+`Brace` is Manim's `BraceBetweenPoints`: its tip points to the right of the direction from
+`(x1, y1)` to `(x2, y2)`, below for a brace drawn left to right; a negative `depth` or
+swapped points put it on the other side. `BraceLabel` is `BraceLabel` and `BraceText`.
+`ArcBrace` bends a brace round an arc, its tip outward, or toward the center when `inside`;
+`tip()` is where its label goes.
+
+The boolean operations read their paths with the nonzero fill rule, as SVG and Manim do, so
+a self-crossing star keeps its middle. Curves are flattened to `BOOLEAN_TOLERANCE` (0.25 px)
+and the result is straight lines, holes running against their outline. Combining detailed
+paths takes time: when the inputs do not change, compute the path once with
+`boolean(a, b, BooleanOp::..)` and keep it in `self`.
+
+`SvgShape::parse` reads an SVG file once, keep the result in `self`; a clone shares the
+parts. Every path is a part with the `id` of the path or of the nearest group around it, its
+fill and its outline, and keeps the file's paint unless `fill` or `stroke` replace it.
+`fill_part(key, color)` and `stroke_part(key, color)` paint the parts with an `id` or the
+one at an index, `only(|index, part| ..)` keeps some, and `part(key)` reads one. A gradient
+draws in its first stop's colour. Text and images in the file are not drawn: convert text to
+paths before export.
+
+Manim's `ImageMobject` is an `<image>` of a picture from the media; `PhotoFrame` adds a
+border and rounded corners, and `KenBurns` a slow zoom.
+
+```rust
+use fframes_kit::{paths, prelude::*};
+
+fn drawings<'a>(ui: &mut Ui<'a, '_, '_>, logo: &SvgShape) -> Svgr<'a> {
+    let accent = ui.theme.colors.accent;
+    let logo = ui.show(SvgShape {
+        cx: 400.0,
+        height: Some(300.0),
+        enter: Some(Write::default().into()),
+        ..logo.clone().fill_part("roof", accent)
+    });
+    let a = Circle { cx: 900.0, cy: 540.0, radius: 120.0, ..ui.defaults() }.path();
+    let b = Circle { cx: 1000.0, cy: 540.0, radius: 120.0, ..ui.defaults() }.path();
+    let lens = ui.show(Intersection { paths: vec![a, b], ..ui.defaults() });
+    let wave = paths::parse_path("M1200 540 C1300 440 1400 640 1500 540").unwrap_or_default();
+    let wave = ui.show(SvgPath { path: wave, ..ui.defaults() });
+    let Some(photo) = ui.ctx.get_image("photo.png") else {
+        return svgr!(<g>{logo}{lens}{wave}</g>);
+    };
+    let photo = svgr!(<image href={photo.href()} x="1560" y="440" width="320" height="200" />);
+    svgr!(<g>{logo}{lens}{wave}{photo}</g>)
+}
+```
+
 ## Geometry animations
 
 Animations are plain data. Put them into a shape's `enter`, `exit` or `emphasis` with
