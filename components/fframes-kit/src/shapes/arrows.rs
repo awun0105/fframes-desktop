@@ -1,12 +1,9 @@
 //! Manim's arrows: an outlined shaft with a filled triangular tip, in one path.
 
-use kurbo::{BezPath, Point, Shape as _, Vec2};
+use kurbo::{BezPath, Point, Vec2};
 
-use super::{
-    Paint, TOLERANCE,
-    basic::{arc, polar},
-    pt, shape,
-};
+use super::{Paint, basic::ChordArc, pt, shape};
+use crate::geometry::Shape;
 
 /// Appends a closed tip whose point is `point` and whose base is centered on `base`.
 fn tip(path: &mut BezPath, base: Point, point: Point, width: f64) {
@@ -116,6 +113,44 @@ shape! {
     }
 }
 
+/// An arrow drawn as its shaft, an outline only, and its filled tips: the first subpath of
+/// `shape`, then the others. One path would fill the inside of a curved shaft.
+pub(crate) fn shaft_and_tips(shape: Shape) -> Vec<Shape> {
+    crate::paths::get_subpaths(&shape.path)
+        .into_iter()
+        .enumerate()
+        .map(|(i, path)| Shape {
+            path,
+            fill: if i == 0 { None } else { shape.fill },
+            ..shape.clone()
+        })
+        .collect()
+}
+
+/// An arrow along the arc from `from` to `to` that turns by `angle`, with a tip at the end
+/// and at the start when `start` is set. The arc stops at the tips.
+pub(crate) fn curved(
+    from: Point,
+    to: Point,
+    angle: f64,
+    tip_length: f64,
+    tip_width: f64,
+    start: bool,
+) -> BezPath {
+    let Some(a) = ChordArc::new(from, to, angle) else {
+        return straight(from, to, tip_length, tip_width, start);
+    };
+    let ends = if start { 3.0 } else { 2.0 };
+    let tip_turn = (tip_length / a.radius).min(angle.abs() / ends) * angle.signum();
+    let first = if start { tip_turn } else { 0.0 };
+    let mut path = a.path(first, angle - tip_turn - first);
+    tip(&mut path, a.point(angle - tip_turn), to, tip_width);
+    if start {
+        tip(&mut path, a.point(tip_turn), from, tip_width);
+    }
+    path
+}
+
 shape! {
     /// An arrow along a circular arc that turns by `angle` from `(x1, y1)` to `(x2, y2)`,
     /// counterclockwise on screen for a positive angle (Manim `CurvedArrow`).
@@ -132,20 +167,10 @@ shape! {
     path(s) {
         let (from, to) = (pt(s.x1, s.y1), pt(s.x2, s.y2));
         let (tip_length, tip_width) = (f64::from(s.tip_length), f64::from(s.tip_width));
-        let theta = f64::from(s.angle);
-        let chord = to - from;
-        if theta.abs() < 1e-4 || chord.hypot() < 1e-9 {
-            return straight(from, to, tip_length, tip_width, false);
-        }
-        let radius = chord.hypot() / (2.0 * (theta / 2.0).sin().abs());
-        // a counterclockwise turn has the center on the left of the chord on screen
-        let left = Vec2::new(chord.y, -chord.x).normalize();
-        let center = from.midpoint(to) + left * (chord.hypot() / 2.0 / (theta / 2.0).tan());
-        let start = (-(from.y - center.y)).atan2(from.x - center.x);
-        let tip_turn = (tip_length / radius).min(theta.abs() / 2.0) * theta.signum();
-        let mut path = arc(center, radius, start, theta - tip_turn).to_path(TOLERANCE);
-        tip(&mut path, polar(center, radius, start + theta - tip_turn), to, tip_width);
-        path
+        curved(from, to, f64::from(s.angle), tip_length, tip_width, false)
+    }
+    parts(s) {
+        shaft_and_tips(s.shape())
     }
 }
 

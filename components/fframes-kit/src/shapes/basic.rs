@@ -16,6 +16,48 @@ pub(crate) fn arc(center: Point, radius: f64, start: f64, sweep: f64) -> kurbo::
     kurbo::Arc::new(center, (radius, radius), -start, -sweep, 0.0)
 }
 
+/// A circular arc through two points: its center, radius, start angle and turn (all as
+/// [`arc`] takes them).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ChordArc {
+    pub center: Point,
+    pub radius: f64,
+    pub start: f64,
+    pub angle: f64,
+}
+
+impl ChordArc {
+    /// The arc from `from` to `to` that turns by `angle`, counterclockwise on screen for a
+    /// positive angle (Manim `ArcBetweenPoints`); `None` when it is a straight line.
+    pub fn new(from: Point, to: Point, angle: f64) -> Option<Self> {
+        let chord = to - from;
+        if angle.abs() < 1e-4 || chord.hypot() < 1e-9 {
+            return None;
+        }
+        let radius = chord.hypot() / (2.0 * (angle / 2.0).sin().abs());
+        // a counterclockwise turn has the center on the left of the chord on screen
+        let left = Vec2::new(chord.y, -chord.x).normalize();
+        let center = from.midpoint(to) + left * (chord.hypot() / 2.0 / (angle / 2.0).tan());
+        let start = (-(from.y - center.y)).atan2(from.x - center.x);
+        Some(Self {
+            center,
+            radius,
+            start,
+            angle,
+        })
+    }
+
+    /// The point `turn` radians along the arc from its start.
+    pub fn point(&self, turn: f64) -> Point {
+        polar(self.center, self.radius, self.start + turn)
+    }
+
+    /// The arc as a path from `from` by `turn` (part or all of `angle`).
+    pub fn path(&self, from: f64, turn: f64) -> BezPath {
+        arc(self.center, self.radius, self.start + from, turn).to_path(TOLERANCE)
+    }
+}
+
 /// A closed path through `points`.
 pub(crate) fn closed(points: impl IntoIterator<Item = Point>) -> BezPath {
     let mut path = BezPath::new();

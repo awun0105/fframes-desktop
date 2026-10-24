@@ -19,14 +19,20 @@
 //! }
 //! ```
 
+mod arcs;
 mod arrows;
 mod basic;
 mod brace;
 mod dashed;
+mod labeled;
 mod matchers;
 mod remotion;
 
 pub use crate::text_outline::TextPath;
+pub use arcs::{
+    AnnularSector, ArcBetweenPoints, ArcPolygon, ArcPolygonFromArcs, CubicBezier,
+    CurvedDoubleArrow, TangentialArc,
+};
 pub(crate) use arrows::straight;
 pub use arrows::{Arrow, CurvedArrow, DoubleArrow, Vector};
 pub use basic::{
@@ -35,6 +41,7 @@ pub use basic::{
 };
 pub use brace::Brace;
 pub use dashed::{CurvesAsSubmobjects, DashedVMobject, curves, dash_path};
+pub use labeled::{AnnotationDot, LabeledArrow, LabeledDot, LabeledLine, ShapeLabel};
 pub use matchers::{BackgroundRectangle, Cross, SMALL_BUFF, SurroundingRectangle, Underline};
 pub use remotion::{BlockArrow, Callout, Heart, Pie, Rect, Spark};
 
@@ -88,7 +95,8 @@ pub(crate) fn pt(x: f32, y: f32) -> Point {
 
 /// A shape component: the geometry fields given here plus `fill`, `stroke`, `stroke_width`,
 /// `dash`, `opacity`, `enter`, `exit` and `emphasis`, with `Themed`, `Default`, `Geometry`
-/// and `Component` impls. `path(s)` builds the outline from the props `s`.
+/// and `Component` impls. `path(s)` builds the outline from the props `s`; an optional
+/// `parts(s)` splits the drawn shape into parts with their own paint (one by default).
 macro_rules! shape {
     (@dash) => {
         None
@@ -96,6 +104,13 @@ macro_rules! shape {
     (@dash $dash:expr) => {
         Some($dash)
     };
+    (@parts $self:ident) => {
+        vec![$self.shape()]
+    };
+    (@parts $self:ident $ps:ident $parts:block) => {{
+        let $ps = &$self;
+        $parts
+    }};
     (
         $(#[$meta:meta])*
         $name:ident($t:ident) {
@@ -104,6 +119,7 @@ macro_rules! shape {
         paint: $paint:expr;
         $(dash: $dash:expr;)?
         path($s:ident) $path:block
+        $(parts($ps:ident) $parts:block)?
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq)]
@@ -170,9 +186,11 @@ macro_rules! shape {
 
         impl<'a> $crate::ui::Component<'a> for $name {
             fn render(self, ui: &mut $crate::ui::Ui<'a, '_, '_>) -> fframes::Svgr<'a> {
+                let parts: Vec<$crate::geometry::Shape> =
+                    $crate::shapes::shape!(@parts self $($ps $parts)?);
                 $crate::animate::draw_animated(
                     ui,
-                    &[self.shape()],
+                    &parts,
                     self.enter.as_ref(),
                     self.exit.as_ref(),
                     self.emphasis.as_ref(),

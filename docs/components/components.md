@@ -365,7 +365,7 @@ accent outlines by default, Remotion shapes (and Manim's `Dot`, `Annulus`, `Sect
 | `Star` | `cx`, `cy`, `n`, `outer_radius`, `inner_radius` | Manim, Remotion |
 | `Arrow`, `DoubleArrow` | `x1`, `y1`, `x2`, `y2`, `tip_length`, `tip_width` | Manim |
 | `Vector` | `x`, `y`, `dx`, `dy`, `tip_length`, `tip_width` | Manim |
-| `CurvedArrow` | `x1`, `y1`, `x2`, `y2`, `angle`, `tip_length`, `tip_width` | Manim |
+| `CurvedArrow` | `x1`, `y1`, `x2`, `y2`, `angle`, `tip_length`, `tip_width`; the shaft an outline, the tip filled | Manim |
 | `Brace` | `x1`, `y1`, `x2`, `y2`, `depth`; `brace.tip()` places a label | Manim |
 | `Rect` | `cx`, `cy`, `width`, `height`, `corner_radius` | Remotion |
 | `BlockArrow` | `cx`, `cy`, `length`, `head_width`, `head_length`, `shaft_width`, `angle` | Remotion `Arrow` |
@@ -418,6 +418,52 @@ fn boxed<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let circle = Circle { cx: 960.0, cy: 540.0, radius: 120.0, ..ui.defaults() };
     let dashed = ui.show(DashedVMobject { path: circle.path(), num_dashes: 24, ..ui.defaults() });
     svgr!(<g>{word}{frame}{dashed}</g>)
+}
+```
+
+### Arcs, dots and labels
+
+| Shape | Props (defaults) | Source |
+| --- | --- | --- |
+| `ArcBetweenPoints` | `x1`, `y1`, `x2`, `y2`, `angle` (a quarter turn), `radius: Option<f32>` | Manim |
+| `CurvedDoubleArrow` | as `CurvedArrow`, a tip at both ends | Manim |
+| `TangentialArc` | `line1`, `line2` (two points each), `radius` (50), `corner` ((1, 1)) | Manim |
+| `CubicBezier` | `start`, `start_handle`, `end_handle`, `end` | Manim |
+| `AnnularSector` | `cx`, `cy`, `inner_radius`, `outer_radius`, `start_angle`, `angle`; filled | Manim |
+| `ArcPolygon` | `points`, `angle` (an eighth turn), `radius: Option<f32>` | Manim |
+| `ArcPolygonFromArcs` | `arcs: Vec<ArcBetweenPoints>` | Manim |
+| `AnnotationDot` | `cx`, `cy`, `radius` (10.4); accent fill, light outline | Manim |
+| `LabeledDot` | `label`, `cx`, `cy`, `radius: Option<f32>` (fits the label), `label_style`, `label_color` | Manim |
+| `LabeledLine`, `LabeledArrow` | `label`, `x1`, `y1`, `x2`, `y2`, `label_position` (0.5), `label_style`, `label_color`, `label_box` (true) | Manim |
+
+A positive `angle` turns counterclockwise on screen, so an arc drawn left to right sags below
+its chord. A `radius` takes the shorter arc of that radius instead, on the other side when it is
+negative. `TangentialArc` rounds the corner where two lines cross: `corner` picks the side of
+each line, `1` along its direction and `-1` against it. `ArcPolygonFromArcs` joins arcs that
+do not meet with straight lines.
+
+A `ShapeLabel` is `"text".into()`, drawn in a font from the media, or, with the `latex`
+feature, `(&formula).into()`. The label is drawn as outlines with the shape, so `Create` and
+`Write` draw both. Without a font file it falls back to a `<text>` element. The labelled lines
+put a box of the background colour behind the label, so the line stops at it. Curved arrows
+draw their shaft as an outline and their tips filled.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn distance<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let a = ui.show(LabeledDot { label: "A".into(), cx: 400.0, cy: 540.0, ..ui.defaults() });
+    let d = ui.show(LabeledLine {
+        label: "d = 5".into(),
+        x1: 440.0,
+        y1: 540.0,
+        x2: 1100.0,
+        y2: 540.0,
+        enter: Some(Write::default().into()),
+        ..ui.defaults()
+    });
+    let bend = ui.show(ArcBetweenPoints { x1: 400.0, y1: 600.0, x2: 1100.0, y2: 600.0, ..ui.defaults() });
+    svgr!(<g>{a}{d}{bend}</g>)
 }
 ```
 

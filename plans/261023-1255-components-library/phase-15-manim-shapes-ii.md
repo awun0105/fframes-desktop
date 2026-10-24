@@ -135,7 +135,7 @@ geometry name maps to a kit construct.
 
 - [x] Boolean-ops crate chosen and recorded
 - [x] Matchers and dashes
-- [ ] Arcs, curves, dots and labels
+- [x] Arcs, curves, dots and labels
 - [ ] Angles, polygrams and tips
 - [ ] Braces, boolean operations, SVG import, image mapping
 - [ ] Gallery scenes, e2e frames, docs and mapping rows

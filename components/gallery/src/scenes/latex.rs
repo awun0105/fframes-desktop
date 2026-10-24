@@ -20,8 +20,8 @@ macro_rules! scenes {
 }
 
 #[derive(Debug)]
-struct Formulas {
-    euler: Formula,
+pub(super) struct Formulas {
+    pub(super) euler: Formula,
     sum: Formula,
     pythagoras: Formula,
     solved: Formula,
@@ -67,7 +67,7 @@ impl Formulas {
 
 static FORMULAS: OnceLock<Formulas> = OnceLock::new();
 
-fn formulas() -> &'static Formulas {
+pub(super) fn formulas() -> &'static Formulas {
     FORMULAS.get_or_init(Formulas::typeset)
 }
 
