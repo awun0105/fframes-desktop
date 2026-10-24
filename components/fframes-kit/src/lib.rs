@@ -184,6 +184,10 @@ struct ComponentsDocs;
 #[doc = include_str!("../../../docs/components/math.md")]
 struct MathDocs;
 
+#[cfg(all(doctest, feature = "3d"))]
+#[doc = include_str!("../../../docs/components/three-d.md")]
+struct ThreeDDocs;
+
 #[cfg(all(doctest, feature = "physics"))]
 #[doc = include_str!("../../../docs/components/physics.md")]
 struct PhysicsDocs;
