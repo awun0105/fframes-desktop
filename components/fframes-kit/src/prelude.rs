@@ -34,8 +34,8 @@ pub use crate::kits::chemistry::{
 pub use crate::kits::cs::{
     ArrayStep, ArrayTrace, ArrayView, BinarySearch, CallStack, CallTrace, CellColors, CodeBlock,
     ComplexityPlot, Graph, GraphTrace, GraphView, Growth, HashTable, HashTrace, Language,
-    LinkedList, ListTrace, Machine, MachineTrace, Queue, RecursionTree, SortVisualizer, Stack,
-    StateMachine, TreeTrace, TreeView,
+    LinkedList, ListTrace, Machine, MachineTrace, Message, Queue, RecursionTree, SequenceDiagram,
+    SortVisualizer, Stack, StateMachine, TreeTrace, TreeView,
 };
 #[cfg(feature = "math")]
 pub use crate::kits::math::{

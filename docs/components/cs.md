@@ -405,3 +405,31 @@ fn code<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a ArrayTrace, lines: Vec<usize>) -
     fframes::svgr!(<g>{search}{code}</g>)
 }
 ```
+
+## SequenceDiagram
+
+`SequenceDiagram` draws `participants` as boxes along the top, `spacing` pixels apart, with
+dashed lifelines below, and sends one of `messages` every `step_time` seconds from `delay`, each
+`row` pixels below the one before. A packet travels from the sender's lifeline to the receiver's
+in the first `travel` of its step, drawing the arrow behind it, and turns into the arrowhead when
+it lands. The label appears above the arrow, numbered with `numbers` and cut with `…` to fit
+between the lifelines. `Message::new(from, to, label)` is a call, `Message::reply` is dashed, and a
+message to the sender itself loops out to the right. The message being sent is lit in
+`active_color`. Gallery scene: `SequenceDiagram` (a request through a server to a database).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn request<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(SequenceDiagram {
+        participants: vec!["client".into(), "server".into()],
+        messages: vec![
+            Message::new(0, 1, "GET /users/42"),
+            Message::new(1, 1, "check the session"),
+            Message::reply(1, 0, "200 OK"),
+        ],
+        delay: 0.5,
+        ..ui.defaults()
+    })
+}
+```

@@ -491,6 +491,26 @@ fn code_block<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{search}{code}</g>)
 }
 
+fn sequence_diagram<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "SequenceDiagram");
+    let figure = ui.show(SequenceDiagram {
+        participants: vec!["client".into(), "server".into(), "database".into()],
+        messages: vec![
+            Message::new(0, 1, "GET /users/42"),
+            Message::new(1, 1, "check the session"),
+            // longer than the gap between the lifelines, so it is cut
+            Message::new(1, 2, "SELECT * FROM users WHERE id = 42"),
+            Message::reply(2, 1, "row 42"),
+            Message::reply(1, 0, "200 OK, JSON"),
+        ],
+        delay: 0.6,
+        center: (0.0, -0.2),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight steps of a second from 0.6 s
@@ -513,5 +533,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("RecursionTree", 10.5, recursion_tree),
         GalleryScene::new("ComplexityPlot", 7.0, complexity_plot),
         GalleryScene::new("CodeBlock", 9.0, code_block),
+        GalleryScene::new("SequenceDiagram", 7.0, sequence_diagram),
     ]
 }
