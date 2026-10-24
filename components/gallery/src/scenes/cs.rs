@@ -375,6 +375,46 @@ fn state_machine<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+fn call_stack<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<CallTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| CallTrace::factorial(5));
+    let head = title(ui, "CallStack");
+    let figure = ui.show(CallStack {
+        trace: Some(trace),
+        delay: 0.6,
+        step_time: 0.6,
+        center: (0.0, 0.3),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn recursion_tree<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<CallTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| CallTrace::fib(4));
+    let head = title(ui, "RecursionTree");
+    // the tree and the stack of the same calls, in step
+    let tree = ui.show(RecursionTree {
+        trace: Some(trace),
+        delay: 0.6,
+        step_time: 0.45,
+        center: (1.6, 0.3),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    let stack = ui.show(CallStack {
+        trace: Some(trace),
+        delay: 0.6,
+        step_time: 0.45,
+        center: (-4.6, 0.3),
+        notes: false,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{stack}{tree}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight steps of a second from 0.6 s
@@ -391,5 +431,9 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Dijkstra", 13.0, dijkstra),
         GalleryScene::new("HashTable", 12.5, hash_table),
         GalleryScene::new("StateMachine", 8.5, state_machine),
+        // five calls and five returns of 0.6 s from 0.6 s
+        GalleryScene::new("CallStack", 8.5, call_stack),
+        // 19 steps of 0.45 s from 0.6 s
+        GalleryScene::new("RecursionTree", 10.5, recursion_tree),
     ]
 }

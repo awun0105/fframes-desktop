@@ -299,3 +299,47 @@ let even = Machine::new(
 assert!(MachineTrace::run(&even, "1001").accepted());
 assert!(!MachineTrace::run(&even, "1000").accepted());
 ```
+## CallTrace, CallStack and RecursionTree
+
+`CallTrace` records a recursion: every call and every return takes a step. A returning call
+stays on the stack for its step, showing its result, and leaves at the next. Each `Call`
+keeps its label, its caller, the calls it made, its result and the steps where it is called
+and returns. The tree of calls is laid out once with `layout::tidy_tree`.
+
+- `CallTrace::recurse(name, arg, f)` runs `f` and records every call it makes through
+  `r.call(arg)`, labelled `name(arg)`. The calls really run, so keep the input small: a tree
+  of more than about 30 calls does not fit on the canvas.
+- `CallTrace::fib(n)` and `CallTrace::factorial(n)` are two ready ones.
+- `CallTrace::record()` records by hand: `call(label)`, `ret(result)`, `note`, `finish`.
+
+`CallStack` piles a frame for each open call into a column as tall as the deepest stack (or
+`capacity`). A call drops its frame on top, the innermost frame lights up, and a returning
+frame shows `fact(2) = 2` in `colors.found`, then rises out. `RecursionTree` draws the call
+tree: each node drops in under its caller, the open calls are outlined in `path_color`, the
+innermost is lit, and each call's result appears beside it as it returns. Both play the same
+trace, so they can run side by side in step. Gallery scenes: `CallStack` (`fact(5)`),
+`RecursionTree` (`fib(4)` with its stack).
+
+```rust
+use fframes_kit::prelude::*;
+
+let sum = CallTrace::recurse("sum", 3_u32, |r, n| if n == 0 { 0 } else { n + r.call(n - 1) });
+assert_eq!(sum.calls().len(), 4);
+assert_eq!(sum.max_stack(), 4);
+assert_eq!(sum.steps().last().unwrap().note, "sum(3) = 6");
+
+fn recursion<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a CallTrace) -> Svgr<'a> {
+    let tree = ui.show(RecursionTree {
+        trace: Some(trace),
+        center: (1.6, 0.0),
+        ..ui.defaults()
+    });
+    let stack = ui.show(CallStack {
+        trace: Some(trace),
+        center: (-4.6, 0.0),
+        notes: false,
+        ..ui.defaults()
+    });
+    fframes::svgr!(<g>{stack}{tree}</g>)
+}
+```
