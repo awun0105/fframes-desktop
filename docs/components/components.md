@@ -602,6 +602,7 @@ fn zoom_on_a_box<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 the polyhedra and `ConvexHull3D`; see [three-d.md](three-d.md).
 
 ## Shapes
+
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,
 `stroke_width`, `dash`, `opacity`, and the animation props `enter`, `exit`, `emphasis`.
 Positions are canvas pixels with `y` down, angles are radians, counterclockwise on screen as in

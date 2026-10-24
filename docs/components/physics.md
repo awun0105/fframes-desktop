@@ -381,6 +381,7 @@ fn fields<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 ```
 
 ## Circuit
+
 A series circuit on a rectangular loop: a battery on the left side, a switch on the top, a
 bulb on the right and a resistor on the bottom. Turn a part off (`switch: false`, ..) and
 the wire runs on. The switch closes at `on_at` seconds. Then the current flows as dots out
@@ -519,6 +520,7 @@ fn bench<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 ```
 
 ## Collision1D
+
 Carts A and B on a track that collide head on: masses `m1`, `m2`, velocities `u1`, `u2`,
 centers `x1`, `x2`, and a `restitution` from 1 (elastic) to 0 (they stick together). The
 motion is a closed form, and heavier carts are drawn longer. Each cart carries its velocity.
