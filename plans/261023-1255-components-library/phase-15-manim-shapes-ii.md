@@ -136,6 +136,6 @@ geometry name maps to a kit construct.
 - [x] Boolean-ops crate chosen and recorded
 - [x] Matchers and dashes
 - [x] Arcs, curves, dots and labels
-- [ ] Angles, polygrams and tips
+- [ ] Angles, polygrams and tips (with `LabeledPolygram`, which needs `Polygram`)
 - [ ] Braces, boolean operations, SVG import, image mapping
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
