@@ -24,9 +24,12 @@ fn blurred(content: Svgr<'_>, id: String, radius: f32, (w, h): (f32, f32)) -> Sv
 
 /// The blur radii of the copies of a progressive blur from `start` to `end`: the first
 /// is drawn whole, every later one over it through a ramp. At most [`MAX_BLUR_LEVELS`]
-/// copies after the first.
+/// copies after the first, and only the first when the blur stays the same.
 pub fn blur_levels(start: f32, end: f32) -> Vec<f32> {
     let (start, end) = (start.max(0.0), end.max(0.0));
+    if start == end {
+        return vec![start];
+    }
     let steps = ((end - start).abs() / LEVEL_STEP).ceil() as usize;
     let steps = steps.clamp(1, MAX_BLUR_LEVELS);
     (0..=steps)
@@ -281,6 +284,6 @@ mod tests {
         assert_eq!(blur_levels(0.0, 500.0).len(), MAX_BLUR_LEVELS + 1);
         // a blur that falls off, and one that stays even
         assert_eq!(blur_levels(12.0, 0.0), [12.0, 6.0, 0.0]);
-        assert_eq!(blur_levels(10.0, 10.0), [10.0, 10.0]);
+        assert_eq!(blur_levels(10.0, 10.0), [10.0]);
     }
 }

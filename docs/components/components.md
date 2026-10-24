@@ -1054,8 +1054,8 @@ the median of three `render` runs):
 | `BenchLinearProgressiveBlur` | 7.39 | 7.0 |
 | `BenchRadialProgressiveBlur` | 7.38 | 7.0 |
 
-Every copy is a blur of the whole area, about 5 ms a frame each at 1080p on the CPU backend;
-a smaller `end_blur` takes fewer copies.
+Each blurred copy is a blur of the whole area, about 5 ms a frame at 1080p on the CPU backend;
+the defaults (0 to 50) take eight, a smaller `end_blur` fewer.
 
 ```rust
 use fframes_kit::prelude::*;
