@@ -4,19 +4,27 @@
 //! meter, like the math kit's [`UnitCircle`](crate::kits::math). Physical quantities are SI
 //! (meters, seconds, kilograms). A motion without a closed form is stepped once, in the
 //! video's constructor, into a [`Sim`](crate::sim::Sim) that the figure borrows:
-//! [`PendulumMotion`], [`SpringMotion`]. A figure without its data draws nothing. Every
+//! [`PendulumMotion`], [`SpringMotion`], [`Field`]. A figure without its data draws nothing. Every
 //! figure runs on its own clock: local time minus `delay`, times `time_scale`.
 //! `docs/components/physics.md` has an example of each with its gallery scene.
 
 mod energy;
+mod field_lines;
+mod free_body;
+mod orbit;
 mod pendulum;
 mod projectile;
 mod spring;
+mod wave;
 
 pub use energy::EnergyBars;
+pub use field_lines::{Charge, Field, FieldLines};
+pub use free_body::{Force, FreeBody};
+pub use orbit::{Orbit, eccentric_anomaly};
 pub use pendulum::{Pendulum, PendulumMotion};
 pub use projectile::Projectile;
 pub use spring::{SpringMass, SpringMotion};
+pub use wave::{Wave, WaveKind};
 
 use fframes::{Color, Svgr};
 use kurbo::Point;

@@ -11,10 +11,11 @@ no other crates. Every entry names its scene in the components gallery
 - **Units.** Quantities are SI: meters, seconds, kilograms, radians. `GRAVITY` is 9.81 m/s².
 - **Time.** Each figure runs on its own clock: the local time minus `delay`, times
   `time_scale`. Before `delay` it shows its start.
-- **Simulations.** A motion with a closed form (`Projectile`) is computed per frame. One
-  without (`Pendulum`, `SpringMass`) is stepped once, at 240 steps per second with RK4, into
+- **Simulations.** A motion with a closed form (`Projectile`, `Wave`, `Orbit`) is computed per
+  frame. One without (`Pendulum`, `SpringMass`) is stepped once, at 240 steps per second with RK4, into
   a motion value built in the video's constructor (a `OnceLock` field, or a field set in
   `new`). The figure borrows it through `motion: Some(&..)` and draws nothing without it.
+  Field lines are traced once the same way, into a `Field`.
 - **Animation props.** The fixed parts (ground, ceiling, wall) draw with `enter`; the moving
   parts fade with `parts_enter`.
 
@@ -112,5 +113,121 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     });
     let axes = ui.show(axes);
     svgr!(<g>{axes}{spring}</g>)
+}
+```
+
+## Wave
+
+One figure for four kinds of wave, chosen by `kind`:
+
+- `WaveKind::Transverse`: the medium moves up and down;
+- `WaveKind::Longitudinal`: a row of particles that bunch and spread;
+- `WaveKind::Standing`: `2A sin(kx) cos(ωt)` with its nodes and dashed envelope;
+- `WaveKind::Superposition`: the wave and a second one (`second_wavelength`,
+  `second_amplitude`) drawn thin, with their sum drawn thick.
+
+With `front` (the default) the medium starts at rest and the wave leaves the left end.
+`marker` picks out one point of the medium, which only moves in place. `displacement(x, t)`,
+`envelope(x)` and `nodes()` give the numbers. Gallery scene: `Wave` (all four).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Wave {
+        kind: WaveKind::Superposition,
+        origin: (-6.0, 0.0),
+        length: 12.0,
+        amplitude: 0.5,
+        wavelength: 3.0,
+        second_wavelength: 2.2,
+        speed: 3.0,
+        marker: Some(6.0),
+        ..ui.defaults()
+    })
+}
+```
+
+## FreeBody
+
+A block with `forces` (`Force::new(name, x, y)`, in newtons, `y` up) drawn from its middle,
+`scale` units per newton. The arrows grow one after another, each labelled at its tip with
+its name and magnitude. Then the other forces dim and their sum grows as a dashed arrow
+labelled `net = … N`, or `net = 0` under the block when they balance. `net_force()` gives
+the sum. Gallery scene: `FreeBody`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(FreeBody {
+        forces: vec![
+            Force::new("W", 0.0, -5.0),
+            Force::new("N", 0.0, 5.0),
+            Force::new("F", 6.0, 0.0),
+            Force::new("f", -2.0, 0.0),
+        ],
+        center: (0.0, -0.4),
+        scale: 0.45,
+        delay: 0.5,
+        ..ui.defaults()
+    })
+}
+```
+
+## Orbit
+
+A planet on a Kepler orbit around a star at `focus`: `semi_major` units, `eccentricity`, the
+perihelion to the right of the star, once around every `period` seconds (Kepler's equation
+is solved for each frame). With `sweeps`, the first orbit shades that many sectors from the
+star, each swept in the same `sweep` fraction of the period. The sector near the star is
+short and wide, the far one long and thin, and their areas are equal. `position(t)` and
+`eccentric_anomaly(m, e)` give the numbers. Gallery scene: `Orbit`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Orbit {
+        focus: (2.0, -0.5),
+        semi_major: 4.0,
+        eccentricity: 0.6,
+        period: 5.0,
+        sweeps: 3,
+        sweep: 0.12,
+        ..ui.defaults()
+    })
+}
+```
+
+## FieldLines
+
+`Field::new(charges, lines_per_charge, bounds)` traces the field lines of point charges once
+(`Charge::new(x, y, q)`). The lines leave the positive charges, evenly spaced, and end on a
+negative charge or at `bounds`. `FieldLines` draws them on together over `draw` seconds, each
+with an arrowhead at its middle. Then, with `test_charge: Some(i)`, a small charge follows
+line `i`. `field.at(x, y)` gives the field and `field.lines()` the points. Gallery scene:
+`FieldLines`.
+
+```rust
+use std::sync::OnceLock;
+
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static FIELD: OnceLock<Field> = OnceLock::new();
+    let field = FIELD.get_or_init(|| {
+        Field::new(
+            vec![Charge::new(-2.5, 0.0, 1.0), Charge::new(2.5, 0.0, -1.0)],
+            16,
+            (-7.3, -4.1, 7.3, 4.1),
+        )
+    });
+    ui.show(FieldLines {
+        field: Some(field),
+        delay: 0.5,
+        test_charge: Some(2),
+        ..ui.defaults()
+    })
 }
 ```

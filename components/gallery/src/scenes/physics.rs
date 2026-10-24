@@ -99,11 +99,125 @@ fn spring_mass<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{axes}{spring}</g>)
 }
 
+/// The four kinds of wave, one per row, each with its name above its left end.
+fn wave<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Wave");
+    let rows = [
+        (WaveKind::Transverse, "transverse", 1.75),
+        (WaveKind::Longitudinal, "longitudinal", 0.25),
+        (WaveKind::Standing, "standing", -1.25),
+        (WaveKind::Superposition, "superposition", -2.85),
+    ];
+    let mut parts = Vec::new();
+    for (i, (kind, name, y)) in rows.into_iter().enumerate() {
+        let delay = 0.3 * i as f32;
+        let origin = (-6.0, y);
+        let at = ui.space.to_px(origin.0, origin.1 + 0.55);
+        parts.push(ui.show(Label {
+            text: name.into(),
+            x: at.x as f32,
+            y: at.y as f32,
+            direction: Anchor::TopRight,
+            style: ui.theme.typography.caption,
+            fill: ui.theme.colors.muted,
+            enter: Some(fade(delay)),
+            ..ui.defaults()
+        }));
+        parts.push(ui.show(Wave {
+            kind,
+            origin,
+            length: 12.0,
+            amplitude: if kind == WaveKind::Standing {
+                0.22
+            } else {
+                0.4
+            },
+            wavelength: 3.0,
+            speed: 3.0,
+            second_wavelength: 2.2,
+            second_amplitude: 0.25,
+            marker: (kind != WaveKind::Standing).then_some(6.0),
+            particles: 56,
+            band: 0.7,
+            delay: delay + 0.3,
+            enter: Some(create(delay)),
+            parts_enter: Some(fade(delay + 0.2)),
+            ..ui.defaults()
+        }));
+    }
+    svgr!(<g>{head}{parts}</g>)
+}
+
+/// A block pushed to the right against friction, with its four forces and their sum.
+fn free_body<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "FreeBody");
+    let figure = ui.show(FreeBody {
+        forces: vec![
+            Force::new("W", 0.0, -5.0),
+            Force::new("N", 0.0, 5.0),
+            Force::new("F", 6.0, 0.0),
+            Force::new("f", -2.0, 0.0),
+        ],
+        center: (0.0, -0.4),
+        scale: 0.45,
+        delay: 0.6,
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// A planet on an orbit of eccentricity 0.6 sweeping three equal areas.
+fn orbit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Orbit");
+    let figure = ui.show(Orbit {
+        focus: (2.0, -0.5),
+        semi_major: 4.0,
+        eccentricity: 0.6,
+        period: 5.0,
+        sweeps: 3,
+        sweep: 0.12,
+        delay: 0.6,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.3)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// The field of a dipole drawing on, then a test charge following one line.
+fn field_lines<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static FIELD: OnceLock<Field> = OnceLock::new();
+    let field = FIELD.get_or_init(|| {
+        Field::new(
+            vec![Charge::new(-2.5, -0.5, 1.0), Charge::new(2.5, -0.5, -1.0)],
+            16,
+            (-7.3, -4.1, 7.3, 2.5),
+        )
+    });
+    let head = title(ui, "FieldLines");
+    let figure = ui.show(FieldLines {
+        field: Some(field),
+        delay: 0.5,
+        draw: 1.5,
+        test_charge: Some(2),
+        speed: 2.0,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.3)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("Projectile", 3.5, projectile),
         GalleryScene::new("Pendulum", 6.0, pendulum),
         // the motion starts at 0.5 s and the axes end at 5 s of it
         GalleryScene::new("SpringMass", 5.5, spring_mass),
+        GalleryScene::new("Wave", 5.0, wave),
+        GalleryScene::new("FreeBody", 4.5, free_body),
+        GalleryScene::new("Orbit", 6.0, orbit),
+        GalleryScene::new("FieldLines", 6.0, field_lines),
     ]
 }
