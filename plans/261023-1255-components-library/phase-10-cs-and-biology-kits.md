@@ -74,7 +74,7 @@ gallery scene and a skill reference.
 ## Todo
 
 - [x] Tidy tree and layered layout
-- [ ] CS figures in table order
+- [x] CS figures in table order
 - [ ] Biology figures in table order
 - [ ] `cs.md` and `biology.md` doctested
 - [ ] e2e subset

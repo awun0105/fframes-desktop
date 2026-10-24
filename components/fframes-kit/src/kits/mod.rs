@@ -1,10 +1,14 @@
 //! Explainer kits, one Cargo feature each.
 
+#[cfg(feature = "biology")]
+pub mod biology;
 #[cfg(feature = "chemistry")]
 pub mod chemistry;
 #[cfg(feature = "cs")]
 pub mod cs;
-#[cfg(feature = "cs")]
+#[cfg(any(feature = "cs", feature = "biology"))]
+// the links and arrows wait for the biology kit's food web
+#[cfg_attr(not(feature = "cs"), allow(dead_code))]
 mod draw;
 #[cfg(feature = "math")]
 pub mod math;

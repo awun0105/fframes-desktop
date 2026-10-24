@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 fframes = { workspace = true, features = ["cpu_renderer"] }
-fframes-kit = { workspace = true, features = ["latex", "math", "physics", "chemistry", "cs"] }
+fframes-kit = { workspace = true, features = ["latex", "math", "physics", "chemistry", "cs", "biology"] }
 
 # `--renderer cpu|skia-cpu|gpu`: Skia on Metal on macOS, on Vulkan everywhere else
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -20,6 +20,8 @@ pub use crate::explain::{
     ParametricFunction, Range, RiemannRectangles, SampleAt, Space, Table, VGroup,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
+#[cfg(feature = "biology")]
+pub use crate::kits::biology::{BaseColors, Cell, CellKind, CellPalette, DnaHelix, Organelle};
 #[cfg(all(feature = "chemistry", feature = "latex"))]
 pub use crate::kits::chemistry::ReactionEquation;
 #[cfg(all(feature = "chemistry", feature = "3d"))]
