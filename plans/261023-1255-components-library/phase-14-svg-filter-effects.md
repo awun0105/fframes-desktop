@@ -32,15 +32,22 @@ wrappers around children.
 - **Also deferred: every `feDisplacementMap` effect** (wave, waves, zigzag, noise
   displacement, turbulent displace). Checked on 2026-10-24 with a scratch video:
   - A flat `#c0c0c0` map at scale 29 should shift the picture by about 7 px. Skia-CPU does
-    that, as the SVG spec says. The CPU backend draws garbage: 42% to 66% of the pixels
-    differ at scales 15 and 29.
+    that, as the SVG spec says. The CPU backend draws garbage: on the repro frame (scale
+    29), 57.27% of the pixels differ from Skia-CPU.
   - The fault is in the `svgr` crate (0.50.2, pinned by the root `Cargo.toml`), the CPU
-    backend's filter code. Its `displacement_map::apply` is the same as resvg's; the
-    difference is in the filter plumbing around it.
+    backend's filter code, inherited from resvg (0.45.1 to 0.48.1 draw the same):
+    `scale` is applied twice, and the map is read premultiplied. Upstream issue
+    linebender/resvg#1160, fix linebender/resvg#1157 (open on 2026-10-24).
+  - With both lines fixed in a local copy of svgr, 0.50% of the pixels differ from
+    Skia-CPU, at the e2e limit. The rest are thin lines along the edges of displaced
+    shapes.
+  - The PR draft for svgr, with the repro and the patch, is in
+    `plans/reports/svgr-displacement-261024/`.
   - e2e renders on `cpu`, so any displacement effect would snapshot as garbage.
   - Do not patch the dependency and do not displace pixels in the kit (that is a per-pixel
     effect, which the user deferred). The fix belongs upstream; the effects come back when
-    a fixed `svgr` arrives through the regular pull.
+    a fixed `svgr` arrives through the regular pull. Even then, check the e2e difference
+    per effect: 0.50% is too close to the limit to assume it passes.
 
 ## Requirements
 

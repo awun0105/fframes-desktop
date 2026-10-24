@@ -1,0 +1,27 @@
+diff --git a/crates/svgr/src/filter/displacement_map.rs b/crates/svgr/src/filter/displacement_map.rs
+--- a/crates/svgr/src/filter/displacement_map.rs
++++ b/crates/svgr/src/filter/displacement_map.rs
+@@ -45,8 +45,8 @@ pub fn apply(
+ 
+         let dx = calc_offset(fe.x_channel_selector());
+         let dy = calc_offset(fe.y_channel_selector());
+-        let ox = (x as f32 + dx * sx * fe.scale()).round() as i32;
+-        let oy = (y as f32 + dy * sy * fe.scale()).round() as i32;
++        let ox = (x as f32 + dx * sx).round() as i32;
++        let oy = (y as f32 + dy * sy).round() as i32;
+ 
+         // TODO: we should use some kind of anti-aliasing when offset is on a pixel border
+ 
+diff --git a/crates/svgr/src/filter/mod.rs b/crates/svgr/src/filter/mod.rs
+--- a/crates/svgr/src/filter/mod.rs
++++ b/crates/svgr/src/filter/mod.rs
+@@ -1081,7 +1081,8 @@ fn apply_displacement_map(
+     pixmap_pool: &crate::cache::PixmapPool,
+ ) -> Result<Image, Error> {
+     let pixmap1 = input1.into_color_space(cs)?.take()?;
+-    let pixmap2 = input2.into_color_space(cs)?.take()?;
++    let mut pixmap2 = input2.into_color_space(cs)?.take()?;
++    demultiply_alpha(pixmap2.data_mut().as_rgba_mut());
+ 
+     let mut pixmap = pixmap_pool
+         .take_or_allocate(region.width(), region.height())
