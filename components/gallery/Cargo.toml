@@ -6,7 +6,7 @@ license = "MIT"
 publish = false
 
 [dependencies]
-fframes.workspace = true
+fframes = { workspace = true, features = ["cpu_renderer"] }
 fframes-kit = { workspace = true, features = ["latex", "math"] }
 
 # `--renderer cpu|skia-cpu|gpu`: Skia on Metal on macOS, on Vulkan everywhere else

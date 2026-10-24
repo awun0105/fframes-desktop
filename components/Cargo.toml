@@ -3,7 +3,9 @@ resolver = "2"
 members = ["fframes-kit", "fframes-kit-macros", "gallery", "gallery/editor/editor-bridge"]
 
 [workspace.dependencies]
-fframes = { path = "../fframes", version = "1.3.0" }
+# Without default features here: a member may not turn off what the workspace turns on
+# (Studio's pinned cargo refuses it when a project depends on the kit by path).
+fframes = { path = "../fframes", version = "1.3.0", default-features = false }
 fframes_skia_renderer = { path = "../fframes-skia-renderer", version = "1.3.0" }
 fframes-editor-controller = { path = "../fframes-editor-controller" }
 fframes-kit = { path = "fframes-kit" }
