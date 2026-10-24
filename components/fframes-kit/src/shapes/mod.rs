@@ -22,6 +22,8 @@
 mod arrows;
 mod basic;
 mod brace;
+mod dashed;
+mod matchers;
 mod remotion;
 
 pub use crate::text_outline::TextPath;
@@ -32,6 +34,8 @@ pub use basic::{
     RoundedRectangle, Sector, Square, Star, Triangle,
 };
 pub use brace::Brace;
+pub use dashed::{CurvesAsSubmobjects, DashedVMobject, curves, dash_path};
+pub use matchers::{BackgroundRectangle, Cross, SMALL_BUFF, SurroundingRectangle, Underline};
 pub use remotion::{BlockArrow, Callout, Heart, Pie, Rect, Spark};
 
 use fframes::Color;

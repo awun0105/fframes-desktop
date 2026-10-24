@@ -14,6 +14,7 @@ pub mod math;
 pub mod overlay;
 pub mod physics;
 pub mod shapes;
+pub mod shapes_ii;
 pub mod tags;
 pub mod text;
 pub mod transitions;
@@ -22,6 +23,7 @@ pub mod transitions;
 pub fn all() -> Vec<GalleryScene> {
     let mut scenes = core::scenes();
     scenes.extend(shapes::scenes());
+    scenes.extend(shapes_ii::scenes());
     scenes.extend(animate::scenes());
     scenes.extend(transitions::scenes());
     scenes.extend(effects::scenes());

@@ -237,6 +237,19 @@ impl TextPath<'_> {
         )
     }
 
+    /// The box of the inked glyphs, descenders included (what Manim measures around
+    /// text), or the estimated box when the font has no file in the media.
+    pub fn bounds(&self, ctx: &FFramesContext<'_, '_>) -> Rect {
+        self.parts(ctx)
+            .and_then(|parts| {
+                parts
+                    .iter()
+                    .map(|p| kurbo::Shape::bounding_box(&p.path))
+                    .reduce(|a, b| a.union(b))
+            })
+            .unwrap_or_else(|| kurbo::Shape::bounding_box(&self.estimated_box()))
+    }
+
     /// A box of about the text's size for the `<text>` fallback: 0.55 em per character,
     /// from the cap height to the baseline.
     fn estimated_box(&self) -> BezPath {

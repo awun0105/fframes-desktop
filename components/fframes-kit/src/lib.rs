@@ -55,6 +55,8 @@
 //! | `run_time`, `rate_func` | the same fields; [`RateFunc`](anim::RateFunc) has `smooth`, `linear`, `rush_into`, `rush_from`, `there_and_back`, `double_smooth` |
 //! | `lag_ratio` | [`motion::stagger`], [`LaggedStart`](animate::LaggedStart), [`AnimationGroup`](animate::AnimationGroup), [`Succession`](animate::Succession) |
 //! | `Circle`, `Square`, `Arrow`, `Brace`, ... (mobjects) | [`shapes`], placed by center in canvas pixels |
+//! | `SurroundingRectangle`, `BackgroundRectangle`, `Cross`, `Underline` | [`SurroundingRectangle`](shapes::SurroundingRectangle), [`BackgroundRectangle`](shapes::BackgroundRectangle), [`Cross`](shapes::Cross), [`Underline`](shapes::Underline) around a `kurbo::Rect` (`shape.bbox()`, [`TextPath::bounds`](shapes::TextPath::bounds)) |
+//! | `DashedVMobject`, `CurvesAsSubmobjects` | [`DashedVMobject`](shapes::DashedVMobject) ([`dash_path`](shapes::dash_path)), [`CurvesAsSubmobjects`](shapes::CurvesAsSubmobjects) ([`curves`](shapes::curves)) |
 //! | `Text` as a `VMobject` | [`TextPath`](shapes::TextPath) (glyph outlines) |
 //! | `Create`, `Uncreate`, `DrawBorderThenFill`, `Write` | [`animate`], in a shape's `enter` / `exit` prop |
 //! | `GrowFromCenter`, `GrowFromPoint`, `GrowArrow`, `SpinInFromNothing` | [`animate`], `enter` |

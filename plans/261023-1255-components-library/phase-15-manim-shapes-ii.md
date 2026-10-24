@@ -1,7 +1,7 @@
 ---
 phase: 15
 title: "Phase 15: Manim shapes II"
-status: todo
+status: in-progress
 priority: P1
 effort: 5d
 dependencies: [2]
@@ -134,7 +134,7 @@ geometry name maps to a kit construct.
 ## Todo
 
 - [x] Boolean-ops crate chosen and recorded
-- [ ] Matchers and dashes
+- [x] Matchers and dashes
 - [ ] Arcs, curves, dots and labels
 - [ ] Angles, polygrams and tips
 - [ ] Braces, boolean operations, SVG import, image mapping

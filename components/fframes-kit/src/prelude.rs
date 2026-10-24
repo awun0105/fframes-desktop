@@ -90,9 +90,10 @@ pub use crate::props::{Editable, EditableExt};
 #[cfg(feature = "studio")]
 pub use crate::props::{PropChoice, PropValue, Props, PropsStore};
 pub use crate::shapes::{
-    Annulus, Arc, Arrow, BlockArrow, Brace, Callout, Circle, CurvedArrow, DashedLine, Dot,
-    DoubleArrow, Ellipse, Heart, Line, Pie, Polygon, Rect, Rectangle, RegularPolygon,
-    RoundedRectangle, Sector, Spark, Square, Star, TextPath, Triangle, Vector,
+    Annulus, Arc, Arrow, BackgroundRectangle, BlockArrow, Brace, Callout, Circle, Cross,
+    CurvedArrow, CurvesAsSubmobjects, DashedLine, DashedVMobject, Dot, DoubleArrow, Ellipse, Heart,
+    Line, Pie, Polygon, Rect, Rectangle, RegularPolygon, RoundedRectangle, Sector, Spark, Square,
+    Star, SurroundingRectangle, TextPath, Triangle, Underline, Vector,
 };
 pub use crate::sim::{Lerp, Sim};
 pub use crate::text::{

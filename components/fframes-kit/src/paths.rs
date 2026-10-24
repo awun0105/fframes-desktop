@@ -80,20 +80,35 @@ pub fn reverse_path(path: &BezPath) -> BezPath {
 
 /// The first `length` units of the path.
 pub fn cut_path(path: &BezPath, length: f64) -> BezPath {
+    slice_path(path, 0.0, length)
+}
+
+/// The part of the path between the arc lengths `from` and `to`.
+pub fn slice_path(path: &BezPath, from: f64, to: f64) -> BezPath {
     let mut out = BezPath::new();
-    let mut rest = length.max(0.0);
+    let mut at = 0.0;
     let mut pen: Option<Point> = None;
     for seg in path.segments() {
-        if rest <= 0.0 {
+        if at >= to {
             break;
         }
         let len = seg.arclen(ACCURACY);
-        let piece = if rest >= len {
-            seg
+        let (a, b) = ((from - at).max(0.0), (to - at).min(len));
+        at += len;
+        if a >= b {
+            continue;
+        }
+        let t0 = if a <= 0.0 {
+            0.0
         } else {
-            seg.subsegment(0.0..seg.inv_arclen(rest, ACCURACY))
+            seg.inv_arclen(a, ACCURACY)
         };
-        rest -= len;
+        let t1 = if b >= len {
+            1.0
+        } else {
+            seg.inv_arclen(b, ACCURACY)
+        };
+        let piece = seg.subsegment(t0..t1);
         let start = piece.start();
         if pen != Some(start) {
             out.move_to(start);

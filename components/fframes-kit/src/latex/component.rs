@@ -271,6 +271,11 @@ impl<'f> FormulaView<'f> {
         Affine::translate((f64::from(self.x) - ax, f64::from(self.y) - ay)) * Affine::scale(s)
     }
 
+    /// The box of the whole formula on the canvas, for a matcher around it.
+    pub fn bounds(&self) -> Rect {
+        self.transform().transform_rect_bbox(self.of.bbox())
+    }
+
     /// The box of a part on the canvas.
     pub fn part_bbox(&self, part: Part<'_>) -> Option<Rect> {
         self.of

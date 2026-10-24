@@ -380,6 +380,47 @@ accent outlines by default, Remotion shapes (and Manim's `Dot`, `Annulus`, `Sect
 re-exported. `TextPath` draws glyph outlines from the font files of the video's media and
 falls back to a `<text>` (faded in word by word by `Write`) when the family has none.
 
+### Matchers and dashes
+
+Matchers draw around, behind, across or under a box: a `kurbo::Rect` in canvas pixels. Take it
+from `shape.bbox()` of any shape, `text_path.bounds(ui.ctx)` (the inked glyphs, descenders
+included, as Manim measures text), `label.bounds(ui)` (a `Label`'s cap-height box) or
+`view.bounds()` of a formula.
+
+| Shape | Props (defaults) | Source |
+| --- | --- | --- |
+| `SurroundingRectangle` | `around`, `buff` (`SMALL_BUFF`, 13.5), `corner_radius` (0); highlight outline | Manim |
+| `BackgroundRectangle` | `around`, `buff` (0), `corner_radius` (0); the background colour at 75% alpha | Manim |
+| `Cross` | `around`, `scale_factor` (1); red, thick | Manim |
+| `Underline` | `around`, `buff` (`SMALL_BUFF`) | Manim |
+| `DashedVMobject` | `path`, `num_dashes` (15), `dashed_ratio` (0.5), `dash_offset` (0) | Manim |
+| `CurvesAsSubmobjects` | `path`, `colors` (a gradient along the curves), `stroke_width` | Manim |
+
+`SMALL_BUFF` is Manim's 0.1 units on a 1080 px tall canvas. `DashedVMobject` spaces its dashes
+by arc length like Manim: an open path starts and ends with a dash, a closed one has as many
+gaps as dashes, and every dash is its own subpath (`dash_path` builds the path alone).
+`CurvesAsSubmobjects` draws each curve of the path as its own part, so `Write` draws them one
+after another; `curves(path)` gives the parts.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn boxed<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let word = TextPath { text: "Energy", x: 200.0, y: 300.0, ..ui.defaults() };
+    let around = word.bounds(ui.ctx);
+    let word = ui.show(word);
+    let frame = ui.show(SurroundingRectangle {
+        around,
+        corner_radius: 12.0,
+        enter: Some(Create::default().into()),
+        ..ui.defaults()
+    });
+    let circle = Circle { cx: 960.0, cy: 540.0, radius: 120.0, ..ui.defaults() };
+    let dashed = ui.show(DashedVMobject { path: circle.path(), num_dashes: 24, ..ui.defaults() });
+    svgr!(<g>{word}{frame}{dashed}</g>)
+}
+```
+
 ## Geometry animations
 
 Animations are plain data. Put them into a shape's `enter`, `exit` or `emphasis` with
