@@ -325,6 +325,7 @@ impl StudioShell {
                 shell
                     .timeline
                     .update(cx, |timeline, cx| timeline.end_edit_drag(cx));
+                shell.props_panel.update(cx, |panel, cx| panel.end_drag(cx));
             }
         });
         let panel = cx.new(|cx| ConversationPanel::new(window, cx));

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use fframes_studio_protocol::{EditorObjectIdentity, PropField, PropKind, PropsInfo};
 use gpui::{
     AppContext, Context, DispatchPhase, Entity, EventEmitter, Focusable, InteractiveElement,
-    IntoElement, MouseButton, MouseUpEvent, ParentElement, Render, SharedString,
+    IntoElement, MouseButton, MouseMoveEvent, MouseUpEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, canvas, div, prelude::FluentBuilder, px,
 };
 use serde_json::Value;
@@ -121,13 +121,6 @@ impl PropsPanel {
         })
     }
 
-    /// True while a field holds keyboard focus.
-    pub fn has_text_focus(&self, window: &Window, cx: &gpui::App) -> bool {
-        self.inputs
-            .values()
-            .any(|(input, _)| input.focus_handle(cx).is_focused(window))
-    }
-
     // ---- edits -------------------------------------------------------------------------
 
     fn run(&mut self, command: PropsCommand, cx: &mut Context<Self>) {
@@ -177,7 +170,8 @@ impl PropsPanel {
         self.set_field(&field.name, Some(value), cx);
     }
 
-    fn end_drag(&mut self, cx: &mut Context<Self>) {
+    /// Ends a slider drag as one gesture; nothing happens when no drag runs.
+    pub fn end_drag(&mut self, cx: &mut Context<Self>) {
         if self.dragging.take().is_some() {
             self.run(PropsCommand::EndGesture, cx);
             cx.notify();
@@ -504,11 +498,20 @@ impl Render for PropsPanel {
                 canvas(
                     |_, _, _| {},
                     move |_, _, window, _| {
-                        let entity = entity.clone();
+                        let up = entity.clone();
                         window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
                             if phase == DispatchPhase::Capture && event.button == MouseButton::Left
                             {
-                                entity.update(cx, |panel, cx| panel.end_drag(cx));
+                                up.update(cx, |panel, cx| panel.end_drag(cx));
+                            }
+                        });
+                        // A release outside the window arrives as a move without the button.
+                        let moved = entity.clone();
+                        window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                            if phase == DispatchPhase::Capture
+                                && event.pressed_button != Some(MouseButton::Left)
+                            {
+                                moved.update(cx, |panel, cx| panel.end_drag(cx));
                             }
                         });
                     },
