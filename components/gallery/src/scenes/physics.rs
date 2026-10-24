@@ -209,6 +209,88 @@ fn field_lines<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+/// A battery, switch, bulb and resistor in series: the switch closes, the current flows and
+/// the bulb lights.
+fn circuit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Circuit");
+    let figure = ui.show(Circuit {
+        center: (0.0, -0.4),
+        width: 8.0,
+        height: 4.5,
+        on_at: 1.4,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.2)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// A converging lens forming a real, inverted image.
+fn ray_diagram<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "RayDiagram");
+    let figure = ui.show(RayDiagram {
+        center: (0.5, -0.4),
+        focal: 1.8,
+        object_distance: 4.0,
+        object_height: 1.2,
+        reach: 5.5,
+        delay: 0.8,
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// A concave mirror sending the rays back to a real image in front of it.
+fn mirror<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Mirror");
+    let figure = ui.show(RayDiagram {
+        optic: Optic::Mirror,
+        center: (4.0, -0.4),
+        focal: 1.6,
+        object_distance: 4.5,
+        object_height: 1.2,
+        reach: 5.5,
+        delay: 0.8,
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// Light bending into glass, with its weak reflection.
+fn refraction<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Refraction");
+    let figure = ui.show(Refraction {
+        point: (0.0, -0.6),
+        n1: 1.0,
+        n2: 1.5,
+        angle: 0.75,
+        length: 3.0,
+        delay: 0.7,
+        enter: Some(create(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// A heavy cart running into a light one, elastically, above the momentum bars.
+fn collision<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Collision1D");
+    let figure = ui.show(Collision1D {
+        track: (-6.0, 0.2),
+        x1: 1.5,
+        x2: 5.5,
+        u1: 2.0,
+        u2: -0.5,
+        delay: 0.4,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.2)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("Projectile", 3.5, projectile),
@@ -219,5 +301,11 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("FreeBody", 4.5, free_body),
         GalleryScene::new("Orbit", 6.0, orbit),
         GalleryScene::new("FieldLines", 6.0, field_lines),
+        GalleryScene::new("Circuit", 5.0, circuit),
+        GalleryScene::new("RayDiagram", 4.5, ray_diagram),
+        GalleryScene::new("Mirror", 4.5, mirror),
+        GalleryScene::new("Refraction", 3.5, refraction),
+        // B reaches the end of the track just after the scene
+        GalleryScene::new("Collision1D", 3.8, collision),
     ]
 }

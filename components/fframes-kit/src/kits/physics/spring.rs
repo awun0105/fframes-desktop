@@ -1,5 +1,5 @@
 use fframes::{Color, Svgr};
-use kurbo::{BezPath, Point, Vec2};
+use kurbo::Point;
 
 use crate::{
     anim::{FadeIn, FadeOut, fade},
@@ -13,7 +13,7 @@ use crate::{
     ui::{Component, Themed, Ui},
 };
 
-use super::{RATE, clock, line, rk4};
+use super::{RATE, clock, line, rk4, zigzag};
 
 /// A mass on a spring, stepped once: `stiffness` N/m, `mass` kg, `damping` N·s/m, let go
 /// at rest `x0` meters from its rest position (`m x'' = -k x - c x'`). Build it in the
@@ -140,32 +140,6 @@ impl Default for SpringMass<'_> {
     fn default() -> Self {
         Self::themed(&Theme::default())
     }
-}
-
-/// A zigzag from `a` to `b` with `coils` turns `amplitude` pixels to each side, straight
-/// for the first and last tenth.
-fn zigzag(a: Point, b: Point, coils: usize, amplitude: f64) -> BezPath {
-    let mut path = BezPath::new();
-    path.move_to(a);
-    let d = b - a;
-    let length = d.hypot();
-    if length < 1e-9 {
-        return path;
-    }
-    let along = d / length;
-    let side = Vec2::new(-along.y, along.x) * amplitude;
-    let lead = length * 0.1;
-    let body = length - 2.0 * lead;
-    let points = coils.max(1) * 2;
-    path.line_to(a + along * lead);
-    for i in 0..points {
-        let f = (i as f64 + 0.5) / points as f64;
-        let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
-        path.line_to(a + along * (lead + body * f) + side * sign);
-    }
-    path.line_to(b - along * lead);
-    path.line_to(b);
-    path
 }
 
 impl SpringMass<'_> {

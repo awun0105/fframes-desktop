@@ -8,18 +8,24 @@
 //! figure runs on its own clock: local time minus `delay`, times `time_scale`.
 //! `docs/components/physics.md` has an example of each with its gallery scene.
 
+mod circuit;
+mod collision;
 mod energy;
 mod field_lines;
 mod free_body;
+mod optics;
 mod orbit;
 mod pendulum;
 mod projectile;
 mod spring;
 mod wave;
 
+pub use circuit::Circuit;
+pub use collision::Collision1D;
 pub use energy::EnergyBars;
 pub use field_lines::{Charge, Field, FieldLines};
 pub use free_body::{Force, FreeBody};
+pub use optics::{Optic, RayDiagram, Refraction};
 pub use orbit::{Orbit, eccentric_anomaly};
 pub use pendulum::{Pendulum, PendulumMotion};
 pub use projectile::Projectile;
@@ -27,7 +33,7 @@ pub use spring::{SpringMass, SpringMotion};
 pub use wave::{Wave, WaveKind};
 
 use fframes::{Color, Svgr};
-use kurbo::Point;
+use kurbo::{BezPath, Point, Vec2};
 
 use crate::{
     geometry::Shape,
@@ -110,6 +116,32 @@ pub(crate) fn label<'a>(
         ..ui.defaults()
     };
     ui.show(label)
+}
+
+/// A zigzag from `a` to `b` with `coils` turns `amplitude` pixels to each side, straight
+/// for the first and last tenth.
+pub(crate) fn zigzag(a: Point, b: Point, coils: usize, amplitude: f64) -> BezPath {
+    let mut path = BezPath::new();
+    path.move_to(a);
+    let d = b - a;
+    let length = d.hypot();
+    if length < 1e-9 {
+        return path;
+    }
+    let along = d / length;
+    let side = Vec2::new(-along.y, along.x) * amplitude;
+    let lead = length * 0.1;
+    let body = length - 2.0 * lead;
+    let points = coils.max(1) * 2;
+    path.line_to(a + along * lead);
+    for i in 0..points {
+        let f = (i as f64 + 0.5) / points as f64;
+        let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+        path.line_to(a + along * (lead + body * f) + side * sign);
+    }
+    path.line_to(b - along * lead);
+    path.line_to(b);
+    path
 }
 
 #[cfg(test)]

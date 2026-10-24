@@ -11,8 +11,8 @@ no other crates. Every entry names its scene in the components gallery
 - **Units.** Quantities are SI: meters, seconds, kilograms, radians. `GRAVITY` is 9.81 m/s².
 - **Time.** Each figure runs on its own clock: the local time minus `delay`, times
   `time_scale`. Before `delay` it shows its start.
-- **Simulations.** A motion with a closed form (`Projectile`, `Wave`, `Orbit`) is computed per
-  frame. One without (`Pendulum`, `SpringMass`) is stepped once, at 240 steps per second with RK4, into
+- **Simulations.** A motion with a closed form (`Projectile`, `Wave`, `Orbit`, `Collision1D`) is
+  computed per frame. One without (`Pendulum`, `SpringMass`) is stepped once, at 240 steps per second with RK4, into
   a motion value built in the video's constructor (a `OnceLock` field, or a field set in
   `new`). The figure borrows it through `motion: Some(&..)` and draws nothing without it.
   Field lines are traced once the same way, into a `Field`.
@@ -227,6 +227,96 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         field: Some(field),
         delay: 0.5,
         test_charge: Some(2),
+        ..ui.defaults()
+    })
+}
+```
+## Circuit
+
+A series circuit on a rectangular loop: a battery on the left side, a switch on the top, a
+bulb on the right and a resistor on the bottom. Turn a part off (`switch: false`, ..) and
+the wire runs on. The switch closes at `on_at` seconds. Then the current flows as dots out
+of the battery's long plate, clockwise, and the bulb glows. A label left empty is not drawn.
+Gallery scene: `Circuit`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Circuit {
+        center: (0.0, -0.4),
+        width: 8.0,
+        height: 4.5,
+        on_at: 1.4,
+        battery_label: "9 V",
+        enter: Some(Create::default().into()),
+        ..ui.defaults()
+    })
+}
+```
+
+## RayDiagram and Refraction
+
+`RayDiagram` draws the three principal rays of a thin lens (`Optic::Lens`) or a mirror
+(`Optic::Mirror`). A positive `focal` is a converging lens or a concave mirror, a negative
+one a diverging lens or a convex mirror. The rays leave the tip of an object
+`object_distance` units in front, one after another. Then the image forms where they meet,
+dashed with the rays' backward extensions when it is virtual. `image_distance`,
+`magnification` and `image` give the numbers from `1/d_o + 1/d_i = 1/f`. Gallery scenes:
+`RayDiagram` (a lens) and `Mirror`.
+
+`Refraction` bends a ray at the boundary between two media by Snell's law, with the weak
+reflection and the angles. Past the critical angle (`critical_angle()`) the ray is
+reflected whole. Gallery scene: `Refraction`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figures<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let lens = ui.show(RayDiagram {
+        center: (0.5, 1.5),
+        focal: 1.8,
+        object_distance: 4.0,
+        object_height: 1.0,
+        optic_height: 2.5,
+        delay: 0.5,
+        ..ui.defaults()
+    });
+    let glass = ui.show(Refraction {
+        point: (0.0, -2.0),
+        n1: 1.0,
+        n2: 1.5,
+        angle: 0.75,
+        length: 1.8,
+        ..ui.defaults()
+    });
+    svgr!(<g>{lens}{glass}</g>)
+}
+```
+
+## Collision1D
+
+Carts A and B on a track that collide head on: masses `m1`, `m2`, velocities `u1`, `u2`,
+centers `x1`, `x2`, and a `restitution` from 1 (elastic) to 0 (they stick together). The
+motion is a closed form, and heavier carts are drawn longer. Each cart carries its velocity.
+Momentum bars under the track show `p A`, `p B` and their sum, which stays the same through
+the collision. A cart stops at the end of the track, and the end's push changes the sum
+then. `collision_time`, `final_velocities`, `state` and `momenta` give the numbers. Gallery
+scene: `Collision1D`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Collision1D {
+        m1: 2.0,
+        m2: 1.0,
+        u1: 2.0,
+        u2: -0.5,
+        x1: 1.5,
+        x2: 5.5,
+        restitution: 1.0,
+        track: (-6.0, 0.2),
         ..ui.defaults()
     })
 }
