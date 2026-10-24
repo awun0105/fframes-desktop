@@ -20,6 +20,11 @@ clippy:
 fmt:
   cargo fmt --all
 
+# Build the crate files of the kit and its macros without publishing them (target/package/).
+# No lockfile: fframes-studio-protocol (feature `studio`) is not on crates.io to lock against.
+package:
+  cargo package -p fframes-kit-macros -p fframes-kit --allow-dirty --no-verify --exclude-lockfile
+
 # Kit commits that touched upstream-owned paths. Must print nothing.
 boundary:
   cd .. && git log --no-merges --grep='(kit)' --name-only --format= cdf2f12a..HEAD -- \

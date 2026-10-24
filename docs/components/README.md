@@ -6,6 +6,7 @@ fframes-kit` from `components/`).
 
 | File | Covers |
 | --- | --- |
+| [getting-started.md](getting-started.md) | adding the kit to a project made by `cargo fframes new`, a first `Sequence` + `LowerThird` video and a `Theme` override; its code is proven on a generated project, not compiled as doctests |
 | [components.md](components.md) | the import, the component model, time containers, fades, rate functions, `Anim`, `Theme`, writing your own component, a whole video |
 | [math.md](math.md) | the math kit (feature `math`): its figures, each with an example and its gallery scene; the plots of `fframes_kit::plot` (no feature) |
 | [physics.md](physics.md) | the physics kit (feature `physics`): its figures, simulations stepped once in the constructor, each with an example and its gallery scene |
@@ -21,4 +22,5 @@ Commands, from `components/` (or `just -f components/justfile <recipe>` from the
 - `just clippy`, `just fmt`
 - `just check-wasm`: the gallery's editor bridge for `wasm32-unknown-unknown`
 - `just e2e cpu [--update]`: gallery key frames against `gallery/snapshots`
+- `just package`: the kit's `.crate` file, without publishing (the kit is 0.x and not on crates.io)
 - `just boundary`: must print nothing; kit commits never touch upstream fframes or Studio

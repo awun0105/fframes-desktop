@@ -3,6 +3,7 @@ name = "fframes-kit-macros"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/khanhthanhdev/fframes-desktop"
 description = "The ui! macro and the Props derives of fframes-kit"
 
 [lib]
