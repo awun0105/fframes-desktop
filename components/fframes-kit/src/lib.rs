@@ -69,6 +69,10 @@
 //! | `ImageMobject` | `<image href={ctx.get_image(..)?.href()} ..>`, framed by [`PhotoFrame`](decor::PhotoFrame), zoomed by [`KenBurns`](media::KenBurns) |
 //! | `Text` as a `VMobject` | [`TextPath`](shapes::TextPath) (glyph outlines) |
 //! | `Create`, `Uncreate`, `DrawBorderThenFill`, `Write` | [`animate`], in a shape's `enter` / `exit` prop |
+//! | `Unwrite`, `RemoveTextLetterByLetter` | [`animate`], `exit` |
+//! | `ShowPartial`, `ShowIncreasingSubsets`, `ShowSubmobjectsOneByOne`, `SpiralIn`, `AddTextLetterByLetter` | [`animate`], `enter`, on the glyphs of a [`TextPath`](shapes::TextPath) or the parts given to [`draw_animated`](animate::draw_animated) |
+//! | `AddTextLetterByLetter`, `AddTextWordByWord` on `Text` | [`Typewriter`](text::Typewriter) `{ cursor: None, .. }`, [`TextReveal`](text::TextReveal) `{ by: RevealBy::Word, run_time: 0.0, .. }` |
+//! | `TypeWithCursor`, `UntypeWithCursor` | [`Typewriter`](text::Typewriter), `erase: Some(seconds)` for the second |
 //! | `GrowFromCenter`, `GrowFromPoint`, `GrowArrow`, `SpinInFromNothing` | [`animate`], `enter` |
 //! | `Indicate`, `Circumscribe`, `Flash`, `Wiggle` | [`animate`], `emphasis` |
 //! | `Transform`, `ReplacementTransform` | [`animate::Transform`] (`Morph` in the prelude), [`ReplacementTransform`](animate::ReplacementTransform) |

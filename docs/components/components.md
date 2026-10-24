@@ -815,6 +815,11 @@ Animations are plain data. Put them into a shape's `enter`, `exit` or `emphasis`
 | `Create`, `Uncreate` | enter, exit | draws the outline from its start (and fades the fill in), or back |
 | `DrawBorderThenFill` | enter | draws the outline, then fills (`run_time` 2) |
 | `Write` | enter | `DrawBorderThenFill` per glyph of a `TextPath`, `lag_ratio` |
+| `Unwrite { reverse }` | exit | `Write` backwards; with `reverse` (the default) the first glyph goes first |
+| `ShowPartial { start, end }` | enter | the drawn part of the outline moves from one window to another |
+| `ShowIncreasingSubsets`, `ShowSubmobjectsOneByOne` | enter | the parts appear one more at a time, or one at a time with the last staying |
+| `SpiralIn { scale_factor, fade_in_fraction }` | enter | the parts fly in on a spiral around the center of the whole |
+| `AddTextLetterByLetter`, `RemoveTextLetterByLetter` | enter, exit | glyphs appear, or vanish from the last, `time_per_char` each (or in `run_time`) |
 | `GrowFromCenter`, `GrowFromPoint { point }`, `GrowArrow` | enter | grows from nothing about the center, a point, or the path's start |
 | `SpinInFromNothing { angle }` | enter | grows while turning into place |
 | `Indicate { scale_factor, color }` | emphasis | scales up and tints, then back |
@@ -824,7 +829,12 @@ Animations are plain data. Put them into a shape's `enter`, `exit` or `emphasis`
 
 Enter and emphasis animations count from the start of the enclosing container plus `delay`;
 exit animations end `delay` seconds before its end. They change only the transform, opacity
-and drawn part of the outline, never the path.
+and drawn part of the outline, never the path. The parts are the glyphs of a `TextPath`, or
+the shapes given to `animate::draw_animated`; a single shape is one part. For a `<text>`
+line, `AddTextLetterByLetter` is a `Typewriter { cursor: None, .. }`, `AddTextWordByWord` a
+`TextReveal { by: RevealBy::Word, run_time: 0.0, shift: (0.0, 0.0), .. }`, and Manim's
+`TypeWithCursor` and `UntypeWithCursor` are a `Typewriter`, with `erase: Some(seconds)`
+for the second.
 
 | Component | Props | What it does |
 | --- | --- | --- |

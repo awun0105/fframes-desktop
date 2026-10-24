@@ -70,6 +70,76 @@ impl ShapeAnimation for Write {
     }
 }
 
+/// `Write` backwards, ending `delay` seconds before the end of the container (Manim's
+/// `Unwrite`): each part loses its fill, then its outline. With `reverse` (Manim's default)
+/// the first part goes first.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Unwrite {
+    /// Seconds between the end of the animation and the end of `ui.duration`.
+    pub delay: f32,
+    pub run_time: f32,
+    pub rate_func: RateFunc,
+    pub lag_ratio: Option<f32>,
+    pub reverse: bool,
+}
+
+themed!(Unwrite, |t| Unwrite {
+    delay: 0.0,
+    run_time: 1.0,
+    rate_func: t.motion.easing.standard,
+    lag_ratio: None,
+    reverse: true,
+});
+
+impl ShapeAnimation for Unwrite {
+    fn look(&self, ui: &Ui<'_, '_, '_>, shape: &Shape, look: &mut Look) {
+        self.look_part(ui, shape, shape, 0, 1, look);
+    }
+
+    fn per_part(&self) -> bool {
+        true
+    }
+
+    fn look_part(
+        &self,
+        ui: &Ui<'_, '_, '_>,
+        whole: &Shape,
+        part: &Shape,
+        index: usize,
+        count: usize,
+        look: &mut Look,
+    ) {
+        let Some(end) = ui.duration_seconds() else {
+            return;
+        };
+        let write = Write {
+            delay: end - self.delay - self.run_time,
+            run_time: self.run_time,
+            rate_func: self.rate_func,
+            lag_ratio: self.lag_ratio,
+        };
+        let order = if self.reverse {
+            index
+        } else {
+            count - 1 - index
+        };
+        let (start, each) = write.window(order, count);
+        let p = self
+            .rate_func
+            .apply(progress(ui.seconds(), start, start + each), each);
+        if p <= 0.0 {
+            return;
+        }
+        let border = DrawBorderThenFill {
+            delay: 0.0,
+            run_time: self.run_time,
+            rate_func: self.rate_func,
+            stroke_width: whole.stroke_width.max(2.0),
+        };
+        border.at(1.0 - p, part, look);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,10 +9,11 @@ pub use crate::anim::{
     Anim, ComplexValueTracker, Enter, Exit, FadeIn, FadeOut, RateFunc, ValueTracker,
 };
 pub use crate::animate::{
-    AnimationGroup, Circumscribe, Create, DrawBorderThenFill, Emphasis, EnterAnim, ExitAnim, Flash,
-    GrowArrow, GrowFromCenter, GrowFromPoint, Indicate, LaggedStart, MoveAlongPath,
-    ReplacementTransform, SpinInFromNothing, Succession, Transform as Morph, Uncreate, Wiggle,
-    Write,
+    AddTextLetterByLetter, AnimationGroup, Circumscribe, Create, DrawBorderThenFill, Emphasis,
+    EnterAnim, ExitAnim, Flash, GrowArrow, GrowFromCenter, GrowFromPoint, Indicate, LaggedStart,
+    MoveAlongPath, RemoveTextLetterByLetter, ReplacementTransform, ShowIncreasingSubsets,
+    ShowPartial, ShowSubmobjectsOneByOne, SpinInFromNothing, SpiralIn, Succession,
+    Transform as Morph, Uncreate, Unwrite, Wiggle, Write,
 };
 pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
 pub use crate::data::BarChart;

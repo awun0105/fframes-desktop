@@ -12,6 +12,8 @@ mod create;
 mod emphasis;
 mod group;
 mod grow;
+mod subsets;
+mod text_by;
 mod transform;
 mod write;
 
@@ -19,10 +21,12 @@ pub use create::{Create, DrawBorderThenFill, Uncreate};
 pub use emphasis::{Circumscribe, Flash, Indicate, Wiggle};
 pub use group::{AnimationGroup, LaggedStart, Succession};
 pub use grow::{GrowArrow, GrowFromCenter, GrowFromPoint, SpinInFromNothing};
+pub use subsets::{ShowIncreasingSubsets, ShowPartial, ShowSubmobjectsOneByOne, SpiralIn};
+pub use text_by::{AddTextLetterByLetter, RemoveTextLetterByLetter};
 #[cfg(feature = "latex")]
 pub(crate) use transform::{MORPH_SEGMENTS, lerp_paint, morph};
 pub use transform::{MoveAlongPath, ReplacementTransform, Transform};
-pub use write::Write;
+pub use write::{Unwrite, Write};
 
 use fframes::Svgr;
 use kurbo::{Affine, Point, Vec2};
@@ -131,6 +135,11 @@ pub enum EnterAnim {
     GrowFromPoint(GrowFromPoint),
     GrowArrow(GrowArrow),
     SpinInFromNothing(SpinInFromNothing),
+    ShowPartial(ShowPartial),
+    ShowIncreasingSubsets(ShowIncreasingSubsets),
+    ShowSubmobjectsOneByOne(ShowSubmobjectsOneByOne),
+    SpiralIn(SpiralIn),
+    AddTextLetterByLetter(AddTextLetterByLetter),
 }
 
 /// The `exit` prop of shapes.
@@ -138,6 +147,8 @@ pub enum EnterAnim {
 pub enum ExitAnim {
     FadeOut(FadeOut),
     Uncreate(Uncreate),
+    Unwrite(Unwrite),
+    RemoveTextLetterByLetter(RemoveTextLetterByLetter),
 }
 
 /// The `emphasis` prop of shapes.
@@ -193,8 +204,8 @@ macro_rules! slot {
     };
 }
 
-slot!(EnterAnim: FadeIn, Create, DrawBorderThenFill, Write, GrowFromCenter, GrowFromPoint, GrowArrow, SpinInFromNothing);
-slot!(ExitAnim: FadeOut, Uncreate);
+slot!(EnterAnim: FadeIn, Create, DrawBorderThenFill, Write, GrowFromCenter, GrowFromPoint, GrowArrow, SpinInFromNothing, ShowPartial, ShowIncreasingSubsets, ShowSubmobjectsOneByOne, SpiralIn, AddTextLetterByLetter);
+slot!(ExitAnim: FadeOut, Uncreate, Unwrite, RemoveTextLetterByLetter);
 slot!(Emphasis: Indicate, Circumscribe, Flash, Wiggle);
 
 /// Draws `parts` (the glyphs of a text, or one shape) with the animation props applied.
@@ -222,7 +233,8 @@ pub fn draw_animated<'a>(
         e.look(ui, whole, &mut look);
     }
     let overlay = emphasis.and_then(|e| e.overlay(ui, whole));
-    let per_part = enter.is_some_and(ShapeAnimation::per_part) || exit.is_some_and(ShapeAnimation::per_part);
+    let per_part =
+        enter.is_some_and(ShapeAnimation::per_part) || exit.is_some_and(ShapeAnimation::per_part);
     let drawn: Svgr<'a> = if per_part {
         let count = parts.len();
         parts

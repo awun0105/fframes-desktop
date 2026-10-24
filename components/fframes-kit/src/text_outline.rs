@@ -277,6 +277,14 @@ impl TextPath<'_> {
                         .apply(progress(ui.seconds(), start, start + each), each)
                 })
                 .collect(),
+            // the words take the parts' looks; only their opacity shows
+            Some(e) if e.per_part() => (0..words.len())
+                .map(|i| {
+                    let mut word = Look::default();
+                    e.look_part(ui, &whole, &whole, i, words.len(), &mut word);
+                    word.opacity * word.drawn.1.clamp(0.0, 1.0)
+                })
+                .collect(),
             Some(e) => {
                 e.look(ui, &whole, &mut look);
                 // the part of the outline an outline animation has drawn
