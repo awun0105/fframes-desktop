@@ -6,7 +6,7 @@ use crate::{
     ui::{Themed, Ui},
 };
 
-use super::{Direction, Presentation, Side};
+use super::{Direction, Presentation, Side, presentation::clipped};
 
 /// The entering item is uncovered by an edge that moves across from `direction` (Remotion's
 /// `wipe()`); the exiting item stays in place under it. `size` is the area in view-box
@@ -55,21 +55,18 @@ impl Presentation for Wipe {
         _ui: &Ui<'a, '_, '_>,
         id: &str,
     ) -> Svgr<'a> {
-        if side == Side::Exiting {
+        if side == Side::Exiting || progress >= 1.0 {
             return content;
         }
         let (x, y, width, height) = self.visible(progress);
-        let url = format!("url(#{id})");
-        let id = id.to_owned();
-        fframes::svgr!(
-            <g>
-                <defs>
-                    <clipPath id={id}>
-                        <rect x={x} y={y} width={width} height={height} />
-                    </clipPath>
-                </defs>
-                <g clip-path={url}>{content}</g>
-            </g>
+        // a rectangle without area is invalid SVG; nothing is uncovered yet
+        if width <= 0.0 || height <= 0.0 {
+            return Svgr::empty();
+        }
+        clipped(
+            content,
+            fframes::svgr!(<rect x={x} y={y} width={width} height={height} />),
+            id,
         )
     }
 }

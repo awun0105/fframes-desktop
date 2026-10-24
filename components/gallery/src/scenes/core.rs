@@ -379,7 +379,13 @@ fn bench_extra_hand_written<'a>(ui: &Ui<'a, '_, '_>) -> Svgr<'a> {
     };
     let shown = |i: f32| ramp(i * 0.12, 0.6) * (1.0 - ramp(5.0 - (2.0 - i) * 0.06 - 0.4, 0.4));
     let (bar, name, role) = (shown(0.0), shown(1.0), shown(2.0));
-    let bar_height = 140.4 * bar;
+    // a rectangle without height is invalid SVG, so the bar is left out until it grows
+    let accent_bar = if bar > 0.0 {
+        let bar_height = 140.4 * bar;
+        svgr!(<rect x="1100" y="760" width="6" height={bar_height} fill={c.accent} />)
+    } else {
+        Svgr::empty()
+    };
     let slide = |p: f32| Transform::translate(-40.0 * (1.0 - p), 0.0);
     let (name_t, role_t) = (slide(name), slide(role));
     let digits = ((12_480.0 * ramp(0.0, 1.6)).round() as u64).to_string();
@@ -392,7 +398,7 @@ fn bench_extra_hand_written<'a>(ui: &Ui<'a, '_, '_>) -> Svgr<'a> {
     }
     svgr!(
         <g>
-            <rect x="1100" y="760" width="6" height={bar_height} fill={c.accent} />
+            {accent_bar}
             <g transform={name_t} opacity={name}>
                 <text x="1122" y="824" font-family="DM Sans" font-size="56" font-weight="600" fill={c.title}>"Grace Hopper"</text>
             </g>
