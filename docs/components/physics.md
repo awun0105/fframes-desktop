@@ -148,6 +148,35 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+`harmonic(n)` turns a wave into the standing wave of a string's `n`th harmonic, fixed at
+both ends (Manim-physics' `StandingWave`): `Wave { length: 9.0, ..ui.defaults() }.harmonic(3)`.
+Manim-physics' `LinearWave` is `Wave { front: false, .. }` with `speed = wavelength / period`.
+
+## RadialWave
+
+Circular waves from every point of `sources`, `amplitude sin(k r - ω t)` each, summed where
+they meet. In 2D the crests are rings and the troughs dashed rings, clipped to `x_range` by
+`y_range`; where the rings of two sources cross, the waves add up. With `front` (the
+default) the rings leave the sources on the figure's clock. `displacement(x, y, t)` gives the
+height. With the `3d` feature the same wave goes into a `ThreeDView` as a surface
+(`resolution` pieces a side, `amplitude` high); only `enter` applies there. Gallery scenes:
+`RadialWave`, and `RadialWave3D` with the `3d` feature.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(RadialWave {
+        sources: vec![(-1.6, 0.0), (1.6, 0.0)],
+        wavelength: 1.1,
+        speed: 1.6,
+        x_range: (-7.0, 7.0),
+        y_range: (-4.0, 4.0),
+        ..ui.defaults()
+    })
+}
+```
+
 ## FreeBody
 
 A block with `forces` (`Force::new(name, x, y)`, in newtons, `y` up) drawn from its middle,

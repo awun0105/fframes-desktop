@@ -35,6 +35,8 @@ pub use polyhedra::{
 };
 pub use solids::{Arrow3D, Cone, Cube, Cylinder, Dot3D, Line3D, Prism, Sphere, Torus};
 pub use surface::Surface;
+#[cfg(feature = "physics")]
+pub(crate) use surface::parametric;
 pub use view::{Projector, ThreeDView};
 
 /// A point in Manim's units, `z` out of the screen.

@@ -85,8 +85,8 @@ pub use crate::kits::math::{
 pub use crate::kits::physics::{
     Charge, ChargeGlow, Circuit, Collision1D, Doppler, ElectricField, EnergyBars, Field,
     FieldLines, Force, FreeBody, GasBox, GasMotion, GasSetup, Heat, Lens, LensShape, MagneticField,
-    Optic, OpticalBench, Orbit, Pendulum, PendulumMotion, Projectile, Ray, RayDiagram, Refraction,
-    SpringMass, SpringMotion, Wave, WaveKind, Wire,
+    Optic, OpticalBench, Orbit, Pendulum, PendulumMotion, Projectile, RadialWave, Ray, RayDiagram,
+    Refraction, SpringMass, SpringMotion, Wave, WaveKind, Wire,
 };
 pub use crate::label::{BraceLabel, Label, Leader};
 #[cfg(feature = "latex")]

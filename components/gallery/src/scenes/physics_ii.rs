@@ -89,10 +89,56 @@ fn lens<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{figure}{head}</g>)
 }
 
+/// Two sources a few wavelengths apart: their rings cross where the waves add up.
+fn radial_wave<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "RadialWave");
+    let figure = ui.show(RadialWave {
+        sources: vec![(-1.6, -0.4), (1.6, -0.4)],
+        wavelength: 1.1,
+        speed: 1.6,
+        x_range: (-7.0, 7.0),
+        y_range: (-3.8, 2.8),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{figure}{head}</g>)
+}
+
+/// The same two sources as a surface, the camera turning slowly.
+#[cfg(feature = "three-d")]
+fn radial_wave_3d<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "RadialWave3D");
+    let wave = RadialWave {
+        sources: vec![(-1.2, 0.0), (1.2, 0.0)],
+        wavelength: 1.0,
+        speed: 1.2,
+        amplitude: 0.18,
+        front: false,
+        x_range: (-4.0, 4.0),
+        y_range: (-4.0, 4.0),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    };
+    let objects: Vec<Box<dyn Object3D + 'a>> = vec![Box::new(wave)];
+    let figure = ui.show(ThreeDView {
+        phi: 60f32.to_radians(),
+        theta: -60f32.to_radians(),
+        ambient_rotation: 0.1,
+        objects,
+        ..ui.defaults()
+    });
+    svgr!(<g>{figure}{head}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
-    vec![
+    #[allow(unused_mut)]
+    let mut scenes = vec![
         GalleryScene::new("ElectricField", 4.0, electric_field),
         GalleryScene::new("MagneticField", 2.0, magnetic_field),
         GalleryScene::new("Lens", 3.5, lens),
-    ]
+        GalleryScene::new("RadialWave", 4.0, radial_wave),
+    ];
+    #[cfg(feature = "three-d")]
+    scenes.push(GalleryScene::new("RadialWave3D", 2.5, radial_wave_3d));
+    scenes
 }

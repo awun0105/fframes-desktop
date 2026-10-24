@@ -145,6 +145,17 @@ impl Wave {
         2.0 * self.amplitude * (TAU / self.wavelength.max(1e-9) * x).sin()
     }
 
+    /// The standing wave of the `n`th harmonic of a string `length` meters long, fixed at both
+    /// ends: Manim-physics' `StandingWave(n, length)`, `n` half wavelengths along it.
+    #[must_use]
+    pub fn harmonic(self, n: u32) -> Self {
+        Self {
+            kind: WaveKind::Standing,
+            wavelength: 2.0 * self.length / f64::from(n.max(1)),
+            ..self
+        }
+    }
+
     /// The nodes of a standing wave, every half wavelength from the left end, in meters.
     pub fn nodes(&self) -> Vec<f64> {
         let half = self.wavelength / 2.0;
@@ -353,6 +364,17 @@ mod tests {
         }
         // an antinode reaches twice the amplitude
         assert!((wave.displacement(1.0, 0.0) - 2.0 * wave.amplitude).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_harmonic_has_n_loops_between_fixed_ends() {
+        let wave = Wave {
+            length: 9.0,
+            ..Wave::default()
+        }
+        .harmonic(3);
+        assert_eq!(wave.kind, WaveKind::Standing);
+        assert_eq!(wave.nodes(), vec![0.0, 3.0, 6.0, 9.0]);
     }
 
     #[test]

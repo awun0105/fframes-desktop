@@ -24,6 +24,7 @@ mod pendulum;
 mod projectile;
 mod spring;
 mod wave;
+mod waves_ii;
 
 pub use circuit::Circuit;
 pub use collision::Collision1D;
@@ -41,6 +42,7 @@ pub use pendulum::{Pendulum, PendulumMotion};
 pub use projectile::Projectile;
 pub use spring::{SpringMass, SpringMotion};
 pub use wave::{Wave, WaveKind};
+pub use waves_ii::RadialWave;
 
 pub(crate) use super::label;
 

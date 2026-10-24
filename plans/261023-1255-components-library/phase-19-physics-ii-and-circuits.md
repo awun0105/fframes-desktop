@@ -125,6 +125,6 @@ kit (feature `physics`).
 - [x] Electrostatics and magnetostatics
 - [x] Lenses and rays
 - [ ] Rigid bodies and multi-pendulum
-- [ ] Waves
+- [x] Waves
 - [ ] Circuit symbols and schematic
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
