@@ -4,6 +4,8 @@
 pub mod chemistry;
 #[cfg(feature = "cs")]
 pub mod cs;
+#[cfg(feature = "cs")]
+mod draw;
 #[cfg(feature = "math")]
 pub mod math;
 #[cfg(feature = "physics")]

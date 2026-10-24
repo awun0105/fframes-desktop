@@ -13,6 +13,7 @@ use crate::{
 };
 
 use super::keyed::{locate, mix, stroke, tip};
+use crate::kits::draw::partial;
 
 /// A message from one participant to another (or to itself); a reply is drawn dashed.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -40,26 +41,6 @@ impl Message {
             ..Self::new(from, to, label)
         }
     }
-}
-
-/// The first `fraction` of the polyline `points`, by length.
-fn partial(points: &[Point], fraction: f64) -> Vec<Point> {
-    let total: f64 = points.windows(2).map(|w| (w[1] - w[0]).hypot()).sum();
-    let mut left = total * fraction.clamp(0.0, 1.0);
-    let mut out = vec![points[0]];
-    for w in points.windows(2) {
-        let length = (w[1] - w[0]).hypot();
-        if left >= length {
-            out.push(w[1]);
-            left -= length;
-        } else {
-            if length > 0.0 {
-                out.push(w[0] + (w[1] - w[0]) * (left / length));
-            }
-            break;
-        }
-    }
-    out
 }
 
 /// `text` cut with `…` to at most `max` pixels in `style`, measured from the font when it can
@@ -330,28 +311,6 @@ impl<'a> Component<'a> for SequenceDiagram {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn partial_paths_follow_their_length() {
-        let points = [
-            Point::new(0.0, 0.0),
-            Point::new(10.0, 0.0),
-            Point::new(10.0, 10.0),
-        ];
-        assert_eq!(
-            partial(&points, 0.25),
-            [Point::new(0.0, 0.0), Point::new(5.0, 0.0)]
-        );
-        assert_eq!(
-            partial(&points, 0.75),
-            [
-                Point::new(0.0, 0.0),
-                Point::new(10.0, 0.0),
-                Point::new(10.0, 5.0)
-            ]
-        );
-        assert_eq!(partial(&points, 1.0).len(), 3);
-    }
 
     #[test]
     fn messages_are_sent_one_a_step() {
