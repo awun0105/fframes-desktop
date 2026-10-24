@@ -123,7 +123,7 @@ kit (feature `physics`).
 
 - [x] `rapier2d` checked and recorded
 - [x] Electrostatics and magnetostatics
-- [ ] Lenses and rays
+- [x] Lenses and rays
 - [ ] Rigid bodies and multi-pendulum
 - [ ] Waves
 - [ ] Circuit symbols and schematic

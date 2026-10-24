@@ -67,9 +67,32 @@ fn magnetic_field<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{figure}{head}</g>)
 }
 
+/// Parallel light through a thick biconvex lens, then a thin diverging one.
+fn lens<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Lens");
+    let rays = (0..7)
+        .map(|i| Ray::new((-6.8, -1.3 + 0.3 * f64::from(i)), (1.0, 0.0)))
+        .collect();
+    let figure = ui.show(OpticalBench {
+        lenses: vec![
+            Lens::thick(-3.0, 2.4, -2.4, 1.5, 0.5),
+            Lens::thin(2.6, -2.0),
+        ],
+        rays,
+        axis_y: -0.4,
+        x_range: (-7.0, 7.0),
+        enter: Some(Create::default().into()),
+        parts_enter: Some(fade(0.3)),
+        delay: 0.6,
+        ..ui.defaults()
+    });
+    svgr!(<g>{figure}{head}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("ElectricField", 4.0, electric_field),
         GalleryScene::new("MagneticField", 2.0, magnetic_field),
+        GalleryScene::new("Lens", 3.5, lens),
     ]
 }

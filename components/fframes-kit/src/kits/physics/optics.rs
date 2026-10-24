@@ -99,7 +99,7 @@ impl Default for RayDiagram {
 }
 
 /// The part of the polyline `points` that is `shown` (0 to 1) of its length from the start.
-fn partial(points: &[Point], shown: f64) -> BezPath {
+pub(super) fn partial(points: &[Point], shown: f64) -> BezPath {
     let mut path = BezPath::new();
     let Some(&first) = points.first() else {
         return path;
@@ -122,7 +122,7 @@ fn partial(points: &[Point], shown: f64) -> BezPath {
     path
 }
 
-fn stroked(path: BezPath, color: Color, width: f32) -> Shape {
+pub(super) fn stroked(path: BezPath, color: Color, width: f32) -> Shape {
     Shape {
         path,
         fill: None,
@@ -131,6 +131,36 @@ fn stroked(path: BezPath, color: Color, width: f32) -> Shape {
         dash: None,
         opacity: 1.0,
     }
+}
+
+/// The outline of a thin lens `height` units tall at `center` (units of `ui.space`), in
+/// pixels: a narrow ellipse when it converges, a concave slab when it diverges.
+pub(super) fn thin_lens_outline(
+    space: Space,
+    center: (f64, f64),
+    height: f64,
+    converging: bool,
+) -> BezPath {
+    let p = |x: f64, y: f64| space.to_px(center.0 + x, center.1 + y);
+    if converging {
+        let ellipse = Ellipse {
+            cx: p(0.0, 0.0).x as f32,
+            cy: p(0.0, 0.0).y as f32,
+            width: space.px(0.4) as f32,
+            height: space.px(height) as f32,
+            ..Ellipse::default()
+        };
+        return crate::geometry::Geometry::path(&ellipse);
+    }
+    let (half, w) = (height / 2.0, 0.22);
+    let mut path = BezPath::new();
+    path.move_to(p(-w, half));
+    path.line_to(p(w, half));
+    path.quad_to(p(w * 0.15, 0.0), p(w, -half));
+    path.line_to(p(-w, -half));
+    path.quad_to(p(-w * 0.15, 0.0), p(-w, half));
+    path.close_path();
+    path
 }
 
 impl RayDiagram {
@@ -188,24 +218,8 @@ impl RayDiagram {
         let mut path = BezPath::new();
         let p = |x, y| self.px(space, (x, y));
         match (self.optic, self.focal >= 0.0) {
-            (Optic::Lens, true) => {
-                let ellipse = Ellipse {
-                    cx: p(0.0, 0.0).x as f32,
-                    cy: p(0.0, 0.0).y as f32,
-                    width: space.px(0.4) as f32,
-                    height: space.px(self.optic_height) as f32,
-                    ..Ellipse::default()
-                };
-                return crate::geometry::Geometry::path(&ellipse);
-            }
-            (Optic::Lens, false) => {
-                let w = 0.22;
-                path.move_to(p(-w, half));
-                path.line_to(p(w, half));
-                path.quad_to(p(w * 0.15, 0.0), p(w, -half));
-                path.line_to(p(-w, -half));
-                path.quad_to(p(-w * 0.15, 0.0), p(-w, half));
-                path.close_path();
+            (Optic::Lens, converging) => {
+                return thin_lens_outline(space, self.center, self.optic_height, converging);
             }
             (Optic::Mirror, concave) => {
                 // the edges bend toward the side the mirror faces when it is concave

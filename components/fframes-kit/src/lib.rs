@@ -141,6 +141,7 @@
 //! | manim-physics `Charge` (feature `physics`) | `kits::physics::Charge` (the data) drawn by `kits::physics::ChargeGlow` |
 //! | manim-physics `ElectricField` (feature `physics`) | `kits::physics::ElectricField { charges, x_range, y_range, lines_per_charge }`, the charges a prop computed per frame to move them |
 //! | manim-physics `Wire`, `MagneticField` (feature `physics`) | `kits::physics::Wire::{Through, Segment}`, `kits::physics::MagneticField` in the page (arrows, ⊙ and ⊗), `kits::physics::magnetic_field` |
+//! | manim-physics `Lens`, `Ray` (feature `physics`) | `kits::physics::Lens::{thin, thick}` and `kits::physics::Ray` drawn on a `kits::physics::OpticalBench` (paraxial tracing, focal points); `kits::physics::RayDiagram` for the three principal rays |
 
 // The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
 extern crate self as fframes_kit;

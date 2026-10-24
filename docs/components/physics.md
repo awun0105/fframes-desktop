@@ -335,8 +335,35 @@ fn figures<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
-## Collision1D
+## OpticalBench, Lens and Ray
 
+`OpticalBench` is manim-physics' `Lens` and `Ray`: `lenses` on one horizontal axis, and
+`rays` traced through them from left to right. `Lens::thin(x, focal)` is a thin lens,
+`Lens::thick(x, r1, r2, index, thickness)` a real one from its radii, refractive index and
+thickness (`focal_length()` is the lensmaker's equation). Radii are positive when the centre
+of curvature is to the right, so a biconvex lens has `r1 > 0` and `r2 < 0`; a flat side is
+`f64::INFINITY`. The rays are traced with paraxial optics, surface by surface, and a ray that
+meets a lens outside its `height` stops there. Each lens shows its front and back focal
+points, `F` and `F′`, found by tracing a parallel ray, so a thick lens's sit at its focal
+distances from its surfaces. Gallery scene: `Lens`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn bench<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let rays = (0..7)
+        .map(|i| Ray::new((-6.8, -0.9 + 0.3 * f64::from(i)), (1.0, 0.0)))
+        .collect();
+    ui.show(OpticalBench {
+        lenses: vec![Lens::thick(-3.0, 2.4, -2.4, 1.5, 0.5), Lens::thin(2.6, -2.0)],
+        rays,
+        delay: 0.5,
+        ..ui.defaults()
+    })
+}
+```
+
+## Collision1D
 Carts A and B on a track that collide head on: masses `m1`, `m2`, velocities `u1`, `u2`,
 centers `x1`, `x2`, and a `restitution` from 1 (elastic) to 0 (they stick together). The
 motion is a closed form, and heavier carts are drawn longer. Each cart carries its velocity.
