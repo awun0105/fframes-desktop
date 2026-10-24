@@ -154,9 +154,56 @@ fn named_molecule<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figures}</g>)
 }
 
+/// Hexan-1-ol as a graph: its hydroxyl lights up and changes colour while the end of the
+/// chain turns half a turn about the middle bond, out of the page half way.
+fn bond_rotation<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static ALCOHOL: OnceLock<Structure> = OnceLock::new();
+    let alcohol = ALCOHOL.get_or_init(|| Structure::from_smiles("OCCCCCC").unwrap_or_default());
+    let head = title(ui, "BondRotation");
+    let hydroxyl = functional_groups(alcohol, FunctionalGroup::Hydroxyl)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    // the middle bond of the chain
+    let bond = alcohol
+        .bonds
+        .iter()
+        .position(|b| (b.a.min(b.b), b.a.max(b.b)) == (3, 4))
+        .unwrap_or(0);
+    let accent = ui.theme.colors.accent;
+    let highlight = ui.theme.colors.highlight;
+    let figure = ui.show(GraphMolecule {
+        structure: Some(alcohol),
+        center: (0.0, -0.3),
+        bond_length: 110.0,
+        atom_radius: 26.0,
+        highlights: vec![GroupHighlight {
+            atoms: hydroxyl.clone(),
+            color: accent,
+            start: 0.4,
+            duration: 0.6,
+        }],
+        rotations: vec![BondRotation {
+            bond,
+            degrees: 180.0,
+            start: 1.0,
+            duration: 2.0,
+        }],
+        recolors: vec![Recolor {
+            parts: hydroxyl.iter().map(|&o| MoleculePart::Atom(o)).collect(),
+            color: highlight,
+            start: 1.5,
+            duration: 1.0,
+        }],
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("MolFile", 3.0, mol_file),
         GalleryScene::new("NamedMolecule", 3.0, named_molecule),
+        GalleryScene::new("BondRotation", 4.0, bond_rotation),
     ]
 }

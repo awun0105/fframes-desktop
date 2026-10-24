@@ -64,10 +64,11 @@ pub use crate::kits::chemistry::ReactionEquation;
 pub use crate::kits::chemistry::{Atom3D, Molecule3D, Orbital, OrbitalKind, Structure3D, XyzError};
 #[cfg(feature = "chemistry")]
 pub use crate::kits::chemistry::{
-    BohrAtom, BondFormation, BondKind, BondType, Category, ChemAtom, ChemBond, ElementTile,
-    EnergyProfile, Equilibrium, EquilibriumModel, MatterState, MolAtom, MolBond, MolError, MolFile,
-    Molecule, Molecule2D, NamedMolecule, PeriodicTable, PhScale, Reaction, SmilesError,
-    StatesOfMatter, Structure, Titration, TitrationCurve, Trend,
+    BohrAtom, BondFormation, BondKind, BondRotation, BondType, Category, ChemAtom, ChemBond,
+    ElementTile, EnergyProfile, Equilibrium, EquilibriumModel, FunctionalGroup, GraphMolecule,
+    GroupHighlight, MatterState, MolAtom, MolBond, MolError, MolFile, Molecule, Molecule2D,
+    MoleculePart, NamedMolecule, PeriodicTable, PhScale, Reaction, Recolor, SmilesError,
+    StatesOfMatter, Structure, Titration, TitrationCurve, Trend, functional_groups,
 };
 #[cfg(feature = "cs")]
 pub use crate::kits::cs::{

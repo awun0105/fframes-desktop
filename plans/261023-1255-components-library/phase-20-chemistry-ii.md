@@ -101,7 +101,7 @@ Cover the rest of manim-chemistry in the chemistry kit (feature `chemistry`):
 - [x] `.mol` support checked and recorded
 - [x] `MolFile`
 - [x] Name table and `NamedMolecule`
-- [ ] Graph molecule animations
+- [x] Graph molecule animations
 - [ ] `ElementCard`
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
 

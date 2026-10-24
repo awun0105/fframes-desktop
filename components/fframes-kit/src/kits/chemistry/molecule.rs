@@ -201,7 +201,7 @@ impl Structure {
     }
 
     /// The other atoms bonded to atom `i`.
-    fn neighbors(&self, i: usize) -> impl Iterator<Item = usize> + '_ {
+    pub(crate) fn neighbors(&self, i: usize) -> impl Iterator<Item = usize> + '_ {
         self.bonds.iter().filter_map(move |b| {
             if b.a == i {
                 Some(b.b)

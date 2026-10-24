@@ -260,7 +260,49 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
-## ReactionEquation`Reaction` holds a reaction's formulas. `atom_counts` reads one, with parentheses (`Ca(OH)2`).
+## GraphMolecule
+
+`GraphMolecule` is manim-chemistry's `GraphMolecule` with the animations of its
+`GMAnimationBuilder`. It draws every atom of a `Structure` as a ring with its symbol,
+carbons too, and the bonds as lines, two for a double bond and three for a triple bond,
+`bond_length` pixels long. Three lists animate it on the figure's own seconds, each entry
+with a `start` and a `duration`:
+
+- `rotations`: a `BondRotation` turns the part of the molecule on the far side of bond
+  `bond` (the atoms reached from its second atom) by `degrees` about the bond, as about a
+  shaft. The figure is seen from `elevation` degrees above the page (15 by default), and
+  atoms nearer the viewer are drawn larger and on top. A bond in a ring turns nothing.
+- `recolors`: a `Recolor` blends the atoms and bonds in `parts` (`MoleculePart::Atom(i)`,
+  `MoleculePart::Bond(i)`) to `color`.
+- `highlights`: a `GroupHighlight` fades in a band of `color` behind `atoms` and the bonds
+  between them.
+
+`functional_groups(&structure, FunctionalGroup::Carboxyl)` finds the atoms of each group in
+a structure: hydroxyls, carbonyls, carboxyls, esters, amides, amines and ethers, each list
+starting with the group's central atom. Gallery scene: `BondRotation` (hexan-1-ol, its
+hydroxyl lit while the end of the chain turns).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>, acid: &'a Structure) -> Svgr<'a> {
+    let carboxyl = functional_groups(acid, FunctionalGroup::Carboxyl);
+    let accent = ui.theme.colors.accent;
+    ui.show(GraphMolecule {
+        structure: Some(acid),
+        rotations: vec![BondRotation { bond: 1, degrees: 180.0, start: 1.0, duration: 2.0 }],
+        highlights: carboxyl
+            .into_iter()
+            .map(|atoms| GroupHighlight { atoms, color: accent, start: 0.3, duration: 0.5 })
+            .collect(),
+        ..ui.defaults()
+    })
+}
+```
+
+## ReactionEquation
+
+`Reaction` holds a reaction's formulas. `atom_counts` reads one, with parentheses (`Ca(OH)2`).
 `balance` finds the smallest whole coefficients. It returns `None` when the reaction cannot be
 balanced or has more than one balance. `tally` counts each element on both sides.
 
