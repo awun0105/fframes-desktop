@@ -47,3 +47,25 @@ pub trait Presentation {
         id: &str,
     ) -> Svgr<'a>;
 }
+
+/// The distance from `center` to the farthest corner of a `size` area: the radius of a circle
+/// that covers it.
+pub(crate) fn reach(center: (f32, f32), size: (f32, f32)) -> f32 {
+    let dx = center.0.max(size.0 - center.0);
+    let dy = center.1.max(size.1 - center.1);
+    dx.hypot(dy)
+}
+
+/// `content` clipped to `shape`, a clip path with `id`.
+pub(crate) fn clipped<'a>(content: Svgr<'a>, shape: Svgr<'a>, id: &str) -> Svgr<'a> {
+    let url = format!("url(#{id})");
+    let id = id.to_owned();
+    fframes::svgr!(
+        <g>
+            <defs>
+                <clipPath id={id}>{shape}</clipPath>
+            </defs>
+            <g clip-path={url}>{content}</g>
+        </g>
+    )
+}

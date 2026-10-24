@@ -14,6 +14,11 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Fade", 2.2, fade),
         GalleryScene::new("Slide", 2.2, slide),
         GalleryScene::new("Wipe", 2.2, wipe),
+        GalleryScene::new("Flip", 2.2, flip),
+        GalleryScene::new("ClockWipe", 2.2, clock_wipe),
+        GalleryScene::new("Iris", 2.2, iris),
+        GalleryScene::new("CircleWipe", 2.2, circle_wipe),
+        GalleryScene::new("SlantWipe", 2.2, slant_wipe),
         GalleryScene::new("SceneFade", 2.0, scene_fade),
         GalleryScene::new("BeforeOverlap", 1.5, before_overlap),
         GalleryScene::new("SceneOverlap", 1.5, scene_overlap).with_overlap(OVERLAP),
@@ -78,6 +83,40 @@ fn slide<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 fn wipe<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let timing = ui.defaults();
     series(ui, "Wipe", timing, Wipe::default())
+}
+
+fn flip<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    series(ui, "Flip", timing, Flip::default())
+}
+
+fn clock_wipe<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    series(ui, "ClockWipe", timing, ClockWipe::default())
+}
+
+fn iris<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    series(ui, "Iris", timing, Iris::default())
+}
+
+fn circle_wipe<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    let wipe = CircleWipe {
+        center: (0.7, 0.4),
+        ..ui.defaults()
+    };
+    series(ui, "CircleWipe", timing, wipe)
+}
+
+fn slant_wipe<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    // the back stripe in the title colour, so it shows against the accent panel
+    let wipe = SlantWipe {
+        back: ui.theme.colors.title,
+        ..ui.defaults()
+    };
+    series(ui, "SlantWipe", timing, wipe)
 }
 
 fn scene_fade<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {

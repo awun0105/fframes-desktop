@@ -91,8 +91,8 @@ pub use crate::theme::{
 };
 pub use crate::time::{Fill, Freeze, Loop, Sequence, Series};
 pub use crate::transitions::{
-    Direction, Fade, Presentation, SceneFade, Side, Slide, Timing, TransitionItem,
-    TransitionSeries, Wipe, scene_transition,
+    CircleWipe, ClockWipe, Direction, Fade, Flip, Iris, Presentation, SceneFade, Side, SlantWipe,
+    Slide, Timing, TransitionItem, TransitionSeries, Wipe, scene_transition,
 };
 pub use crate::ui::{BoxedComponent, Children, Component, DynComponent, Themed, Ui, children};
 pub use fframes_kit_macros::ui;
