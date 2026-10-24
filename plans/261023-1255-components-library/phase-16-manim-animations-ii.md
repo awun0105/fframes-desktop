@@ -4,7 +4,7 @@ title: "Phase 16: Manim animations II"
 status: todo
 priority: P1
 effort: 5d
-dependencies: [2]
+dependencies: [2, 17]
 ---
 
 # Phase 16: Manim animations II
@@ -69,8 +69,8 @@ exist.
   - `ApplyMatrix`, `ApplyFunction`, `ApplyComplexFunction`, `ApplyPointwiseFunction`,
     `ApplyPointwiseFunctionToCenter`, all on path points.
 - **Numbers:**
-  - `ChangeDecimalToValue`, `ChangingDecimal`, on phase 17's `DecimalNumber`. If phase 17 is
-    not done yet, use the kit's `Counter`, and switch to `DecimalNumber` later.
+  - `ChangeDecimalToValue`, `ChangingDecimal`, on phase 17's `DecimalNumber`. That is why
+    this phase depends on 17.
 - **Time:**
   - `ChangeSpeed`: remaps local time through a speed curve for its children;
   - `LaggedStartMap`: a helper over `LaggedStart`.

@@ -101,7 +101,7 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 13 | [Remotion transitions II](./phase-13-remotion-transitions-ii.md) | 11 | 3d | Pending |
 | 14 | [SVG-filter effects](./phase-14-svg-filter-effects.md) | 11 | 5d | Pending |
 | 15 | [Manim shapes II](./phase-15-manim-shapes-ii.md) | 2 | 5d | Pending |
-| 16 | [Manim animations II](./phase-16-manim-animations-ii.md) | 2 | 5d | Pending |
+| 16 | [Manim animations II](./phase-16-manim-animations-ii.md) | 2, 17 | 5d | Pending |
 | 17 | [Coordinate systems, fields, graphs, tables and text mobjects](./phase-17-coordinates-fields-graphs-text.md) | 6 | 6d | Pending |
 | 18 | [Cameras and 3D](./phase-18-cameras-and-3d.md) | 6 | 5d | Pending |
 | 19 | [Physics kit II and circuit symbols](./phase-19-physics-ii-and-circuits.md) | 9 | 5d | Pending |
@@ -114,12 +114,11 @@ Phases 2 and 3 can run in parallel after phase 1; 4, 5, 6 and 7 can run in paral
 9, 10 and 11 can run in parallel after phase 6 (11 after phase 3). Each owns its own module, gallery file and skill
 reference.
 
-Phases 13 to 23 depend only on completed phases, except 21, which needs 17's graph layouts.
-The loop runs them in number order. They touch disjoint files except for the shared
+Phases 13 to 23 depend only on completed phases, except 16, which needs 17's
+`DecimalNumber`, and 21, which needs 17's graph layouts. The loop picks the lowest-numbered
+ready phase, so it runs 13, 14, 15, 17, 16, 18 and on. They touch disjoint files except for the shared
 `prelude.rs`, `lib.rs` mapping table, `components/gallery/src/scenes/mod.rs`,
 `components/scripts/e2e.mjs` and `docs/components/components.md`, so run them one at a time.
-Phase 16's number animations use phase 17's `DecimalNumber` when it exists and the kit's
-`Counter` before that.
 
 ## Success criteria (whole plan)
 

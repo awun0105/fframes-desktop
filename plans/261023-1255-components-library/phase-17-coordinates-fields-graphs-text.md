@@ -104,7 +104,7 @@ Add the remaining 2D mobjects of the Manim CE reference:
 
 ## Tasks & Steps
 
-1. **Numbers and text.** Done first, because phase 16 uses `DecimalNumber`.
+1. **Numbers and text.** Phase 16's number animations build on `DecimalNumber`.
 2. Coordinate systems and `LogBase`.
 3. `ImplicitFunction`, vector fields and stream lines.
 4. Graph layouts, then `Graph` and `DiGraph`.

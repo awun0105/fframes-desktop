@@ -64,6 +64,8 @@ wrappers around children.
   `feColorMatrix` where the maths allows it, so a stack costs one filter.
 - **`noise2D`, `noise3D`, `noise4D`** as plain functions (Remotion `@remotion/noise`), for
   driving motion. Each one is seeded and deterministic.
+- The effects section of `docs/components/components.md` lists the deferred per-pixel
+  effects (the report's "Deferred" list) as not yet available.
 - Add the new rows to the Remotion mapping table in `lib.rs`. Include the
   `@remotion/animation-utils` names as rows with doc examples:
   - `makeTransform` maps onto `fframes::Transform`;

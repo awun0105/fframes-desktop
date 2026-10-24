@@ -29,7 +29,7 @@ None of these generate speech or recognise it.
   - the JSON that Whisper and whisper.cpp write (`segments[].words[]` with `start`, `end`,
     `word`);
   - `.srt` and `.vtt` files;
-  - the kit's own `Vec<Caption>`.
+  - the kit's own `Vec<CaptionWord>`.
 
   The kit never runs speech-to-text or text-to-speech (user decision, 2026-10-24: "timing
   only, no TTS").
@@ -43,8 +43,11 @@ None of these generate speech or recognise it.
 ## Requirements
 
 - **Captions:**
-  - A `Caption { text, start_ms, end_ms, timestamp_ms, confidence }` type, the same as
-    Remotion's.
+  - A `CaptionWord { text, start_ms, end_ms, timestamp_ms, confidence }` type, with the
+    fields of Remotion's `Caption`.
+    - The name differs because the kit already exports `Caption` (`overlay/captions.rs`,
+      `Caption::new(time, title, body)` for `CaptionStack`). That type stays unchanged.
+    - The mapping row reads: Remotion `Caption` → `CaptionWord`.
   - `parse_srt`, `serialize_srt` and `parse_vtt`, plus `from_whisper_json` (the openai
     whisper and whisper.cpp shapes).
   - `tiktok_pages(captions, combine_within_ms)`, Remotion's `createTikTokStyleCaptions`:
@@ -68,7 +71,7 @@ None of these generate speech or recognise it.
     - `bookmark("A")`: a time;
     - `time_until_bookmark`;
     - `remaining(i, t)`;
-    - `subcaptions()`, which returns `Caption`s for `WordCaptions` or `Captions`;
+    - `subcaptions()`, which returns `CaptionWord`s for `WordCaptions`;
     - `audio_tracks()`, which returns `Vec<AudioTrack>`.
   - The script works with `Sequence` and `Series`, so a scene can last as long as its
     voiceover block.
