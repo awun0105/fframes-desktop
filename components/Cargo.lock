@@ -303,6 +303,89 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "chematic"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3984b40375959d8baf0c5bfb35ee7a7769a82a731a0bd21e07892cc3fe1911b"
+dependencies = [
+ "chematic-core",
+ "chematic-depict",
+ "chematic-perception",
+ "chematic-smiles",
+]
+
+[[package]]
+name = "chematic-core"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cdcdc94f7d539f9b127c016ddb142e6a67c07d95f5058b3db96d4f165bdd1dd"
+
+[[package]]
+name = "chematic-depict"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fee69a268a3e9ceaec85c53afc7f756b701b8ebcb87ec68abac1c88a3dd605f"
+dependencies = [
+ "chematic-core",
+ "chematic-perception",
+ "chematic-rxn",
+ "chematic-smiles",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "tiny-skia",
+]
+
+[[package]]
+name = "chematic-perception"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "052826cbf888fabe3248cfda4742bbdc3c0f0abb0cc13bdac574c5eebbbea592"
+dependencies = [
+ "chematic-core",
+ "rustc-hash",
+ "smallvec",
+]
+
+[[package]]
+name = "chematic-rxn"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad57d060bb4523bf11fd36611e8324ec67f9d21716850b00aa24a86d14e7c0dc"
+dependencies = [
+ "chematic-core",
+ "chematic-perception",
+ "chematic-smarts",
+ "chematic-smiles",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "chematic-smarts"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fa22d56b9988bfc097468a3f0761ab5e4a86b3dcb771889a5f93d8ed3744229"
+dependencies = [
+ "chematic-core",
+ "chematic-perception",
+ "rustc-hash",
+ "web-time",
+]
+
+[[package]]
+name = "chematic-smiles"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ce54b7b51dd64b072d2608e5bfbe21ae67ffc1c822fde21855198ecb116d348"
+dependencies = [
+ "chematic-core",
+ "chematic-perception",
+ "smallvec",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -639,10 +722,12 @@ dependencies = [
 name = "fframes-kit"
 version = "0.1.0"
 dependencies = [
+ "chematic",
  "fframes",
  "fframes-kit-macros",
  "fframes-studio-protocol",
  "kurbo",
+ "mendeleev",
  "serde_json",
 ]
 
@@ -1274,6 +1359,12 @@ checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "mendeleev"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f4cefcffb9afe2069e74baae496420299bf2a18a7d48b61cfc7482d7355db28"
 
 [[package]]
 name = "metal"

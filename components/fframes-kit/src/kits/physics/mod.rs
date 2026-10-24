@@ -36,13 +36,13 @@ pub use projectile::Projectile;
 pub use spring::{SpringMass, SpringMotion};
 pub use wave::{Wave, WaveKind};
 
-use fframes::{Color, Svgr};
+pub(crate) use super::label;
+
+use fframes::Color;
 use kurbo::{BezPath, Point, Vec2};
 
 use crate::{
     geometry::Shape,
-    label::Label,
-    layout::Anchor,
     shapes::{Arrow, Line},
     ui::Ui,
 };
@@ -101,25 +101,6 @@ pub(crate) fn arrow(ui: &Ui<'_, '_, '_>, a: Point, b: Point, color: Color, width
         ..ui.defaults()
     }
     .shape()
-}
-
-pub(crate) fn label<'a>(
-    ui: &mut Ui<'a, '_, '_>,
-    text: String,
-    at: Point,
-    direction: Anchor,
-    fill: Color,
-) -> Svgr<'a> {
-    let label = Label {
-        text: text.into(),
-        x: at.x as f32,
-        y: at.y as f32,
-        direction,
-        style: ui.theme.typography.caption,
-        fill,
-        ..ui.defaults()
-    };
-    ui.show(label)
 }
 
 /// A zigzag from `a` to `b` with `coils` turns `amplitude` pixels to each side, straight

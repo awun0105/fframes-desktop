@@ -20,6 +20,11 @@ pub use crate::explain::{
     ParametricFunction, Range, RiemannRectangles, SampleAt, Space, Table, VGroup,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
+#[cfg(feature = "chemistry")]
+pub use crate::kits::chemistry::{
+    BohrAtom, BondKind, Category, ChemAtom, ChemBond, ElementTile, Molecule, Molecule2D,
+    PeriodicTable, SmilesError, Structure, Trend,
+};
 #[cfg(feature = "math")]
 pub use crate::kits::math::{
     AreaUnder, Epicycles, FractionBar, FractionPie, FunctionPlot, Interval, LinearTransform,

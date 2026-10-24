@@ -9,6 +9,7 @@ fframes-kit` from `components/`).
 | [components.md](components.md) | the import, the component model, time containers, fades, rate functions, `Anim`, `Theme`, writing your own component, a whole video |
 | [math.md](math.md) | the math kit (feature `math`): its figures, each with an example and its gallery scene; the plots of `fframes_kit::plot` (no feature) |
 | [physics.md](physics.md) | the physics kit (feature `physics`): its figures, simulations stepped once in the constructor, each with an example and its gallery scene |
+| [chemistry.md](chemistry.md) | the chemistry kit (feature `chemistry`): Bohr atoms, element tiles and the periodic table from `mendeleev`, skeletal formulas by hand or from SMILES with `chematic`, each with an example and its gallery scene |
 
 LaTeX formulas (feature `latex`) need a TeX installation: see [latex-setup.md](../latex-setup.md).
 
