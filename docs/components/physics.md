@@ -325,6 +325,54 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+## Symbol and Schematic
+
+`Symbol` draws one circuit part: `SymbolKind::Resistor`, `Capacitor`, `Inductor`,
+`VoltageSource`, `CurrentSource`, `Ground`, `Opamp` (Manim-circuit's set), and `Battery`,
+`Switch { closes_at }`, `Bulb` and `Diode`. It sits at `at`, turned `rotation` degrees
+counterclockwise, `size` units from its middle to a terminal, with an optional `label`.
+`terminal(name)` gives where a wire attaches: `a` and `b` for every two-terminal part (also
+`-` and `+` on the sources and the battery, `anode` and `cathode` on the diode), `a` on top of
+`Ground`, and `-`, `+`, `out` on the op-amp.
+
+`Schematic` wires symbols together. A `Connection` runs from a pin to a pin, a terminal
+`(symbol index, name)` or a point `(x, y)` to end on another wire, through the corners given
+with `via`. Without corners a wire whose ends are not in line goes horizontally, then
+vertically. There is no automatic routing. Junction dots mark where three or more conductors
+meet. From `current_at` the current flows as dots along every wire (reversed with a negative
+`current(..)`, none with 0) and bulbs light up. Each wire moves its own dots, so they do not
+line up across a junction. A wire with a missing terminal is skipped, and `unresolved()` lists
+it. Gallery scene: `Schematic`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let theme = ui.theme.clone();
+    let part = |kind, at, rotation, label| Symbol {
+        kind,
+        at,
+        rotation,
+        label,
+        ..Symbol::themed(&theme)
+    };
+    ui.show(Schematic {
+        symbols: vec![
+            part(SymbolKind::Battery, (-3.0, 0.0), 90.0, "9 V"),
+            part(SymbolKind::Resistor, (0.0, 1.5), 0.0, "220R"),
+            part(SymbolKind::Bulb, (3.0, 0.0), 90.0, ""),
+        ],
+        wires: vec![
+            Connection::new((0, "+"), (1, "a")).via([(-3.0, 1.5)]),
+            Connection::new((1, "b"), (2, "b")).via([(3.0, 1.5)]),
+            Connection::new((2, "a"), (0, "-")).via([(3.0, -1.5), (-3.0, -1.5)]),
+        ],
+        current_at: Some(1.0),
+        ..ui.defaults()
+    })
+}
+```
+
 ## RayDiagram and Refraction
 
 `RayDiagram` draws the three principal rays of a thin lens (`Optic::Lens`) or a mirror

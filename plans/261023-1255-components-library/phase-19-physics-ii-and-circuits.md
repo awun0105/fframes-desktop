@@ -126,5 +126,5 @@ kit (feature `physics`).
 - [x] Lenses and rays
 - [ ] Rigid bodies and multi-pendulum
 - [x] Waves
-- [ ] Circuit symbols and schematic
+- [x] Circuit symbols and schematic
 - [ ] Gallery scenes, e2e frames, docs and mapping rows

@@ -130,6 +130,71 @@ fn radial_wave_3d<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{figure}{head}</g>)
 }
 
+/// A lamp circuit whose switch closes, and an inverting amplifier beside it.
+fn schematic<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Schematic");
+    let theme = ui.theme.clone();
+    let part = |kind, at: (f64, f64), rotation: f64, label: &'a str| Symbol {
+        kind,
+        at,
+        rotation,
+        label,
+        ..Symbol::themed(&theme)
+    };
+    let symbols = vec![
+        // the lamp circuit
+        part(SymbolKind::Battery, (-6.0, -0.4), 90.0, "9 V"),
+        part(
+            SymbolKind::Switch {
+                closes_at: Some(1.0),
+            },
+            (-4.6, 1.8),
+            0.0,
+            "",
+        ),
+        part(SymbolKind::Resistor, (-2.6, 1.8), 0.0, "220R"),
+        part(SymbolKind::Bulb, (-0.8, -0.4), 90.0, ""),
+        part(SymbolKind::Diode, (-3.4, -2.6), 180.0, ""),
+        part(SymbolKind::Ground, (-6.0, -2.6), 0.0, ""),
+        // the amplifier
+        part(SymbolKind::Opamp, (3.8, -0.2), 0.0, ""),
+        part(SymbolKind::Resistor, (1.6, 0.04), 0.0, "10k"),
+        part(SymbolKind::Resistor, (3.8, 1.4), 0.0, "100k"),
+        part(SymbolKind::VoltageSource, (0.4, -1.0), 90.0, ""),
+        part(SymbolKind::Ground, (0.4, -2.6), 0.0, ""),
+        part(SymbolKind::Ground, (3.2, -1.4), 0.0, ""),
+        // the other parts
+        part(SymbolKind::Capacitor, (2.4, -3.1), 0.0, ""),
+        part(SymbolKind::Inductor, (4.2, -3.1), 0.0, ""),
+        part(SymbolKind::CurrentSource, (6.0, -3.1), 0.0, ""),
+    ];
+    let still = |c: Connection<'a>| c.current(0.0);
+    let wires = vec![
+        Connection::new((0, "+"), (1, "a")).via([(-6.0, 1.8)]),
+        Connection::new((1, "b"), (2, "a")),
+        Connection::new((2, "b"), (3, "b")).via([(-0.8, 1.8)]),
+        Connection::new((3, "a"), (4, "a")).via([(-0.8, -2.6)]),
+        Connection::new((4, "b"), (5, "a")),
+        Connection::new((5, "a"), (0, "-")),
+        still(Connection::new((9, "+"), (7, "a")).via([(0.4, 0.04)])),
+        still(Connection::new((9, "-"), (10, "a"))),
+        still(Connection::new((7, "b"), (6, "-"))),
+        still(Connection::new((6, "-"), (8, "a")).via([(3.2, 1.4)])),
+        still(Connection::new((8, "b"), (5.0, -0.2)).via([(5.0, 1.4)])),
+        still(Connection::new((6, "out"), (6.2, -0.2))),
+        still(Connection::new((6, "+"), (11, "a"))),
+    ];
+    let figure = ui.show(Schematic {
+        symbols,
+        wires,
+        current_at: Some(1.3),
+        enter: Some(Create::default().into()),
+        parts_enter: Some(fade(0.6)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{figure}{head}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     #[allow(unused_mut)]
     let mut scenes = vec![
@@ -137,6 +202,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("MagneticField", 2.0, magnetic_field),
         GalleryScene::new("Lens", 3.5, lens),
         GalleryScene::new("RadialWave", 4.0, radial_wave),
+        GalleryScene::new("Schematic", 3.5, schematic),
     ];
     #[cfg(feature = "three-d")]
     scenes.push(GalleryScene::new("RadialWave3D", 2.5, radial_wave_3d));
