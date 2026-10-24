@@ -31,7 +31,7 @@ struct Formulas {
 
 /// Typesets `tex`, or keeps its source to draw as text when TeX is missing and the cache
 /// has no entry (the editor).
-fn typeset(tex: &str, result: Result<Formula, TexError>) -> Formula {
+pub(super) fn typeset(tex: &str, result: Result<Formula, TexError>) -> Formula {
     result.unwrap_or_else(|e| {
         eprintln!("gallery: {e}");
         Formula::unset(tex)

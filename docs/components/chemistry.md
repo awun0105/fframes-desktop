@@ -140,3 +140,99 @@ fn figures<'a>(ui: &mut Ui<'a, '_, '_>, water: &'a Structure) -> Svgr<'a> {
     svgr!(<g>{water}{aspirin}</g>)
 }
 ```
+
+## ReactionEquation
+
+`Reaction` holds a reaction's formulas. `atom_counts` reads one, with parentheses (`Ca(OH)2`).
+`balance` finds the smallest whole coefficients. It returns `None` when the reaction cannot be
+balanced or has more than one balance. `tally` counts each element on both sides.
+
+`ReactionEquation` needs the `latex` feature as well. It turns the equation without
+coefficients into the balanced one: the species slide apart and the coefficients fade in,
+starting at `delay` and taking `run_time` seconds. Typeset both with `Reaction::typeset` in
+the constructor. With `tally` a line under the equation counts the atoms of each element on
+both sides. It shows `unequal_color` until the balance and `equal_color` after it. Gallery
+scene: `ReactionEquation` (propane burning).
+
+```rust
+use fframes_kit::prelude::*;
+
+let reaction = Reaction::new(&["C3H8", "O2"], &["CO2", "H2O"]);
+assert_eq!(reaction.balance(), Some(vec![1, 5, 3, 4]));
+assert_eq!(reaction.ce(Some(&[1, 5, 3, 4])), "C3H8 + 5O2 -> 3CO2 + 4H2O");
+
+# #[cfg(feature = "latex")]
+fn figure<'a>(
+    ui: &mut Ui<'a, '_, '_>,
+    reaction: &'a Reaction,
+    unbalanced: &'a Formula,
+    balanced: &'a Formula,
+) -> Svgr<'a> {
+    // unbalanced = reaction.typeset(&engine, false)?, balanced = reaction.typeset(&engine, true)?
+    ui.show(ReactionEquation {
+        reaction: Some(reaction),
+        unbalanced: Some(unbalanced),
+        balanced: Some(balanced),
+        delay: 1.0,
+        ..ui.defaults()
+    })
+}
+```
+
+## BondFormation
+
+Two atoms with their valence electrons on a ring around each symbol, placed as in a Lewis
+diagram. From `at` over `duration` seconds they bond:
+
+- **`BondType::Ionic`**: the left atom's electrons arc over to the gaps of the right one. The
+  empty ring fades and both atoms get their charge.
+- **`BondType::Covalent`**: the atoms move together until their rings overlap. The electrons
+  each one lacks pair up between them in `shared_color`, and a label counts the shared pairs.
+
+`valence`, `missing` and `bond_electrons` give the numbers it uses. Gallery scenes:
+`BondFormation` (sodium chloride) and `CovalentBond` (oxygen).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figures<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let salt = ui.show(BondFormation {
+        center: (0.0, 1.8),
+        at: 1.0,
+        ..ui.defaults()
+    });
+    let oxygen = ui.show(BondFormation {
+        kind: BondType::Covalent,
+        left: 8,
+        right: 8,
+        center: (0.0, -1.8),
+        at: 1.0,
+        ..ui.defaults()
+    });
+    svgr!(<g>{salt}{oxygen}</g>)
+}
+```
+
+## EnergyProfile
+
+A reaction's energy along its progress: the reactants' level, the hump of the transition state
+and the products' level, in `unit`. Arrows mark the activation energy (`activation()`) and the
+enthalpy change (`enthalpy()`, negative when the reaction releases heat). A dashed guide
+carries the reactants' level across. A `catalyst` gives a second, lower peak. Its dashed path
+draws at `catalyst_at`. Gallery scene: `EnergyProfile`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(EnergyProfile {
+        reactants: 50.0,
+        transition: 150.0,
+        products: 10.0,
+        catalyst: Some(95.0),
+        catalyst_at: 2.0,
+        enter: Some(Create::default().into()),
+        ..ui.defaults()
+    })
+}
+```

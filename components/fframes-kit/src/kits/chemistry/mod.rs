@@ -2,12 +2,20 @@
 //! element data of [`mendeleev`] and the 2D depictions of [`chematic`].
 
 mod bohr;
+mod bond_formation;
+mod energy_profile;
 mod molecule;
 mod periodic;
+mod reaction;
 
 pub use bohr::BohrAtom;
+pub use bond_formation::{BondFormation, BondType, bond_electrons, missing, valence};
+pub use energy_profile::EnergyProfile;
 pub use molecule::{BondKind, ChemAtom, ChemBond, Molecule, Molecule2D, SmilesError, Structure};
 pub use periodic::{ElementTile, PeriodicTable, Trend};
+#[cfg(feature = "latex")]
+pub use reaction::ReactionEquation;
+pub use reaction::{Reaction, atom_counts};
 
 use fframes::Color;
 use mendeleev::{ALL_ELEMENTS, Element};

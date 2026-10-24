@@ -20,10 +20,12 @@ pub use crate::explain::{
     ParametricFunction, Range, RiemannRectangles, SampleAt, Space, Table, VGroup,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
+#[cfg(all(feature = "chemistry", feature = "latex"))]
+pub use crate::kits::chemistry::ReactionEquation;
 #[cfg(feature = "chemistry")]
 pub use crate::kits::chemistry::{
-    BohrAtom, BondKind, Category, ChemAtom, ChemBond, ElementTile, Molecule, Molecule2D,
-    PeriodicTable, SmilesError, Structure, Trend,
+    BohrAtom, BondFormation, BondKind, BondType, Category, ChemAtom, ChemBond, ElementTile,
+    EnergyProfile, Molecule, Molecule2D, PeriodicTable, Reaction, SmilesError, Structure, Trend,
 };
 #[cfg(feature = "math")]
 pub use crate::kits::math::{

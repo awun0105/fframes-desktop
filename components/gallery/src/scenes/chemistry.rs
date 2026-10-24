@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use fframes_kit::prelude::*;
 
-use super::core::title;
+use super::{core::title, latex::typeset};
 use crate::GalleryScene;
 
 fn create(delay: f32) -> EnterAnim {
@@ -142,6 +142,86 @@ fn molecule<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{aspirin}{caffeine}</g>)
 }
 
+/// Propane burning: the bare equation, then its balance, with the atoms counted under it.
+fn reaction_equation<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    struct Typeset {
+        reaction: Reaction,
+        unbalanced: Formula,
+        balanced: Formula,
+    }
+    static TYPESET: OnceLock<Typeset> = OnceLock::new();
+    let t = TYPESET.get_or_init(|| {
+        let engine = TexEngine::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tex-cache"));
+        let reaction = Reaction::new(&["C3H8", "O2"], &["CO2", "H2O"]);
+        let unbalanced = typeset(&reaction.ce(None), reaction.typeset(&engine, false));
+        let balanced = typeset(
+            &reaction.ce(reaction.balance().as_deref()),
+            reaction.typeset(&engine, true),
+        );
+        Typeset {
+            reaction,
+            unbalanced,
+            balanced,
+        }
+    });
+    let head = title(ui, "ReactionEquation");
+    let figure = ui.show(ReactionEquation {
+        reaction: Some(&t.reaction),
+        unbalanced: Some(&t.unbalanced),
+        balanced: Some(&t.balanced),
+        center: (0.0, 0.3),
+        delay: 1.0,
+        run_time: 1.5,
+        parts_enter: Some(fade(0.3)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// Sodium giving its outer electron to chlorine.
+fn bond_formation<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "BondFormation");
+    let figure = ui.show(BondFormation {
+        center: (0.0, -0.3),
+        at: 1.0,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.3)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// Two oxygen atoms closing in to share two pairs.
+fn covalent_bond<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "CovalentBond");
+    let figure = ui.show(BondFormation {
+        kind: BondType::Covalent,
+        left: 8,
+        right: 8,
+        center: (0.0, -0.3),
+        distance: 600.0,
+        at: 1.0,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.3)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// An exothermic reaction, then the lower path of its catalyst.
+fn energy_profile<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "EnergyProfile");
+    let figure = ui.show(EnergyProfile {
+        center: (0.0, -0.45),
+        catalyst: Some(95.0),
+        catalyst_at: 2.0,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(1.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("BohrAtom", 5.0, bohr_atom),
@@ -150,5 +230,9 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("PeriodicTrend", 3.5, periodic_trend),
         GalleryScene::new("Molecule2D", 3.0, molecule_2d),
         GalleryScene::new("Molecule", 3.5, molecule),
+        GalleryScene::new("ReactionEquation", 3.5, reaction_equation),
+        GalleryScene::new("BondFormation", 3.5, bond_formation),
+        GalleryScene::new("CovalentBond", 3.5, covalent_bond),
+        GalleryScene::new("EnergyProfile", 3.5, energy_profile),
     ]
 }
