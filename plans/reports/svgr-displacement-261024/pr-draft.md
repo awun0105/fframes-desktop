@@ -151,23 +151,17 @@ in place does not change the result that other primitives read.
 
 ### Tests
 
-Steps in the svgr checkout (`crates/svgr/tests/README.md` describes the conventions; the two
-SVGs already follow its template):
-
-1. Copy `uniform-map.svg` and `semi-transparent-map.svg` to
-   `crates/svgr/tests/tests/filters/feDisplacementMap/`. The folder has only `simple-case`
-   today, an empty test.
-2. Render each reference PNG with the fixed renderer, using the command in the tests
-   README (`cargo run --release -- --width 300 --skip-system-fonts ...`). Open each PNG and
-   check that the blue rect fills the dashed red outline.
-3. Regenerate `crates/svgr/tests/integration/render.rs` with
-   `python3 gen-tests.py > integration/render.rs` from `crates/svgr/tests`. The file says
-   it is generated from the SVG files.
-4. Run `cargo test -p svgr`. `simple_case` should still pass: it draws no displacement.
+- New tests `filters/feDisplacementMap/uniform-map` and `semi-transparent-map`. Each draws the
+  expected position as a dashed red outline, and the blue rect fills it.
+- Reference PNGs made by the test harness (`MAKE_REF=1`) and compressed with
+  `oxipng -o 6 -Z`, as `crates/svgr/tests/README.md` asks.
+- The two lines were added to `integration/render.rs` by hand. Running `gen-tests.py` on
+  Windows writes backslash paths and adds six SVGs that the checked-in file does not list.
+- `cargo test -p svgr --release`: 1,707 passed, 0 failed.
 
 resvg#1157 also adds `scale=0`, `turbulence-map` and `primitiveUnits=objectBoundingBox`; they
-can be ported the same way. svgr's `CHANGELOG.md` has had no entries since 0.40.0, so it needs
-none.
+can follow in another PR. svgr's `CHANGELOG.md` has had no entries since 0.40.0, so this PR
+adds none.
 
 ### Not in this PR
 
