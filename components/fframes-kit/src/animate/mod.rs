@@ -43,6 +43,26 @@ pub trait ShapeAnimation {
     fn overlay<'a>(&self, _ui: &Ui<'a, '_, '_>, _shape: &Shape) -> Option<Svgr<'a>> {
         None
     }
+
+    /// Whether every part (a glyph of a text) gets its own [`look_part`](Self::look_part),
+    /// as in `Write`, instead of the whole sharing one look.
+    fn per_part(&self) -> bool {
+        false
+    }
+
+    /// Changes `look` of part `index` of `count`; `whole` holds every part. By default the
+    /// part looks like the whole.
+    fn look_part(
+        &self,
+        ui: &Ui<'_, '_, '_>,
+        whole: &Shape,
+        _part: &Shape,
+        _index: usize,
+        _count: usize,
+        look: &mut Look,
+    ) {
+        self.look(ui, whole, look);
+    }
 }
 
 /// Eased progress of an animation that starts `delay` seconds after the local start.
@@ -153,6 +173,22 @@ macro_rules! slot {
             fn overlay<'a>(&self, ui: &Ui<'a, '_, '_>, shape: &Shape) -> Option<Svgr<'a>> {
                 self.as_animation().overlay(ui, shape)
             }
+
+            fn per_part(&self) -> bool {
+                self.as_animation().per_part()
+            }
+
+            fn look_part(
+                &self,
+                ui: &Ui<'_, '_, '_>,
+                whole: &Shape,
+                part: &Shape,
+                index: usize,
+                count: usize,
+                look: &mut Look,
+            ) {
+                self.as_animation().look_part(ui, whole, part, index, count, look);
+            }
         }
     };
 }
@@ -162,7 +198,8 @@ slot!(ExitAnim: FadeOut, Uncreate);
 slot!(Emphasis: Indicate, Circumscribe, Flash, Wiggle);
 
 /// Draws `parts` (the glyphs of a text, or one shape) with the animation props applied.
-/// `Write` staggers the parts; every other animation treats them as one.
+/// Animations whose [`ShapeAnimation::per_part`] is set (`Write`) give each part its own
+/// look; the others treat the parts as one.
 pub fn draw_animated<'a>(
     ui: &Ui<'a, '_, '_>,
     parts: &[Shape],
@@ -184,18 +221,36 @@ pub fn draw_animated<'a>(
     if let Some(e) = emphasis {
         e.look(ui, whole, &mut look);
     }
-    if let Some(x) = exit {
-        x.look(ui, whole, &mut look);
-    }
     let overlay = emphasis.and_then(|e| e.overlay(ui, whole));
-    let drawn: Svgr<'a> = match enter {
-        Some(EnterAnim::Write(w)) => w.draw(ui, parts, look),
-        Some(e) => {
-            e.look(ui, whole, &mut look);
-            parts.iter().map(|p| p.draw_with(&look)).collect()
+    let per_part = enter.is_some_and(ShapeAnimation::per_part) || exit.is_some_and(ShapeAnimation::per_part);
+    let drawn: Svgr<'a> = if per_part {
+        let count = parts.len();
+        parts
+            .iter()
+            .enumerate()
+            .map(|(i, part)| {
+                let mut part_look = look;
+                if let Some(x) = exit {
+                    x.look_part(ui, whole, part, i, count, &mut part_look);
+                }
+                if let Some(e) = enter {
+                    e.look_part(ui, whole, part, i, count, &mut part_look);
+                }
+                part.draw_with(&part_look)
+            })
+            .collect()
+    } else {
+        if let Some(x) = exit {
+            x.look(ui, whole, &mut look);
         }
-        None if parts.len() == 1 => first.draw_with(&look),
-        None => parts.iter().map(|p| p.draw_with(&look)).collect(),
+        match enter {
+            Some(e) => {
+                e.look(ui, whole, &mut look);
+                parts.iter().map(|p| p.draw_with(&look)).collect()
+            }
+            None if parts.len() == 1 => first.draw_with(&look),
+            None => parts.iter().map(|p| p.draw_with(&look)).collect(),
+        }
     };
     match overlay {
         Some(overlay) => fframes::svgr!(<g>{drawn}{overlay}</g>),

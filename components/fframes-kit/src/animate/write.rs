@@ -1,5 +1,3 @@
-use fframes::Svgr;
-
 use crate::{
     anim::RateFunc,
     geometry::{Look, Shape},
@@ -36,34 +34,29 @@ impl Write {
         let each = self.run_time / (1.0 + (n - 1.0) * lag);
         (self.delay + i as f32 * lag * each, each)
     }
-
-    /// Draws every part with its own progress on top of `look`.
-    pub(crate) fn draw<'a>(&self, ui: &Ui<'a, '_, '_>, parts: &[Shape], look: Look) -> Svgr<'a> {
-        let border = DrawBorderThenFill {
-            delay: 0.0,
-            run_time: self.run_time,
-            rate_func: self.rate_func,
-            stroke_width: parts.first().map_or(2.0, |p| p.stroke_width.max(2.0)),
-        };
-        parts
-            .iter()
-            .enumerate()
-            .map(|(i, part)| {
-                let (start, each) = self.window(i, parts.len());
-                let p = self
-                    .rate_func
-                    .apply(progress(ui.seconds(), start, start + each), each);
-                let mut part_look = look;
-                border.at(p, part, &mut part_look);
-                part.draw_with(&part_look)
-            })
-            .collect()
-    }
 }
 
 impl ShapeAnimation for Write {
     fn look(&self, ui: &Ui<'_, '_, '_>, shape: &Shape, look: &mut Look) {
-        let (start, each) = self.window(0, 1);
+        self.look_part(ui, shape, shape, 0, 1, look);
+    }
+
+    fn per_part(&self) -> bool {
+        true
+    }
+
+    /// `DrawBorderThenFill` in the part's own window; the temporary border is as wide as the
+    /// first part's outline (`whole` starts as the first part), at least 2.
+    fn look_part(
+        &self,
+        ui: &Ui<'_, '_, '_>,
+        whole: &Shape,
+        part: &Shape,
+        index: usize,
+        count: usize,
+        look: &mut Look,
+    ) {
+        let (start, each) = self.window(index, count);
         let p = self
             .rate_func
             .apply(progress(ui.seconds(), start, start + each), each);
@@ -71,9 +64,9 @@ impl ShapeAnimation for Write {
             delay: 0.0,
             run_time: self.run_time,
             rate_func: self.rate_func,
-            stroke_width: shape.stroke_width.max(2.0),
+            stroke_width: whole.stroke_width.max(2.0),
         };
-        border.at(p, shape, look);
+        border.at(p, part, look);
     }
 }
 
