@@ -38,7 +38,8 @@ impl<'a, T: Animatable + Copy + Default> From<&'a KeyFramesAnimation<T>> for Ani
 /// `timeline!` of the value in the video (Manim's `tracker.animate.set_value(..)` calls
 /// become its keyframes), read it with [`Ui::sample`] where Manim calls `get_value()`, and
 /// build what depends on it in `render_frame`, which runs every frame like
-/// `always_redraw`. A `DecimalNumber` is a `Label` with `format!("{value:.2}")`.
+/// `always_redraw`. [`DecimalNumber`](crate::text::DecimalNumber) and
+/// [`Variable`](crate::text::Variable) show one.
 ///
 /// ```
 /// use fframes_kit::prelude::*;

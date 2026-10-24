@@ -155,6 +155,61 @@ fn drop_in<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Numbers and Manim's text mobjects
+
+| Component | Props | What it does | Without a font |
+| --- | --- | --- | --- |
+| `DecimalNumber` | `value: ValueTracker`, `x`, `y`, `style` (title), `fill`, `anchor` (`Start`), `num_decimal_places` (2), `include_sign`, `group_with_commas` (true), `unit`, `opacity` | the value with every digit in a slot as wide as the widest digit, so digits do not jitter; `anchor: End` keeps them in place across a carry | one line |
+| `Integer` | as `DecimalNumber` without `num_decimal_places` | the value rounded to a whole number | one line |
+| `Variable` | `label`, `value`, `x`, `y`, `style` (heading), `fill`, `value_fill` (accent), `num_decimal_places` (2), `unit`, `opacity` | `label = value`, the label in place and the number after it | one line |
+| `BulletedList` | `items: Vec<Cow<str>>`, `x`, `y`, `style` (body), `fill`, `bullet_fill` (accent), `indent`, `line_spacing`, `opacity` | one line per item after a round bullet (a circle, no glyph needed); `baseline(i)` gives a line's `y` | the same |
+| `Title` | `text`, `x` (960), `y` (130), `style`, `fill`, `include_underline` (true), `match_underline_width_to_text`, `underline_width` (1720), `underline_buff`, `underline_stroke`, `underline_stroke_width`, `opacity` | a centered heading over an underline | the underline `underline_width` wide |
+| `MarkupText` | `markup`, `x`, `y`, `style` (heading), `fill`, `anchor`, `opacity` | one line with Pango tags: `<b>`, `<i>`, `<u>`, `<span>` with `foreground`, `size` (pixels or `xx-small` to `xx-large`), `weight`, `style`, `underline` | the same |
+
+`value` is a `ValueTracker`: a fixed number (`3.5.into()`), a stored `timeline!`
+(`(&self.price).into()`), or a value computed from time in `render_frame`
+(`f(ui.seconds()).into()`), which is Manim's `always_redraw`. It is an `f32`, exact to about
+seven significant digits.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn readout<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    let title = ui.show(Title { text: "Free fall".into(), ..ui.defaults() });
+    let height = ui.show(Variable {
+        label: "h".into(),
+        value: (100.0 - 4.905 * t * t).max(0.0).into(),
+        x: 200.0,
+        y: 400.0,
+        unit: " m",
+        ..ui.defaults()
+    });
+    let steps = ui.show(BulletedList {
+        items: vec!["drop the ball".into(), "read the height".into()],
+        x: 200.0,
+        y: 560.0,
+        ..ui.defaults()
+    });
+    let note = ui.show(MarkupText {
+        markup: "<b>no</b> air <span foreground='#ff5500'>resistance</span>".into(),
+        x: 200.0,
+        y: 760.0,
+        ..ui.defaults()
+    });
+    svgr!(<g>{title}{height}{steps}{note}</g>)
+}
+
+let n = DecimalNumber { include_sign: true, unit: " m", ..DecimalNumber::default() };
+assert_eq!(n.format(1234.5), "+1,234.50 m");
+```
+
+Bold and italic in `MarkupText` draw with the family's bold and italic faces, so put those
+font files into the media. Unknown tags and attributes are drawn without their style, and
+markup that is not well formed is drawn as plain text; `inspect` warns about both.
+`inspect --pops` reports changing digits as pops "like a counter"; that is the number
+counting, not a layout jump.
+
 ## Overlays
 
 Overlays sit on top of a scene: who is speaking, what is said, where in the video we are.

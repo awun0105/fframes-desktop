@@ -4,12 +4,12 @@ use fframes::{Color, Svgr};
 
 use crate::{
     anim::RateFunc,
-    motion::{progress, thousands},
+    motion::progress,
     theme::{TextStyle, Theme},
     ui::{Component, Themed, Ui},
 };
 
-use super::{TextAnchor, line};
+use super::{TextAnchor, decimal::format_number, line};
 
 /// A number that counts from `from` to `to` over `run_time` seconds, starting `delay`
 /// seconds into the container: `"0" -> "12,480"`. It is right aligned by default, so the
@@ -74,20 +74,8 @@ impl Counter<'_> {
 
     /// The text shown for `value`.
     pub fn format(&self, value: f64) -> String {
-        let fixed = format!("{:.*}", self.decimals, value.abs());
-        let (int, frac) = fixed.split_once('.').unwrap_or((&fixed, ""));
-        let int = match (self.thousands, int.parse::<u64>()) {
-            (true, Ok(n)) => thousands(n),
-            _ => int.to_owned(),
-        };
-        // -0 shows as 0
-        let sign = if value < 0.0 && fixed.chars().any(|c| matches!(c, '1'..='9')) {
-            "-"
-        } else {
-            ""
-        };
-        let dot = if frac.is_empty() { "" } else { "." };
-        format!("{}{sign}{int}{dot}{frac}{}", self.prefix, self.suffix)
+        let number = format_number(value, self.decimals, false, self.thousands);
+        format!("{}{number}{}", self.prefix, self.suffix)
     }
 }
 

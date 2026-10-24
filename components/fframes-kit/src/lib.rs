@@ -83,6 +83,8 @@
 //! | `VGroup(..).arrange(RIGHT, buff)`, `arrange_in_grid` | [`VGroup`](explain::VGroup) `::arrange`, `::arrange_in_grid`; boxes alone with [`layout::arrange`], `row`, `column`, `grid` |
 //! | `Matrix`, `Table`, `BraceLabel` | [`Matrix`](explain::Matrix), [`Table`](explain::Table), [`BraceLabel`](label::BraceLabel) |
 //! | `ValueTracker` with `always_redraw` | [`ValueTracker`](anim::ValueTracker), a `timeline!` read with `ui.sample` inside `render` |
+//! | `DecimalNumber`, `Integer`, `Variable` | [`DecimalNumber`](text::DecimalNumber) (digits in fixed slots), [`Integer`](text::Integer), [`Variable`](text::Variable), each following a `ValueTracker` |
+//! | `BulletedList`, `Title`, `MarkupText` | [`BulletedList`](text::BulletedList), [`Title`](text::Title), [`MarkupText`](text::MarkupText) (Pango tags; [`parse_markup`](text::parse_markup)) |
 //! | updaters that step a simulation (`dt`) | [`Sim`](sim::Sim) `::precompute` in the constructor, `sample(t)` per frame |
 //! | `axes.plot_line_graph`, `BarChart`, histograms, heat maps | [`plot`]: `LinePlot`, `ScatterPlot`, `Histogram` with `bin`, `Heatmap`, `plot::bars` |
 //! | the math scenes (feature `math`): dots and intervals on a `NumberLine`, tangents, secants, Riemann sums, the unit circle, `LinearTransformationScene`, vector sums, the central limit theorem, `FourierCirclesScene` | `kits::math`: `NumberPoint`, `Interval`, `FunctionPlot`, `Tangent`, `Secant`, `RiemannSum`, `AreaUnder` (and `integral`), `UnitCircle`, `LinearTransform`, `VectorSum`, `Pythagoras`, `FractionBar`, `FractionPie`, `MatrixView`, `NormalFit`, `Epicycles` |

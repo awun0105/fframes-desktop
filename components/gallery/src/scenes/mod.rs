@@ -8,6 +8,7 @@ pub mod cs;
 pub mod effects;
 pub mod effects_ii;
 pub mod explain;
+pub mod explain_ii;
 pub mod general;
 pub mod latex;
 pub mod math;
@@ -33,6 +34,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(general::scenes());
     scenes.extend(latex::scenes());
     scenes.extend(explain::scenes());
+    scenes.extend(explain_ii::scenes());
     scenes.extend(math::scenes());
     scenes.extend(physics::scenes());
     scenes.extend(chemistry::scenes());

@@ -1,7 +1,7 @@
 ---
 phase: 17
 title: "Phase 17: Coordinate systems, fields, graphs, tables and text mobjects"
-status: todo
+status: in-progress
 priority: P1
 effort: 6d
 dependencies: [6]
@@ -131,9 +131,23 @@ Add the remaining 2D mobjects of the Manim CE reference:
 
 ## Todo
 
-- [ ] Numbers and text mobjects
+- [x] Numbers and text mobjects
 - [ ] Coordinate systems and `LogBase`
 - [ ] Implicit functions, vector fields, stream lines
 - [ ] Graph layouts, `Graph` and `DiGraph`
 - [ ] Typed matrices and tables
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
+
+## Notes
+
+- `DecimalNumber`, `Integer` and `Variable` follow a `ValueTracker` (`f32`), so an existing
+  tracker drives them; a closure of time is `f(ui.seconds()).into()`. `Counter` shares their
+  formatting.
+- No jitter is checked in `gallery/tests/decimal_number.rs`: the point and the commas keep their x
+  while the digits change, also across a carry with `anchor: End`.
+- `inspect --pops` on `DecimalNumber` reports the leading digits and the sign flip as pops "like
+  a counter": the number counting, not a layout jump.
+- `MarkupText` writes each run as a sibling `<tspan>` with its whole style. Underline draws; bold
+  and italic need the family's bold and italic faces in the media (the gallery has only DM Sans
+  Medium, so they look regular there).
+- `BulletedList` draws its bullets as circles, independent of the font.
