@@ -15,6 +15,7 @@ use super::enter_alpha;
 /// `t` as `run_time · S(t / run_time) / S(1)`, `S` the area under the curve, so they start
 /// and end where they would anyway and only the pace in between changes. After `run_time`
 /// their time is the real one again.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct ChangeSpeed<'a> {
     pub run_time: f32,
     pub speed: Vec<(f32, f32)>,
@@ -96,6 +97,7 @@ impl<'a> Component<'a> for ChangeSpeed<'a> {
 /// Counts a [`DecimalNumber`] from the value of its tracker to `target` (Manim's
 /// `ChangeDecimalToValue`).
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct ChangeDecimalToValue<'a> {
     pub number: DecimalNumber<'a>,
     pub target: f32,

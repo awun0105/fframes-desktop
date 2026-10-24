@@ -1,7 +1,7 @@
 ---
 phase: 16
 title: "Phase 16: Manim animations II"
-status: in-progress
+status: completed
 priority: P1
 effort: 5d
 dependencies: [2, 17]

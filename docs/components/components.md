@@ -951,7 +951,7 @@ fn shift_and_restore<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     }
 }
 
-/// `UpdateFromAlphaFunc` and `MaintainPositionRelativeTo`: a dot crosses in 2 seconds from
+/// `UpdateFromFunc`, `UpdateFromAlphaFunc` and `MaintainPositionRelativeTo`: a dot crosses in 2 seconds from
 /// second 1, and a second dot follows it 80 pixels above.
 fn follow<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let alpha = RateFunc::Smooth.apply(motion::progress(ui.seconds(), 1.0, 3.0), 2.0);
