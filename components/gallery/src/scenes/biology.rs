@@ -76,6 +76,26 @@ fn mitosis<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+fn neuron<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Neuron");
+    let figure = ui.show(Neuron {
+        delay: 0.6,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn action_potential<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "ActionPotential");
+    let figure = ui.show(ActionPotential {
+        delay: 0.8,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight parts half a second apart from 0.6 s, the last name at about 5.1 s
@@ -89,5 +109,9 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Translation", 8.5, translation),
         // six stages of 1.6 s from 0.6 s
         GalleryScene::new("MitosisStages", 11.0, mitosis),
+        // the names by 5 s, then two impulses from 5.2 s and 7.2 s
+        GalleryScene::new("Neuron", 9.0, neuron),
+        // the trace from 0.8 s to 5.8 s, then a pause on it
+        GalleryScene::new("ActionPotential", 7.0, action_potential),
     ]
 }

@@ -155,3 +155,44 @@ fn division<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
+## Neuron
+
+`Neuron` lies across the frame, `length` pixels from its dendrites to its axon terminals:
+dendrites branching from the cell body (placed from `seed`), the axon wrapped in myelin with
+nodes of Ranvier between the segments, and the terminals. It grows in from `delay`, and with
+`labels` each part is then named above or below it. At each time in `impulses` the cell body
+fires and the impulse jumps from node to node along the axon at `speed` pixels a second; at
+the terminals it releases neurotransmitter. Gallery scene: `Neuron`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn two_signals<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Neuron {
+        impulses: vec![2.5, 3.5],
+        labels: false,
+        ..ui.defaults()
+    })
+}
+```
+
+## ActionPotential
+
+`ActionPotential` traces the membrane potential of an action potential on axes of time (0 to
+6 ms) against millivolts, drawing it in `duration` seconds from `delay`, a dot at its head.
+The dashed threshold (-55 mV) and resting (-70 mV) lines are there from the start, and each
+phase is named as the trace reaches it: resting potential, stimulus, depolarization, the peak,
+repolarization and hyperpolarization. `membrane_potential(ms)` gives the curve. Gallery
+scene: `ActionPotential`.
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::kits::biology::membrane_potential;
+
+assert_eq!(membrane_potential(0.0), -70.0);
+assert!((membrane_potential(2.3) - 40.0).abs() < 1e-6); // the peak
+
+fn spike<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(ActionPotential { duration: 3.0, ..ui.defaults() })
+}
+```

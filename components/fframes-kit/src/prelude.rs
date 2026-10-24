@@ -22,8 +22,8 @@ pub use crate::explain::{
 pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(feature = "biology")]
 pub use crate::kits::biology::{
-    BaseColors, Cell, CellKind, CellPalette, DnaHelix, MitosisStage, MitosisStages, Organelle,
-    Transcription, Translation,
+    ActionPotential, BaseColors, Cell, CellKind, CellPalette, DnaHelix, MitosisStage,
+    MitosisStages, Neuron, Organelle, Transcription, Translation,
 };
 #[cfg(all(feature = "chemistry", feature = "latex"))]
 pub use crate::kits::chemistry::ReactionEquation;
