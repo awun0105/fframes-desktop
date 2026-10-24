@@ -8,13 +8,13 @@ use fframes::{
 use kurbo::Point;
 
 /// A kit colour for the 3D renderer.
-pub(super) fn rgb(color: Color) -> Rgb {
+pub(crate) fn rgb(color: Color) -> Rgb {
     Rgb::srgb8(color.r, color.g, color.b)
 }
 
 /// An empty scene with a studio environment, a sun from the upper left and no background,
 /// so the frame shows through.
-pub(super) fn stage() -> Scene {
+pub(crate) fn stage() -> Scene {
     let mut scene = Scene::new()
         .environment(Environment::studio())
         .background(Background::Transparent);
@@ -28,7 +28,7 @@ pub(super) fn stage() -> Scene {
 
 /// A camera turned `azimuth` degrees around the Y axis and raised `elevation` degrees, far
 /// enough to fit a sphere of `radius` around `target` into a `width` x `height` image.
-pub(super) fn fitting_camera(
+pub(crate) fn fitting_camera(
     target: Vec3,
     radius: f32,
     width: f32,
@@ -45,7 +45,7 @@ pub(super) fn fitting_camera(
 }
 
 /// Renders `scene` and places the image `width` x `height` pixels around `middle`.
-pub(super) fn picture<'a>(
+pub(crate) fn picture<'a>(
     scene: &Scene,
     camera: &Camera,
     middle: Point,

@@ -111,7 +111,7 @@ Add Manim's camera scenes and its 3D mobjects:
 ## Todo
 
 - [x] 2D cameras
-- [ ] 3D view, camera mapping and overlays, measured cost
-- [ ] Solids, polyhedra, surfaces and 3D axes
-- [ ] 3D enter animations
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] 3D view, camera mapping and overlays, measured cost
+- [x] Solids, polyhedra, surfaces and 3D axes
+- [x] 3D enter animations
+- [x] Gallery scenes, e2e frames, docs and mapping rows

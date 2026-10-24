@@ -55,7 +55,8 @@ fn still_life<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 
 pub fn scenes() -> Vec<GalleryScene> {
-    scenes![
+    #[allow(unused_mut)]
+    let mut scenes = scenes![
         "MovingCamera", 2.0 => |ui| {
             // from the whole canvas onto the circle and back, like `self.camera.frame.animate`
             let space = ui.space;
@@ -81,5 +82,256 @@ pub fn scenes() -> Vec<GalleryScene> {
             };
             ui.show(inset)
         },
-    ]
+    ];
+    #[cfg(feature = "three-d")]
+    scenes.extend(three_d::scenes());
+    scenes
+}
+
+#[cfg(feature = "three-d")]
+mod three_d {
+    use std::f32::consts::{PI, TAU};
+
+    use fframes_kit::prelude::*;
+
+    use super::title;
+    use crate::GalleryScene;
+
+    const DEG: f32 = PI / 180.0;
+
+    /// Manim's favourite camera: `phi` 75°, `theta` 30°, turning slowly.
+    fn view<'a>(objects: Vec<Box<dyn Object3D + 'a>>, rotation: f32) -> ThreeDView<'a> {
+        ThreeDView {
+            phi: 75.0 * DEG,
+            theta: 30.0 * DEG,
+            ambient_rotation: rotation,
+            objects,
+            ..ThreeDView::themed(&Theme::default())
+        }
+    }
+
+    fn ripple(u: f32, v: f32) -> (f32, f32, f32) {
+        (u, v, 0.6 * (u * 1.4).sin() * (v * 1.4).cos())
+    }
+
+    /// Axes drawn in, a dot, a line and an arrow on them, the camera turning.
+    fn axes<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let head = title(ui, "ThreeDAxes");
+        let c = ui.theme.colors;
+        let axes = ThreeDAxes {
+            enter: Some(
+                Create {
+                    run_time: 1.0,
+                    ..ui.defaults()
+                }
+                .into(),
+            ),
+            ..ui.defaults()
+        };
+        let p = axes.c2p(3.0, 2.0, 2.0);
+        let later = |delay: f32| -> Option<Enter3D> {
+            Some(
+                FadeIn {
+                    delay,
+                    run_time: 0.5,
+                    ..FadeIn::themed(&Theme::default())
+                }
+                .into(),
+            )
+        };
+        let objects: Vec<Box<dyn Object3D + 'a>> = vec![
+            Box::new(axes),
+            Box::new(Line3D {
+                start: axes.c2p(0.0, 0.0, 0.0),
+                end: p,
+                color: c.highlight,
+                enter: later(1.0),
+                ..Line3D::default()
+            }),
+            Box::new(Arrow3D {
+                start: axes.c2p(0.0, 0.0, 0.0),
+                end: axes.c2p(-3.0, 2.0, 0.0),
+                color: c.accent,
+                thickness: 0.03,
+                enter: later(1.3),
+                ..Arrow3D::default()
+            }),
+            Box::new(Dot3D {
+                point: p,
+                radius: 0.12,
+                color: c.highlight,
+                enter: later(1.0),
+                ..Dot3D::default()
+            }),
+        ];
+        let figure = ui.show(view(objects, 0.15));
+        svgr!(<g>{figure}{head}</g>)
+    }
+
+    /// A rippled checkerboard surface over axes, fading in while the camera turns.
+    fn surface<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let head = title(ui, "Surface");
+        let objects: Vec<Box<dyn Object3D + 'a>> = vec![
+            Box::new(ThreeDAxes {
+                show_labels: false,
+                ..ui.defaults()
+            }),
+            Box::new(Surface {
+                func: ripple,
+                u_range: (-3.0, 3.0),
+                v_range: (-3.0, 3.0),
+                resolution: (24, 24),
+                enter: Some(
+                    FadeIn {
+                        run_time: 1.0,
+                        ..ui.defaults()
+                    }
+                    .into(),
+                ),
+                ..ui.defaults()
+            }),
+        ];
+        let figure = ui.show(view(objects, 0.2));
+        svgr!(<g>{figure}{head}</g>)
+    }
+
+    /// The six solids, each growing from its center in turn.
+    fn solids<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let head = title(ui, "Solids");
+        let grow = |i: usize| -> Option<Enter3D> {
+            Some(
+                Create {
+                    delay: 0.2 * i as f32,
+                    run_time: 0.8,
+                    ..Create::themed(&Theme::default())
+                }
+                .into(),
+            )
+        };
+        let x = |i: usize| -5.0 + 2.0 * i as f32;
+        let objects: Vec<Box<dyn Object3D + 'a>> = vec![
+            Box::new(Sphere {
+                center: (x(0), 0.0, 0.0),
+                radius: 0.8,
+                enter: grow(0),
+                ..ui.defaults()
+            }),
+            Box::new(Cube {
+                center: (x(1), 0.0, 0.0),
+                side_length: 1.3,
+                enter: grow(1),
+                ..ui.defaults()
+            }),
+            Box::new(Cylinder {
+                center: (x(2), 0.0, 0.0),
+                radius: 0.6,
+                height: 1.6,
+                enter: grow(2),
+                ..ui.defaults()
+            }),
+            Box::new(Cone {
+                apex: (x(3), 0.0, 0.8),
+                base_radius: 0.7,
+                height: 1.6,
+                show_base: true,
+                enter: grow(3),
+                ..ui.defaults()
+            }),
+            Box::new(Torus {
+                center: (x(4), 0.0, 0.0),
+                major_radius: 0.6,
+                minor_radius: 0.25,
+                enter: grow(4),
+                ..ui.defaults()
+            }),
+            Box::new(Prism {
+                center: (x(5), 0.0, 0.0),
+                dimensions: (1.0, 0.7, 1.5),
+                enter: grow(5),
+                ..ui.defaults()
+            }),
+        ];
+        let figure = ui.show(ThreeDView {
+            phi: 65.0 * DEG,
+            theta: -80.0 * DEG,
+            objects,
+            ..ui.defaults()
+        });
+        svgr!(<g>{figure}{head}</g>)
+    }
+
+    /// The four Platonic solids and the hull of points on a twisted ring.
+    fn polyhedra<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let head = title(ui, "Polyhedra");
+        let fade = |i: usize| -> Option<Enter3D> {
+            Some(
+                FadeIn {
+                    delay: 0.2 * i as f32,
+                    run_time: 0.6,
+                    ..FadeIn::themed(&Theme::default())
+                }
+                .into(),
+            )
+        };
+        let ring: Vec<(f32, f32, f32)> = (0..10)
+            .map(|i| {
+                let a = TAU * i as f32 / 10.0;
+                (
+                    0.9 * a.cos(),
+                    0.9 * a.sin(),
+                    if i % 2 == 0 { 0.5 } else { -0.5 },
+                )
+            })
+            .collect();
+        let x = |i: usize| -4.8 + 2.4 * i as f32;
+        let objects: Vec<Box<dyn Object3D + 'a>> = vec![
+            Box::new(Tetrahedron {
+                edge_length: 1.6,
+                center: (x(0), 0.0, 0.0),
+                enter: fade(0),
+                ..ui.defaults()
+            }),
+            Box::new(Octahedron {
+                edge_length: 1.3,
+                center: (x(1), 0.0, 0.0),
+                enter: fade(1),
+                ..ui.defaults()
+            }),
+            Box::new(Icosahedron {
+                edge_length: 1.0,
+                center: (x(2), 0.0, 0.0),
+                enter: fade(2),
+                ..ui.defaults()
+            }),
+            Box::new(Dodecahedron {
+                edge_length: 0.65,
+                center: (x(3), 0.0, 0.0),
+                enter: fade(3),
+                ..ui.defaults()
+            }),
+            Box::new(ConvexHull3D {
+                points: ring,
+                center: (x(4), 0.0, 0.0),
+                enter: fade(4),
+                ..ui.defaults()
+            }),
+        ];
+        let figure = ui.show(ThreeDView {
+            phi: 70.0 * DEG,
+            theta: -70.0 * DEG,
+            ambient_rotation: 0.1,
+            objects,
+            ..ui.defaults()
+        });
+        svgr!(<g>{figure}{head}</g>)
+    }
+
+    pub fn scenes() -> Vec<GalleryScene> {
+        vec![
+            GalleryScene::new("ThreeDAxes", 3.0, axes),
+            GalleryScene::new("Surface", 3.0, surface),
+            GalleryScene::new("Solids", 2.5, solids),
+            GalleryScene::new("Polyhedra", 2.5, polyhedra),
+        ]
+    }
 }

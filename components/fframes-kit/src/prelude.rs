@@ -125,6 +125,12 @@ pub use crate::theme::{
     Colors, Durations, Easings, Motion, Radius, Shadow, Shadows, Spacing, Stagger, Stroke,
     TextStyle, Theme, Typography,
 };
+#[cfg(feature = "3d")]
+pub use crate::three::{
+    Arrow3D, Cone, ConvexHull3D, Cube, Cylinder, Dodecahedron, Dot3D, Enter3D, Icosahedron, Line3D,
+    Object3D, Octahedron, Polyhedron, Prism, Projector, Sphere, Surface, Tetrahedron, ThreeDAxes,
+    ThreeDView, Torus,
+};
 pub use crate::time::{Fill, Freeze, Loop, Sequence, Series};
 pub use crate::transitions::{
     AudioFade, BlurSlide, CircleWipe, ClockWipe, CrossZoom, Direction, Dissolve, DreamyZoom, Fade,

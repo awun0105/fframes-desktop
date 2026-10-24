@@ -11,8 +11,12 @@ pub(crate) mod draw;
 pub mod math;
 #[cfg(feature = "physics")]
 pub mod physics;
-#[cfg(all(feature = "3d", any(feature = "chemistry", feature = "biology")))]
-mod stage;
+#[cfg(feature = "3d")]
+#[cfg_attr(
+    not(any(feature = "chemistry", feature = "biology")),
+    allow(dead_code, unused_imports)
+)]
+pub(crate) mod stage;
 
 #[cfg(any(feature = "physics", feature = "chemistry"))]
 use crate::{layout::Anchor, ui::Ui};

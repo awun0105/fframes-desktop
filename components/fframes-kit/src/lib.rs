@@ -105,6 +105,13 @@
 //! | the frame: 8 units tall, `y` up, origin in the middle | [`Space`](explain::Space) in `ui.space`, [`Canvas`](explain::Canvas) for another one |
 //! | `MovingCameraScene`, `self.camera.frame`, `camera.auto_zoom` | [`MovingCamera`](explain::MovingCamera) `{ center, width, children }`, [`auto_zoom`](explain::auto_zoom) |
 //! | `ZoomedScene` (`zoomed_camera`, `zoomed_display`, `get_zoomed_display_pop_out_animation`) | [`ZoomedInset`](explain::ZoomedInset) `{ frame, display, delay, run_time, children }` |
+//! | `VectorScene` (`add_vector`, `get_basis_vectors`), `LinearTransformationScene` | a [`NumberPlane`](explain::NumberPlane) with [`Vector`](shapes::Vector)s, `kits::math::LinearTransform` (feature `math`) for the transformation |
+//! | `ThreeDScene`, `set_camera_orientation`, `begin_ambient_camera_rotation`, `add_fixed_in_frame_mobjects` (feature `3d`) | `three::ThreeDView { phi, theta, focal_distance, zoom, ambient_rotation, objects, fixed_in_frame }`, `three::Projector` for 2D on 3D points |
+//! | `Surface`, `checkerboard_colors` (feature `3d`) | `three::Surface { func, u_range, v_range, resolution, checkerboard_colors }` |
+//! | `ThreeDAxes`, `c2p`, `get_axis_labels` (feature `3d`) | `three::ThreeDAxes` with `c2p` and `show_labels` |
+//! | `Sphere`, `Cube`, `Prism`, `Cylinder`, `Cone`, `Torus`, `Dot3D`, `Line3D`, `Arrow3D` (feature `3d`) | the same names in `three`, Manim's sizes and resolutions |
+//! | `Polyhedron`, `Tetrahedron`, `Octahedron`, `Icosahedron`, `Dodecahedron`, `ConvexHull3D` (feature `3d`) | the same names in `three`; `three::convex_hull_faces` for the hull's faces |
+//! | `Create`, `FadeIn` on a 3D mobject (feature `3d`) | the object's `enter: Some(Create { .. }.into())`, a `three::Enter3D` |
 //! | `NumberLine`, `Axes`, `NumberPlane` | [`explain`]: the same names, `x_range: Range::new(min, max, step)` |
 //! | `LinearBase`, `LogBase` (`scaling=`) | [`Scaling`](explain::Scaling) in `Axes::x_scaling`, `y_scaling`, `NumberLine::scaling`; the range in exponents |
 //! | `UnitInterval` | [`NumberLine::unit_interval`](explain::NumberLine::unit_interval) |
@@ -160,6 +167,8 @@ pub mod sim;
 pub mod text;
 pub mod text_outline;
 pub mod theme;
+#[cfg(feature = "3d")]
+pub mod three;
 pub mod time;
 pub mod transitions;
 pub mod ui;
