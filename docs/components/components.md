@@ -790,6 +790,52 @@ fn badge<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Noise
+
+| Component | Props (defaults) | What it does |
+| --- | --- | --- |
+| `WhiteNoise` | `amount` (1), `seed` (0), `grain` (2), `area` | grey static over the opaque parts; derive `seed` from the frame to make it move |
+| `FractalNoise` | `fractal_type` (`Basic`, or `Turbulent`), `scale` (100), `complexity` (6), `evolution` (0°), `cycle_evolution`, `cycle` (1), `contrast` (1), `brightness` (0), `offset_x`, `offset_y`, `seed`, `invert`, `amount` (1), `area` | layered grey noise for clouds and smoke, mixed over the opaque parts |
+
+Both draw `feTurbulence` on a rectangle over `area`, masked by the children's alpha, so the
+children render twice. `FractalNoise::evolution` cross-fades to the next seed on every full
+turn; with `cycle_evolution` the seeds repeat after `cycle` turns. Remotion's other fractal
+types, `noiseType`, `subInfluence` and `subScaling` have no `feTurbulence` equivalent.
+
+Noise detail near the pixel size samples differently on the CPU and Skia backends. A
+white noise of one-unit grain in a fifth-size thumbnail differed in 1.2% of the pixels; at
+about five output pixels per speck it differed in 0.07%. Keep `grain` and the finest
+`FractalNoise` layer (`scale / 2^(complexity - 1)`) at a few output pixels where the backends
+must agree.
+
+`motion::noise_2d`, `noise_3d` and `noise_4d` are simplex noise for driving motion
+(Remotion's `noise2D`, `noise3D`, `noise4D`). They return -1 to 1, the same for the same seed
+and coordinates. The seed is a number or a string.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn bobbing<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let y = 540.0 + 80.0 * motion::noise_2d("buoy", 0.0, ui.seconds() * 0.6);
+    svgr!(<circle cx="960" cy={y} r="40" fill="#e63946" />)
+}
+
+fn storm<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let turn = 90.0 * ui.seconds();
+    ui.show(FractalNoise {
+        evolution: Anim::Fixed(turn),
+        amount: Anim::Fixed(0.6),
+        children: children(bobbing),
+        ..ui.defaults()
+    })
+}
+```
+
+The displacement effects (noise displacement, turbulent displace, wave, waves, zigzag) are
+not yet available. They need `feDisplacementMap`, which the CPU backend draws wrongly: the
+`svgr` crate applies its `scale` twice and reads the map premultiplied (resvg issue 1160).
+They come back when a fixed `svgr` arrives with an upstream update.
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`

@@ -6,7 +6,8 @@
 //! The colour effects ([`Brightness`] to [`Lut`]) are SVG filters around their children;
 //! [`ColorStack`] composes several colour matrices into one filter. [`Outline`],
 //! [`Emboss`], [`BevelAlpha`], [`LongShadows`], [`RoughenEdges`] and [`Shrinkwrap`] work on
-//! the alpha edges of their children.
+//! the alpha edges of their children. [`WhiteNoise`] and [`FractalNoise`] draw noise over
+//! them.
 
 use fframes::Svgr;
 
@@ -144,6 +145,7 @@ macro_rules! filter_effect {
 
 mod blur;
 mod color;
+mod distort;
 mod edges;
 mod light_leak;
 mod motion_blur;
@@ -155,6 +157,7 @@ pub use color::{
     Exposure, Grayscale, HueRotate, Invert, Levels, Lut, Saturation, ShadowsHighlights,
     THERMAL_PALETTE, ThermalVision, Tint, Vibrance, WhiteBalance,
 };
+pub use distort::{FractalNoise, FractalType, WhiteNoise};
 pub use edges::{BevelAlpha, Emboss, LongShadows, Outline, RoughenEdges, Shrinkwrap};
 pub use light_leak::{Flare, LightLeak};
 pub use motion_blur::{CameraMotionBlur, MAX_SAMPLES, Trail};

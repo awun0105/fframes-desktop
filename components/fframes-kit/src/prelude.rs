@@ -19,9 +19,10 @@ pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
 pub use crate::effects::ShaderNoise;
 pub use crate::effects::{
     BevelAlpha, Blur, Brightness, CameraMotionBlur, ColorCorrection, ColorKey, ColorMatrix,
-    ColorStack, Contrast, Curves, Duotone, Emboss, Exposure, Grayscale, HueRotate, Invert, Levels,
-    LightLeak, LongShadows, Lut, Noise, Outline, RoughenEdges, Saturation, ShadowsHighlights,
-    Shrinkwrap, ThermalVision, Tint, Trail, Vibrance, WhiteBalance,
+    ColorStack, Contrast, Curves, Duotone, Emboss, Exposure, FractalNoise, FractalType, Grayscale,
+    HueRotate, Invert, Levels, LightLeak, LongShadows, Lut, Noise, Outline, RoughenEdges,
+    Saturation, ShadowsHighlights, Shrinkwrap, ThermalVision, Tint, Trail, Vibrance, WhiteBalance,
+    WhiteNoise,
 };
 pub use crate::explain::{
     Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, Matrix, NumberLine, NumberPlane,

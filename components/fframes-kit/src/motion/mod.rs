@@ -4,9 +4,11 @@
 
 mod beat;
 mod format;
+mod noise;
 
 pub use beat::Beat;
 pub use format::{TimecodeError, thousands, timecode};
+pub use noise::{NoiseSeed, noise_2d, noise_3d, noise_4d};
 
 /// Clamps `x` to `0..=1`.
 pub fn clamp01(x: f32) -> f32 {

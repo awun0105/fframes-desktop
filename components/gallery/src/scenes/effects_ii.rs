@@ -11,6 +11,8 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("ColorEffects", 2.0, color_effects),
         // the outline grows and the long shadows stretch out over the scene
         GalleryScene::new("EdgeEffects", 2.0, edge_effects),
+        // the static flickers, the clouds evolve and the dots ride the noise
+        GalleryScene::new("NoiseEffects", 2.0, noise_effects),
     ]
 }
 
@@ -319,5 +321,83 @@ fn edge_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     .collect();
     let figure = grid(ui, 4, cells);
     let head = title(ui, "Edges and shape");
+    svgr!(<g>{figure}{head}</g>)
+}
+
+/// Dots riding 2D simplex noise over time, and a 3D noise field as a row of bars.
+fn noise_motion<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    let dots: Vec<Svgr<'a>> = (0..24)
+        .map(|i| {
+            let x = 120.0 + i as f32 * 73.0;
+            let y = 380.0 + 220.0 * motion::noise_2d("dots", i as f32 * 0.21, t * 0.9);
+            svgr!(<circle cx={x} cy={y} r="22" fill="#e63946" />)
+        })
+        .collect();
+    let bars: Vec<Svgr<'a>> = (0..48)
+        .map(|i| {
+            let h = 160.0 + 140.0 * motion::noise_3d(7, i as f32 * 0.12, 0.0, t * 0.7);
+            let x = 96.0 + i as f32 * 36.0;
+            svgr!(<rect x={x} y={1000.0 - h} width="26" height={h} fill="#2a9d8f" />)
+        })
+        .collect();
+    svgr!(
+        <g>
+            <rect x="0" y="0" width="1920" height="1080" fill="#e9e4da" />
+            {dots}
+            {bars}
+        </g>
+    )
+}
+
+fn noise_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    let frame = ui.frame.index as u32;
+    let cells = vec![
+        (
+            "WhiteNoise",
+            ui.show(WhiteNoise {
+                amount: Anim::Fixed(0.5),
+                seed: frame,
+                // specks of about five output pixels in a fifth-size thumbnail of a half-size render
+                grain: 48.0,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "FractalNoise",
+            ui.show(FractalNoise {
+                amount: Anim::Fixed(0.7),
+                evolution: Anim::Fixed(180.0 * t),
+                key: Some("photo"),
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "FractalNoise turbulent",
+            on_backdrop(ui.show(FractalNoise {
+                fractal_type: FractalType::Turbulent,
+                scale: 220.0,
+                complexity: 3,
+                offset_x: 120.0 * t,
+                key: Some("logo"),
+                children: children(logo),
+                ..ui.defaults()
+            })),
+        ),
+        ("Noise", {
+            let picture = photo(ui);
+            let grain = ui.show(Noise {
+                opacity: 0.3,
+                ..ui.defaults()
+            });
+            svgr!(<g>{picture}{grain}</g>)
+        }),
+        ("noise_2d, noise_3d", noise_motion(ui)),
+    ];
+    let figure = grid(ui, 4, cells);
+    let head = title(ui, "Noise");
     svgr!(<g>{figure}{head}</g>)
 }
