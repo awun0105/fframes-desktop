@@ -1,11 +1,13 @@
-use std::f32::consts::PI;
+use std::{collections::BTreeMap, f32::consts::PI, fmt::Write};
 
-use fframes::{Color, Svgr};
+use fframes::{Color, Svgr, animation::Animatable};
 
+use super::{Region, edges::shadow_steps, filtered};
 use crate::{
+    anim::Anim,
     motion::{Rng, clamp01},
     theme::Theme,
-    ui::{Component, Themed, Ui},
+    ui::{Children, Component, Themed, Ui, no_children},
 };
 
 /// Hues of the blobs before `hue_shift`, in degrees: orange, red, amber and pink, like light
@@ -146,6 +148,257 @@ impl<'a> Component<'a> for LightLeak<'a> {
     }
 }
 
+/// The most samples a [`LightTrail`] weighs, like Remotion.
+pub const MAX_TRAIL_SAMPLES: u32 = 64;
+
+/// A streak of light trailing its children (Remotion's `lightTrail()`): copies of their
+/// silhouette in `color`, `distance` units long towards `direction` (degrees clockwise from
+/// the right, 180 to the left), each copy `decay` (0 to 1) as bright as the one before,
+/// added to the children at `intensity`. `samples` (1 to 64) sets how Remotion spaces the
+/// copies, so the falloff and brightness follow it; `threshold` (0 to 1) leaves out pixels
+/// less opaque than it. Drawn inside the `area` from the origin.
+///
+/// Remotion also lets bright semi-transparent pixels through the threshold; here only the
+/// alpha counts. The copies are averaged by doubling, like [`LongShadows`](super::LongShadows):
+/// at most 256 copies for the cost of sixteen primitives.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
+pub struct LightTrail<'a> {
+    pub direction: f32,
+    pub distance: Anim<'a, f32>,
+    pub intensity: f32,
+    pub decay: f32,
+    pub threshold: f32,
+    pub samples: u32,
+    pub color: Color,
+    pub area: (f32, f32),
+    pub key: Option<&'a str>,
+    pub children: Children<'a>,
+}
+
+impl Themed for LightTrail<'_> {
+    /// Remotion's defaults: a white trail 80 units to the left.
+    fn themed(_: &Theme) -> Self {
+        Self {
+            direction: 180.0,
+            distance: Anim::Fixed(80.0),
+            intensity: 1.0,
+            decay: 0.9,
+            threshold: 0.0,
+            samples: 32,
+            color: Color::WHITE,
+            area: (1920.0, 1080.0),
+            key: None,
+            children: no_children(),
+        }
+    }
+}
+
+impl LightTrail<'_> {
+    /// How bright the trail of a solid silhouette is, before the colour's alpha: Remotion's
+    /// sum of the sample weights over their count, times `intensity`.
+    pub fn gain(&self) -> f32 {
+        let samples = self.samples.clamp(1, MAX_TRAIL_SAMPLES);
+        let decay = clamp01(self.decay);
+        let sum: f32 = (0..samples as i32).map(|i| decay.powi(i)).sum();
+        self.intensity.max(0.0) * sum / samples as f32
+    }
+}
+
+impl<'a> Component<'a> for LightTrail<'a> {
+    fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let distance = ui.sample(&self.distance).max(0.0);
+        let content = (self.children)(ui);
+        let gain = self.gain() * f32::from(self.color.a) / 255.0;
+        if distance <= 0.0 || gain <= 0.0 {
+            return content;
+        }
+        let samples = self.samples.clamp(1, MAX_TRAIL_SAMPLES) as f32;
+        let (sin, cos) = self.direction.to_radians().sin_cos();
+        let first = distance / samples;
+        let mut primitives = Vec::new();
+        let threshold = clamp01(self.threshold).min(0.999);
+        let mut source = "SourceAlpha";
+        if threshold > 0.0 {
+            let slope = 1.0 / (1.0 - threshold);
+            primitives.push(fframes::svgr!(
+                <feComponentTransfer in="SourceAlpha" result="lt-passing">
+                    <feFuncA type="linear" slope={slope} intercept={-threshold * slope} />
+                </feComponentTransfer>
+            ));
+            primitives.push(fframes::svgr!(
+                <feComposite in="SourceAlpha" in2="lt-passing" operator="arithmetic"
+                             k1="1" k2="0" k3="0" k4="0" result="lt-lit" />
+            ));
+            source = "lt-lit";
+        }
+        primitives.push(fframes::svgr!(
+            <feOffset in={source} dx={first * cos} dy={first * sin} result="lt-start" />
+        ));
+        let mut last = "lt-start".to_owned();
+        // each doubling averages the trail so far with itself shifted, the copy weighed by
+        // the decay over the shift, so the average never clips
+        let (doublings, step) = shadow_steps(distance - first);
+        let falloff = clamp01(self.decay).powf(step * samples / distance);
+        for i in 0..doublings {
+            let span = (1u32 << i) as f32;
+            let weight = falloff.powf(span);
+            let moved = format!("lt-moved-{i}");
+            let merged = format!("lt-{i}");
+            primitives.push(fframes::svgr!(
+                <feOffset in={last.clone()} dx={step * span * cos} dy={step * span * sin} result={moved.clone()} />
+            ));
+            primitives.push(fframes::svgr!(
+                <feComposite in={last} in2={moved} operator="arithmetic" result={merged.clone()}
+                             k1="0" k2={1.0 / (1.0 + weight)} k3={weight / (1.0 + weight)} k4="0" />
+            ));
+            last = merged;
+        }
+        let color = self.color.with_alpha(255);
+        primitives.push(fframes::svgr!(<feFlood flood-color={color} />));
+        primitives.push(fframes::svgr!(<feComposite in2={last} operator="in" result="lt-trail" />));
+        primitives.push(fframes::svgr!(
+            <feComposite in="SourceGraphic" in2="lt-trail" operator="arithmetic"
+                         k1="0" k2="1" k3={gain} k4="0" />
+        ));
+        let id = ui.id(self.key, 0, "light-trail");
+        let (w, h) = self.area;
+        filtered(content, id, Region::Area(w, h), Svgr::from(primitives))
+    }
+}
+
+/// The steps a [`Starburst`] blends neighbouring rays over.
+const BLEND_STEPS: usize = 12;
+
+/// Rays of colour from a point (Remotion's `starburst()`): `rays` (2 to 100) wedges round
+/// `origin` (0 to 1 across the area), coloured with `colors` in turn and turned `rotation`
+/// degrees clockwise; the first ray starts on the left. `smoothness` (0 to 1) blends each
+/// ray into the next over that share of a ray. It replaces the layer, so it takes no
+/// children.
+///
+/// Remotion blends from both sides of a boundary towards the colour across it, which swaps
+/// the two colours at the boundary itself; here the blend runs smoothly across it, in twelve
+/// steps.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
+pub struct Starburst<'a> {
+    pub rays: u32,
+    pub colors: Vec<Color>,
+    pub rotation: f32,
+    pub smoothness: f32,
+    pub origin: (f32, f32),
+    pub area: (f32, f32),
+    pub key: Option<&'a str>,
+}
+
+impl Themed for Starburst<'_> {
+    fn themed(theme: &Theme) -> Self {
+        Self {
+            rays: 12,
+            colors: vec![theme.colors.accent, theme.colors.background],
+            rotation: 0.0,
+            smoothness: 0.0,
+            origin: (0.5, 0.5),
+            area: (1920.0, 1080.0),
+            key: None,
+        }
+    }
+}
+
+impl Starburst<'_> {
+    /// The rays as `(start, end, colour index)`, in degrees clockwise from the right.
+    pub fn wedges(&self) -> Vec<(f32, f32, usize)> {
+        if self.colors.is_empty() {
+            return Vec::new();
+        }
+        let rays = self.rays.clamp(2, 100);
+        let sector = 360.0 / rays as f32;
+        (0..rays as usize)
+            .map(|k| {
+                let start = 180.0 + self.rotation + k as f32 * sector;
+                (start, start + sector, k % self.colors.len())
+            })
+            .collect()
+    }
+}
+
+impl<'a> Component<'a> for Starburst<'a> {
+    fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let wedges = self.wedges();
+        let Some(&(first, last, _)) = wedges.first() else {
+            return Svgr::empty();
+        };
+        let sector = last - first;
+        let (w, h) = self.area;
+        let (ox, oy) = (self.origin.0 * w, self.origin.1 * h);
+        let far = [(0.0, 0.0), (w, 0.0), (0.0, h), (w, h)]
+            .iter()
+            .map(|&(x, y): &(f32, f32)| (x - ox).hypot(y - oy))
+            .fold(0.0, f32::max)
+            + 2.0;
+        let wedge = |d: &mut String, from: f32, to: f32| {
+            let (s0, c0) = from.to_radians().sin_cos();
+            let (s1, c1) = to.to_radians().sin_cos();
+            let _ = write!(
+                d,
+                "M{ox} {oy}L{} {}A{far} {far} 0 0 1 {} {}Z",
+                ox + far * c0,
+                oy + far * s0,
+                ox + far * c1,
+                oy + far * s1
+            );
+        };
+        let mut hard = vec![String::new(); self.colors.len()];
+        for &(from, to, color) in &wedges {
+            wedge(&mut hard[color], from, to);
+        }
+        let mut paths: Vec<Svgr<'a>> = hard
+            .into_iter()
+            .zip(&self.colors)
+            .filter(|(d, _)| !d.is_empty())
+            .map(|(d, &fill)| fframes::svgr!(<path d={d} fill={fill} />))
+            .collect();
+        // the blend across each boundary, in steps that overlap the next a little
+        let half = clamp01(self.smoothness) * sector / 2.0;
+        if half > 0.0 {
+            let width = 2.0 * half / BLEND_STEPS as f32;
+            let mut steps: BTreeMap<(usize, usize), String> = BTreeMap::new();
+            for &(_, to, color) in &wedges {
+                for j in 0..BLEND_STEPS {
+                    let from = to - half + j as f32 * width;
+                    wedge(
+                        steps.entry((j, color)).or_default(),
+                        from,
+                        from + width * 1.25,
+                    );
+                }
+            }
+            for ((j, color), d) in steps {
+                let next = self.colors[(color + 1) % self.colors.len()];
+                let t = (j as f32 + 0.5) / BLEND_STEPS as f32;
+                let fill =
+                    Animatable::apply_progress(&self.colors[color], &next, t * t * (3.0 - 2.0 * t));
+                paths.push(fframes::svgr!(<path d={d} fill={fill} />));
+            }
+        }
+        let id = ui.id(self.key, 0, "starburst");
+        let url = format!("url(#{id})");
+        let base = self.colors[0];
+        fframes::svgr!(
+            <g>
+                <defs>
+                    <clipPath id={id}>
+                        <rect x="0" y="0" width={w} height={h} />
+                    </clipPath>
+                </defs>
+                <g clip-path={url}>
+                    <rect x="0" y="0" width={w} height={h} fill={base} />
+                    {Svgr::from(paths)}
+                </g>
+            </g>
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +417,45 @@ mod tests {
             ..LightLeak::default()
         };
         assert_ne!(other.flares(0.4), leak.flares(0.4));
+    }
+
+    #[test]
+    fn trail_brightness_follows_the_samples() {
+        let trail = LightTrail::themed(&Theme::default());
+        // Remotion: 32 samples at 0.9 decay sum to about 9.66
+        assert!(
+            (trail.gain() - 9.657 / 32.0).abs() < 1e-3,
+            "{}",
+            trail.gain()
+        );
+        let flat = LightTrail {
+            decay: 1.0,
+            intensity: 2.0,
+            ..LightTrail::themed(&Theme::default())
+        };
+        assert_eq!(flat.gain(), 2.0);
+    }
+
+    #[test]
+    fn starburst_rays_start_on_the_left_and_cycle_colours() {
+        let burst = Starburst {
+            rays: 5,
+            colors: vec![Color::WHITE, Color::BLACK],
+            rotation: 10.0,
+            ..Starburst::themed(&Theme::default())
+        };
+        let wedges = burst.wedges();
+        assert_eq!(wedges.len(), 5);
+        assert_eq!(wedges[0], (190.0, 262.0, 0));
+        assert_eq!(
+            wedges.iter().map(|w| w.2).collect::<Vec<_>>(),
+            [0, 1, 0, 1, 0]
+        );
+        let none = Starburst {
+            colors: Vec::new(),
+            ..burst
+        };
+        assert_eq!(none.wedges().len(), 0);
     }
 
     #[test]

@@ -80,13 +80,13 @@ fn rects(parts: impl IntoIterator<Item = (f32, f32, f32, f32)>) -> String {
 }
 
 /// The diagonal of the area: how far a pattern turned about its middle must reach.
-fn reach((w, h): (f32, f32)) -> f32 {
+pub(super) fn reach((w, h): (f32, f32)) -> f32 {
     w.hypot(h)
 }
 
 /// The square, centred on the area, that still covers it when turned about its middle: the
 /// middle and half the side, `pitch` past the corners.
-fn cover(area: (f32, f32), pitch: f32) -> (f32, f32, f32) {
+pub(super) fn cover(area: (f32, f32), pitch: f32) -> (f32, f32, f32) {
     (area.0 / 2.0, area.1 / 2.0, reach(area) / 2.0 + pitch)
 }
 

@@ -7,8 +7,10 @@
 //! [`ColorStack`] composes several colour matrices into one filter. [`Outline`],
 //! [`Emboss`], [`BevelAlpha`], [`LongShadows`], [`RoughenEdges`] and [`Shrinkwrap`] work on
 //! the alpha edges of their children. [`WhiteNoise`] and [`FractalNoise`] draw noise over
-//! them. [`Scanlines`] to [`Vignette`] lay patterns and gradients over them;
-//! [`Pattern`] tiles them and [`Paper`], [`Burlap`], [`Flannel`] and [`Speckle`] texture them.
+//! them. [`Scanlines`] to [`Vignette`] lay patterns and gradients over them, [`Halftone`] and
+//! [`HalftoneLinearGradient`] print them as dots, [`Starburst`] draws rays and [`LightTrail`]
+//! streaks light behind them; [`Pattern`] tiles them and [`Paper`], [`Burlap`], [`Flannel`]
+//! and [`Speckle`] texture them.
 
 use fframes::Svgr;
 
@@ -148,6 +150,7 @@ mod blur;
 mod color;
 mod distort;
 mod edges;
+mod halftone;
 mod light_leak;
 mod motion_blur;
 mod noise;
@@ -162,7 +165,8 @@ pub use color::{
 };
 pub use distort::{FractalNoise, FractalType, WhiteNoise};
 pub use edges::{BevelAlpha, Emboss, LongShadows, Outline, RoughenEdges, Shrinkwrap};
-pub use light_leak::{Flare, LightLeak};
+pub use halftone::{Halftone, HalftoneColor, HalftoneLinearGradient, HalftoneShape};
+pub use light_leak::{Flare, LightLeak, LightTrail, MAX_TRAIL_SAMPLES, Starburst};
 pub use motion_blur::{CameraMotionBlur, MAX_SAMPLES, Trail};
 pub use noise::Noise;
 #[cfg(feature = "skia")]

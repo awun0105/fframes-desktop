@@ -19,6 +19,8 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("TextureEffects", 2.0, texture_effects),
         // paper on its own, large enough for its fibres
         GalleryScene::new("PaperEffects", 1.0, paper_effects),
+        // the starburst turns over the scene
+        GalleryScene::new("HalftoneEffects", 2.0, halftone_effects),
     ]
 }
 
@@ -638,5 +640,89 @@ fn paper_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ];
     let figure = grid(ui, 2, cells);
     let head = title(ui, "Paper");
+    svgr!(<g>{figure}{head}</g>)
+}
+
+fn halftone_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    let ink = Color::hex("#1d2b53");
+    let cells = vec![
+        (
+            "Halftone",
+            on_backdrop(ui.show(Halftone {
+                dot_size: 64.0,
+                dot_color: ink,
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Halftone squares",
+            on_backdrop(ui.show(Halftone {
+                shape: HalftoneShape::Square,
+                dot_size: 72.0,
+                rotation: 45.0,
+                color: HalftoneColor::Source,
+                key: Some("squares"),
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Halftone lines",
+            on_backdrop(ui.show(Halftone {
+                shape: HalftoneShape::Line,
+                dot_size: 56.0,
+                rotation: -20.0,
+                invert: true,
+                dot_color: ink,
+                key: Some("lines"),
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Halftone gradient",
+            ui.show(HalftoneLinearGradient {
+                grid_size: 72.0,
+                second_dot_size: 110.0,
+                dot_color: ink,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Starburst",
+            ui.show(Starburst {
+                rays: 14,
+                colors: vec![
+                    Color::hex("#ffcf5c"),
+                    Color::hex("#ff7a59"),
+                    Color::hex("#ffe9a8"),
+                ],
+                rotation: 12.0 * t,
+                smoothness: 0.5,
+                origin: (0.5, 0.65),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Light trail",
+            svgr!(
+                <g>
+                    <rect x="0" y="0" width="1920" height="1080" fill="#14182b" />
+                    {ui.show(LightTrail {
+                        distance: Anim::Fixed(420.0),
+                        intensity: 2.0,
+                        color: Color::hex("#ffb347"),
+                        children: children(logo),
+                        ..ui.defaults()
+                    })}
+                </g>
+            ),
+        ),
+    ];
+    let figure = grid(ui, 3, cells);
+    let head = title(ui, "Halftone and light");
     svgr!(<g>{figure}{head}</g>)
 }

@@ -936,6 +936,53 @@ fn wallpaper<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Halftone and light
+
+| Component | Props (defaults) | What it does |
+| --- | --- | --- |
+| `Halftone` | `shape` (`Circle`, `Square`, `Line`), `dot_size` (20), `dot_spacing` (`None`: the dot size), `rotation` (degrees), `offset`, `color` (`Solid`, `Source`), `dot_color` (red), `invert` | the children printed as dots that grow where they are dark; the dots replace them |
+| `HalftoneLinearGradient` | `first_dot_size` (0), `second_dot_size` (40), `first_stop` (0, 0.5), `second_stop` (1, 0.5), `grid_size` (24), `color`, `dot_color` (black), `mask_to_source_alpha` | dots growing along a gradient over the children, or the children seen only through them |
+| `Starburst` | `rays` (12, 2 to 100), `colors` (accent and background), `rotation` (degrees), `smoothness` (0 to 1), `origin` (0.5, 0.5) | rays of colour from a point; it replaces the layer and takes no children |
+| `LightTrail` | `direction` (180, degrees clockwise from the right), `distance` (80, animatable), `intensity` (1), `decay` (0.9), `threshold` (0), `samples` (32, at most `MAX_TRAIL_SAMPLES`), `color` (white) | a streak of light added behind the children's silhouette |
+
+`Halftone` compares every pixel's brightness with a field of gradients that peaks in the dot
+middles, inside one filter over the `area`. Remotion sizes a whole dot by the brightness at
+its middle, so here a dot on an edge in the picture takes the edge's shape. Circles are drawn
+one by one, at most `MAX_PATTERN_SHAPES`; squares and lines are gradients. `Starburst` blends
+a ray into the next in twelve steps, smoothly across the boundary. `LightTrail` averages
+copies of the silhouette by doubling, like `LongShadows`, and its threshold looks only at the
+alpha (Remotion also lets bright semi-transparent pixels through).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn photo<'a>(_: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    svgr!(<rect x="0" y="0" width="1920" height="1080" fill="#f6d365" />)
+}
+
+fn poster<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let rays = ui.show(Starburst {
+        rays: 16,
+        rotation: 10.0 * ui.seconds(),
+        smoothness: 0.4,
+        ..ui.defaults()
+    });
+    let dots = ui.show(Halftone {
+        dot_size: 32.0,
+        rotation: 45.0,
+        color: HalftoneColor::Source,
+        children: children(photo),
+        ..ui.defaults()
+    });
+    let trail = ui.show(LightTrail {
+        distance: Anim::Fixed(240.0),
+        children: children(|_| svgr!(<circle cx="1400" cy="540" r="120" fill="#ffffff" />)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{rays}{dots}{trail}</g>)
+}
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`

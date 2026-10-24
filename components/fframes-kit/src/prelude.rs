@@ -20,10 +20,11 @@ pub use crate::effects::ShaderNoise;
 pub use crate::effects::{
     BevelAlpha, Blur, Brightness, Burlap, CameraMotionBlur, Checkerboard, ColorCorrection,
     ColorKey, ColorMatrix, ColorStack, Contrast, Curves, DotGrid, Duotone, Emboss, Exposure,
-    Flannel, FractalNoise, FractalType, Grayscale, Gridlines, HueRotate, Invert, Levels, LightLeak,
+    Flannel, FractalNoise, FractalType, Grayscale, Gridlines, Halftone, HalftoneColor,
+    HalftoneLinearGradient, HalftoneShape, HueRotate, Invert, Levels, LightLeak, LightTrail,
     LineDirection, LinearGradient, LinearGradientTint, Lines, LongShadows, Lut, Noise, Outline,
     Paper, Pattern, Rings, RoughenEdges, Saturation, Scanlines, ShadowsHighlights, Shrinkwrap,
-    Speckle, ThermalVision, Tint, Trail, Vibrance, Vignette, VignetteMode, WhiteBalance,
+    Speckle, Starburst, ThermalVision, Tint, Trail, Vibrance, Vignette, VignetteMode, WhiteBalance,
     WhiteNoise,
 };
 pub use crate::explain::{
