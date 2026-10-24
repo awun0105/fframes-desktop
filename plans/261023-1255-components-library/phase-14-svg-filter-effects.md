@@ -145,6 +145,6 @@ wrappers around children.
 - [x] Edges and shape
 - [x] Noise, noise functions
 - [x] Patterns and overlays, halftone
-- [ ] Geometry and reveals
+- [x] Geometry and reveals
 - [ ] Blur group with measured cost
 - [ ] Gallery scenes, e2e frames, docs and mapping rows

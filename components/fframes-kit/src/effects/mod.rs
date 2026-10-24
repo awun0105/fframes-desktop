@@ -10,7 +10,8 @@
 //! them. [`Scanlines`] to [`Vignette`] lay patterns and gradients over them, [`Halftone`] and
 //! [`HalftoneLinearGradient`] print them as dots, [`Starburst`] draws rays and [`LightTrail`]
 //! streaks light behind them; [`Pattern`] tiles them and [`Paper`], [`Burlap`], [`Flannel`]
-//! and [`Speckle`] texture them.
+//! and [`Speckle`] texture them. [`Mirror`], [`Tile`], [`Skew`], [`Scale`] and [`Translate`]
+//! move them; [`VenetianBlinds`], [`Evolve`] and [`TvSignalOff`] reveal or replace them.
 
 use fframes::Svgr;
 
@@ -150,11 +151,13 @@ mod blur;
 mod color;
 mod distort;
 mod edges;
+mod geometry;
 mod halftone;
 mod light_leak;
 mod motion_blur;
 mod noise;
 mod patterns;
+mod reveal;
 mod textures;
 
 pub use blur::Blur;
@@ -165,6 +168,7 @@ pub use color::{
 };
 pub use distort::{FractalNoise, FractalType, WhiteNoise};
 pub use edges::{BevelAlpha, Emboss, LongShadows, Outline, RoughenEdges, Shrinkwrap};
+pub use geometry::{Mirror, MirrorDirection, Scale, Skew, Tile, Translate};
 pub use halftone::{Halftone, HalftoneColor, HalftoneLinearGradient, HalftoneShape};
 pub use light_leak::{Flare, LightLeak, LightTrail, MAX_TRAIL_SAMPLES, Starburst};
 pub use motion_blur::{CameraMotionBlur, MAX_SAMPLES, Trail};
@@ -175,4 +179,5 @@ pub use patterns::{
     Checkerboard, DotGrid, Gridlines, LineDirection, LinearGradient, LinearGradientTint, Lines,
     MAX_PATTERN_SHAPES, MAX_RINGS, Rings, Scanlines, Vignette, VignetteMode,
 };
+pub use reveal::{BlindsDirection, Evolve, EvolveDirection, TvSignalOff, VenetianBlinds};
 pub use textures::{Burlap, Flannel, MAX_TILES, Paper, Pattern, Speckle};

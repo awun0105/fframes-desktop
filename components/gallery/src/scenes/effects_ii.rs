@@ -21,6 +21,8 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("PaperEffects", 1.0, paper_effects),
         // the starburst turns over the scene
         GalleryScene::new("HalftoneEffects", 2.0, halftone_effects),
+        // the picture skews, shrinks and slides, the blinds open and the bars come in
+        GalleryScene::new("GeometryEffects", 2.0, geometry_effects),
     ]
 }
 
@@ -724,5 +726,95 @@ fn halftone_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ];
     let figure = grid(ui, 3, cells);
     let head = title(ui, "Halftone and light");
+    svgr!(<g>{figure}{head}</g>)
+}
+
+fn geometry_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    let cells = vec![
+        (
+            "Mirror",
+            on_backdrop(ui.show(Mirror {
+                position: Anim::Fixed(0.4),
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Mirror vertical",
+            on_backdrop(ui.show(Mirror {
+                direction: MirrorDirection::Vertical,
+                invert: true,
+                key: Some("vertical"),
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Tile",
+            on_backdrop(ui.show(Tile {
+                rect: (560.0, 240.0, 800.0, 600.0),
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Skew",
+            on_backdrop(ui.show(Skew {
+                x: Anim::Fixed(-10.0 * t),
+                y: Anim::Fixed(5.0),
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Scale",
+            on_backdrop(ui.show(Scale {
+                scale: Anim::Fixed(0.9 - 0.2 * t),
+                vertical: false,
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Translate",
+            on_backdrop(ui.show(Translate {
+                x: Anim::Fixed(0.15 * t),
+                y: Anim::Fixed(0.1),
+                uv: true,
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Venetian blinds",
+            on_backdrop(ui.show(VenetianBlinds {
+                progress: Anim::Fixed(0.3 + 0.2 * t),
+                slats: 8,
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "Evolve",
+            on_backdrop(ui.show(Evolve {
+                progress: Anim::Fixed(0.3 + 0.2 * t),
+                direction: EvolveDirection::Top,
+                feather: 0.3,
+                children: children(photo),
+                ..ui.defaults()
+            })),
+        ),
+        (
+            "TV signal off",
+            ui.show(TvSignalOff {
+                amount: Anim::Fixed(0.4 + 0.3 * t),
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+    ];
+    let figure = grid(ui, 4, cells);
+    let head = title(ui, "Geometry and reveals");
     svgr!(<g>{figure}{head}</g>)
 }

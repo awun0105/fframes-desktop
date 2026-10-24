@@ -18,14 +18,15 @@ pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
 #[cfg(feature = "skia")]
 pub use crate::effects::ShaderNoise;
 pub use crate::effects::{
-    BevelAlpha, Blur, Brightness, Burlap, CameraMotionBlur, Checkerboard, ColorCorrection,
-    ColorKey, ColorMatrix, ColorStack, Contrast, Curves, DotGrid, Duotone, Emboss, Exposure,
-    Flannel, FractalNoise, FractalType, Grayscale, Gridlines, Halftone, HalftoneColor,
-    HalftoneLinearGradient, HalftoneShape, HueRotate, Invert, Levels, LightLeak, LightTrail,
-    LineDirection, LinearGradient, LinearGradientTint, Lines, LongShadows, Lut, Noise, Outline,
-    Paper, Pattern, Rings, RoughenEdges, Saturation, Scanlines, ShadowsHighlights, Shrinkwrap,
-    Speckle, Starburst, ThermalVision, Tint, Trail, Vibrance, Vignette, VignetteMode, WhiteBalance,
-    WhiteNoise,
+    BevelAlpha, BlindsDirection, Blur, Brightness, Burlap, CameraMotionBlur, Checkerboard,
+    ColorCorrection, ColorKey, ColorMatrix, ColorStack, Contrast, Curves, DotGrid, Duotone, Emboss,
+    Evolve, EvolveDirection, Exposure, Flannel, FractalNoise, FractalType, Grayscale, Gridlines,
+    Halftone, HalftoneColor, HalftoneLinearGradient, HalftoneShape, HueRotate, Invert, Levels,
+    LightLeak, LightTrail, LineDirection, LinearGradient, LinearGradientTint, Lines, LongShadows,
+    Lut, Mirror, MirrorDirection, Noise, Outline, Paper, Pattern, Rings, RoughenEdges, Saturation,
+    Scale, Scanlines, ShadowsHighlights, Shrinkwrap, Skew, Speckle, Starburst, ThermalVision, Tile,
+    Tint, Trail, Translate, TvSignalOff, VenetianBlinds, Vibrance, Vignette, VignetteMode,
+    WhiteBalance, WhiteNoise,
 };
 pub use crate::explain::{
     Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, Matrix, NumberLine, NumberPlane,

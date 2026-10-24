@@ -983,6 +983,52 @@ fn poster<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Geometry and reveals
+
+| Component | Props (defaults) | What it does |
+| --- | --- | --- |
+| `Mirror` | `direction` (`Horizontal`, `Vertical`), `position` (0.5, animatable), `invert` | the part past `position` shows the other side reflected |
+| `Tile` | `rect` (x, y, width, height), `horizontal` (true), `vertical` (true) | `rect` of the children repeated across the area, every other copy mirrored |
+| `Skew` | `x` (20 degrees), `y` (0), `origin` (0.5, 0.5) | slanted like CSS `skewX` then `skewY` |
+| `Scale` | `scale` (1), `horizontal` (true), `vertical` (true) | scaled about the middle of the area |
+| `Translate` | `x`, `y` (0), `uv` (false: units; true: shares of the area) | moved |
+| `VenetianBlinds` | `progress` (0.5), `direction` (`Vertical`, `Horizontal`), `slats` (12) | shown through blinds opening from the middle of each slat |
+| `Evolve` | `progress` (0.5), `direction` (`Left`, `Right`, `Top`, `Bottom`), `feather` (0.1) | revealed by an edge sweeping across, softened over `feather` |
+| `TvSignalOff` | `amount` (1) | television test bars mixed in inside the children's alpha |
+
+All of them work inside the `area` from the origin and cut what leaves it, like Remotion's
+canvas. `progress`, `position`, `scale`, `amount` and the offsets and angles are animatable.
+Remotion's `tile()` finds the rectangle to repeat from the opaque pixels; fframes cannot
+measure the children, so `Tile` takes it as `rect`. Where a mirrored side reaches past the
+area, Remotion stretches the edge pixels and `Mirror` leaves it transparent. `TvSignalOff`
+draws the bars over the children, so semi-transparent parts mix a little differently.
+
+`Mirror` and `Tile` lay a slightly larger copy under the exact one so that no seam shows
+where copies meet; they render their children twice.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn photo<'a>(_: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    svgr!(<rect x="0" y="0" width="1920" height="1080" fill="#f6d365" />)
+}
+
+fn intro<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let progress = Anim::Fixed((ui.seconds() / 1.5).min(1.0));
+    ui.show(VenetianBlinds {
+        progress,
+        slats: 8,
+        children: children(|ui| {
+            ui.show(Mirror {
+                children: children(photo),
+                ..ui.defaults()
+            })
+        }),
+        ..ui.defaults()
+    })
+}
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`
