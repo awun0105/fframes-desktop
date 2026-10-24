@@ -988,7 +988,7 @@ fn poster<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 | Component | Props (defaults) | What it does |
 | --- | --- | --- |
 | `Mirror` | `direction` (`Horizontal`, `Vertical`), `position` (0.5, animatable), `invert` | the part past `position` shows the other side reflected |
-| `Tile` | `rect` (x, y, width, height), `horizontal` (true), `vertical` (true) | `rect` of the children repeated across the area, every other copy mirrored |
+| `Tile` | `rect` (x, y, width, height: 640, 360, 640, 360), `horizontal` (true), `vertical` (true) | `rect` of the children repeated across the area, every other copy mirrored |
 | `Skew` | `x` (20 degrees), `y` (0), `origin` (0.5, 0.5) | slanted like CSS `skewX` then `skewY` |
 | `Scale` | `scale` (1), `horizontal` (true), `vertical` (true) | scaled about the middle of the area |
 | `Translate` | `x`, `y` (0), `uv` (false: units; true: shares of the area) | moved |
@@ -996,8 +996,8 @@ fn poster<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 | `Evolve` | `progress` (0.5), `direction` (`Left`, `Right`, `Top`, `Bottom`), `feather` (0.1) | revealed by an edge sweeping across, softened over `feather` |
 | `TvSignalOff` | `amount` (1) | television test bars mixed in inside the children's alpha |
 
-All of them work inside the `area` from the origin and cut what leaves it, like Remotion's
-canvas. `progress`, `position`, `scale`, `amount` and the offsets and angles are animatable.
+All of them except `TvSignalOff` work inside the `area` from the origin and cut what leaves it,
+like Remotion's canvas. `progress`, `position`, `scale`, `amount` and the offsets and angles are animatable.
 Remotion's `tile()` finds the rectangle to repeat from the opaque pixels; fframes cannot
 measure the children, so `Tile` takes it as `rect`. Where a mirrored side reaches past the
 area, Remotion stretches the edge pixels and `Mirror` leaves it transparent. `TvSignalOff`
