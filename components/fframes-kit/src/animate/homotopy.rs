@@ -20,7 +20,7 @@ pub const PHASE_FLOW_STEPS: usize = 120;
 
 /// `path` cut into about [`HOMOTOPY_SEGMENTS`] pieces with every point mapped through `f`,
 /// which works in the units of `space` (`y` up).
-fn warp_in(path: &BezPath, space: Space, f: impl Fn(f64, f64) -> (f64, f64)) -> BezPath {
+pub(super) fn warp_in(path: &BezPath, space: Space, f: impl Fn(f64, f64) -> (f64, f64)) -> BezPath {
     let threshold = (paths::get_length(path) / HOMOTOPY_SEGMENTS as f64).max(0.5);
     paths::warp_path(path, threshold, |p| {
         let (x, y) = space.from_px(p);

@@ -8,6 +8,7 @@
 //! Times are local: enter and emphasis animations count from the start of the enclosing
 //! container plus `delay`, exit animations back from its end.
 
+mod apply;
 mod create;
 mod emphasis;
 mod group;
@@ -19,8 +20,13 @@ mod subsets;
 mod text_by;
 mod traced_path;
 mod transform;
+mod transform_ii;
 mod write;
 
+pub use apply::{
+    ApplyComplexFunction, ApplyFunction, ApplyMatrix, ApplyPointwiseFunction,
+    ApplyPointwiseFunctionToCenter,
+};
 pub use create::{Create, DrawBorderThenFill, Uncreate};
 pub use emphasis::{Circumscribe, Flash, Indicate, Wiggle};
 pub use group::{AnimationGroup, LaggedStart, Succession};
@@ -40,6 +46,11 @@ pub use traced_path::{MAX_TRACE_SAMPLES, TracedPath};
 #[cfg(feature = "latex")]
 pub(crate) use transform::{MORPH_SEGMENTS, lerp_paint, morph};
 pub use transform::{MoveAlongPath, ReplacementTransform, Transform};
+pub use transform_ii::{
+    ClockwiseTransform, CounterclockwiseTransform, CyclicReplace, FadeToColor, FadeTransform,
+    FadeTransformPieces, ScaleInPlace, ShrinkToCenter, Swap, TransformAnimations,
+    TransformFromCopy, TransformMatchingShapes, match_shapes, same_shape, shape_key,
+};
 pub use write::{Unwrite, Write};
 
 use fframes::Svgr;
@@ -164,6 +175,7 @@ pub enum ExitAnim {
     Uncreate(Uncreate),
     Unwrite(Unwrite),
     RemoveTextLetterByLetter(RemoveTextLetterByLetter),
+    ShrinkToCenter(ShrinkToCenter),
 }
 
 /// The `emphasis` prop of shapes.
@@ -177,6 +189,8 @@ pub enum Emphasis {
     FocusOn(FocusOn),
     Rotate(Rotate),
     Rotating(Rotating),
+    FadeToColor(FadeToColor),
+    ScaleInPlace(ScaleInPlace),
 }
 
 macro_rules! slot {
@@ -224,8 +238,8 @@ macro_rules! slot {
 }
 
 slot!(EnterAnim: FadeIn, Create, DrawBorderThenFill, Write, GrowFromCenter, GrowFromPoint, GrowArrow, SpinInFromNothing, ShowPartial, ShowIncreasingSubsets, ShowSubmobjectsOneByOne, SpiralIn, AddTextLetterByLetter, GrowFromEdge);
-slot!(ExitAnim: FadeOut, Uncreate, Unwrite, RemoveTextLetterByLetter);
-slot!(Emphasis: Indicate, Circumscribe, Flash, Wiggle, Blink, FocusOn, Rotate, Rotating);
+slot!(ExitAnim: FadeOut, Uncreate, Unwrite, RemoveTextLetterByLetter, ShrinkToCenter);
+slot!(Emphasis: Indicate, Circumscribe, Flash, Wiggle, Blink, FocusOn, Rotate, Rotating, FadeToColor, ScaleInPlace);
 
 /// Draws `parts` (the glyphs of a text, or one shape) with the animation props applied.
 /// Animations whose [`ShapeAnimation::per_part`] is set (`Write`) give each part its own

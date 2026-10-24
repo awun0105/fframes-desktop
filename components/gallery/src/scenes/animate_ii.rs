@@ -105,6 +105,47 @@ fn wave_homotopy(x: f64, y: f64, t: f64) -> (f64, f64) {
     (x + 0.5 * t * (2.0 * y).sin(), y + 0.3 * t * (3.0 * x).cos())
 }
 
+/// A square on the left and a circle on the right, outlined, for the morphs.
+fn pair(ui: &Ui<'_, '_, '_>) -> (Shape, Shape) {
+    let c = ui.theme.colors;
+    let left = Square {
+        cx: CX - 300.0,
+        cy: CY,
+        side_length: 240.0,
+        stroke: Some(c.accent),
+        stroke_width: 6.0,
+        ..ui.defaults()
+    };
+    let right = Circle {
+        cx: CX + 300.0,
+        cy: CY,
+        radius: 135.0,
+        stroke: Some(c.highlight),
+        fill: Some(c.highlight),
+        stroke_width: 6.0,
+        ..ui.defaults()
+    };
+    (left.shape(), right.shape())
+}
+
+/// The glyphs of `text` at `y`, one shape each.
+fn glyphs(ui: &Ui<'_, '_, '_>, text: &'static str, x: f32, y: f32) -> Vec<Shape> {
+    let t = TextPath {
+        text,
+        x,
+        y,
+        stroke: Some(ui.theme.colors.title),
+        ..ui.defaults()
+    };
+    t.parts(ui.ctx).unwrap_or_default()
+}
+
+/// Half as high and 1.6 times as wide about the canvas middle.
+fn squash(s: Shape) -> Shape {
+    let path = paths::translate_path(&paths::scale_path(&s.path, 1.6, 0.5), -576.0, 290.0);
+    Shape { path, ..s }
+}
+
 fn lissajous(t: f32) -> (f32, f32) {
     (CX + 420.0 * (1.4 * t).sin(), CY + 240.0 * (2.1 * t).sin())
 }
@@ -238,6 +279,91 @@ pub fn scenes() -> Vec<GalleryScene> {
             let (x, y) = lissajous(ui.seconds());
             let dot = ui.show(Dot { cx: x, cy: y, radius: 20.0, ..ui.defaults() });
             svgr!(<g>{trace}{dot}</g>)
+        },
+        "TransformFromCopy", 2.0 => |ui| {
+            let (a, b) = pair(ui);
+            ui.show(TransformFromCopy { delay: 0.25, run_time: 1.5, ..TransformFromCopy::new(a, b) })
+        },
+        "ClockwiseTransform", 2.0 => |ui| {
+            let (a, b) = pair(ui);
+            ui.show(ClockwiseTransform { delay: 0.25, run_time: 1.5, ..ClockwiseTransform::new(a, b) })
+        },
+        "CounterclockwiseTransform", 2.0 => |ui| {
+            let (a, b) = pair(ui);
+            ui.show(CounterclockwiseTransform { delay: 0.25, run_time: 1.5, ..CounterclockwiseTransform::new(a, b) })
+        },
+        "Swap", 2.0 => |ui| {
+            let (a, b) = pair(ui);
+            ui.show(Swap { delay: 0.25, run_time: 1.5, ..Swap::new(a, b) })
+        },
+        "CyclicReplace", 2.0 => |ui| {
+            let c = ui.theme.colors;
+            let shapes = (0..4)
+                .map(|i| {
+                    let x = CX - 450.0 + 300.0 * i as f32;
+                    let fill = Some(if i % 2 == 0 { c.accent } else { c.highlight });
+                    Square { cx: x, cy: CY, side_length: 80.0 + 40.0 * i as f32, fill, ..ui.defaults() }.shape()
+                })
+                .collect();
+            ui.show(CyclicReplace { delay: 0.25, run_time: 1.5, ..CyclicReplace::new(shapes) })
+        },
+        "FadeTransform", 2.0 => |ui| {
+            let (a, b) = pair(ui);
+            ui.show(FadeTransform { delay: 0.25, run_time: 1.5, ..FadeTransform::new(a, b) })
+        },
+        "FadeTransformPieces", 2.0 => |ui| {
+            let from = glyphs(ui, "pieces", 700.0, 500.0);
+            let to = glyphs(ui, "fade in", 640.0, 760.0);
+            ui.show(FadeTransformPieces { delay: 0.25, run_time: 1.5, ..FadeTransformPieces::new(from, to) })
+        },
+        "TransformMatchingShapes", 2.0 => |ui| {
+            let from = glyphs(ui, "the morse code", 480.0, 500.0);
+            let to = glyphs(ui, "here come dots", 480.0, 760.0);
+            ui.show(TransformMatchingShapes { delay: 0.25, run_time: 1.5, ..TransformMatchingShapes::new(from, to) })
+        },
+        "TransformAnimations", 2.0 => |ui| {
+            let (a, b) = pair(ui);
+            let create: EnterAnim = Create { run_time: 1.5, delay: 0.25, ..ui.defaults() }.into();
+            let grow: EnterAnim = GrowFromCenter { run_time: 1.5, delay: 0.25, ..ui.defaults() }.into();
+            ui.show(TransformAnimations { delay: 0.25, run_time: 1.5, ..TransformAnimations::new(a, create, b, grow) })
+        },
+        "FadeToColor", 2.0 => |ui| {
+            let f = FadeToColor { delay: 0.25, run_time: 1.5, ..ui.defaults() };
+            ui.show(bar(ui, f.into()))
+        },
+        "ScaleInPlace", 2.0 => |ui| {
+            let s = ScaleInPlace { scale_factor: 1.5, delay: 0.25, run_time: 1.5, ..ui.defaults() };
+            ui.show(bar(ui, s.into()))
+        },
+        "ShrinkToCenter", 2.0 => |ui| {
+            let s = ShrinkToCenter { delay: 0.25, run_time: 1.5, ..ui.defaults() };
+            ui.show(Square { exit: Some(s.into()), ..square(ui) })
+        },
+        "ApplyMatrix", 2.0 => |ui| {
+            let m = ApplyMatrix { delay: 0.25, run_time: 1.5, ..ApplyMatrix::new(unit_square(ui), [[1.0, 1.0], [0.0, 1.0]]) };
+            ui.show(m)
+        },
+        "ApplyPointwiseFunction", 2.0 => |ui| {
+            let f = ApplyPointwiseFunction {
+                delay: 0.25,
+                run_time: 1.5,
+                ..ApplyPointwiseFunction::new(unit_square(ui), |x, y| (x + 0.3 * y.sin() * 2.0, y + 0.2 * (2.0 * x).sin()))
+            };
+            ui.show(f)
+        },
+        "ApplyComplexFunction", 2.0 => |ui| {
+            // multiplication by i: a quarter turn on arcs
+            let f = ApplyComplexFunction { delay: 0.25, run_time: 1.5, ..ApplyComplexFunction::new(unit_square(ui), |(re, im)| (-im, re)) };
+            ui.show(f)
+        },
+        "ApplyFunction", 2.0 => |ui| {
+            let s = square(ui).shape();
+            ui.show(ApplyFunction { delay: 0.25, run_time: 1.5, ..ApplyFunction::new(s, squash) })
+        },
+        "ApplyPointwiseFunctionToCenter", 2.0 => |ui| {
+            let (a, _) = pair(ui);
+            let f = ApplyPointwiseFunctionToCenter { delay: 0.25, run_time: 1.5, ..ApplyPointwiseFunctionToCenter::new(a, |x, y| (-x, y + 1.0)) };
+            ui.show(f)
         },
     ]
 }

@@ -129,6 +129,6 @@ exist.
 - [x] Creation animations
 - [x] Growth and indication
 - [x] Movement and `TracedPath`
-- [ ] Transforms and shape matching
+- [x] Transforms and shape matching
 - [ ] Numbers and time
 - [ ] Gallery scenes, e2e frames, docs

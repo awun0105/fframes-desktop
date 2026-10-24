@@ -831,6 +831,9 @@ Animations are plain data. Put them into a shape's `enter`, `exit` or `emphasis`
 | `FocusOn { point, color, opacity }` | emphasis | a frame-sized disc shrinks onto the point and vanishes |
 | `Rotate { angle, about_point }` | emphasis | turns by `angle` (a half turn; positive is counterclockwise, as in Manim) and stays |
 | `Rotating { angle, about_point, forever }` | emphasis | turns at an even speed, `angle` per `run_time` (a full turn in 5 s), once or `forever` |
+| `FadeToColor { color }` | emphasis | fill and outline turn into `color` and stay |
+| `ScaleInPlace { scale_factor }` | emphasis | scales about the center (twice) and stays |
+| `ShrinkToCenter` | exit | shrinks to nothing about the center |
 
 Enter and emphasis animations count from the start of the enclosing container plus `delay`;
 exit animations end `delay` seconds before its end. They change only the transform, opacity
@@ -855,15 +858,25 @@ for the second.
 | `ComplexHomotopy` | `shape`, `homotopy: fn((re, im), t) -> (re, im)`, timing | the same on complex numbers |
 | `PhaseFlow` | `shape`, `function: fn(x, y) -> (dx, dy)`, `virtual_time`, timing | the points flow along a field for `virtual_time` |
 | `TracedPath` | `point: &dyn Fn(f32) -> (f32, f32)`, `stroke`, `stroke_width`, `dissipating_time`, `delay` | the line a moving point has drawn so far |
+| `TransformFromCopy` | `from`, `to`, timing | morphs a copy while `from` stays |
+| `ClockwiseTransform`, `CounterclockwiseTransform` | `from`, `to`, `path_arc`, timing | morphs with every point on an arc (a half turn) |
+| `CyclicReplace`, `Swap` | `shapes` (`first`, `second`), `path_arc`, timing | each shape moves on an arc (a quarter turn) to the next one's place |
+| `FadeTransform`, `FadeTransformPieces` | `from`, `to` (lists for the pieces), `stretch`, timing | `from` fades out moving onto `to`'s box while `to` fades in from `from`'s; pieces pair by index and the rest fade in place (Manim splits pieces until the counts match) |
+| `TransformMatchingShapes` | `from: Vec<Shape>`, `to: Vec<Shape>`, timing | pieces with the same `shape_key` (form, whatever the place and size) morph, the others fade; pieces of one key pair in order, where Manim morphs them as a group |
+| `TransformAnimations` | `from`, `from_anim: EnterAnim`, `to`, `to_anim`, timing | morphs while the look goes from the first animation's to the second's |
+| `ApplyMatrix` | `shape`, `matrix: [[f64; 2]; 2]`, `about_point`, timing (3 s) | maps every point by the matrix in `ui.space` units, `y` up |
+| `ApplyPointwiseFunction`, `ApplyPointwiseFunctionToCenter` | `shape`, `function: fn(x, y) -> (x, y)`, timing (3 s) | moves every point, or the whole shape by its center |
+| `ApplyComplexFunction` | `shape`, `function: fn((re, im)) -> (re, im)`, timing | the same on complex numbers, on arcs as wide as the angle of `function(1)` |
+| `ApplyFunction` | `shape`, `function: fn(Shape) -> Shape`, timing | `Morph` into the shape the function returns |
+| `LaggedStart` | `lag_ratio`, `run_time`, `children` | child `i` starts `i * lag_ratio * run_time` seconds in |
+| `AnimationGroup` | `children` | every child at once |
+| `Succession` | `run_time`, `children` | each child `run_time` after the one before |
 
 The homotopies cut the path into about `HOMOTOPY_SEGMENTS` (256) pieces and map every point
 each frame; `PhaseFlow` takes up to `PHASE_FLOW_STEPS` (120) Runge-Kutta steps per point.
 `TracedPath` calls `point` again for every frame of the trail, at most `MAX_TRACE_SAMPLES`
 (240) times, on a fixed grid of times so the drawn part does not shimmer; keep `point`
 cheap, or give it a `dissipating_time`.
-| `LaggedStart` | `lag_ratio`, `run_time`, `children` | child `i` starts `i * lag_ratio * run_time` seconds in |
-| `AnimationGroup` | `children` | every child at once |
-| `Succession` | `run_time`, `children` | each child `run_time` after the one before |
 
 The prelude calls Manim's `Transform` `Morph`, because `Transform` there is the SVG transform;
 it is also `fframes_kit::animate::Transform`.

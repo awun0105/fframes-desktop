@@ -83,6 +83,14 @@
 //! | `ShowPassingFlash`, `ShowPassingFlashWithThinningStrokeWidth`, `Broadcast`, `AnimatedBoundary`, `ApplyWave` | the same names in [`animate`], components that take a [`Shape`](geometry::Shape) (`Broadcast` a point) |
 //! | `Transform`, `ReplacementTransform` | [`animate::Transform`] (`Morph` in the prelude), [`ReplacementTransform`](animate::ReplacementTransform) |
 //! | `MoveAlongPath` | [`MoveAlongPath`](animate::MoveAlongPath) |
+//! | `TransformFromCopy`, `ClockwiseTransform`, `CounterclockwiseTransform` | the same names in [`animate`], components over two [`Shape`](geometry::Shape)s; `path_arc` sets the arc the points travel on |
+//! | `CyclicReplace`, `Swap` | [`CyclicReplace`](animate::CyclicReplace), [`Swap`](animate::Swap): the shapes move on arcs to each other's places |
+//! | `FadeTransform`, `FadeTransformPieces` | [`FadeTransform`](animate::FadeTransform), [`FadeTransformPieces`](animate::FadeTransformPieces): pieces pair by index, the pieces left over fade where they are instead of being split |
+//! | `TransformMatchingShapes` | [`TransformMatchingShapes`](animate::TransformMatchingShapes) over two lists of pieces, matched by [`shape_key`](animate::shape_key); pieces of one key pair in order, not as a group |
+//! | `TransformAnimations` | [`TransformAnimations`](animate::TransformAnimations): two `enter` animations, the shape and its look go from the first to the second |
+//! | `FadeToColor`, `ScaleInPlace` | [`FadeToColor`](animate::FadeToColor), [`ScaleInPlace`](animate::ScaleInPlace), `emphasis` |
+//! | `ShrinkToCenter` | [`ShrinkToCenter`](animate::ShrinkToCenter), `exit` |
+//! | `ApplyMatrix`, `ApplyPointwiseFunction`, `ApplyComplexFunction`, `ApplyFunction`, `ApplyPointwiseFunctionToCenter` | the same names in [`animate`], components over a shape in `ui.space` units, `y` up |
 //! | `Wait` | no call: what follows starts later, [`Sequence`](time::Sequence) `{ from, .. }` |
 //! | `ApplyMethod`, `.animate`, `MoveToTarget` | [`animate::Transform`] (`Morph`) from the shape to a copy with the change made (the target) |
 //! | `save_state`, `Restore` | a clone of the shape kept, [`animate::Transform`] from the changed shape back to it |
