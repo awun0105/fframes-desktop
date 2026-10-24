@@ -152,6 +152,27 @@ fn circulation<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+fn enzyme<'a>(ui: &mut Ui<'a, '_, '_>, induced: bool, name: &'static str) -> Svgr<'a> {
+    let head = title(ui, name);
+    let figure = ui.show(EnzymeFit {
+        induced,
+        delay: 0.6,
+        center: (0.0, -0.1),
+        scale: 1.3,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn induced_fit<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    enzyme(ui, true, "EnzymeFit")
+}
+
+fn lock_and_key<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    enzyme(ui, false, "LockAndKey")
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight parts half a second apart from 0.6 s, the last name at about 5.1 s
@@ -178,5 +199,8 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("FoodWeb", 7.5, food_web),
         // the vessels draw from 1 s to 4.2 s, then the blood flows
         GalleryScene::new("Circulation", 8.0, circulation),
+        // the substrate arrives from 1.2 s, splits at 5.4 s and the products are gone by 6.8 s
+        GalleryScene::new("EnzymeFit", 7.5, induced_fit),
+        GalleryScene::new("LockAndKey", 7.5, lock_and_key),
     ]
 }

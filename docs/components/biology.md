@@ -327,3 +327,32 @@ fn heart<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
+
+## EnzymeFit
+
+`EnzymeFit` shows an enzyme splitting its substrate. The substrate is two halves joined by a
+bond; it drifts in and settles into the active site cut into the top of the enzyme.
+
+- **Model:** with `induced` (the default) the site starts wider than the substrate and closes
+  round it as it binds (induced fit). Without it the site already has the substrate's shape
+  (lock and key). The model is named under the caption.
+- **Motion:** from `delay` the substrate arrives over 0.6..1.8 s and binds over 2..2.8 s.
+  The bond glows from 3.4 s and breaks at 4.8 s, then the two products drift away and an
+  induced-fit site opens again. Everything has finished by 6.2 s.
+- **Text:** `labels` names the enzyme, the active site, the substrate and the products.
+  `captions` describes each step underneath, one caption at a time.
+
+Gallery scenes: `EnzymeFit` (induced fit) and `LockAndKey`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn lock_and_key<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(EnzymeFit {
+        induced: false,
+        delay: 0.5,
+        scale: 1.3,
+        ..ui.defaults()
+    })
+}
+```
