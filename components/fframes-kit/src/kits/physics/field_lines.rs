@@ -32,6 +32,16 @@ impl Charge {
     }
 }
 
+/// The field of `charges` at `(x, y)`: the sum of `q r̂ / r²`.
+pub(super) fn coulomb(charges: &[Charge], x: f64, y: f64) -> (f64, f64) {
+    charges.iter().fold((0.0, 0.0), |(ex, ey), c| {
+        let (dx, dy) = (x - c.x, y - c.y);
+        let r2 = (dx * dx + dy * dy).max(1e-12);
+        let s = c.q / (r2 * r2.sqrt());
+        (ex + s * dx, ey + s * dy)
+    })
+}
+
 /// Units between two points of a traced line.
 const STEP: f64 = 0.02;
 /// Units from a charge where a line starts or ends.
@@ -89,12 +99,7 @@ impl Field {
 
     /// The field at `(x, y)`: the sum of `q r̂ / r²`.
     pub fn at(&self, x: f64, y: f64) -> (f64, f64) {
-        self.charges.iter().fold((0.0, 0.0), |(ex, ey), c| {
-            let (dx, dy) = (x - c.x, y - c.y);
-            let r2 = (dx * dx + dy * dy).max(1e-12);
-            let s = c.q / (r2 * r2.sqrt());
-            (ex + s * dx, ey + s * dy)
-        })
+        coulomb(&self.charges, x, y)
     }
 
     /// The unit direction of the field times `sign`, or `None` where it vanishes.
@@ -225,6 +230,42 @@ fn path(space: Space, points: &[(f64, f64)]) -> BezPath {
     path
 }
 
+/// The first `drawn` (0 to 1) of every line of `field`, with an arrowhead at the middle of
+/// each line long enough for one once that part is drawn.
+pub(super) fn line_shapes(
+    ui: &Ui<'_, '_, '_>,
+    field: &Field,
+    drawn: f64,
+    arrows: bool,
+    color: Color,
+    width: f32,
+) -> Vec<Shape> {
+    let space = ui.space;
+    let mut shapes = Vec::new();
+    if drawn <= 0.0 {
+        return shapes;
+    }
+    for line in field.lines() {
+        let end = ((line.len() as f64 * drawn).ceil() as usize).clamp(2, line.len().max(2));
+        let shown = &line[..end.min(line.len())];
+        shapes.push(Shape {
+            path: path(space, shown),
+            fill: None,
+            stroke: Some(color),
+            stroke_width: width,
+            dash: None,
+            opacity: 1.0,
+        });
+        let mid = line.len() / 2;
+        if arrows && line.len() > 24 && end > mid + 3 {
+            let a = space.to_px(line[mid - 10].0, line[mid - 10].1);
+            let b = space.to_px(line[mid + 3].0, line[mid + 3].1);
+            shapes.push(arrow(ui, a, b, color, width));
+        }
+    }
+    shapes
+}
+
 impl<'a> Component<'a> for FieldLines<'a> {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         let Some(field) = self.field else {
@@ -263,27 +304,14 @@ impl<'a> Component<'a> for FieldLines<'a> {
 
         let now = ui.seconds();
         let drawn = f64::from(progress(now, self.delay, self.delay + self.draw.max(1e-3)));
-        let mut shapes = Vec::new();
-        if drawn > 0.0 {
-            for line in field.lines() {
-                let end = ((line.len() as f64 * drawn).ceil() as usize).clamp(2, line.len().max(2));
-                let shown = &line[..end.min(line.len())];
-                shapes.push(Shape {
-                    path: path(space, shown),
-                    fill: None,
-                    stroke: Some(self.line_color),
-                    stroke_width: self.stroke_width,
-                    dash: None,
-                    opacity: 1.0,
-                });
-                let mid = line.len() / 2;
-                if self.arrows && line.len() > 24 && end > mid + 3 {
-                    let a = space.to_px(line[mid - 10].0, line[mid - 10].1);
-                    let b = space.to_px(line[mid + 3].0, line[mid + 3].1);
-                    shapes.push(arrow(ui, a, b, self.line_color, self.stroke_width));
-                }
-            }
-        }
+        let mut shapes = line_shapes(
+            ui,
+            field,
+            drawn,
+            self.arrows,
+            self.line_color,
+            self.stroke_width,
+        );
         let moving = f64::from(now - self.delay - self.draw);
         if let Some(line) = self.test_charge.and_then(|i| field.lines().get(i))
             && moving > 0.0

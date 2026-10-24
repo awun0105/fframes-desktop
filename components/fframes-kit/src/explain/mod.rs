@@ -68,5 +68,7 @@ pub use typed_matrix::{DecimalMatrix, IntegerMatrix, Mobject, MobjectMatrix};
 #[cfg(feature = "latex")]
 pub use typed_table::MathTable;
 pub use typed_table::{DecimalTable, IntegerTable, MobjectTable};
+#[cfg(feature = "physics")]
+pub(crate) use vector_field::ramp;
 pub use vector_field::{ArrowVectorField, Field, VectorField, sigmoid_length};
 pub use vgroup::VGroup;

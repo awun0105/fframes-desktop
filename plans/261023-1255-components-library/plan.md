@@ -104,7 +104,7 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 16 | [Manim animations II](./phase-16-manim-animations-ii.md) | 2, 17 | 5d | Completed |
 | 17 | [Coordinate systems, fields, graphs, tables and text mobjects](./phase-17-coordinates-fields-graphs-text.md) | 6 | 6d | Completed |
 | 18 | [Cameras and 3D](./phase-18-cameras-and-3d.md) | 6 | 5d | Completed |
-| 19 | [Physics kit II and circuit symbols](./phase-19-physics-ii-and-circuits.md) | 9 | 5d | Pending |
+| 19 | [Physics kit II and circuit symbols](./phase-19-physics-ii-and-circuits.md) | 9 | 5d | In progress |
 | 20 | [Chemistry kit II](./phase-20-chemistry-ii.md) | 9 | 3d | Pending |
 | 21 | [ML kit and data-structure additions](./phase-21-ml-kit-and-dsa.md) | 10, 17 | 5d | Pending |
 | 22 | [Word captions, text layout and voiceover timing](./phase-22-captions-and-voiceover-timing.md) | 4 | 3d | Pending |

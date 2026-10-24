@@ -70,21 +70,12 @@ impl VectorField {
         if let Some(color) = self.color {
             return color;
         }
-        if self.colors.is_empty() {
-            return Color::WHITE;
-        }
-        let span = self.max_magnitude - self.min_magnitude;
-        let t = if span > 0.0 && magnitude.is_finite() {
-            ((magnitude - self.min_magnitude) / span).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let at = t * (self.colors.len() - 1) as f64;
-        let i = (at.floor() as usize).min(self.colors.len() - 1);
-        match self.colors.get(i + 1) {
-            Some(next) => self.colors[i].apply_progress(next, (at - i as f64) as f32),
-            None => self.colors[i],
-        }
+        ramp(
+            &self.colors,
+            self.min_magnitude,
+            self.max_magnitude,
+            magnitude,
+        )
     }
 
     /// The colour of the vector at `(x, y)`.
@@ -103,6 +94,25 @@ impl VectorField {
     }
 }
 
+/// The colour of `magnitude` on a gradient through `colors`, from the first at `min` to the
+/// last at `max`; white without colours.
+pub(crate) fn ramp(colors: &[Color], min: f64, max: f64, magnitude: f64) -> Color {
+    if colors.is_empty() {
+        return Color::WHITE;
+    }
+    let span = max - min;
+    let t = if span > 0.0 && magnitude.is_finite() {
+        ((magnitude - min) / span).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let at = t * (colors.len() - 1) as f64;
+    let i = (at.floor() as usize).min(colors.len() - 1);
+    match colors.get(i + 1) {
+        Some(next) => colors[i].apply_progress(next, (at - i as f64) as f32),
+        None => colors[i],
+    }
+}
 /// Manim's default `length_func`: `0.45 * sigmoid(norm)`.
 pub fn sigmoid_length(norm: f64) -> f64 {
     0.45 / (1.0 + (-norm).exp())

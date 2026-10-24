@@ -1,7 +1,7 @@
 ---
 phase: 19
 title: "Phase 19: Physics kit II and circuit symbols"
-status: todo
+status: in-progress
 priority: P2
 effort: 5d
 dependencies: [9]
@@ -122,7 +122,7 @@ kit (feature `physics`).
 ## Todo
 
 - [x] `rapier2d` checked and recorded
-- [ ] Electrostatics and magnetostatics
+- [x] Electrostatics and magnetostatics
 - [ ] Lenses and rays
 - [ ] Rigid bodies and multi-pendulum
 - [ ] Waves

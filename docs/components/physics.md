@@ -231,8 +231,49 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
-## Circuit
+## ElectricField and MagneticField
 
+`ElectricField` is manim-physics' `ElectricField`: an arrow on every grid point of
+`x_range` by `y_range`, pointing along the field of `charges` and coloured by its strength
+(`colors` from `min_magnitude` to `max_magnitude`), with each charge as a glowing
+`ChargeGlow`. `lines_per_charge` adds the field lines of `Field`. `charges` is a plain prop:
+compute it from `ui.seconds()` and the arrows and lines follow, the lines traced again each
+frame. `ChargeGlow { charge, .. }` draws one charge on its own. Gallery scene:
+`ElectricField`.
+
+`MagneticField` is the field of `wires` in the page, by the Biot–Savart law (`μ₀` left out).
+A `Wire::Through { x, y, current }` crosses the page (current out of it when positive) and
+circles its field around it; a `Wire::Segment { from, to, current }` lies in the page, and
+its field there points out of or into the page. Where the field lies mostly in the page the
+grid shows an arrow, otherwise a ⊙ (out) or ⊗ (in) sized by its strength.
+`magnetic_field(&wires, x, y)` returns `(B_x, B_y, B_z)`. Gallery scene: `MagneticField`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn fields<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    // a negative charge circling a positive one
+    let angle = 0.6 * f64::from(ui.seconds());
+    let electric = ui.show(ElectricField {
+        charges: vec![
+            Charge::new(-1.0, 0.0, 2.0),
+            Charge::new(-1.0 + 3.0 * angle.cos(), 2.0 * angle.sin(), -1.0),
+        ],
+        lines_per_charge: 8,
+        ..ui.defaults()
+    });
+    let magnetic = ui.show(MagneticField {
+        wires: vec![
+            Wire::Through { x: -2.0, y: 0.0, current: 1.0 },
+            Wire::Segment { from: (1.0, -1.0), to: (4.0, -1.0), current: 2.0 },
+        ],
+        ..ui.defaults()
+    });
+    svgr!(<g>{electric}{magnetic}</g>)
+}
+```
+
+## Circuit
 A series circuit on a rectangular loop: a battery on the left side, a switch on the top, a
 bulb on the right and a resistor on the bottom. Turn a part off (`switch: false`, ..) and
 the wire runs on. The switch closes at `on_at` seconds. Then the current flows as dots out

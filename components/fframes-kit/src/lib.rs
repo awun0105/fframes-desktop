@@ -138,6 +138,9 @@
 //! | updaters that step a simulation (`dt`) | [`Sim`](sim::Sim) `::precompute` in the constructor, `sample(t)` per frame |
 //! | `axes.plot_line_graph`, `BarChart`, histograms, heat maps | [`plot`]: `LinePlot`, `ScatterPlot`, `Histogram` with `bin`, `Heatmap`, `plot::bars` |
 //! | the math scenes (feature `math`): dots and intervals on a `NumberLine`, tangents, secants, Riemann sums, the unit circle, `LinearTransformationScene`, vector sums, the central limit theorem, `FourierCirclesScene` | `kits::math`: `NumberPoint`, `Interval`, `FunctionPlot`, `Tangent`, `Secant`, `RiemannSum`, `AreaUnder` (and `integral`), `UnitCircle`, `LinearTransform`, `VectorSum`, `Pythagoras`, `FractionBar`, `FractionPie`, `MatrixView`, `NormalFit`, `Epicycles` |
+//! | manim-physics `Charge` (feature `physics`) | `kits::physics::Charge` (the data) drawn by `kits::physics::ChargeGlow` |
+//! | manim-physics `ElectricField` (feature `physics`) | `kits::physics::ElectricField { charges, x_range, y_range, lines_per_charge }`, the charges a prop computed per frame to move them |
+//! | manim-physics `Wire`, `MagneticField` (feature `physics`) | `kits::physics::Wire::{Through, Segment}`, `kits::physics::MagneticField` in the page (arrows, ⊙ and ⊗), `kits::physics::magnetic_field` |
 
 // The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
 extern crate self as fframes_kit;
