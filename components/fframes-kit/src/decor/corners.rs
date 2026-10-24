@@ -12,6 +12,7 @@ use crate::{
 /// each corner, like the brackets around a viewfinder. With `enter` (such as `Create`) the
 /// marks draw on; without, they are one static path.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct CornerMarks {
     pub x: f32,
     pub y: f32,

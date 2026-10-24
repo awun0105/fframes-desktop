@@ -14,6 +14,7 @@ use super::{TextAnchor, line};
 /// `style.line_height` apart and `\n` starts a new one. Without a measurable font it is one
 /// unwrapped line.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Paragraph<'a> {
     pub text: Cow<'a, str>,
     pub x: f32,

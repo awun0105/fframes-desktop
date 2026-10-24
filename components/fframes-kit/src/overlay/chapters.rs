@@ -13,6 +13,7 @@ use crate::{
 /// the steps of a tutorial). Each chapter is `(start seconds, title)`, in order; before the
 /// first start the highlight is on the first row. `(x, y)` is the top left of the list.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct ChapterList<'a> {
     pub chapters: Vec<(f32, Cow<'a, str>)>,
     pub x: f32,

@@ -23,6 +23,7 @@ use super::short;
 /// the highlights fade out. Entries are written with at most
 /// `decimals` decimals.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct MatrixView {
     pub a: Vec<Vec<f64>>,
     pub b: Vec<Vec<f64>>,

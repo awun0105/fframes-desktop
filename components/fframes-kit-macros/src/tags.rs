@@ -103,6 +103,7 @@ fn component(
 ) -> Result<(TokenTree, usize), Error> {
     let mut i = start + 2;
     let mut fields = Vec::new();
+    let mut editable = None;
     let self_closing = loop {
         match tokens.get(i) {
             Some(TokenTree::Punct(p)) if p.as_char() == '/' && is_punct(tokens.get(i + 1), '>') => {
@@ -112,6 +113,29 @@ fn component(
             Some(TokenTree::Punct(p)) if p.as_char() == '>' => {
                 i += 1;
                 break false;
+            }
+            Some(TokenTree::Ident(attr)) if attr == "editable" => {
+                // the editor key, not a field: `editable="speaker"` or `editable={key}`
+                let key = match (tokens.get(i + 1), tokens.get(i + 2)) {
+                    (Some(TokenTree::Punct(p)), Some(TokenTree::Literal(lit)))
+                        if p.as_char() == '=' && is_string(lit) =>
+                    {
+                        quote!(#lit)
+                    }
+                    (Some(TokenTree::Punct(p)), Some(TokenTree::Group(group)))
+                        if p.as_char() == '=' && group.delimiter() == Delimiter::Brace =>
+                    {
+                        group.stream()
+                    }
+                    _ => {
+                        return Err(Error::new(
+                            attr.span(),
+                            "`editable` needs a key: `editable=\"speaker\"` or `editable={key}`",
+                        ));
+                    }
+                };
+                editable = Some(key);
+                i += 3;
             }
             Some(TokenTree::Ident(attr)) => {
                 let (field, next) = attribute(tokens, i, attr)?;
@@ -149,10 +173,15 @@ fn component(
     // a binding of the macro's own, so it cannot shadow or be shadowed by the caller's names;
     // the struct update has no effect when every field is set, which is fine here
     let props = Ident::new("props", Span::mixed_site());
+    let shown = if let Some(key) = editable {
+        quote_spanned!(name.span()=> ::fframes_kit::props::Editable::new(#key, #props))
+    } else {
+        quote!(#props)
+    };
     let call = quote_spanned!(name.span()=>
         #[allow(clippy::needless_update)]
         let #props = #name { #(#fields)* ..#ui.defaults() };
-        #ui.show(#props)
+        #ui.show(#shown)
     );
     let mut block = Group::new(Delimiter::Brace, call);
     block.set_span(name.span());
@@ -332,6 +361,30 @@ mod tests {
         </svg>"##;
         let tokens: TokenStream = input.parse().unwrap();
         assert_eq!(rewritten(input), tokens.to_string());
+    }
+
+    #[test]
+    fn editable_wraps_the_props_and_is_not_a_field() {
+        let wrapped = |key: &str| {
+            format!(
+                "{{ #[allow(clippy::needless_update)] let props = LowerThird {{ name: {PROP}(\"Ada\"), ..ui.defaults() }}; \
+                 ui.show(::fframes_kit::props::Editable::new({key}, props)) }}"
+            )
+        };
+        same(
+            r#"<LowerThird editable="speaker" name="Ada" />"#,
+            &wrapped("\"speaker\""),
+        );
+        same(
+            r#"<LowerThird name="Ada" editable={key} />"#,
+            &wrapped("key"),
+        );
+        for bad in [
+            "<LowerThird editable />",
+            "<LowerThird editable={1} editable=3 />",
+        ] {
+            assert!(error(bad).contains("`editable` needs a key"), "{bad}");
+        }
     }
 
     #[test]

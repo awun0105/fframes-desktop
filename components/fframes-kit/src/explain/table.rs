@@ -162,6 +162,7 @@ impl TextGrid {
 /// `col_labels` go above the columns and `row_labels` left of the rows, in `label_style`.
 /// The lines draw with `enter` (`Create`), the text fades with `entries_enter`.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Table<'a> {
     /// The body, row by row; a shorter row is padded with empty cells.
     pub rows: Vec<Vec<Cow<'a, str>>>,

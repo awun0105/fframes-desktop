@@ -12,6 +12,7 @@ use crate::{
 /// `drift / 4` pixels a second, `t` seconds after `from`. A missing image draws nothing;
 /// `key` names the clip path when two are drawn in one frame.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct KenBurns<'a> {
     pub image: &'a str,
     pub key: Option<&'a str>,

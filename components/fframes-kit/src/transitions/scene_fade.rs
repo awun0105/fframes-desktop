@@ -12,6 +12,7 @@ use super::{Presentation, Side, Timing};
 /// Fades its children in at the start and out at the end of the enclosing `Sequence` or
 /// scene (`ui.duration`). Without a known end only the fade in runs. A 0 length skips that
 /// fade.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct SceneFade<'a> {
     /// Seconds of the fade in.
     pub fade_in: f32,

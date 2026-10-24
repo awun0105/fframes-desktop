@@ -173,6 +173,7 @@ pub fn outline(
 /// Text drawn as glyph outlines, so `Create`, `Write` and `DrawBorderThenFill` can draw it
 /// (Manim's `Text` as a `VMobject`). `(x, y)` is the start of the baseline.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct TextPath<'s> {
     pub text: &'s str,
     pub x: f32,

@@ -33,6 +33,7 @@ fn fraction_text(numerator: usize, denominator: usize) -> String {
 /// stacked under each other show equal fractions lining up (`1/2`, `2/4`, `4/8`). The outline
 /// and the cuts draw with `enter`; with `label` the fraction is written left of the bar.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct FractionBar {
     pub numerator: usize,
     pub denominator: usize,
@@ -162,6 +163,7 @@ impl<'a> Component<'a> for FractionBar {
 /// the top, clockwise, of which the first `numerator` fill one after another. With `label`
 /// the fraction is written under the circle.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct FractionPie {
     pub numerator: usize,
     pub denominator: usize,

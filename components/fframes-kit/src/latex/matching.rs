@@ -184,6 +184,7 @@ fn slide(from: &Shape, to: &Shape, t: f32) -> Shape {
 /// with a different number of glyphs morphs as one shape), the rest of `from` fades out and
 /// the rest of `to` fades in. Before the start it draws `from`, after the end `to`.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct TransformMatchingTex<'f> {
     pub from: FormulaView<'f>,
     pub to: FormulaView<'f>,

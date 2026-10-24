@@ -17,6 +17,7 @@ use crate::{
 /// coordinates (Manim's plot with an `always_redraw` dot). Build `graph` with
 /// [`Axes::plot`] on the same axes.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct FunctionPlot<'a> {
     pub axes: Axes<'a>,
     pub graph: FunctionGraph,

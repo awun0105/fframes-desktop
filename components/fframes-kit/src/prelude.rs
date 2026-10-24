@@ -41,6 +41,9 @@ pub use crate::overlay::{
 };
 pub use crate::paths;
 pub use crate::plot::{Heatmap, Histogram, LinePlot, ScatterPlot};
+pub use crate::props::{Editable, EditableExt};
+#[cfg(feature = "studio")]
+pub use crate::props::{PropChoice, PropValue, Props, PropsStore};
 pub use crate::shapes::{
     Annulus, Arc, Arrow, BlockArrow, Brace, Callout, Circle, CurvedArrow, DashedLine, Dot,
     DoubleArrow, Ellipse, Heart, Line, Pie, Polygon, Rect, Rectangle, RegularPolygon,

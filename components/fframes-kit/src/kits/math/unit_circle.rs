@@ -22,6 +22,7 @@ use super::short;
 /// `angle` in radians counterclockwise. The circle and its axes draw with `enter`, the rest
 /// fades with `parts_enter`.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct UnitCircle<'a> {
     pub center: (f64, f64),
     pub radius: f64,

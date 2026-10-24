@@ -3,7 +3,7 @@ name = "fframes-kit-macros"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "The ui! macro of fframes-kit: component tags in svgr! markup"
+description = "The ui! macro and the Props derives of fframes-kit"
 
 [lib]
 proc-macro = true
@@ -11,6 +11,7 @@ proc-macro = true
 [dependencies]
 proc-macro2.workspace = true
 quote.workspace = true
+syn.workspace = true
 
 [lints]
 workspace = true

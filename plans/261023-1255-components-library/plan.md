@@ -58,15 +58,16 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | Formulas | full LaTeX through the user's TeX install (MiKTeX on Windows, Ubuntu, macOS; TeX Live works too), Manim's `latex` + `dvisvgm` pipeline, SVG cache | any package works (amsmath, mhchem, physics, siunitx, TikZ, chemfig, circuitikz); a committed cache renders without TeX; the web editor shows the TeX source as text |
 | Typst | not supported | no Typst crates, packages or CeTZ; the `Formula` type does not depend on the engine, so a second engine can be added later without changing components |
 | Transitions | basic set early (phase 3): `Fade`, `Slide`, `Wipe`, linear and spring timing, `SceneFade` | advanced presentations and effects wait for phase 11 |
-| Studio props panel | **cancelled** (user, 2026-10-23: no changes to fframes core or fframes Studio; the kit must be independent) | phase 8 is not done; phases 9 to 11 no longer depend on it |
+| Studio props panel | **reopened** (user, 2026-10-24: "just keep the fframes core, can edit the studio"; it was cancelled on 2026-10-23) | phase 8 is redesigned: it changes only the kit and fframes Studio (`desktop/`, `fframes-studio-protocol/`, `fframes-studio-runtime/`); phases 9 to 11 do not depend on it |
 | Tag form | the kit's own proc macro `fframes_kit::ui!` wrapping `svgr!`, implicit variable named `ui` | `svgr-macro` is not changed; the macro error says how to create `ui` when it is missing |
 | Core changes | **none** (user, 2026-10-23: "i do not want to modify the core of fframes since i will continue pull the latest changes"); this replaces the earlier "additive only" row | text measured through `ctx.font_source` and borrowed strings, tags through `ui!`, warnings through the public `fframes::diagnostics::report`; see "Upstream boundary" below |
 | Layout | nested workspace `components/` (`fframes-kit`, `fframes-kit-macros`, `gallery`, own `justfile`, `scripts/e2e.mjs`, `Cargo.lock`); agent references in `docs/components/` | upstream merges never conflict; moving the kit to its own repository later is a folder move |
-| Fork-only APIs | **not used**: no `EditorObjectKey`, `Svgr::with_editor_object`, `Scene::editor_instance_key` or `fframes::Styles`, no `studio` feature | the kit builds against plain upstream fframes; `Theme` is the kit's own type with its own defaults |
+| Fork-only APIs | not used by the default build; since 2026-10-24 the kit feature `studio` (off by default) uses `EditorObjectKey` and `Scene::editor_instance_key` for the props panel | the default kit builds against plain upstream fframes; `Theme` is the kit's own type with its own defaults |
 | Example migration | only the fork-only `fframes-studio-intro` (and later `vinuni-future-rises`) | `examples/fframes-intro` is upstream-owned and keeps its helpers |
 | MiKTeX on this VM | approved (2026-10-23): phase 5 installs it without asking (Chocolatey; this VM has no winget) | real formulas render and the `tex-cache/` is generated here |
-| Phase 8 | **the loop stops before phase 8** (user, 2026-10-23) | phase 8 is cancelled; phases 9 to 12 wait for a new decision to run them |
-| Commits | one conventional commit per finished phase on `main`, scope `kit` (2026-10-23) | stage only the phase's own paths, never the unrelated dirty files already in the tree |
+| Phases 8 to 12 | **run them** (user, 2026-10-24: "Run 9 to 12"; phase 8 is reopened) | the loop runs phases 8 to 12; before, it stopped before phase 8 (2026-10-23) |
+| Commits | one conventional commit per finished slice on `main`: scope `kit` for `components/`, scope `studio-props` for Studio paths (2026-10-23; Studio scope 2026-10-24) | stage only the phase's own paths, never the unrelated dirty files already in the tree |
+| Push | **push `main` to origin after each completed phase** (user, 2026-10-24: "Push to origin") | replaces the earlier "do not push" rule |
 
 ## Phases
 
@@ -79,10 +80,10 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 5 | [LaTeX formulas](./phase-05-latex-formulas.md) | 2 | 4d | Completed |
 | 6 | [Explain layer and math kit](./phase-06-explain-layer-and-math-kit.md) | 2 (LaTeX labels when 5 is done) | 5d | Completed |
 | 7 | [Component tags with the ui! macro](./phase-07-component-tags-in-svgr.md) | 2 | 3d | Completed |
-| 8 | [Studio props panel](./phase-08-studio-props-panel.md) | n/a | 0d | Cancelled |
-| 9 | [Physics and chemistry kits](./phase-09-physics-and-chemistry-kits.md) | 6, 8 | 6d | Pending |
-| 10 | [CS and biology kits](./phase-10-cs-and-biology-kits.md) | 6, 8 | 6d | Pending |
-| 11 | [Effects and more transitions](./phase-11-effects-and-more-transitions.md) | 3, 8 | 3d | Pending |
+| 8 | [Studio props panel](./phase-08-studio-props-panel.md) | 3, 4, 6, 7 | 5d | In progress |
+| 9 | [Physics and chemistry kits](./phase-09-physics-and-chemistry-kits.md) | 6 | 6d | Pending |
+| 10 | [CS and biology kits](./phase-10-cs-and-biology-kits.md) | 6 | 6d | Pending |
+| 11 | [Effects and more transitions](./phase-11-effects-and-more-transitions.md) | 3 | 3d | Pending |
 | 12 | [Getting started and packaging](./phase-12-scaffolding-and-studio-template.md) | 4 | 1d | Pending |
 
 Phases 2 and 3 can run in parallel after phase 1; 4, 5, 6 and 7 can run in parallel after phase 2;
@@ -122,9 +123,13 @@ Baseline commit: `cdf2f12a` (`main` before the kit work, 2026-10-23).
 Upstream-owned paths (from `git ls-tree upstream/main`) are never modified: `fframes*/`,
 `svgr-macro/`, `media-dir-macro/`, `webvtt-parser/`, `cargo-fframes/`, `examples/` (except
 the fork-only `examples/fframes-studio-intro` and `examples/vinuni-future-rises`), `skills/`,
-`e2e/`, `scripts/`, `justfile`, `render-bench/`, `package.json`, `.github/`. fframes Studio is off
-limits too, although the fork owns it: `desktop/`, `fframes-studio-protocol/`,
-`fframes-studio-runtime/`. The only allowed
+`e2e/`, `scripts/`, `justfile`, `render-bench/`, `package.json`, `.github/`.
+
+fframes Studio is `desktop/`, `fframes-studio-protocol/` and `fframes-studio-runtime/`. The fork owns it, and it is not in `upstream/main`.
+- Since 2026-10-24, phase 8 may change it, in commits with the scope `studio-props`.
+- Kit commits still never touch it.
+
+The only allowed
 edits in upstream-owned files are one word in the root `Cargo.toml` `exclude` line and one
 pointer line in `AGENTS.md` (phase 1), plus the root `Cargo.lock` entries that phase 4 adds when the
 fork-only `fframes-studio-intro` starts depending on the kit. Reading upstream code is fine.
@@ -140,9 +145,14 @@ cd .. && git log --no-merges --grep='(kit)' --name-only --format= cdf2f12a..HEAD
   package.json .github desktop fframes-studio-protocol fframes-studio-runtime \
   ':!examples/fframes-studio-intro' ':!examples/vinuni-future-rises' | sort -u
 cd .. && git log --no-merges --grep='(kit)' -p --format=%h cdf2f12a..HEAD -- Cargo.toml AGENTS.md
+cd .. && git log --no-merges --grep='(studio-props)' --name-only --format= cdf2f12a..HEAD -- \
+  fframes fframes-media fframes-editor fframes-editor-controller fframes-skia-renderer \
+  fframes-three-d fframes-native-player fframes-test-utils fframes-lyon-renderer svgr-macro \
+  media-dir-macro webvtt-parser cargo-fframes examples skills e2e scripts justfile render-bench \
+  package.json .github Cargo.toml AGENTS.md | sort -u
 ```
 
-The first command must print nothing. The second prints the kit commits' own edits to
+The first and third commands must print nothing. The second prints the kit commits' own edits to
 `Cargo.toml` and `AGENTS.md`; check by eye that they are only the `exclude` word and the one
 pointer line.
 Uncommitted changes that were in the tree before the kit work (`typos.toml`,
@@ -162,7 +172,6 @@ Status words: the table uses `Pending`, `In progress`, `Completed`, `Blocked`, `
    from its Todo list (checked items are done; verify them quickly before continuing).
 2. **Stop conditions**, checked before any work. End the loop (`ScheduleWakeup` with
    `stop: true`) and tell the user why when:
-   - the next phase to run is 8 or higher (user decision: the loop stops before phase 8);
    - a phase is `Blocked` (its file records the blocker);
    - the same check failed in two consecutive firings after an advisor call;
    - the boundary check prints anything;
@@ -177,10 +186,12 @@ Status words: the table uses `Pending`, `In progress`, `Completed`, `Blocked`, `
 5. Commit: `git add` the phase's paths explicitly (`components/`, `docs/components/`,
    `docs/latex-setup.md`, this plan folder, the report, and the two pointer edits in phase 1;
    `examples/fframes-studio-intro/` in phase 4 only for files the phase changed), then
-   `git commit -m "feat(kit): <what the phase delivered>"`. No AI references or attribution
-   trailer in the message (user rule), no plan IDs or phase numbers in commit messages or code.
-   Do not push.
-6. Set the phase to `Completed` (table and file), then schedule the next firing
+   `git commit -m "feat(kit): <what the phase delivered>"`. Studio paths (phase 8) are
+   committed separately as `feat(studio-props): ..`. No AI references or attribution trailer
+   in the message (user rule), no plan IDs or phase numbers in commit messages or code.
+6. Set the phase to `Completed` (table and file), and push `main` to origin
+   (`git push origin main`; only commits go out, the user's uncommitted changes stay local).
+   Then schedule the next firing
    (`ScheduleWakeup`, about 60 s, same prompt). If the phase is too large for one firing, commit
    the finished, green part as `feat(kit): ...`, leave the phase `In progress` with its Todo
    ticks, and schedule the next firing.
@@ -234,5 +245,11 @@ core. or fframes studio. It must be independence". Phase 8 cancelled; the `studi
 editor keys and `Theme::from_styles` removed from phase 1; `Keyed`/`#[derive(Props)]` removed
 from phases 2, 9, 10, 11; phase 12 reduced to the getting-started page and packaging (no
 Studio template); `desktop/` and the Studio crates added to the boundary check.
+
+Round 5 (2026-10-24, user direction): "just keep the fframes core, can edit the studio", "Run 9
+to 12", "Push to origin". Phase 8 was reopened and redesigned so that it changes only the kit
+and the fork-owned Studio crates. The stop before phase 8 was lifted. Phases 9 to 11 no longer
+list 8 as a dependency. `main` is pushed after each completed phase, and Studio commits use the
+scope `studio-props`, which has its own boundary check.
 
 Note: the plan directory is named `components-library`; the crate it builds is `fframes-kit`.

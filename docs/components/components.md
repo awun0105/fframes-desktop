@@ -736,6 +736,74 @@ fn card<'a>(frame: Frame, ctx: &FFramesContext<'a, '_>, theme: &'a Theme) -> Svg
 }
 ```
 
+## Editable props (fframes Studio)
+
+fframes Studio can change a component's props without code edits. In the Props panel, select
+the component on the canvas, change a value, and the preview updates. The values are saved in
+the project's `props.json`.
+
+A component is editable when it has a key:
+- in the struct form, `ui.show(LowerThird { .. }.editable("speaker"))`;
+- in a tag, `<LowerThird editable="speaker" .. />`.
+
+Keys must be unique within a scene.
+- Without the kit feature `studio`, `editable` renders the component unchanged. Code that marks
+  components therefore builds the same everywhere.
+- With `studio`, every kit component implements `Props`. Its editable fields are numbers,
+  `bool`, text, `Color`, `Option<Color>` (`null` is none) and a fixed `Anim<f32>`.
+  - Children, slices, keyframes and styles stay in code.
+  - Your own components get it with `#[derive(Props)]`. Use `#[props(skip)]` to keep a field
+    out, and `#[props(min = 0.0, max = 100.0, step = 1.0, unit = "px")]` to bound a number.
+  - Enums whose variants have no fields get it with `#[derive(PropChoice)]`.
+
+The video keeps a `PropsStore` and renders with it through `Ui::with_props`:
+
+```rust
+use fframes_kit::prelude::*;
+
+fn title<'a>(frame: Frame, ctx: &FFramesContext<'a, '_>, theme: &'a Theme) -> Svgr<'a> {
+    let mut ui = Ui::new(frame, ctx, theme);
+    ui.show(
+        LowerThird {
+            name: "Ada".into(),
+            ..ui.defaults()
+        }
+        .editable("speaker"),
+    )
+}
+
+# #[cfg(feature = "studio")]
+fn with_store<'a>(
+    frame: Frame,
+    ctx: &FFramesContext<'a, '_>,
+    theme: &'a Theme,
+    store: &'a PropsStore, // `Arc<PropsStore>` in the video, `PropsStore::load("props.json")`
+) -> Svgr<'a> {
+    let mut ui = Ui::new(frame, ctx, theme).with_props(store);
+    ui!(<LowerThird editable="speaker" name="Ada" />)
+}
+```
+
+When the component renders with a store:
+- the document's values for it replace the code's values;
+- it is drawn inside a `<g>` whose id is its editor identity: the scene's
+  `editor_instance_key` (else its name; `video` outside scenes), the type name, the key, and
+  `main`;
+- a value that does not fit its field is skipped with a warning in `inspect`.
+
+A CLI render reads the same document with `PropsStore::load`, so exports match the preview.
+The project's Studio worker hands the store to the preview worker:
+
+```rust,ignore
+props.listen(); // record each editable object's schema and values for the panel
+let (apply, info) = (props.clone(), props.clone());
+let config = config.with_props_args(&args).with_props(PropsHooks::new(
+    move |doc| apply.set(doc),
+    move |identity| info.info(identity),
+));
+// export: run_export_with_props(&video, &options, &args, &hooks)
+```
+
 ## A whole video
 
 ```rust

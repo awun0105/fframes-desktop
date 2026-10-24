@@ -13,6 +13,7 @@ use super::{TextAnchor, line, width};
 /// pixels. It shrinks by `step` pixels down to `min_size`, where it stays even if it is
 /// still too wide. Without a measurable font it keeps `style.size`.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct FitText<'a> {
     pub text: Cow<'a, str>,
     /// The anchor point on the baseline.

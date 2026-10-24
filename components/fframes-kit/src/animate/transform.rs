@@ -42,6 +42,7 @@ pub(crate) fn morph(from: &Shape, to: &Shape, a: &BezPath, b: &BezPath, t: f32) 
 /// it draws `from`, after it ends the morphed shape, which looks like `to`. The prelude
 /// calls it `Morph`, because `Transform` there is the SVG transform.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Transform {
     pub from: Shape,
     pub to: Shape,
@@ -77,6 +78,7 @@ impl<'a> Component<'a> for Transform {
 /// `Transform` that draws `to` itself once the morph has finished (Manim's
 /// `ReplacementTransform`).
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct ReplacementTransform {
     pub from: Shape,
     pub to: Shape,

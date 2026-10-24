@@ -12,6 +12,7 @@ use super::{TextAnchor, line};
 /// A small tracked label, like the annotations of an engineering drawing ("01 / RENDER").
 /// `uppercase` turns the text to capitals.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct HudLabel<'a> {
     pub text: Cow<'a, str>,
     pub x: f32,

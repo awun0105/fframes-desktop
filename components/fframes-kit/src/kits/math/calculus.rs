@@ -68,6 +68,7 @@ fn dot_shape(ui: &Ui<'_, '_, '_>, p: Point, radius: f32, color: Color) -> Shape 
 /// on the point when `dot` is above 0 (Manim's `TangentLine`). `x` is a
 /// [`ValueTracker`], so the line can slide along the graph.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Tangent<'a> {
     pub f: Func,
     pub axes: AxesMap,
@@ -129,6 +130,7 @@ impl<'a> Component<'a> for Tangent<'a> {
 /// with dots on them and, when `legs` is set, the dashed `dx` and `dy` legs (Manim's
 /// `get_secant_slope_group`). As `dx` goes to 0 it turns into the tangent.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Secant<'a> {
     pub f: Func,
     pub axes: AxesMap,
@@ -261,6 +263,7 @@ fn stage(t: f32, steps: usize, hold: f32, crossfade: f32) -> (usize, f32) {
 /// `sum` writes the Riemann sum after its text with `decimals`, fading with the
 /// rectangles. Build `rects` with [`Axes::riemann_rectangles`](crate::explain::Axes::riemann_rectangles).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct RiemannSum<'a> {
     pub rects: RiemannRectangles,
     pub dxs: Vec<f64>,
@@ -332,6 +335,7 @@ impl<'a> Component<'a> for RiemannSum<'a> {
 /// [`Axes::area`](crate::explain::Axes::area); `key` tells the clip paths of two areas in
 /// one frame apart.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct AreaUnder<'a> {
     pub area: Area,
     pub delay: f32,

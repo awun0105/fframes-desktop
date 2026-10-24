@@ -23,6 +23,7 @@ fn window(index: usize, start: usize, length: Option<usize>) -> Option<usize> {
 
 /// Shows its children from `from` seconds on, for `duration` seconds or until the parent
 /// ends. Inside, time starts at 0 and `ui.duration` is the sequence's length.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Sequence<'a> {
     /// Start in the parent's local seconds.
     pub from: f32,
@@ -59,6 +60,7 @@ impl<'a> Component<'a> for Sequence<'a> {
 
 /// Children one after the other, each for its own number of seconds. Each item starts
 /// `overlap` seconds before the previous one ends, so both show during the overlap.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Series<'a> {
     /// `(seconds, children)` in play order.
     pub items: Vec<(f32, Children<'a>)>,
@@ -94,6 +96,7 @@ impl<'a> Component<'a> for Series<'a> {
 }
 
 /// Repeats its children every `duration` seconds, `times` times or forever (`None`).
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Loop<'a> {
     pub duration: f32,
     pub times: Option<usize>,
@@ -135,6 +138,7 @@ impl<'a> Component<'a> for Loop<'a> {
 }
 
 /// Shows its children frozen at `at` seconds of their local time.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Freeze<'a> {
     pub at: f32,
     pub children: Children<'a>,
@@ -160,6 +164,7 @@ impl<'a> Component<'a> for Freeze<'a> {
 
 /// A group covering the whole canvas, optionally on a background colour (Remotion's
 /// `AbsoluteFill`).
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Fill<'a> {
     pub background: Option<Color>,
     pub children: Children<'a>,

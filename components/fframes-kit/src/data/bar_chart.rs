@@ -15,6 +15,7 @@ use crate::{
 /// `max_height` high when `max_value` is `None`. A bar is never thinner than half a pixel,
 /// so a growing bar starts as a hairline.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct BarChart<'a> {
     /// `(label, value)` of each bar, left to right.
     pub bars: Vec<(Cow<'a, str>, f64)>,

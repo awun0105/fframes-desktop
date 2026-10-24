@@ -70,6 +70,7 @@ pub fn normal_pdf(x: f64, mean: f64, sd: f64) -> f64 {
 /// spread of the samples shown so far and draws with `curve_enter` (a delayed `Create`);
 /// with `stats` the mean and standard deviation are written at `stats_at` (pixels).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct NormalFit<'a> {
     pub samples: &'a [f64],
     pub shown: ValueTracker<'a>,

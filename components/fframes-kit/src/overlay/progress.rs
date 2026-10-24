@@ -11,6 +11,7 @@ use crate::{
 /// through `ui.duration` (a video progress bar), otherwise the given value from 0 to 1. The
 /// filled part is never thinner than half a pixel, so it is visible from the start.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct ProgressBar {
     pub x: f32,
     pub y: f32,
@@ -62,6 +63,7 @@ impl<'a> Component<'a> for ProgressBar {
 /// A check mark that draws itself on from `delay` seconds over `run_time`. `(x, y)` is the
 /// start of the short stroke; the mark is 27 by 20 units times `size`.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Check {
     pub x: f32,
     pub y: f32,

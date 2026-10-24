@@ -26,6 +26,7 @@ pub enum RevealBy {
 /// `run_time`. `(x, y)` is the start of the baseline. Without a measurable font the whole
 /// line fades in as unit 0.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct TextReveal<'a> {
     pub text: Cow<'a, str>,
     pub x: f32,

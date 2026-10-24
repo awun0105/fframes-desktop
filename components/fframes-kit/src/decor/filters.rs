@@ -31,6 +31,7 @@ macro_rules! filter {
     ($(#[$meta:meta])* $name:ident, $token:ident) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq)]
+        #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
         pub struct $name<'a> {
             /// The filter's id, unique in the frame.
             pub id: Cow<'a, str>,

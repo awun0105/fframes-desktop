@@ -43,6 +43,7 @@ pub fn bin(samples: &[f64], range: (f64, f64), bins: usize, density: bool) -> Ve
 /// `stagger` seconds apart; `stagger: 0.0` grows them together. `gap` is the pixels between
 /// bars.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Histogram {
     pub values: Vec<f64>,
     pub range: (f64, f64),

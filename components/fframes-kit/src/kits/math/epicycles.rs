@@ -98,6 +98,7 @@ pub fn tip(terms: &[Term], turns: f64) -> (f64, f64) {
 /// whole drawing). The circles and vectors draw with `enter` and leave with `exit`; the trace
 /// stays, so wrap the figure in a fade to take it away too.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Epicycles<'a> {
     pub terms: &'a [Term],
     pub center: (f64, f64),

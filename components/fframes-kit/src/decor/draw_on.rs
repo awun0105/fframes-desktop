@@ -11,6 +11,7 @@ use crate::{
 /// tick or a hand-drawn arrow. It is [`Create`] on a shape you built: give the shape a
 /// `stroke` (and no `fill` for a line).
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct DrawOn {
     pub shape: Shape,
     pub delay: f32,

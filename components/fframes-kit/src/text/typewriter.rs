@@ -14,6 +14,7 @@ use super::{TextAnchor, line, width};
 /// blinks every `blink` seconds once the text is complete. `(x, y)` is the start of the
 /// baseline. Without a measurable font there is no cursor.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Typewriter<'a> {
     pub text: Cow<'a, str>,
     pub x: f32,

@@ -202,6 +202,7 @@ fn number(v: f64, decimals: usize) -> String {
 /// A horizontal number line (Manim `NumberLine`): `range` spread over `length` units
 /// centered on `center`, with ticks at every step and the `numbers` written below them.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct NumberLine {
     pub range: Range,
     /// Length in units of `ui.space`.
@@ -354,6 +355,7 @@ impl<'a> Component<'a> for NumberLine {
 /// [`Axes::plot`], [`Axes::vertical_line`], [`Axes::riemann_rectangles`] and
 /// [`Axes::area`]; they keep the axes' mapping.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Axes<'a> {
     pub x_range: Range,
     pub y_range: Range,
@@ -658,6 +660,7 @@ impl<'a> Component<'a> for Axes<'a> {
 /// frame by default. `faded_line_ratio` 2 adds a fainter line between two grid lines, 3 two
 /// of them.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct NumberPlane<'a> {
     pub axes: Axes<'a>,
     pub line_color: Color,

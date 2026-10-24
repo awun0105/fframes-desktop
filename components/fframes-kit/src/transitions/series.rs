@@ -26,6 +26,7 @@ pub enum TransitionItem<'a> {
 /// series is shorter than its sequences by the sum of the transitions. A transition longer
 /// than one of its sequences is shortened to it; a transition that is first, last, or next
 /// to another transition is skipped. `inspect` warns about both.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct TransitionSeries<'a> {
     /// Makes the ids of the transitions' clip paths unique when two series share a frame.
     pub key: Option<&'static str>,

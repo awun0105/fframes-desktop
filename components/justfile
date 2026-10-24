@@ -29,3 +29,8 @@ boundary:
     package.json .github desktop fframes-studio-protocol fframes-studio-runtime \
     ':!examples/fframes-studio-intro' ':!examples/vinuni-future-rises' | sort -u
   cd .. && git log --no-merges --grep='(kit)' -p --format=%h cdf2f12a..HEAD -- Cargo.toml AGENTS.md
+  cd .. && git log --no-merges --grep='(studio-props)' --name-only --format= cdf2f12a..HEAD -- \
+    fframes fframes-media fframes-editor fframes-editor-controller fframes-skia-renderer \
+    fframes-three-d fframes-native-player fframes-test-utils fframes-lyon-renderer svgr-macro \
+    media-dir-macro webvtt-parser cargo-fframes examples skills e2e scripts justfile render-bench \
+    package.json .github Cargo.toml AGENTS.md | sort -u

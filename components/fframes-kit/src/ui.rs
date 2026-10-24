@@ -27,6 +27,13 @@ pub struct Ui<'a, 'c, 'm> {
     /// The coordinate system of the explain components, [`Space::FULL_HD`] unless a
     /// [`Canvas`](crate::explain::Canvas) sets another.
     pub space: Space,
+    /// The props document this `Ui` renders editable components with, see [`Ui::with_props`].
+    #[cfg(feature = "studio")]
+    pub(crate) props: Option<crate::props::PropsView<'a>>,
+    /// The scene part of editor identities: the scene's `editor_instance_key`, else its
+    /// name; `video` outside scenes.
+    #[cfg(feature = "studio")]
+    scene: std::sync::Arc<str>,
 }
 
 /// A props struct that renders itself at the current time of a [`Ui`].
@@ -106,6 +113,10 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             ctx,
             theme,
             space: Space::FULL_HD,
+            #[cfg(feature = "studio")]
+            props: None,
+            #[cfg(feature = "studio")]
+            scene: "video".into(),
         }
     }
 
@@ -130,6 +141,13 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             ctx,
             theme,
             space: Space::FULL_HD,
+            #[cfg(feature = "studio")]
+            props: None,
+            #[cfg(feature = "studio")]
+            scene: scene
+                .editor_instance_key()
+                .unwrap_or_else(|| scene.name())
+                .into(),
         }
     }
 
@@ -143,6 +161,10 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             ctx: self.ctx,
             theme: self.theme,
             space: self.space,
+            #[cfg(feature = "studio")]
+            props: self.props.clone(),
+            #[cfg(feature = "studio")]
+            scene: self.scene.clone(),
         }
     }
 
@@ -154,7 +176,25 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             ctx: self.ctx,
             theme: self.theme,
             space,
+            #[cfg(feature = "studio")]
+            props: self.props.clone(),
+            #[cfg(feature = "studio")]
+            scene: self.scene.clone(),
         }
+    }
+
+    /// Renders [`Editable`](crate::props::Editable) components with the values of `store`,
+    /// read once here: a document set later applies from the next `Ui`.
+    #[cfg(feature = "studio")]
+    pub fn with_props(mut self, store: &'a crate::props::PropsStore) -> Self {
+        self.props = Some(crate::props::PropsView::new(store));
+        self
+    }
+
+    /// The scene part of the editor identities this `Ui` gives.
+    #[cfg(feature = "studio")]
+    pub fn scene_key(&self) -> &str {
+        &self.scene
     }
 
     /// Renders a component at the current time.

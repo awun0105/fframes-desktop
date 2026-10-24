@@ -11,6 +11,7 @@ use crate::{
 /// `scale_from` about `center` and fade in over `enter` seconds. They leave the same way up
 /// over `exit` seconds, ending at `until` seconds, or at the end of the container
 /// (`ui.duration`) when `until` is `None`. Inside, time starts at `from`, as in a `Sequence`.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Appear<'a> {
     pub from: f32,
     pub until: Option<f32>,

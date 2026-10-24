@@ -12,6 +12,7 @@ use crate::{
 /// shape components, line them up with [`VGroup::arrange`] or [`VGroup::arrange_in_grid`]
 /// and draw it with one `enter`, `exit` and `emphasis`.
 #[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct VGroup {
     pub parts: Vec<Shape>,
     pub enter: Option<EnterAnim>,

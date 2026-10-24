@@ -14,6 +14,7 @@ use crate::{
 /// Dots at data points on axes. From `delay` they grow in one after another, `stagger`
 /// seconds apart, each over `run_time`. Points that are not finite are left out.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct ScatterPlot {
     pub points: Vec<(f64, f64)>,
     pub axes: AxesMap,

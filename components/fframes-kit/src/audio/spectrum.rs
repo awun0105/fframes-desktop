@@ -38,6 +38,7 @@ pub enum BarAlign {
 /// pixels, kept between `min_height` and `max_height`; NaN draws the shortest bar. Pass the
 /// values of [`spectrum`] (often `.step_by(n)` or `center_spectrum_low_frequencies`).
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct SpectrumBars {
     pub values: Vec<f32>,
     pub x: f32,

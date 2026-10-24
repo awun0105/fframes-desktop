@@ -16,6 +16,7 @@ use crate::{
 /// the bar. With `background`, a plate as wide as the longer line sits behind the text
 /// (without a measurable font it is `min_width` wide).
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct LowerThird<'a> {
     pub name: Cow<'a, str>,
     pub role: Cow<'a, str>,

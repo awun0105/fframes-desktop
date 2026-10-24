@@ -16,6 +16,7 @@ use crate::{
 /// `(x, y)`. The brackets draw with `enter` (`Create`), the entries fade with
 /// `entries_enter`.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Matrix<'a> {
     /// Row by row; a shorter row is padded with empty entries.
     pub entries: Vec<Vec<Cow<'a, str>>>,

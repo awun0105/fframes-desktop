@@ -17,6 +17,7 @@ use crate::{
 /// with a `ValueTracker`). With `decimals` the value is written after the label:
 /// `label: "x = "` and `decimals: Some(1)` write `x = 2.5`. The line is drawn separately.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct NumberPoint<'a> {
     pub line: NumberLine,
     pub value: ValueTracker<'a>,
@@ -105,6 +106,7 @@ impl<'a> Component<'a> for NumberPoint<'a> {
 /// dot at a closed end and a ring at an open one (`[a, b)` is `closed: (true, false)`).
 /// The line is drawn separately.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Interval {
     pub line: NumberLine,
     pub from: f64,

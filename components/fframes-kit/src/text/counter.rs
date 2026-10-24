@@ -15,6 +15,7 @@ use super::{TextAnchor, line};
 /// seconds into the container: `"0" -> "12,480"`. It is right aligned by default, so the
 /// digits stay in place while the number grows.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Counter<'a> {
     pub from: f64,
     pub to: f64,

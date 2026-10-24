@@ -22,6 +22,7 @@ use crate::{
 /// One line of text whose box sits `buff` pixels from `(x, y)` in `direction`: `Top` puts it
 /// above the point, `TopRight` up and to the right, `Center` on it.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Label<'a> {
     pub text: Cow<'a, str>,
     pub x: f32,
@@ -128,6 +129,7 @@ pub fn spread(ui: &Ui<'_, '_, '_>, labels: &mut [Label<'_>], gap: f32) {
 /// a dot on `from` when `dot` is above 0. The line draws with `enter` (`Create` from
 /// `from`), the text fades with `label_enter`.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Leader<'a> {
     pub from: (f32, f32),
     pub to: (f32, f32),
@@ -226,6 +228,7 @@ impl<'a> Component<'a> for Leader<'a> {
 /// on the side the tip points to; the brace draws with its own `enter`, the text fades with
 /// `label_enter`.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct BraceLabel<'a> {
     pub brace: Brace,
     pub text: Cow<'a, str>,

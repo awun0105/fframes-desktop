@@ -42,6 +42,7 @@ pub fn towards(m: Mat2, p: f64) -> Mat2 {
 /// `center`, and the moved grid is clipped to its box; `key` tells the clip paths of two
 /// transforms apart. With `show_matrix` the matrix is written at `matrix_at` (pixels).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct LinearTransform<'a> {
     pub matrix: Mat2,
     pub x_range: Range,
@@ -231,6 +232,7 @@ impl<'a> Component<'a> for LinearTransform<'a> {
 /// middle of the vectors, on their left, and `resultant_label` on the side of the resultant
 /// away from them.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct VectorSum<'a> {
     pub vectors: Vec<(f64, f64)>,
     pub origin: (f64, f64),

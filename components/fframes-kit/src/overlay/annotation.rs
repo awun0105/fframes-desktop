@@ -14,6 +14,7 @@ use crate::{
 /// the text fades in over the last 40 %. (The shape called `Callout` is the Remotion speech
 /// bubble, so this one has another name.)
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Annotation<'a> {
     pub target: (f32, f32),
     pub label: (f32, f32),

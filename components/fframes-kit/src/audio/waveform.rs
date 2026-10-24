@@ -85,6 +85,7 @@ pub fn wave_path(x: f32, y: f32, width: f32, gain: f32, max_height: f32, values:
 /// The audio spectrum (or any values) as a filled smooth wave over a baseline, like the
 /// layered waves of an audio announcement. See [`wave_path`] for the geometry.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Waveform {
     pub values: Vec<f32>,
     pub x: f32,

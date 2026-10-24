@@ -17,6 +17,7 @@ use crate::{
 /// a wave from the top left corner, `stagger` seconds per step along the diagonal. Values
 /// that are not finite leave their cell empty.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Heatmap {
     pub values: Vec<Vec<f64>>,
     pub x_range: (f64, f64),

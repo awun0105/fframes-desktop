@@ -34,6 +34,7 @@ impl Default for LetterLook {
 /// `look(index)`. `(x, y)` is the start of the baseline and `tracking` adds pixels after
 /// every letter. Letters at opacity 0 are left out. Without a measurable font the line is
 /// one `<text>` with the look of letter 0.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Letters<'a> {
     pub text: Cow<'a, str>,
     pub x: f32,

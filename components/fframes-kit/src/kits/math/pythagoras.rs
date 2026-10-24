@@ -17,6 +17,7 @@ use super::short;
 /// square draws with its own `squares_enter` (stagger them with delays) and, with `labels`,
 /// shows its area at its center (`a² = 9`, `b² = 16`, `c² = 25`).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Pythagoras {
     pub a: f64,
     pub b: f64,

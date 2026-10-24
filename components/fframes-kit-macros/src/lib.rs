@@ -1,6 +1,25 @@
-//! The `ui!` macro of `fframes-kit`, re-exported as `fframes_kit::ui`. See its docs there.
+//! The `ui!` macro and the `Props` derives of `fframes-kit`, re-exported as
+//! `fframes_kit::ui` and in `fframes_kit::props`. See their docs there.
 
+mod props;
 mod tags;
+
+/// Makes a props struct editable in fframes Studio: implements `fframes_kit::props::Props`.
+/// Fields whose type implements `PropValue` (numbers, `bool`, `String`, `Cow<str>`,
+/// `Color`, `Anim<f32>`, `#[derive(PropChoice)]` enums) are editable; the others are left
+/// out without an attribute. `#[props(skip)]` leaves an editable field out, and
+/// `#[props(min = 0.0, max = 100.0, step = 1.0, unit = "px")]` bounds a number.
+#[proc_macro_derive(Props, attributes(props))]
+pub fn derive_props(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    props::derive_props(input.into()).into()
+}
+
+/// Makes an enum whose variants have no fields an editable prop: Studio shows the
+/// variant names as a choice.
+#[proc_macro_derive(PropChoice)]
+pub fn derive_prop_choice(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    props::derive_choice(input.into()).into()
+}
 
 /// `svgr!` markup with component tags: `<LowerThird name="Ada" role="Mathematician" />`
 /// becomes `{ui.show(LowerThird { name: "Ada".into(), role: "Mathematician".into(),

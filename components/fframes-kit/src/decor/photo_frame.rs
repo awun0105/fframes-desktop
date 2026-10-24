@@ -9,6 +9,7 @@ use crate::{
 /// clipped to the frame and covers it (`xMidYMid slice`). A missing image draws the frame
 /// alone. `key` names the clip path when two frames are drawn in one frame.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct PhotoFrame<'a> {
     pub image: &'a str,
     pub key: Option<&'a str>,

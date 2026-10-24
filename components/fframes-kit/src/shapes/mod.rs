@@ -103,6 +103,7 @@ macro_rules! shape {
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq)]
+        #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
         pub struct $name {
             $($(#[$fmeta])* pub $field: $ty,)*
             /// `None` leaves the inside empty.

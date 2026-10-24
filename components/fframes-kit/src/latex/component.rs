@@ -205,6 +205,7 @@ pub const UNSET_FORMULA_FONT: &str = "fframes-kit formula not typeset";
 
 /// Draws a [`Formula`] (Manim's `MathTex` on screen).
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct FormulaView<'f> {
     pub of: &'f Formula,
     /// Height in pixels of 10 pt text (the TeX default size).

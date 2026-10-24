@@ -14,6 +14,7 @@ use crate::{
 /// seconds of the video, or of the container with `video_time: false`. A missing file draws
 /// nothing (and `inspect` reports it).
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Captions<'a> {
     /// A subtitle file of the video's media.
     pub file: &'a str,
@@ -95,6 +96,7 @@ impl<'a> Caption<'a> {
 /// at its `at` seconds and leaves upward while the next one comes in. The last stays.
 /// `(x, y)` is the baseline of the tag; the line is `gap` pixels below it.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct CaptionStack<'a> {
     pub items: Vec<Caption<'a>>,
     pub x: f32,

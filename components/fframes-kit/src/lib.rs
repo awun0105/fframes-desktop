@@ -55,6 +55,9 @@
 //! | `axes.plot_line_graph`, `BarChart`, histograms, heat maps | [`plot`]: `LinePlot`, `ScatterPlot`, `Histogram` with `bin`, `Heatmap`, `plot::bars` |
 //! | the math scenes (feature `math`): dots and intervals on a `NumberLine`, tangents, secants, Riemann sums, the unit circle, `LinearTransformationScene`, vector sums, the central limit theorem, `FourierCirclesScene` | `kits::math`: `NumberPoint`, `Interval`, `FunctionPlot`, `Tangent`, `Secant`, `RiemannSum`, `AreaUnder` (and `integral`), `UnitCircle`, `LinearTransform`, `VectorSum`, `Pythagoras`, `FractionBar`, `FractionPie`, `MatrixView`, `NormalFit`, `Epicycles` |
 
+// The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
+extern crate self as fframes_kit;
+
 pub mod anim;
 pub mod animate;
 pub mod audio;
@@ -73,6 +76,7 @@ pub mod overlay;
 pub mod paths;
 pub mod plot;
 pub mod prelude;
+pub mod props;
 pub mod shapes;
 pub mod sim;
 pub mod text;

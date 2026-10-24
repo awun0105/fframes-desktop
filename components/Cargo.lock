@@ -382,6 +382,7 @@ dependencies = [
  "fframes",
  "fframes-kit",
  "fframes_skia_renderer",
+ "serde_json",
 ]
 
 [[package]]
@@ -640,7 +641,9 @@ version = "0.1.0"
 dependencies = [
  "fframes",
  "fframes-kit-macros",
+ "fframes-studio-protocol",
  "kurbo",
+ "serde_json",
 ]
 
 [[package]]
@@ -649,6 +652,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.100",
 ]
 
 [[package]]
@@ -679,6 +683,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+]
+
+[[package]]
+name = "fframes-studio-protocol"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

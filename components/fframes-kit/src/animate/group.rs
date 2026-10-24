@@ -8,6 +8,7 @@ use crate::{
 /// Starts each child `lag_ratio * run_time` seconds after the one before it (Manim's
 /// `LaggedStart`). Each child's time starts at its own start, so its enter animations run
 /// then; every child stays until the parent ends.
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct LaggedStart<'a> {
     /// Fraction of `run_time` between two starts.
     pub lag_ratio: f32,
@@ -43,6 +44,7 @@ impl<'a> Component<'a> for LaggedStart<'a> {
 }
 
 /// Every child at once (Manim's `AnimationGroup` with no lag).
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct AnimationGroup<'a> {
     pub children: Vec<Children<'a>>,
 }
@@ -55,6 +57,7 @@ impl<'a> Component<'a> for AnimationGroup<'a> {
 
 /// Each child starts when the one before it has run `run_time` seconds (Manim's
 /// `Succession`, a `LaggedStart` with `lag_ratio` 1).
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Succession<'a> {
     pub run_time: f32,
     pub children: Vec<Children<'a>>,
