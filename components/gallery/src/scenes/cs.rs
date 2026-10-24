@@ -415,6 +415,82 @@ fn recursion_tree<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{stack}{tree}</g>)
 }
 
+fn complexity_plot<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "ComplexityPlot");
+    let figure = ui.show(ComplexityPlot {
+        delay: 0.8,
+        duration: 4.5,
+        center: (-1.4, -0.3),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+const BINARY_SEARCH: &str = "def binary_search(a, target):
+    lo, hi = 0, len(a) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if a[mid] == target:
+            return mid  # found it
+        if a[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1";
+
+/// The line of `BINARY_SEARCH` each step of the search runs.
+fn search_lines(trace: &ArrayTrace) -> Vec<usize> {
+    trace
+        .steps()
+        .iter()
+        .enumerate()
+        .map(|(i, step)| match step.note.split(' ').next() {
+            _ if i == 0 => 2,
+            Some("search") => 3,
+            Some("is") => 5,
+            Some("found") => 6,
+            _ => 11,
+        })
+        .collect()
+}
+
+fn code_block<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<(ArrayTrace, Vec<usize>)> = OnceLock::new();
+    let (trace, lines) = TRACE.get_or_init(|| {
+        let trace = ArrayTrace::binary_search(&SORTED, 23);
+        let lines = search_lines(&trace);
+        (trace, lines)
+    });
+    let head = title(ui, "CodeBlock");
+    // the code follows the search, step for step
+    let search = ui.show(BinarySearch {
+        view: ArrayView {
+            trace: Some(trace),
+            delay: 0.6,
+            step_time: 0.9,
+            center: (0.0, 2.2),
+            cell: 84.0,
+            notes: false,
+            enter: Some(fade(0.0)),
+            ..ui.defaults()
+        },
+        target: 23,
+        ..ui.defaults()
+    });
+    let code = ui.show(CodeBlock {
+        code: BINARY_SEARCH.into(),
+        language: Language::Python,
+        lines: lines.clone(),
+        delay: 0.6,
+        step_time: 0.9,
+        center: (0.0, -1.1),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{search}{code}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight steps of a second from 0.6 s
@@ -435,5 +511,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("CallStack", 8.5, call_stack),
         // 19 steps of 0.45 s from 0.6 s
         GalleryScene::new("RecursionTree", 10.5, recursion_tree),
+        GalleryScene::new("ComplexityPlot", 7.0, complexity_plot),
+        GalleryScene::new("CodeBlock", 9.0, code_block),
     ]
 }

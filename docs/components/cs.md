@@ -343,3 +343,65 @@ fn recursion<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a CallTrace) -> Svgr<'a> {
     fframes::svgr!(<g>{stack}{tree}</g>)
 }
 ```
+## ComplexityPlot
+
+`ComplexityPlot` races growth rates on the same axes. `n` sweeps along `n_range` in
+`duration` seconds from `delay`, and each `Growth` in `growths` grows with it, a dot at its
+head; a curve that leaves the top of `steps` stops there. A legend beside the axes shows
+`n` and each rate in its colour with its steps at that `n` (`1,048,576`). The rates are
+`Constant`, `Log`, `Linear`, `NLogN`, `Quadratic`, `Cubic`, `Exponential` and `Factorial`
+(logarithms base 2); `Growth::eval(n)` gives the steps, `label()` the notation (`O(n log n)`).
+`palette` has one colour per rate, slowest first, so a rate keeps its colour in every plot.
+Gallery scene: `ComplexityPlot`.
+
+```rust
+use fframes_kit::prelude::*;
+
+assert_eq!(Growth::Quadratic.eval(12.0), 144.0);
+assert_eq!(Growth::Exponential.label(), "O(2^n)");
+
+fn race<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(ComplexityPlot {
+        growths: vec![Growth::Linear, Growth::NLogN, Growth::Quadratic],
+        delay: 0.5,
+        duration: 4.0,
+        steps: Range::new(0.0, 200.0, 50.0),
+        ..ui.defaults()
+    })
+}
+```
+
+## CodeBlock
+
+`CodeBlock` shows source code on a panel in a monospaced `style` (JetBrains Mono by default,
+ship it in `media/`), with line numbers and colours from a small tokenizer for `Language::Rust`,
+`Python`, `JavaScript` and `Pseudo` (`Plain` has none): keywords, strings, numbers, comments,
+called names and capitalised names. Strings and comments end with their line. The panel is as wide
+as the longest line, or `width` pixels with longer lines ending in `…`. `lines` lights one line
+(from 1, 0 for none) a step, one step every `step_time` seconds from `delay`; give it the same
+timing as another figure's trace and it follows that figure step for step: the bar slides to the
+line and the others dim to `dim`. `tokenize(line, language)` gives the coloured pieces. Gallery
+scene: `CodeBlock` (a binary search with its Python code).
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::kits::cs::{Token, tokenize};
+
+let pieces = tokenize("return mid  # found", Language::Python);
+assert_eq!(pieces[0], (Token::Keyword, "return"));
+assert_eq!(pieces.last(), Some(&(Token::Comment, "# found")));
+
+fn code<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a ArrayTrace, lines: Vec<usize>) -> Svgr<'a> {
+    // lines[i] is the line that step i of `trace` runs
+    let search = ui.show(ArrayView { trace: Some(trace), step_time: 0.9, ..ui.defaults() });
+    let code = ui.show(CodeBlock {
+        code: "while lo <= hi:\n    mid = (lo + hi) // 2".into(),
+        language: Language::Python,
+        lines,
+        step_time: 0.9,
+        center: (0.0, -1.5),
+        ..ui.defaults()
+    });
+    fframes::svgr!(<g>{search}{code}</g>)
+}
+```

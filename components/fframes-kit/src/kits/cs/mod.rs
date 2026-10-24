@@ -5,6 +5,8 @@
 //! pixels. `docs/components/cs.md` has an example of each with its gallery scene.
 
 mod array;
+mod code;
+mod complexity;
 mod graph;
 mod hash;
 mod keyed;
@@ -16,6 +18,8 @@ mod trace;
 mod tree;
 
 pub use array::{ArrayView, BinarySearch, CellColors};
+pub use code::{CodeBlock, CodeColors, Language, Token, tokenize};
+pub use complexity::{ComplexityPlot, Growth};
 pub use graph::{Graph, GraphStep, GraphTrace, GraphView};
 pub use hash::{HashRecorder, HashStep, HashTable, HashTrace};
 pub use keyed::StepAt;
