@@ -96,6 +96,42 @@ fn action_potential<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+fn population<'a>(ui: &mut Ui<'a, '_, '_>, name: &'static str, model: PopulationModel) -> Svgr<'a> {
+    let head = title(ui, name);
+    let figure = ui.show(PopulationCurve {
+        model,
+        years: if model == PopulationModel::Logistic {
+            15.0
+        } else {
+            20.0
+        },
+        delay: 0.8,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn logistic<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    population(ui, "PopulationCurve", PopulationModel::Logistic)
+}
+
+fn predator_prey<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    population(ui, "PredatorPrey", PopulationModel::PREDATOR_PREY)
+}
+
+fn phylo_tree<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "PhyloTree");
+    let figure = ui.show(PhyloTree {
+        delay: 0.6,
+        highlight: Some("hair".into()),
+        highlight_at: 5.6,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight parts half a second apart from 0.6 s, the last name at about 5.1 s
@@ -113,5 +149,10 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Neuron", 9.0, neuron),
         // the trace from 0.8 s to 5.8 s, then a pause on it
         GalleryScene::new("ActionPotential", 7.0, action_potential),
+        // the curves from 0.8 s to 5.8 s, then a pause on them
+        GalleryScene::new("PopulationCurve", 7.0, logistic),
+        GalleryScene::new("PredatorPrey", 7.0, predator_prey),
+        // six levels of 0.55 s after the stem, then the mammals light up at 5.6 s
+        GalleryScene::new("PhyloTree", 7.0, phylo_tree),
     ]
 }

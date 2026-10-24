@@ -196,3 +196,70 @@ fn spike<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ui.show(ActionPotential { duration: 3.0, ..ui.defaults() })
 }
 ```
+## PopulationCurve
+
+`PopulationCurve` draws population growth on axes of time against population, from 0 to
+`years` in `duration` seconds from `delay`, a dot at the head of each curve. Its `model` is
+one of three:
+
+- **`PopulationModel::Logistic`:** growth from `n0` at rate `r` levels off at the dashed
+  carrying capacity `k`. With `compare` the exponential curve with the same start and rate is
+  drawn faded beside it, until it leaves the top.
+- **`PopulationModel::Exponential`:** the same growth with no limit.
+- **`PopulationModel::PredatorPrey`:** Lotka-Volterra, with prey and predators rising and
+  falling in turn. `PopulationModel::PREDATOR_PREY` cycles about every six time units.
+
+A legend names each curve in its colour from `colors`. `series(count)` gives the values the
+curves draw. Gallery scenes: `PopulationCurve` (logistic) and `PredatorPrey`.
+
+```rust
+use fframes_kit::prelude::*;
+
+let logistic = PopulationCurve { k: 500.0, n0: 5.0, ..PopulationCurve::default() };
+let n = &logistic.series(100)[0];
+assert!((n[100] - 500.0).abs() < 5.0); // levelled off at K
+
+fn cycles<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(PopulationCurve {
+        model: PopulationModel::PREDATOR_PREY,
+        years: 20.0,
+        ..ui.defaults()
+    })
+}
+```
+
+## PhyloTree
+
+`PhyloTree` reads a tree in Newick format (`Newick::parse`, which says where a malformed
+string goes wrong) and grows it from the root at the left, `width` pixels from the root to
+the leaves and `row` pixels between leaves:
+
+- **Scale:** when every branch has a length the tree is drawn to scale; otherwise it is a
+  cladogram, with the leaves in one column.
+- **Growth:** from `delay` the branches draw outward one level every `step` seconds, and each
+  leaf's name appears as its branch arrives.
+- **Traits:** named inner nodes are traits shared by everything after them, marked on the
+  branch that leads to them (`(Mouse,Human)hair`).
+- **Highlight:** `highlight` names a node whose clade turns `highlight_color` at
+  `highlight_at`.
+
+Names with spaces are quoted (`'four limbs'`) or written with `_`. Gallery scene:
+`PhyloTree` (vertebrates, then the mammals).
+
+```rust
+use fframes_kit::prelude::*;
+use fframes_kit::kits::biology::Newick;
+
+let tree = Newick::parse("((Cat:1,Dog:1):2,Fish:3)root;").unwrap();
+assert_eq!(tree.leaves(), ["Cat", "Dog", "Fish"]);
+assert!(Newick::parse("((Cat,Dog)").is_err());
+
+fn pets<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(PhyloTree {
+        newick: "((Cat:1,Dog:1)mammals:2,Fish:3);".into(),
+        highlight: Some("mammals".into()),
+        highlight_at: 3.0,
+        ..ui.defaults()
+    })
+}
+```

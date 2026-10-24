@@ -23,7 +23,8 @@ pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(feature = "biology")]
 pub use crate::kits::biology::{
     ActionPotential, BaseColors, Cell, CellKind, CellPalette, DnaHelix, MitosisStage,
-    MitosisStages, Neuron, Organelle, Transcription, Translation,
+    MitosisStages, Neuron, Organelle, PhyloTree, PopulationCurve, PopulationModel, Transcription,
+    Translation,
 };
 #[cfg(all(feature = "chemistry", feature = "latex"))]
 pub use crate::kits::chemistry::ReactionEquation;
