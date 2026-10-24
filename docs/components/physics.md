@@ -238,7 +238,7 @@ they meet. In 2D the crests are rings and the troughs dashed rings, clipped to `
 default) the rings leave the sources on the figure's clock. `displacement(x, y, t)` gives the
 height. With the `3d` feature the same wave goes into a `ThreeDView` as a surface
 (`resolution` pieces a side, `amplitude` high); only `enter` applies there. Gallery scenes:
-`RadialWave`, and `RadialWave3D` with the `3d` feature.
+`RadialWave`, and `RadialWave3D` with the gallery's `three-d` feature (on by default).
 
 ```rust
 use fframes_kit::prelude::*;
@@ -499,7 +499,7 @@ thickness (`focal_length()` is the lensmaker's equation). Radii are positive whe
 of curvature is to the right, so a biconvex lens has `r1 > 0` and `r2 < 0`; a flat side is
 `f64::INFINITY`. The rays are traced with paraxial optics, surface by surface, and a ray that
 meets a lens outside its `height` stops there. Each lens shows its front and back focal
-points, `F` and `F′`, found by tracing a parallel ray, so a thick lens's sit at its focal
+points, `F` and `F'`, found by tracing a parallel ray, so a thick lens's sit at its focal
 distances from its surfaces. Gallery scene: `Lens`.
 
 ```rust

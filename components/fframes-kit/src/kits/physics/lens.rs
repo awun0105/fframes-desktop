@@ -346,7 +346,7 @@ fn thick_outline(space: Space, lens: &Lens, axis_y: f64) -> BezPath {
 /// Manim-physics' `Lens` and `Ray` on one axis: `lenses` on a horizontal axis at height
 /// `axis_y` from `x_range.0` to `x_range.1` (units of `ui.space`), and `rays` traced through
 /// them to `x_range.1`. With `focal_points` each lens's front and back focal points are dots
-/// labelled `F` and `F′`, found by tracing a parallel ray through the lens, so for a thick
+/// labelled `F` and `F'`, found by tracing a parallel ray through the lens, so for a thick
 /// lens they sit at its focal distances from its surfaces, not from its middle. The rays draw
 /// on one after another from `delay` seconds after the local start (`ray_time` each,
 /// `stagger` apart). The axis and lenses draw with `enter`, the rays and labels with
@@ -435,7 +435,7 @@ impl<'a> Component<'a> for OpticalBench {
             fixed.push(outline);
             if self.focal_points {
                 foci.extend(lens.front_focal_point().map(|x| (x, "F")));
-                foci.extend(lens.back_focal_point().map(|x| (x, "F′")));
+                foci.extend(lens.back_focal_point().map(|x| (x, "F'")));
             }
         }
         for &(x, _) in &foci {

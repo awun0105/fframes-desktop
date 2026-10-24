@@ -1,7 +1,7 @@
 ---
 phase: 19
 title: "Phase 19: Physics kit II and circuit symbols"
-status: in-progress
+status: completed
 priority: P2
 effort: 5d
 dependencies: [9]
@@ -127,4 +127,15 @@ kit (feature `physics`).
 - [x] Rigid bodies and multi-pendulum
 - [x] Waves
 - [x] Circuit symbols and schematic
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] Gallery scenes, e2e frames, docs and mapping rows
+
+## Notes
+
+- Measurements are in `plans/reports/kit-phase-19-261025-0557.md`.
+- `MultiPendulum` loses 2.2e-7 of its energy over 4 s on the steps; between steps the
+  interpolation adds up to 1.1e-3.
+- `rapier2d` turns a free spinning body about 0.2% short of `spin * t`; the test allows for it.
+- `RigidWorld@50%` differs by 0.012% on `skia-cpu`, under the tolerance.
+- DM Sans has neither `Ω` nor `′`: schematic labels use `220R` and `10k`, the back focal
+  point is `F'`.
+- `inspect --pops` over the phase's scenes finds pops only on the gallery's scene cuts.
