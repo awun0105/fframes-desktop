@@ -3,7 +3,7 @@
 
 use fframes_kit::prelude::*;
 
-use super::animate::{CX, CY};
+use super::animate::{CX, CY, square};
 use super::core::title;
 use crate::GalleryScene;
 
@@ -80,7 +80,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         "Unwrite", 2.0 => |ui| word(ui, "fframes kit", None, Some(Unwrite { run_time: 1.6, ..ui.defaults() }.into())),
         "ShowPartial", 2.0 => |ui| {
             let partial = ShowPartial { start: (0.5, 0.5), end: (0.0, 1.0), ..ui.defaults() };
-            let s = Square { enter: Some(partial.into()), ..super::animate::square(ui) };
+            let s = Square { enter: Some(partial.into()), ..square(ui) };
             ui.show(s)
         },
         "ShowIncreasingSubsets", 2.0 => |ui| dot_row(ui, ShowIncreasingSubsets { run_time: 1.5, ..ui.defaults() }.into()),
@@ -99,6 +99,65 @@ pub fn scenes() -> Vec<GalleryScene> {
                 ..ui.defaults()
             };
             ui.show(t)
+        },
+        "GrowFromEdge", 2.0 => |ui| {
+            let g = GrowFromEdge { edge: Anchor::Bottom, ..ui.defaults() };
+            ui.show(Square { enter: Some(g.into()), ..square(ui) })
+        },
+        "Blink", 2.5 => |ui| {
+            let b = Blink { blinks: 2, delay: 0.25, ..ui.defaults() };
+            ui.show(Square { emphasis: Some(b.into()), ..square(ui) })
+        },
+        "FocusOn", 2.0 => |ui| {
+            let f = FocusOn { point: Some((CX + 200.0, CY - 200.0)), ..ui.defaults() };
+            ui.show(Square { emphasis: Some(f.into()), ..square(ui) })
+        },
+        "ShowPassingFlash", 2.0 => |ui| {
+            let s = square(ui);
+            let flash = ShowPassingFlash {
+                time_width: 0.25,
+                delay: 0.25,
+                run_time: 1.5,
+                ..ShowPassingFlash::new(Shape { stroke: Some(ui.theme.colors.highlight), stroke_width: 8.0, ..s.shape() })
+            };
+            let base = ui.show(s);
+            let flash = ui.show(flash);
+            svgr!(<g>{base}{flash}</g>)
+        },
+        "ShowPassingFlashWithThinningStrokeWidth", 2.0 => |ui| {
+            let c = Circle { cx: CX, cy: CY, radius: 220.0, stroke: Some(ui.theme.colors.highlight), stroke_width: 12.0, ..ui.defaults() };
+            let flash = ShowPassingFlashWithThinningStrokeWidth {
+                time_width: 0.4,
+                delay: 0.25,
+                run_time: 1.5,
+                ..ShowPassingFlashWithThinningStrokeWidth::new(c.shape())
+            };
+            ui.show(flash)
+        },
+        "Broadcast", 3.0 => |ui| ui.show(Broadcast { point: (CX, CY), radius: 360.0, ..ui.defaults() }),
+        "AnimatedBoundary", 4.0 => |ui| {
+            let c = ui.theme.colors;
+            let s = square(ui);
+            let boundary = AnimatedBoundary {
+                max_stroke_width: 8.0,
+                cycle_rate: 1.0,
+                ..AnimatedBoundary::new(s.shape(), vec![c.accent, c.highlight, c.title, c.muted])
+            };
+            let base = ui.show(s);
+            let boundary = ui.show(boundary);
+            svgr!(<g>{base}{boundary}</g>)
+        },
+        "ApplyWave", 2.5 => |ui| {
+            let t = TextPath { text: "ApplyWave", x: 640.0, y: 640.0, ..ui.defaults() };
+            let Some(whole) = t.parts(ui.ctx).and_then(|parts| {
+                parts.into_iter().reduce(|mut whole, p| {
+                    whole.path.extend(p.path.iter());
+                    whole
+                })
+            }) else {
+                return Svgr::empty();
+            };
+            ui.show(ApplyWave { delay: 0.25, amplitude: 60.0, ..ApplyWave::new(whole) })
         },
     ]
 }

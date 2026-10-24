@@ -821,11 +821,14 @@ Animations are plain data. Put them into a shape's `enter`, `exit` or `emphasis`
 | `SpiralIn { scale_factor, fade_in_fraction }` | enter | the parts fly in on a spiral around the center of the whole |
 | `AddTextLetterByLetter`, `RemoveTextLetterByLetter` | enter, exit | glyphs appear, or vanish from the last, `time_per_char` each (or in `run_time`) |
 | `GrowFromCenter`, `GrowFromPoint { point }`, `GrowArrow` | enter | grows from nothing about the center, a point, or the path's start |
+| `GrowFromEdge { edge: Anchor }` | enter | grows from a point of the bounding box (`Anchor::Bottom` is Manim's `DOWN`) |
 | `SpinInFromNothing { angle }` | enter | grows while turning into place |
 | `Indicate { scale_factor, color }` | emphasis | scales up and tints, then back |
 | `Circumscribe { color, buff }` | emphasis | a rectangle runs once around the shape |
 | `Flash { point, num_lines, flash_radius, line_length }` | emphasis | lines shoot out once |
 | `Wiggle { scale_value, rotation_angle, n_wiggles }` | emphasis | shakes the shape |
+| `Blink { blinks, time_on, time_off, hide_at_end }` | emphasis | on, then off, `blinks` times (a step: no `rate_func`) |
+| `FocusOn { point, color, opacity }` | emphasis | a frame-sized disc shrinks onto the point and vanishes |
 
 Enter and emphasis animations count from the start of the enclosing container plus `delay`;
 exit animations end `delay` seconds before its end. They change only the transform, opacity
@@ -841,6 +844,11 @@ for the second.
 | `Morph` (Manim `Transform`) | `from: Shape`, `to: Shape`, `delay`, `run_time`, `rate_func` | morphs path, paint and width; `Morph::new(from, to)` |
 | `ReplacementTransform` | the same | `Morph` that draws `to` itself once done |
 | `MoveAlongPath` | `path: BezPath`, `delay`, `run_time`, `rate_func` | `Enter`: moves content from the path's start to its end |
+| `ShowPassingFlash` | `shape`, `time_width`, timing | a piece of the outline runs along it once; `::new(shape)` |
+| `ShowPassingFlashWithThinningStrokeWidth` | `shape`, `n_segments`, `time_width`, timing | the same with a wide head and a thinning tail |
+| `Broadcast` | `point`, `radius`, `color`, `n_mobs`, `lag_ratio`, opacities, timing | rings grow out of a point one after another and fade |
+| `AnimatedBoundary` | `shape`, `colors`, `max_stroke_width`, `cycle_rate`, `back_and_forth` | the outline redraws itself in one colour after another, forever; `::new(shape, colors)` |
+| `ApplyWave` | `shape`, `direction`, `amplitude` (px), `ripples`, `time_width`, timing | a wave crosses the shape left to right and bends it; `::new(shape)` |
 | `LaggedStart` | `lag_ratio`, `run_time`, `children` | child `i` starts `i * lag_ratio * run_time` seconds in |
 | `AnimationGroup` | `children` | every child at once |
 | `Succession` | `run_time`, `children` | each child `run_time` after the one before |

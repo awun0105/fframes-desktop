@@ -75,6 +75,9 @@
 //! | `TypeWithCursor`, `UntypeWithCursor` | [`Typewriter`](text::Typewriter), `erase: Some(seconds)` for the second |
 //! | `GrowFromCenter`, `GrowFromPoint`, `GrowArrow`, `SpinInFromNothing` | [`animate`], `enter` |
 //! | `Indicate`, `Circumscribe`, `Flash`, `Wiggle` | [`animate`], `emphasis` |
+//! | `GrowFromEdge` | [`GrowFromEdge`](animate::GrowFromEdge) `{ edge: Anchor::Bottom, .. }`, `enter` |
+//! | `Blink`, `FocusOn` | [`Blink`](animate::Blink), [`FocusOn`](animate::FocusOn), `emphasis` |
+//! | `ShowPassingFlash`, `ShowPassingFlashWithThinningStrokeWidth`, `Broadcast`, `AnimatedBoundary`, `ApplyWave` | the same names in [`animate`], components that take a [`Shape`](geometry::Shape) (`Broadcast` a point) |
 //! | `Transform`, `ReplacementTransform` | [`animate::Transform`] (`Morph` in the prelude), [`ReplacementTransform`](animate::ReplacementTransform) |
 //! | `MoveAlongPath` | [`MoveAlongPath`](animate::MoveAlongPath) |
 //! | `Wait` | no call: what follows starts later, [`Sequence`](time::Sequence) `{ from, .. }` |

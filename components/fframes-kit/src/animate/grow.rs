@@ -3,6 +3,7 @@ use kurbo::{PathEl, Point};
 use crate::{
     anim::RateFunc,
     geometry::{Geometry, Look, Shape},
+    layout::Anchor,
     ui::Ui,
 };
 
@@ -49,6 +50,33 @@ impl ShapeAnimation for GrowFromPoint {
     fn look(&self, ui: &Ui<'_, '_, '_>, _shape: &Shape, look: &mut Look) {
         let p = enter_alpha(ui, self.delay, self.run_time, self.rate_func);
         let point = Point::new(f64::from(self.point.0), f64::from(self.point.1));
+        look.then(about(point, grow_scale(p), 0.0));
+    }
+}
+
+/// Grows the shape from nothing about a point of its bounding box (Manim's `GrowFromEdge`:
+/// `Anchor::Bottom` is `DOWN`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GrowFromEdge {
+    pub edge: Anchor,
+    pub delay: f32,
+    pub run_time: f32,
+    pub rate_func: RateFunc,
+}
+
+themed!(GrowFromEdge, |t| GrowFromEdge {
+    edge: Anchor::Bottom,
+    delay: 0.0,
+    run_time: 1.0,
+    rate_func: t.motion.easing.standard,
+});
+
+impl ShapeAnimation for GrowFromEdge {
+    fn look(&self, ui: &Ui<'_, '_, '_>, shape: &Shape, look: &mut Look) {
+        let p = enter_alpha(ui, self.delay, self.run_time, self.rate_func);
+        let b = shape.bbox();
+        let (dx, dy) = self.edge.point(b.width(), b.height());
+        let point = Point::new(b.x0 + dx, b.y0 + dy);
         look.then(about(point, grow_scale(p), 0.0));
     }
 }

@@ -12,6 +12,7 @@ mod create;
 mod emphasis;
 mod group;
 mod grow;
+mod indicate_ii;
 mod subsets;
 mod text_by;
 mod transform;
@@ -20,7 +21,11 @@ mod write;
 pub use create::{Create, DrawBorderThenFill, Uncreate};
 pub use emphasis::{Circumscribe, Flash, Indicate, Wiggle};
 pub use group::{AnimationGroup, LaggedStart, Succession};
-pub use grow::{GrowArrow, GrowFromCenter, GrowFromPoint, SpinInFromNothing};
+pub use grow::{GrowArrow, GrowFromCenter, GrowFromEdge, GrowFromPoint, SpinInFromNothing};
+pub use indicate_ii::{
+    AnimatedBoundary, ApplyWave, Blink, Broadcast, FocusOn, ShowPassingFlash,
+    ShowPassingFlashWithThinningStrokeWidth,
+};
 pub use subsets::{ShowIncreasingSubsets, ShowPartial, ShowSubmobjectsOneByOne, SpiralIn};
 pub use text_by::{AddTextLetterByLetter, RemoveTextLetterByLetter};
 #[cfg(feature = "latex")]
@@ -140,6 +145,7 @@ pub enum EnterAnim {
     ShowSubmobjectsOneByOne(ShowSubmobjectsOneByOne),
     SpiralIn(SpiralIn),
     AddTextLetterByLetter(AddTextLetterByLetter),
+    GrowFromEdge(GrowFromEdge),
 }
 
 /// The `exit` prop of shapes.
@@ -158,6 +164,8 @@ pub enum Emphasis {
     Circumscribe(Circumscribe),
     Flash(Flash),
     Wiggle(Wiggle),
+    Blink(Blink),
+    FocusOn(FocusOn),
 }
 
 macro_rules! slot {
@@ -204,9 +212,9 @@ macro_rules! slot {
     };
 }
 
-slot!(EnterAnim: FadeIn, Create, DrawBorderThenFill, Write, GrowFromCenter, GrowFromPoint, GrowArrow, SpinInFromNothing, ShowPartial, ShowIncreasingSubsets, ShowSubmobjectsOneByOne, SpiralIn, AddTextLetterByLetter);
+slot!(EnterAnim: FadeIn, Create, DrawBorderThenFill, Write, GrowFromCenter, GrowFromPoint, GrowArrow, SpinInFromNothing, ShowPartial, ShowIncreasingSubsets, ShowSubmobjectsOneByOne, SpiralIn, AddTextLetterByLetter, GrowFromEdge);
 slot!(ExitAnim: FadeOut, Uncreate, Unwrite, RemoveTextLetterByLetter);
-slot!(Emphasis: Indicate, Circumscribe, Flash, Wiggle);
+slot!(Emphasis: Indicate, Circumscribe, Flash, Wiggle, Blink, FocusOn);
 
 /// Draws `parts` (the glyphs of a text, or one shape) with the animation props applied.
 /// Animations whose [`ShapeAnimation::per_part`] is set (`Write`) give each part its own
