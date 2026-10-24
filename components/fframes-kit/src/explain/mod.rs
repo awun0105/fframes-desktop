@@ -33,11 +33,14 @@ mod axes;
 mod canvas;
 mod complex_plane;
 mod graph;
+mod implicit;
 mod matrix;
 mod polar_plane;
 mod sample_space;
 mod space;
+mod stream_lines;
 mod table;
+mod vector_field;
 mod vgroup;
 
 pub use axes::{Axes, AxesMap, NumberLine, NumberPlane, Range, Scaling};
@@ -48,9 +51,12 @@ pub use graph::{
     sample_curve, sample_scaled,
 };
 pub(crate) use graph::{graph_px, smooth};
+pub use implicit::{Implicit, ImplicitFunction, march};
 pub use matrix::Matrix;
 pub use polar_plane::{AzimuthDirection, AzimuthUnits, PolarPlane};
 pub use sample_space::{SampleColumn, SampleRow, SampleSpace};
 pub use space::Space;
+pub use stream_lines::{Flow, StreamLines};
 pub use table::Table;
+pub use vector_field::{ArrowVectorField, Field, VectorField, sigmoid_length};
 pub use vgroup::VGroup;

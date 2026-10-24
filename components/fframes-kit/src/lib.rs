@@ -82,6 +82,10 @@
 //! | `ComplexPlane`, `n2p`, `p2n`, `ComplexValueTracker` | [`ComplexPlane`](explain::ComplexPlane), `(re, im)` pairs, [`ComplexValueTracker`](anim::ComplexValueTracker) |
 //! | `PolarPlane`, `pr2pt`, `pt2pr` | [`PolarPlane`](explain::PolarPlane) with [`AzimuthUnits`](explain::AzimuthUnits) |
 //! | `SampleSpace`, `divide_vertically`, `divide_horizontally` | [`SampleSpace`](explain::SampleSpace) of [`SampleColumn`](explain::SampleColumn)s of [`SampleRow`](explain::SampleRow)s |
+//! | `ImplicitFunction`, `axes.plot_implicit_curve` | [`ImplicitFunction`](explain::ImplicitFunction) (marching squares), `Axes::plot_implicit_curve` |
+//! | `FunctionGraph` | [`FunctionGraph`](explain::FunctionGraph), from `Axes::plot` or with its own `x_range` |
+//! | `VectorField`, `ArrowVectorField` | [`VectorField`](explain::VectorField) (the field and its colours), [`ArrowVectorField`](explain::ArrowVectorField) |
+//! | `StreamLines`, `start_animation` | [`StreamLines`](explain::StreamLines), traced once and cached; `flow: Some(`[`Flow`](explain::Flow)`)` |
 //! | `axes.c2p`, `p2c`, `plot`, `i2gp`, `get_vertical_line`, `get_graph_label`, `get_riemann_rectangles`, `get_area` | `Axes::c2p`, `p2c`, `plot`, `FunctionGraph::point`, `Axes::vertical_line`, `graph_label`, `riemann_rectangles`, `area` |
 //! | `m.next_to(point, UR)` | [`Label`](label::Label) `{ direction: Anchor::TopRight, .. }` |
 //! | `ParametricFunction` | [`ParametricFunction`](explain::ParametricFunction) |

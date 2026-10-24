@@ -27,6 +27,12 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("LogBase", 2.0, log_base),
         // the cells grow in, the braces and labels fade in
         GalleryScene::new("SampleSpace", 2.0, sample_space),
+        // axes are created, then two implicit curves are drawn on them
+        GalleryScene::new("ImplicitFunction", 2.0, implicit_function),
+        // the arrows grow in, coloured by their length
+        GalleryScene::new("ArrowVectorField", 2.0, arrow_vector_field),
+        // a piece of every stream line runs along it
+        GalleryScene::new("StreamLines", 4.0, stream_lines),
     ]
 }
 
@@ -246,4 +252,76 @@ fn sample_space<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ..ui.defaults()
     });
     svgr!(<g>{head}{space}</g>)
+}
+
+fn implicit_function<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "ImplicitFunction");
+    let axes = Axes {
+        x_range: Range::new(-5.0, 5.0, 1.0),
+        y_range: Range::new(-3.0, 3.0, 1.0),
+        x_length: 10.0,
+        y_length: 6.0,
+        center: (0.0, -0.5),
+        enter: Some(create()),
+        ..ui.defaults()
+    };
+    let draw = Some(
+        Create {
+            delay: 0.6,
+            ..ui.defaults()
+        }
+        .into(),
+    );
+    // Manim's example, x y² - x² y = 2, and a circle
+    let curve = ui.show(ImplicitFunction {
+        stroke: Some(ui.theme.colors.highlight),
+        enter: draw,
+        ..axes.plot_implicit_curve(ui, |x, y| x * y * y - x * x * y - 2.0)
+    });
+    let circle = ui.show(ImplicitFunction {
+        enter: draw,
+        ..axes.plot_implicit_curve(ui, |x, y| x * x + y * y - 4.0)
+    });
+    let axes = ui.show(axes);
+    svgr!(<g>{head}{axes}{curve}{circle}</g>)
+}
+
+/// A field that turns and drifts, after Manim's stream lines example.
+fn swirl(x: f64, y: f64) -> (f64, f64) {
+    (
+        (x / 2.0).sin() - (y / 2.0).cos(),
+        (x / 2.0).sin() + 0.3 * (y / 1.5).cos(),
+    )
+}
+
+fn arrow_vector_field<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "ArrowVectorField");
+    let field = ui.show(ArrowVectorField {
+        field: VectorField {
+            f: swirl,
+            x_range: Range::new(-6.5, 6.5, 1.0),
+            y_range: Range::new(-3.5, 2.5, 1.0),
+            ..ui.defaults()
+        },
+        enter: Some(GrowFromCenter::default().into()),
+        ..ui.defaults()
+    });
+    svgr!(<g>{field}{head}</g>)
+}
+
+fn stream_lines<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "StreamLines");
+    let lines = ui.show(StreamLines {
+        field: VectorField {
+            f: swirl,
+            x_range: Range::new(-7.0, 7.0, 0.7),
+            y_range: Range::new(-4.0, 2.6, 0.6),
+            ..ui.defaults()
+        },
+        padding: 0.0,
+        seed: 3,
+        flow: Some(Flow::default()),
+        ..ui.defaults()
+    });
+    svgr!(<g>{lines}{head}</g>)
 }

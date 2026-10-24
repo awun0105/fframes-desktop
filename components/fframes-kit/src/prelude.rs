@@ -32,10 +32,10 @@ pub use crate::effects::{
     WhiteNoise,
 };
 pub use crate::explain::{
-    Area, Axes, AxesMap, AzimuthDirection, AzimuthUnits, Canvas, ComplexPlane, Curve, Func,
-    FunctionGraph, Matrix, NumberLine, NumberPlane, ParametricFunction, PolarPlane, Range,
-    RiemannRectangles, SampleAt, SampleColumn, SampleRow, SampleSpace, Scaling, Space, Table,
-    VGroup,
+    Area, ArrowVectorField, Axes, AxesMap, AzimuthDirection, AzimuthUnits, Canvas, ComplexPlane,
+    Curve, Flow, Func, FunctionGraph, Implicit, ImplicitFunction, Matrix, NumberLine, NumberPlane,
+    ParametricFunction, PolarPlane, Range, RiemannRectangles, SampleAt, SampleColumn, SampleRow,
+    SampleSpace, Scaling, Space, StreamLines, Table, VGroup, VectorField,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(all(feature = "biology", feature = "3d"))]

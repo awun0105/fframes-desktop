@@ -133,7 +133,7 @@ Add the remaining 2D mobjects of the Manim CE reference:
 
 - [x] Numbers and text mobjects
 - [x] Coordinate systems and `LogBase`
-- [ ] Implicit functions, vector fields, stream lines
+- [x] Implicit functions, vector fields, stream lines
 - [ ] Graph layouts, `Graph` and `DiGraph`
 - [ ] Typed matrices and tables
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
@@ -155,7 +155,8 @@ Add the remaining 2D mobjects of the Manim CE reference:
   and `AxesMap`, which gained the two fields and `a2p` (axis units to pixels): a change to the
   shape of a public struct. Ranges are in axis units (exponents), as in Manim; points, numbers
   and graph ranges take values. Graphs on a log x-axis sample evenly by exponent
-  (`sample_scaled`). Every existing axes frame stayed at 0.000% on both backends.
+  (`sample_scaled`). Every existing frame stayed at 0.000% on CPU; skia-cpu shows only its
+  drifts from before the change.
 - `UnitInterval` is the constructor `NumberLine::unit_interval(theme)`.
 - `ComplexValueTracker` (`Anim<(f32, f32)>`) came with the complex plane instead of with the
   trackers, and `ComplexPlane::label` writes `a+bi` with `format_complex`.
@@ -163,3 +164,14 @@ Add the remaining 2D mobjects of the Manim CE reference:
   then rows), which covers Manim's conditional-probability figures.
 - DM Sans has `π` but not `τ`; the gallery uses `PiRadians` and the docs name the font need.
 - Extra e2e frames: `PolarPlane@end`, `LogBase@end`, `SampleSpace@end`.
+- `ImplicitFunction`, `VectorField` and `StreamLines` take plain `fn`s, so what they trace is
+  cached by the function's address and the props (the graph sample cache, keyed by kind):
+  traced on first use in a render, never per frame, without `Sim::precompute`.
+- `VectorField` is not drawn by itself, as in Manim it is the base: it holds the function, the
+  grid and the colour by magnitude that `ArrowVectorField` and `StreamLines` share. `Field` is
+  not in the prelude because the physics kit exports a `Field`; it is `explain::Field`.
+- `StreamLines` colours a whole line by the magnitude at its middle, where Manim colours
+  along the line. `start_animation` is the prop `flow`: a piece of each line slides along it
+  from a seeded phase (`slice_path`), rather than Manim's dash and fade. Starts where the field
+  is zero draw nothing.
+- Extra e2e frames: `ImplicitFunction@end`, `ArrowVectorField@end`.

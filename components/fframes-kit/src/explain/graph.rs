@@ -22,9 +22,9 @@ pub type Func = fn(f64) -> f64;
 /// A curve `t -> (x, y)`, a plain `fn` like [`Func`].
 pub type Curve = fn(f64) -> (f64, f64);
 
-/// What was sampled (a graph, a curve or a graph on a log axis), the function's address, the
-/// range bits, the count and the bits of the log base.
-type SampleKey = (u8, usize, u64, u64, usize, u64);
+/// What was sampled (a graph, a curve, an implicit curve, stream lines, ...), the function's
+/// address and the bits of the parameters it was sampled with.
+pub(crate) type SampleKey = (u8, usize, Vec<u64>);
 
 /// Most sample runs kept; the cache starts over when it is full.
 const CACHE_ENTRIES: usize = 512;
@@ -36,8 +36,12 @@ fn sample_cache() -> &'static SampleCache {
     CACHE.get_or_init(Mutex::default)
 }
 
-/// The cached points of `key`, computed by `points` the first time.
-fn cached(key: SampleKey, points: impl FnOnce() -> Arc<[(f64, f64)]>) -> Arc<[(f64, f64)]> {
+/// The cached points of `key`, computed by `points` the first time. Runs that are broken
+/// into pieces separate them with a `(NaN, NaN)` point.
+pub(crate) fn cached(
+    key: SampleKey,
+    points: impl FnOnce() -> Arc<[(f64, f64)]>,
+) -> Arc<[(f64, f64)]> {
     if let Some(hit) = sample_cache()
         .lock()
         .ok()
@@ -60,7 +64,11 @@ fn cached(key: SampleKey, points: impl FnOnce() -> Arc<[(f64, f64)]>) -> Arc<[(f
 pub fn sample(f: Func, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
     let samples = samples.max(1);
     cached(
-        (0, f as usize, a.to_bits(), b.to_bits(), samples, 0),
+        (
+            0,
+            f as usize,
+            vec![a.to_bits(), b.to_bits(), samples as u64],
+        ),
         || {
             (0..=samples)
                 .map(|i| {
@@ -85,14 +93,8 @@ pub fn sample_scaled(
         return sample(f, a, b, samples);
     };
     let samples = samples.max(1);
-    let key = (
-        2,
-        f as usize,
-        a.to_bits(),
-        b.to_bits(),
-        samples,
-        base.to_bits(),
-    );
+    let params = vec![a.to_bits(), b.to_bits(), samples as u64, base.to_bits()];
+    let key = (2, f as usize, params);
     cached(key, || {
         let (a, b) = (scaling.to_axis(a), scaling.to_axis(b));
         (0..=samples)
@@ -109,7 +111,11 @@ pub fn sample_scaled(
 pub fn sample_curve(f: Curve, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
     let samples = samples.max(1);
     cached(
-        (1, f as usize, a.to_bits(), b.to_bits(), samples, 0),
+        (
+            1,
+            f as usize,
+            vec![a.to_bits(), b.to_bits(), samples as u64],
+        ),
         || {
             (0..=samples)
                 .map(|i| f(a + (b - a) * i as f64 / samples as f64))

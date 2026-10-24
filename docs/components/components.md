@@ -447,6 +447,37 @@ assert_eq!(fframes_kit::explain::format_complex((0.0, -1.0), 0), "-i");
 The `PiRadians` azimuths need a font with `π`, `TauRadians` one with `τ` (DM Sans has no
 `τ`, and `inspect` reports the fallback).
 
+### Implicit curves and vector fields
+
+The functions are plain `fn`s (closures that capture nothing), so what they trace is cached
+by the function's address and the props, once per render and not per frame.
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `ImplicitFunction` | `f: fn(x, y) -> f64`, `x_range`, `y_range`, `resolution` (128 cells across), `axes`, `space`, paint, `enter`, `exit`, `emphasis` | the curve where `f(x, y) = 0`, by marching squares; `ImplicitFunction::new(ui, f)` over the frame, `axes.plot_implicit_curve(ui, f)` over the axes' ranges |
+| `VectorField` | `f: fn(x, y) -> (f64, f64)`, `x_range`, `y_range` (the grid, as `Range`s), `colors`, `min_magnitude` (0), `max_magnitude` (2), `color` | not drawn itself: the field, its grid and the colour of a vector by its length (`color_for`, `color_at`) |
+| `ArrowVectorField` | `field`, `length: fn(f64) -> f64` (`sigmoid_length`, Manim's), `stroke_width`, `tip_length`, `tip_width`, `opacity`, `enter`, `exit`, `emphasis` | an arrow from every grid point along the vector, coloured by its length; zero vectors draw nothing |
+| `StreamLines` | `field`, `dt` (0.05), `virtual_time` (3), `max_anchors_per_line` (100), `padding` (3), `n_repeats`, `noise_factor` (half the grid step), `seed`, `stroke_width`, `opacity`, `flow: Option<Flow { time_width, speed }>`, `enter`, `exit` | a line from every grid point, moved by seeded noise, along the field until it leaves the grid by `padding`; each line takes the colour of the field at its middle. `flow` is Manim's `start_animation`: a piece `time_width` of the line long runs along it `speed` times a second, every line from its own start |
+
+```rust
+use fframes_kit::prelude::*;
+
+fn fields<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let axes = Axes::default();
+    let curve = ui.show(axes.plot_implicit_curve(ui, |x, y| x * y * y - x * x * y - 2.0));
+    let axes = ui.show(axes);
+    let lines = ui.show(StreamLines {
+        field: VectorField {
+            f: |x, y| ((x / 2.0).sin() - (y / 2.0).cos(), (x / 2.0).sin()),
+            ..ui.defaults()
+        },
+        flow: Some(Flow::default()),
+        ..ui.defaults()
+    });
+    svgr!(<g>{lines}{axes}{curve}</g>)
+}
+```
+
 ## Shapes
 
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,
