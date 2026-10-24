@@ -9,6 +9,7 @@ mod mol_file;
 mod molecule;
 #[cfg(feature = "3d")]
 mod molecule_3d;
+mod named;
 #[cfg(feature = "3d")]
 mod orbital;
 mod periodic;
@@ -24,6 +25,7 @@ pub use mol_file::{MolAtom, MolBond, MolError, MolFile};
 pub use molecule::{BondKind, ChemAtom, ChemBond, Molecule, Molecule2D, SmilesError, Structure};
 #[cfg(feature = "3d")]
 pub use molecule_3d::{Atom3D, Molecule3D, Structure3D, XyzError};
+pub use named::{NamedMolecule, named_molecules, named_smiles};
 #[cfg(feature = "3d")]
 pub use orbital::{Orbital, OrbitalKind};
 pub use periodic::{ElementTile, PeriodicTable, Trend};

@@ -122,6 +122,41 @@ fn mol_file<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}{solid}</g>)
 }
 
+/// Three molecules looked up by name, each named under its formula.
+fn named_molecule<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "NamedMolecule");
+    let figures: Vec<_> = ["caffeine", "vanillin", "dopamine"]
+        .into_iter()
+        .zip(0_u8..)
+        .map(|(name, i)| {
+            let x = -4.8 + 4.8 * f64::from(i);
+            let delay = 0.4 * f32::from(i);
+            let molecule = ui.show(NamedMolecule {
+                name: name.into(),
+                center: (x, 0.1),
+                bond_length: 60.0,
+                enter: Some(create(delay)),
+                parts_enter: Some(fade(delay + 0.5)),
+                ..ui.defaults()
+            });
+            let at = ui.space.to_px(x, -2.4);
+            let label = ui.show(Label {
+                text: name.into(),
+                x: at.x as f32,
+                y: at.y as f32,
+                direction: Anchor::Center,
+                enter: Some(fade(delay + 0.8)),
+                ..ui.defaults()
+            });
+            svgr!(<g>{molecule}{label}</g>)
+        })
+        .collect();
+    svgr!(<g>{head}{figures}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
-    vec![GalleryScene::new("MolFile", 3.0, mol_file)]
+    vec![
+        GalleryScene::new("MolFile", 3.0, mol_file),
+        GalleryScene::new("NamedMolecule", 3.0, named_molecule),
+    ]
 }

@@ -66,8 +66,8 @@ pub use crate::kits::chemistry::{Atom3D, Molecule3D, Orbital, OrbitalKind, Struc
 pub use crate::kits::chemistry::{
     BohrAtom, BondFormation, BondKind, BondType, Category, ChemAtom, ChemBond, ElementTile,
     EnergyProfile, Equilibrium, EquilibriumModel, MatterState, MolAtom, MolBond, MolError, MolFile,
-    Molecule, Molecule2D, PeriodicTable, PhScale, Reaction, SmilesError, StatesOfMatter, Structure,
-    Titration, TitrationCurve, Trend,
+    Molecule, Molecule2D, NamedMolecule, PeriodicTable, PhScale, Reaction, SmilesError,
+    StatesOfMatter, Structure, Titration, TitrationCurve, Trend,
 };
 #[cfg(feature = "cs")]
 pub use crate::kits::cs::{

@@ -233,8 +233,34 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>, structure: &'a Structure) -> Svgr<'a> {
 }
 ```
 
-## ReactionEquation
-`Reaction` holds a reaction's formulas. `atom_counts` reads one, with parentheses (`Ca(OH)2`).
+## NamedMolecule
+
+`NamedMolecule { name: "caffeine".into(), .. }` draws a molecule by its common name, like
+`Molecule` draws a SMILES string. The name is looked up in a table of about a hundred
+common molecules written for the kit. It covers small inorganic molecules, hydrocarbons,
+aromatics and heterocycles, alcohols, acids, sugars, amino acids, nucleobases, and drugs
+and hormones (caffeine, aspirin, glucose, cholesterol, morphine). Nothing is looked up over
+the network.
+
+Case, hyphens and underscores do not matter (`"Vitamin-C"` finds `"vitamin c"`). A name
+that is not in the table draws nothing, and `inspect` warns about it. `named_smiles(name)`
+gives the SMILES, and `named_molecules()` lists the table. Gallery scene: `NamedMolecule`
+(caffeine, vanillin and dopamine).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(NamedMolecule {
+        name: "glucose".into(),
+        center: (0.0, 0.0),
+        enter: Some(Create::default().into()),
+        ..ui.defaults()
+    })
+}
+```
+
+## ReactionEquation`Reaction` holds a reaction's formulas. `atom_counts` reads one, with parentheses (`Ca(OH)2`).
 `balance` finds the smallest whole coefficients. It returns `None` when the reaction cannot be
 balanced or has more than one balance. `tally` counts each element on both sides.
 
