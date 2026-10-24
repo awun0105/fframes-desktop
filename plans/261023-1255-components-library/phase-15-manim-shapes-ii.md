@@ -154,3 +154,8 @@ Where the result differs from the plan:
 - Extra e2e frames: `Polygrams@end`, `Braces@end`.
 - `i_overlay` is in the workspace dependency table; the inputs are read with the nonzero
   rule (the probe used even-odd, which carves out a self-crossing star's middle).
+- The gallery grows the boolean results from their centers; `Create` on a flattened result
+  is not checked yet, which is when the plan's `flo_curves` fallback would come in.
+- `SvgShape` draws shapes, groups, fills and strokes. Gradients take their first stop's
+  colour, patterns draw black, text and images are left out, and `inspect` warns about each
+  (`SvgShape::unsupported`). CSS and filters in a file are whatever usvgr makes of them.

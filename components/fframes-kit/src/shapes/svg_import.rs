@@ -4,6 +4,7 @@ use std::{fmt, sync::Arc};
 
 use fframes::{
     Color, Svgr,
+    diagnostics::{Diagnostic, report},
     usvgr::{self, Node, fontdb},
 };
 use kurbo::{Affine, BezPath, Rect, Shape as _};
@@ -40,28 +41,63 @@ pub struct SvgPart {
     pub stroke_width: f32,
 }
 
-/// A solid paint as a color; a gradient or pattern takes the color of its first stop (black
-/// for a pattern).
-fn color(paint: &usvgr::Paint, opacity: f32) -> Color {
+/// What a file holds that is not drawn as it is, counted while it is read.
+#[derive(Debug, Default)]
+struct Unsupported {
+    text: usize,
+    images: usize,
+    gradients: usize,
+    patterns: usize,
+}
+
+impl Unsupported {
+    fn messages(&self) -> Vec<String> {
+        [
+            (
+                self.text,
+                "text elements are not drawn (convert text to paths)",
+            ),
+            (self.images, "images are not drawn"),
+            (
+                self.gradients,
+                "gradients are drawn in their first stop's colour",
+            ),
+            (self.patterns, "patterns are drawn black"),
+        ]
+        .into_iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, what)| format!("SvgShape: {n} {what}"))
+        .collect()
+    }
+}
+
+/// A solid paint as a color; a gradient takes the color of its first stop, a pattern is black.
+fn color(paint: &usvgr::Paint, opacity: f32, seen: &mut Unsupported) -> Color {
+    let first_stop = |stops: &[usvgr::Stop]| {
+        stops.first().map_or((usvgr::Color::black(), 1.0), |s| {
+            (s.color(), s.opacity().get())
+        })
+    };
     let (c, stop) = match paint {
         usvgr::Paint::Color(c) => (*c, 1.0),
         usvgr::Paint::LinearGradient(g) => {
-            g.stops().first().map_or((usvgr::Color::black(), 1.0), |s| {
-                (s.color(), s.opacity().get())
-            })
+            seen.gradients += 1;
+            first_stop(g.stops())
         }
         usvgr::Paint::RadialGradient(g) => {
-            g.stops().first().map_or((usvgr::Color::black(), 1.0), |s| {
-                (s.color(), s.opacity().get())
-            })
+            seen.gradients += 1;
+            first_stop(g.stops())
         }
-        usvgr::Paint::Pattern(_) => (usvgr::Color::black(), 1.0),
+        usvgr::Paint::Pattern(_) => {
+            seen.patterns += 1;
+            (usvgr::Color::black(), 1.0)
+        }
     };
     let alpha = (opacity * stop).clamp(0.0, 1.0) * 255.0;
     Color::rgba(c.red, c.green, c.blue, alpha.round() as u8)
 }
 
-fn walk(group: &usvgr::Group, id: &str, out: &mut Vec<SvgPart>) {
+fn walk(group: &usvgr::Group, id: &str, out: &mut Vec<SvgPart>, seen: &mut Unsupported) {
     let id = if group.id().is_empty() {
         id
     } else {
@@ -69,21 +105,44 @@ fn walk(group: &usvgr::Group, id: &str, out: &mut Vec<SvgPart>) {
     };
     for node in group.children() {
         match node {
-            Node::Group(g) => walk(g, id, out),
+            Node::Group(g) => walk(g, id, out, seen),
             Node::Path(p) => {
                 let (path, at) = paths::from_usvgr(p);
                 let scale = at.determinant().abs().sqrt() as f32;
+                let fill = p.fill().map(|f| color(f.paint(), f.opacity().get(), seen));
+                let stroke = p
+                    .stroke()
+                    .map(|s| color(s.paint(), s.opacity().get(), seen));
                 out.push(SvgPart {
                     id: if p.id().is_empty() { id } else { p.id() }.to_owned(),
                     path,
-                    fill: p.fill().map(|f| color(f.paint(), f.opacity().get())),
-                    stroke: p.stroke().map(|s| color(s.paint(), s.opacity().get())),
+                    fill,
+                    stroke,
                     stroke_width: p.stroke().map_or(0.0, |s| s.width().get() * scale),
                 });
             }
+            // text and images are counted in the source, they leave no node behind
             _ => {}
         }
     }
+}
+
+/// The parts of `svg` and what in it is not drawn as it is.
+fn read(svg: &str) -> Result<(Vec<SvgPart>, Unsupported), SvgError> {
+    let tree = usvgr::Tree::from_str(svg, &usvgr::Options::default(), &fontdb::Database::new())
+        .map_err(|e| SvgError(e.to_string()))?;
+    let (mut parts, mut seen) = (Vec::new(), Unsupported::default());
+    if let Ok(doc) = usvgr::roxmltree::Document::parse(svg) {
+        for node in doc.descendants() {
+            match node.tag_name().name() {
+                "text" => seen.text += 1,
+                "image" => seen.images += 1,
+                _ => {}
+            }
+        }
+    }
+    walk(tree.root(), "", &mut parts, &mut seen);
+    Ok((parts, seen))
 }
 
 /// Every path of `svg`, in document order, with its absolute position and paint.
@@ -92,11 +151,7 @@ fn walk(group: &usvgr::Group, id: &str, out: &mut Vec<SvgPart>) {
 ///
 /// When `svg` is not SVG.
 pub fn parse_svg(svg: &str) -> Result<Vec<SvgPart>, SvgError> {
-    let tree = usvgr::Tree::from_str(svg, &usvgr::Options::default(), &fontdb::Database::new())
-        .map_err(|e| SvgError(e.to_string()))?;
-    let mut out = Vec::new();
-    walk(tree.root(), "", &mut out);
-    Ok(out)
+    read(svg).map(|(parts, _)| parts)
 }
 
 /// Which parts of an [`SvgShape`]: those with an `id`, or the one at an index.
@@ -131,8 +186,9 @@ impl PartKey<'_> {
 /// [`SvgShape::parse`] and keep it; a clone shares the parts. The drawing is centered on
 /// `(cx, cy)` and scaled to `height`. Every path keeps the file's paint unless `fill` or
 /// `stroke` replace it; [`fill_part`](Self::fill_part), [`stroke_part`](Self::stroke_part)
-/// and [`only`](Self::only) change single parts. Text and images in the file are not drawn:
-/// convert text to paths before export.
+/// and [`only`](Self::only) change single parts. Text and images in the file are not drawn
+/// (convert text to paths before export) and a gradient is drawn in its first stop's colour;
+/// `inspect` warns about them.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct SvgShape {
@@ -149,6 +205,8 @@ pub struct SvgShape {
     pub enter: Option<EnterAnim>,
     pub exit: Option<ExitAnim>,
     pub emphasis: Option<Emphasis>,
+    /// What the file holds that is not drawn as it is; `inspect` lists it.
+    pub unsupported: Arc<Vec<String>>,
 }
 
 impl Themed for SvgShape {
@@ -165,6 +223,7 @@ impl Themed for SvgShape {
             enter: None,
             exit: None,
             emphasis: None,
+            unsupported: Arc::default(),
         }
     }
 }
@@ -182,8 +241,10 @@ impl SvgShape {
     ///
     /// When `svg` is not SVG.
     pub fn parse(svg: &str) -> Result<Self, SvgError> {
+        let (parts, seen) = read(svg)?;
         Ok(Self {
-            parts: Arc::new(parse_svg(svg)?),
+            parts: Arc::new(parts),
+            unsupported: Arc::new(seen.messages()),
             ..Self::default()
         })
     }
@@ -285,6 +346,11 @@ impl Geometry for SvgShape {
 
 impl<'a> Component<'a> for SvgShape {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        for message in self.unsupported.iter() {
+            report(Diagnostic::RendererWarning {
+                message: message.clone(),
+            });
+        }
         let parts = self.shapes();
         draw_animated(
             ui,
@@ -387,5 +453,26 @@ mod tests {
             ..SvgPath::default()
         };
         assert_eq!(s.bbox(), Rect::new(0.0, 0.0, 100.0, 50.0));
+    }
+
+    #[test]
+    fn what_is_not_drawn_is_listed() {
+        let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>\
+            <defs><linearGradient id='g'><stop offset='0' stop-color='#00ff00'/><stop offset='1' stop-color='#0000ff'/></linearGradient></defs>\
+            <rect width='50' height='50' fill='url(#g)'/>\
+            <text x='0' y='90'>hi</text>\
+            <image width='10' height='10' href='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='/>\
+            </svg>";
+        let shape = SvgShape::parse(svg).unwrap();
+        assert_eq!(shape.parts[0].fill, Some(Color::rgb(0, 255, 0)));
+        assert_eq!(
+            *shape.unsupported,
+            [
+                "SvgShape: 1 text elements are not drawn (convert text to paths)",
+                "SvgShape: 1 images are not drawn",
+                "SvgShape: 1 gradients are drawn in their first stop's colour",
+            ]
+        );
+        assert!(SvgShape::parse(HOUSE).unwrap().unsupported.is_empty());
     }
 }

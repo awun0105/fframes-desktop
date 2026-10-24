@@ -547,8 +547,8 @@ parts. Every path is a part with the `id` of the path or of the nearest group ar
 fill and its outline, and keeps the file's paint unless `fill` or `stroke` replace it.
 `fill_part(key, color)` and `stroke_part(key, color)` paint the parts with an `id` or the
 one at an index, `only(|index, part| ..)` keeps some, and `part(key)` reads one. A gradient
-draws in its first stop's colour. Text and images in the file are not drawn: convert text to
-paths before export.
+draws in its first stop's colour and a pattern black. Text and images in the file are not
+drawn: convert text to paths before export. `inspect` warns about all four.
 
 Manim's `ImageMobject` is an `<image>` of a picture from the media; `PhotoFrame` adds a
 border and rounded corners, and `KenBurns` a slow zoom.
