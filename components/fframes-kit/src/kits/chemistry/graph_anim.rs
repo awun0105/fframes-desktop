@@ -502,9 +502,9 @@ mod tests {
 
     #[test]
     fn groups_of_known_molecules() {
+        use FunctionalGroup::*;
         let count =
             |smiles: &str, g| functional_groups(&Structure::from_smiles(smiles).unwrap(), g).len();
-        use FunctionalGroup::*;
         // ethanol
         assert_eq!(count("CCO", Hydroxyl), 1);
         assert_eq!(count("CCO", Carbonyl), 0);

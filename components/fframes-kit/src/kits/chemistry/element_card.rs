@@ -16,9 +16,10 @@ use crate::{
 
 use super::{Category, Script, element, name, subscript_text, symbol};
 
-/// Pauling electronegativities of elements 1 to 118, 0 where none is known (He, Ne, Ar and
-/// the superheavy elements). `mendeleev` has no electronegativity, so the values are the
-/// ones tabulated for the Pauling scale on Wikipedia's electronegativity data page.
+/// Pauling electronegativities of elements 1 to 118, 0 where none is known. `mendeleev` has
+/// no electronegativity, so the values are the Pauling scale of Wikipedia's electronegativity
+/// data page (the first value where it gives several, Fr 0.7). It gives none for He, Ne, Ar, Rn
+/// and from Rf, and only a range for Pm, Eu and Yb, which are left out.
 const PAULING: [f32; 118] = [
     2.20, 0.0, 0.98, 1.57, 2.04, 2.55, 3.04, 3.44, 3.98, 0.0, // H to Ne
     0.93, 1.31, 1.61, 1.90, 2.19, 2.58, 3.16, 0.0, 0.82, 1.00, // Na to Ca
@@ -26,16 +27,16 @@ const PAULING: [f32; 118] = [
     1.81, 2.01, 2.18, 2.55, 2.96, 3.00, 0.82, 0.95, 1.22, 1.33, // Ga to Zr
     1.6, 2.16, 1.9, 2.2, 2.28, 2.20, 1.93, 1.69, 1.78, 1.96, // Nb to Sn
     2.05, 2.1, 2.66, 2.60, 0.79, 0.89, 1.10, 1.12, 1.13, 1.14, // Sb to Nd
-    1.13, 1.17, 1.2, 1.2, 1.1, 1.22, 1.23, 1.24, 1.25, 1.1, // Pm to Yb
+    0.0, 1.17, 0.0, 1.2, 1.21, 1.22, 1.23, 1.24, 1.25, 0.0, // Pm to Yb
     1.27, 1.3, 1.5, 2.36, 1.9, 2.2, 2.20, 2.28, 2.54, 2.00, // Lu to Hg
-    1.62, 2.33, 2.02, 2.0, 2.2, 2.2, 0.7, 0.9, 1.1, 1.3, // Tl to Th
-    1.5, 1.38, 1.36, 1.28, 1.13, 1.28, 1.3, 1.3, 1.3, 1.3, // Pa to Fm
-    1.3, 1.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // Md to Ds
+    1.62, 2.33, 2.02, 2.0, 2.2, 0.0, 0.7, 0.9, 1.1, 1.3, // Tl to Th
+    1.5, 1.38, 1.36, 1.28, 1.3, 1.28, 1.3, 1.3, 1.3, 1.3, // Pa to Fm
+    1.3, 1.3, 1.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // Md to Ds
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // Rg to Og
 ];
 
-/// The Pauling electronegativity of element `number`, `None` where none is known (the noble
-/// gases He, Ne and Ar, element 103 and up).
+/// The Pauling electronegativity of element `number`, `None` where none is known (He, Ne, Ar,
+/// Rn, Pm, Eu, Yb and from Rf).
 pub fn electronegativity(number: u32) -> Option<f32> {
     let index = usize::try_from(number).ok()?.checked_sub(1)?;
     PAULING.get(index).copied().filter(|v| *v > 0.0)
@@ -384,7 +385,8 @@ mod tests {
     fn electronegativities() {
         assert_eq!(electronegativity(9), Some(3.98));
         assert_eq!(electronegativity(1), Some(2.20));
-        for noble in [2, 10, 18] {
+        assert_eq!(electronegativity(103), Some(1.3));
+        for noble in [2, 10, 18, 86, 61, 104] {
             assert_eq!(electronegativity(noble), None);
         }
         assert_eq!(electronegativity(0), None);

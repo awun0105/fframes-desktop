@@ -116,7 +116,9 @@ Cover the rest of manim-chemistry in the chemistry kit (feature `chemistry`):
   to `Molecule3D` as they are.
 - Electronegativity (2026-10-25): `mendeleev` 0.8.4, its latest release, has no electronegativity.
   `ElementCard` carries the Pauling values as tabulated on Wikipedia's electronegativity data
-  page (facts, no licence issue), with none for He, Ne, Ar and elements 103 and up. Number,
+  page (facts, no licence issue), checked value by value against the page: the first value
+  where it lists several (Fr 0.7), none for He, Ne, Ar, Rn and from Rf, and none for Pm, Eu and
+  Yb, which it gives only as a range. Number,
   symbol, name, mass and configuration come from `mendeleev` and a test checks all 118.
 - `subscript_text` takes a `Script` (base, sub, super) and a style, and draws a space as a gap
   between two `<text>` elements: a space inside a run was measured narrower than drawn, so the

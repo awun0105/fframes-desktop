@@ -98,9 +98,10 @@ electronegativity, tinted like `ElementTile`.
 - **Values.** The mass is the standard atomic weight to three decimals, or the mass number of
   the most stable isotope in brackets (`[294]`). The configuration comes from `mendeleev`
   with the electron counts drawn as raised runs, so the font needs no superscript digits.
-- **Electronegativity.** `mendeleev` has none, so the kit carries the Pauling values
-  (`electronegativity(9)` is `Some(3.98)`). He, Ne, Ar and the elements from 103 have no
-  value: a square card leaves the corner empty, a wide card writes `n/a`.
+- **Electronegativity.** `mendeleev` has none, so the kit carries the Pauling values of
+  Wikipedia's electronegativity data page (`electronegativity(9)` is `Some(3.98)`). He, Ne, Ar,
+  Rn and the elements from Rf have none, Pm, Eu and Yb only a range: a square card leaves the
+  corner empty, a wide card writes `n/a`.
 
 Gallery scene: `ElementCard` (carbon and iron square, bromine wide).
 
