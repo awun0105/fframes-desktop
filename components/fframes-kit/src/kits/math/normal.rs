@@ -21,19 +21,10 @@ use super::short;
 /// for the same `seed` (`SplitMix64` and the Box-Muller transform). The random bits match on
 /// every machine; the transform's `ln`, `cos` and `sin` may differ in the last bit.
 pub fn normal_samples(seed: u64, n: usize, mean: f64, sd: f64) -> Vec<f64> {
-    let mut state = seed;
-    let mut uniform = move || {
-        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut z = state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        z ^= z >> 31;
-        // 53 random bits in (0, 1], so the logarithm below is finite
-        ((z >> 11) as f64 + 1.0) / (1u64 << 53) as f64
-    };
+    let mut rng = crate::motion::Rng::new(seed);
     let mut samples = Vec::with_capacity(n);
     while samples.len() < n {
-        let (u, v) = (uniform(), uniform());
+        let (u, v) = (rng.unit(), rng.unit());
         let r = (-2.0 * u.ln()).sqrt();
         samples.push(mean + sd * r * (TAU * v).cos());
         if samples.len() < n {

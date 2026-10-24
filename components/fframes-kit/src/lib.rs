@@ -96,3 +96,7 @@ struct ComponentsDocs;
 #[cfg(all(doctest, feature = "math"))]
 #[doc = include_str!("../../../docs/components/math.md")]
 struct MathDocs;
+
+#[cfg(all(doctest, feature = "physics"))]
+#[doc = include_str!("../../../docs/components/physics.md")]
+struct PhysicsDocs;

@@ -7,6 +7,7 @@ pub mod general;
 pub mod latex;
 pub mod math;
 pub mod overlay;
+pub mod physics;
 pub mod shapes;
 pub mod tags;
 pub mod text;
@@ -24,6 +25,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(latex::scenes());
     scenes.extend(explain::scenes());
     scenes.extend(math::scenes());
+    scenes.extend(physics::scenes());
     scenes.extend(tags::scenes());
     scenes.extend(shapes::bench_scenes());
     scenes.extend(latex::bench_scenes());

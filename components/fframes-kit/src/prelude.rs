@@ -26,6 +26,10 @@ pub use crate::kits::math::{
     MatrixView, NormalFit, NumberPoint, Pythagoras, RiemannSum, Secant, Tangent, UnitCircle,
     VectorSum,
 };
+#[cfg(feature = "physics")]
+pub use crate::kits::physics::{
+    EnergyBars, Pendulum, PendulumMotion, Projectile, SpringMass, SpringMotion,
+};
 pub use crate::label::{BraceLabel, Label, Leader};
 #[cfg(feature = "latex")]
 pub use crate::latex::{
