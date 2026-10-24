@@ -104,6 +104,8 @@ fn circle_wipe<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let timing = ui.defaults();
     let wipe = CircleWipe {
         center: (0.7, 0.4),
+        // the highlight colour, so the white title stays readable over the disc
+        color: ui.theme.colors.highlight,
         ..ui.defaults()
     };
     series(ui, "CircleWipe", timing, wipe)
