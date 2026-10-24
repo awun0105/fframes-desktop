@@ -12,8 +12,9 @@ pub(super) fn rgb(color: Color) -> Rgb {
     Rgb::srgb8(color.r, color.g, color.b)
 }
 
-/// A point in chemistry axes (z up, x towards the viewer, y right) in the renderer's axes
-/// (y up, z towards the viewer). The mapping is a rotation, so handedness is kept.
+/// A point in chemistry axes (z up; seen from azimuth 0, x to the right and y into the image)
+/// in the renderer's axes (y up, z towards the viewer). The mapping is a rotation, so handedness
+/// is kept.
 pub(super) fn chem(x: f32, y: f32, z: f32) -> Vec3 {
     vec3(x, z, -y)
 }

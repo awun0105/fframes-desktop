@@ -146,8 +146,8 @@ fn figures<'a>(ui: &mut Ui<'a, '_, '_>, water: &'a Structure) -> Svgr<'a> {
 These two need the `3d` feature as well (`features = ["chemistry", "3d"]`), which turns on
 `fframes/3d`. They render a 3D scene with `fframes::three_d` on every frame, on the CPU or,
 with the `wgpu` features, on the GPU, and place it as an image of `width` x `height` pixels
-around `center`. The scene uses chemistry axes: `z` up, `x` towards the viewer, `y` to the
-right. The gallery's eleven seconds of 3D scenes render on the CPU in about seven seconds on 32
+around `center`. The scene uses right-handed chemistry axes with `z` up; seen from `azimuth`
+0, `x` points to the right and `y` into the image. The gallery's eleven seconds of 3D scenes render on the CPU in about seven seconds on 32
 threads. The gallery leaves them out of the editor bridge.
 
 `Molecule3D` draws a `Structure3D` as balls and sticks in CPK colours. `Structure3D::from_xyz`
