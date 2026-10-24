@@ -871,6 +871,50 @@ fn square_to_circle<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Manim's imperative animations
+
+Manim changes a mobject in place and plays the change. In the kit a frame is a function of
+its time, so there is no mobject to change: these names become the components above, or a
+value computed in `render` from `ui.seconds()`.
+
+| Manim | fframes-kit |
+| --- | --- |
+| `self.wait(1)` | nothing to call: start what follows 1 second later (`Sequence { from }`) |
+| `ApplyMethod(m.shift, RIGHT)`, `m.animate.shift(RIGHT)` | `Morph::new(shape.clone(), moved)`, `moved` the shape with the change made |
+| `m.generate_target()`, `MoveToTarget(m)` | the same: the target is a second `Shape` |
+| `m.save_state()`, `Restore(m)` | keep a clone of the shape, `Morph::new(changed, saved)` |
+| `UpdateFromFunc(m, f)`, updaters | compute the prop from `ui.seconds()` in `render`, which runs every frame |
+| `UpdateFromAlphaFunc(m, f)` | the same with `alpha = rate.apply(motion::progress(t, start, end), run_time)` |
+| `MaintainPositionRelativeTo(m, leader)` | place `m` at the leader's position, computed from the same time, plus the offset |
+
+```rust
+use fframes_kit::prelude::*;
+
+/// `ApplyMethod(square.shift, 2 * RIGHT)`, then `Restore(square)`: morph to a moved copy and
+/// back to the saved one. `self.wait(0.5)` is the half second between them.
+fn shift_and_restore<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let saved = Square { cx: 660.0, cy: 540.0, side_length: 200.0, ..ui.defaults() }.shape();
+    let shifted = Shape { path: paths::translate_path(&saved.path, 270.0, 0.0), ..saved.clone() };
+    let (a, b) = (shifted.clone(), saved.clone());
+    let restore = children(move |ui| ui.show(Morph::new(a.clone(), b.clone())));
+    if ui.seconds() < 1.5 {
+        ui.show(Morph::new(saved, shifted))
+    } else {
+        ui.show(Sequence { from: 1.5, duration: None, children: restore })
+    }
+}
+
+/// `UpdateFromAlphaFunc` and `MaintainPositionRelativeTo`: a dot crosses in 2 seconds from
+/// second 1, and a second dot follows it 80 pixels above.
+fn follow<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let alpha = RateFunc::Smooth.apply(motion::progress(ui.seconds(), 1.0, 3.0), 2.0);
+    let x = motion::lerp(360.0, 1560.0, alpha);
+    let leader = ui.show(Dot { cx: x, cy: 540.0, ..ui.defaults() });
+    let follower = ui.show(Dot { cx: x, cy: 460.0, ..ui.defaults() });
+    svgr!(<g>{leader}{follower}</g>)
+}
+```
+
 ## Paths
 
 `fframes_kit::paths` has Remotion's `@remotion/paths` in snake_case over `kurbo::BezPath`:

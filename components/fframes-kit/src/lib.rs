@@ -73,6 +73,12 @@
 //! | `Indicate`, `Circumscribe`, `Flash`, `Wiggle` | [`animate`], `emphasis` |
 //! | `Transform`, `ReplacementTransform` | [`animate::Transform`] (`Morph` in the prelude), [`ReplacementTransform`](animate::ReplacementTransform) |
 //! | `MoveAlongPath` | [`MoveAlongPath`](animate::MoveAlongPath) |
+//! | `Wait` | no call: what follows starts later, [`Sequence`](time::Sequence) `{ from, .. }` |
+//! | `ApplyMethod`, `.animate`, `MoveToTarget` | [`animate::Transform`] (`Morph`) from the shape to a copy with the change made (the target) |
+//! | `save_state`, `Restore` | a clone of the shape kept, [`animate::Transform`] from the changed shape back to it |
+//! | `UpdateFromFunc`, updaters | the prop computed from `ui.seconds()` in `render`, which runs every frame |
+//! | `UpdateFromAlphaFunc` | the same with [`RateFunc::apply`](anim::RateFunc::apply) over [`motion::progress`] |
+//! | `MaintainPositionRelativeTo` | the follower placed from the leader's position at the same time, plus the offset |
 //! | `MathTex`, `Tex`, `TexTemplate` (feature `latex`) | `latex::MathTex`, `latex::Tex`, `latex::TexTemplate`, typeset with a `latex::TexEngine` and drawn by `latex::FormulaView` |
 //! | `TransformMatchingTex` (feature `latex`) | `latex::TransformMatchingTex` |
 //! | the frame: 8 units tall, `y` up, origin in the middle | [`Space`](explain::Space) in `ui.space`, [`Canvas`](explain::Canvas) for another one |
