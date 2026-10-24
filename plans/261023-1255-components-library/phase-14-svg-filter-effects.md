@@ -1,7 +1,7 @@
 ---
 phase: 14
 title: "Phase 14: SVG-filter effects"
-status: in-progress
+status: completed
 priority: P2
 effort: 5d
 dependencies: [11]
@@ -147,4 +147,4 @@ wrappers around children.
 - [x] Patterns and overlays, halftone
 - [x] Geometry and reveals
 - [x] Blur group with measured cost
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] Gallery scenes, e2e frames, docs and mapping rows

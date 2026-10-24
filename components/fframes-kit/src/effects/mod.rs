@@ -186,3 +186,54 @@ pub use progressive_blur::{
 };
 pub use reveal::{BlindsDirection, Evolve, EvolveDirection, TvSignalOff, VenetianBlinds};
 pub use textures::{Burlap, Flannel, MAX_TILES, Paper, Pattern, Speckle};
+
+#[cfg(test)]
+mod tests {
+    /// The id kind of every effect: the literal passed to `ui.id` or to `filter_effect!`.
+    fn kinds(source: &str) -> Vec<&str> {
+        source
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if let Some(call) = line.split("ui.id(").nth(1) {
+                    let literal = call.rsplit('"').nth(1)?;
+                    return (!literal.contains(' ')).then_some(literal);
+                }
+                // `Brightness("brightness", Region::Pad(0.05)) {`
+                let (name, rest) = line.split_once("(\"")?;
+                let pascal = name.starts_with(|c: char| c.is_ascii_uppercase())
+                    && name.chars().all(|c| c.is_ascii_alphanumeric());
+                (pascal && rest.contains("\", Region::")).then(|| rest.split('"').next())?
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_effect_names_its_filters_with_its_own_kind() {
+        let sources = [
+            include_str!("blur.rs"),
+            include_str!("color.rs"),
+            include_str!("distort.rs"),
+            include_str!("edges.rs"),
+            include_str!("geometry.rs"),
+            include_str!("halftone.rs"),
+            include_str!("light_leak.rs"),
+            include_str!("motion_blur.rs"),
+            include_str!("noise.rs"),
+            include_str!("patterns.rs"),
+            include_str!("progressive_blur.rs"),
+            include_str!("reveal.rs"),
+            include_str!("textures.rs"),
+        ];
+        let mut all: Vec<&str> = sources.iter().flat_map(|s| kinds(s)).collect();
+        assert!(all.len() >= 59, "found only {} kinds", all.len());
+        all.sort_unstable();
+        let repeated: Vec<_> = all
+            .windows(2)
+            .filter(|w| w[0] == w[1])
+            .map(|w| w[0])
+            .collect();
+        // two effects with one key would share a filter id
+        assert!(repeated.is_empty(), "kinds used twice: {repeated:?}");
+    }
+}

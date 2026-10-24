@@ -1085,6 +1085,41 @@ fn tilt_shift<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Not yet available
+
+These `@remotion/effects` effects move or sample single pixels, which SVG filters cannot do.
+They need per-pixel code and are not in the kit yet: fisheye, barrel distortion, sphere,
+cylinder, pixelate, linear and radial progressive pixelate, pixel dissolve, chromatic
+aberration, zoom blur, lens blur, page turn, shatter, tear, corner pin, contour lines, liquid
+contours and shine. `Halftone` approximates `halftone()` without its `sampling`, and `Lut`
+approximates a LUT with per-channel tables instead of reading a LUT file. The displacement
+effects wait for a fixed `svgr` (see "Noise").
+
+### Remotion animation utilities
+
+`makeTransform` from `@remotion/animation-utils` is `fframes::Transform`, which the prelude
+exports. It writes its parts in a fixed order: translate, rotate, scale, skew X, skew Y.
+`interpolateStyles` is `motion::progress` over the input range, then `motion::lerp` for each
+value.
+
+```rust
+use fframes_kit::prelude::*;
+
+// makeTransform([translate(40, 0), rotate(15), scale(1.5)])
+let transform = Transform {
+    translate_x: 40.0,
+    rotate: 15.0_f64.into(),
+    scale: 1.5_f64.into(),
+    ..Default::default()
+};
+assert_eq!(transform.to_string(), "translate(40 0) rotate(15) scale(1.5)");
+
+// interpolateStyles(frame, [0, 20], [{ opacity: 0, translateY: 40 }, { opacity: 1, translateY: 0 }])
+let t = motion::progress(5.0, 0.0, 20.0);
+let (opacity, y) = (motion::lerp(0.0, 1.0, t), motion::lerp(40.0, 0.0, t));
+assert_eq!((opacity, y), (0.25, 30.0));
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`
