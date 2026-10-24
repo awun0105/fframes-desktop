@@ -100,7 +100,21 @@ pub fn scene_transition<'a>(
         return content;
     }
     let id = ui.id(key, 0, "scene-transition");
-    presentation.apply(timing.progress(t, length), side, content, ui, &id)
+    let progress = timing.progress(t, length);
+    // presentations that count in seconds read the length from the `Ui`
+    let mut ui = ui.shifted(0, ui.duration);
+    let state = &mut ui.transition;
+    match side {
+        Side::Entering => {
+            state.progress.entering = progress;
+            state.entering_seconds = Some(length);
+        }
+        Side::Exiting => {
+            state.progress.exiting = progress;
+            state.exiting_seconds = Some(length);
+        }
+    }
+    presentation.apply(progress, side, content, &ui, &id)
 }
 
 #[cfg(test)]

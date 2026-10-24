@@ -25,6 +25,13 @@
 //! | `@remotion/paths` (`getLength`, `evolvePath`, `interpolatePath`, ...) | [`paths`]: the same names in snake_case over [`kurbo::BezPath`] |
 //! | `<TransitionSeries>`, `.Sequence`, `.Transition` | [`TransitionSeries`](transitions::TransitionSeries), `TransitionSeries::sequence`, `TransitionSeries::transition` |
 //! | `fade()`, `slide()`, `wipe()` | [`Fade`](transitions::Fade), [`Slide`](transitions::Slide), [`Wipe`](transitions::Wipe), or your own [`Presentation`](transitions::Presentation) |
+//! | `none()`, `pushCut()`, `zoomInOut()` | [`NoTransition`](transitions::NoTransition), [`PushCut`](transitions::PushCut), [`ZoomInOut`](transitions::ZoomInOut) |
+//! | `dreamyZoom()`, `linearBlur()`, `blurSlide()`, `crossZoom()` | [`DreamyZoom`](transitions::DreamyZoom), [`LinearBlur`](transitions::LinearBlur), [`BlurSlide`](transitions::BlurSlide), [`CrossZoom`](transitions::CrossZoom) |
+//! | `dissolve()`, `filmBurn()` | [`Dissolve`](transitions::Dissolve), [`FilmBurn`](transitions::FilmBurn) |
+//! | `swap()` | [`SwapCards`](transitions::SwapCards) (`Swap` is Manim's animation) |
+//! | `useTransitionProgress()` | [`Ui::transition_progress`](ui::Ui::transition_progress) |
+//! | audio fade on transitions | [`audio_fades`](transitions::audio_fades), [`TransitionSeries::audio_fades`](transitions::TransitionSeries::audio_fades), applied in `fn audio` |
+//! | `crosswarp()`, `ripple()`, `bookFlip()`, `cube()`, `custom-html-in-canvas` | not yet available (pixel shaders) |
 //! | `linearTiming`, `springTiming` | [`Timing::Linear`](transitions::Timing::Linear), [`Timing::Spring`](transitions::Timing::Spring) |
 //! | JSX: `<LowerThird name="Ada" />`, children between tags | [`ui!`](ui!): the same tags inside `svgr!` markup, expanded to `ui.show(LowerThird { name: "Ada".into(), ..ui.defaults() })` |
 //!

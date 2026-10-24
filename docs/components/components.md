@@ -487,6 +487,16 @@ transitions. The entering sequence is drawn on top.
 | `Iris` | `size` | the entering sequence shows through a circle that opens from the middle (`iris()`) |
 | `CircleWipe` | `center` (0.5, 0.5, a share of `size`), `color` (`colors.title`), `size` | a disc of `color` grows from `center` over the exiting sequence, then the entering one opens from the same point |
 | `SlantWipe` | `color` (`colors.background`), `edge` (`colors.highlight`), `back` (`colors.accent`), `skew` (320), `size` | a slanted panel with a stripe in front and behind sweeps across, covers everything at the middle and leaves the entering sequence behind it |
+| `NoTransition` | | a hard cut at the middle of the overlap (`none()`); the series keeps the overlap, so the sequences can animate it themselves with `ui.transition_progress()` |
+| `PushCut` | `cut_progress` (5/11), `outgoing_scale` (1.04), `incoming_start_scale` (1.04), `incoming_end_scale` (1.07), `origin` (0.5, 0.5), `flash_color` (#f5f2ed), `flash_opacity` (0.2), `flash_frames` (2), `size` | a hard editorial cut with a punch-in on both sides and a short flash at the edit (`pushCut()`); use a linear timing |
+| `ZoomInOut` | `scale` (1.5), `size` | the exiting sequence zooms in and cross-fades into the entering one, which zooms back out (`zoomInOut()`); `scale` is the kit's, Remotion has no options |
+| `DreamyZoom` | `rotation` (6°), `scale` (1.2), `flash_color` (white), `blur` (12), `size` | both sides zoom, turn and blur through a flash at the middle (`dreamyZoom()`) |
+| `LinearBlur` | `intensity` (0.1, a share of the width), `axes` (1, 1), `size` | the entering sequence fades in while both blur, most at the middle (`linearBlur()`); `axes` weighs the blur along x and y, a slanted direction is not available |
+| `BlurSlide` | `direction` (`FromLeft`), `blur` (0.5, a share of the size), `size` | both sides pan like a fast camera move with a motion blur along it (`blurSlide()`) |
+| `CrossZoom` | `strength` (0.4), `size` | both sides zoom about a centre that moves across and blur, cross-fading at the middle (`crossZoom()`); an approximation: the blur is even, not along rays |
+| `Dissolve` | `line_width` (0.1), `spread_color` (#ff0000), `hot_color` (#e6e633), `pow` (5), `intensity` (1), `seed`, `frequency` (0.004), `size` | the exiting sequence burns away with a glowing edge (`dissolve()`); the burn follows seeded `feTurbulence` noise, not the luminance of the pixels as in Remotion |
+| `FilmBurn` | `seed` (2.31), `blur` (6), `size` | a burning film overlay flares over a blurred cross-fade (`filmBurn()`); an approximation of the GL original from a radial gradient and noise |
+| `SwapCards` | `reflection` (0.4), `perspective` (0.2), `depth` (3), `floor` (`colors.background`), `size` | the two sequences trade places like cards on a floor, with reflections (`swap()`); a 2D approximation of the 3D original. Manim's `Swap` is another thing |
 | `Timing::Linear` | `duration`, `easing: RateFunc` | Remotion's `linearTiming`; the theme default is `motion.duration.slow` with `motion.easing.standard` |
 | `Timing::Spring` | `mass`, `stiffness`, `damping`, `duration: Option<f32>` | `springTiming`: lasts until the spring settles, or is squeezed into `duration` |
 | `SceneFade` | `fade_in`, `fade_out`, `rate_func`, `children` | fades at both edges of the enclosing sequence or scene; `SceneFade::new(ui, children)` takes the theme's `motion.duration.fast` |
@@ -516,6 +526,57 @@ fn wipe<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ],
     })
 }
+```
+
+The blurring presentations (`DreamyZoom`, `LinearBlur`, `BlurSlide`, `CrossZoom`,
+`FilmBurn`) run an `feGaussianBlur` over each side during the transition, up to about 60 ms
+more a frame than a fade on the CPU backend at 1080p. They blur only what is on the canvas (`size`), so the
+CPU and Skia backends draw the same, and they keep the alpha of the blurred side, so the
+canvas does not darken at its edges. They expect sequences that cover the canvas, as a
+`Fill` does: a translucent sequence turns opaque where the blur leaves it a quarter opaque.
+
+Not yet available, because they need pixel shaders: `crosswarp`, `ripple`, `bookFlip`,
+`cube` and `custom-html-in-canvas` (see the
+[usage report](../../plans/reports/research-261024-1748-manim-remotion-usage.md)).
+
+Inside a sequence, `ui.transition_progress()` is Remotion's `useTransitionProgress()`:
+`entering` runs from 0 to 1 while the sequence comes in and is 1 otherwise, `exiting` runs
+from 0 to 1 while it goes away and is 0 otherwise, and `in_series` is false outside a
+series (1 and 0 then). `ui.transition_seconds(side)` is the length of a running transition.
+
+The kit cannot change `fn audio`, so it gives the times to fade a sequence's sound with
+instead: `audio_fades(&lengths, fps)` (or `series.audio_fades(fps)`) returns, per sequence,
+where it starts and ends and how long its fades are, in seconds from the series start.
+`fade.apply(track)` sets them on an `AudioTrack`.
+
+```rust
+use fframes::{AudioMap, AudioTimestamp::Second, AudioTrack};
+use fframes_kit::prelude::*;
+
+const SERIES_START: f32 = 2.0;
+
+fn audio() -> AudioMap<'static> {
+    let fades = audio_fades(
+        &[
+            SeriesLength::Sequence(4.0),
+            SeriesLength::Transition(Timing::default()),
+            SeriesLength::Sequence(4.0),
+        ],
+        30,
+    );
+    let track = |file, fade: &AudioFade| {
+        let range = Second(SERIES_START + fade.start)..Second(SERIES_START + fade.end);
+        fade.apply(AudioTrack::new(file, range))
+    };
+    AudioMap::from([track("one.wav", &fades[0]), track("two.wav", &fades[1])])
+}
+
+/// A bar that fills while the sequence comes in.
+fn bar<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let width = 1200.0 * ui.transition_progress().entering;
+    svgr!(<rect x="96" y="700" width={width.max(1.0)} height="24" fill="#fff" />)
+}
+# let _ = (audio, bar);
 ```
 
 A presentation of your own implements `Presentation`. `apply` gets the progress, 0 when the

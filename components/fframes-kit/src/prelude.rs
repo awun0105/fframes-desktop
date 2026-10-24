@@ -94,8 +94,10 @@ pub use crate::theme::{
 };
 pub use crate::time::{Fill, Freeze, Loop, Sequence, Series};
 pub use crate::transitions::{
-    CircleWipe, ClockWipe, Direction, Fade, Flip, Iris, Presentation, SceneFade, Side, SlantWipe,
-    Slide, Timing, TransitionItem, TransitionSeries, Wipe, scene_transition,
+    AudioFade, BlurSlide, CircleWipe, ClockWipe, CrossZoom, Direction, Dissolve, DreamyZoom, Fade,
+    FilmBurn, Flip, Iris, LinearBlur, NoTransition, Presentation, PushCut, SceneFade, SeriesLength,
+    Side, SlantWipe, Slide, SwapCards, Timing, TransitionItem, TransitionProgress,
+    TransitionSeries, Wipe, ZoomInOut, audio_fades, scene_transition,
 };
 pub use crate::ui::{BoxedComponent, Children, Component, DynComponent, Themed, Ui, children};
 pub use fframes_kit_macros::ui;

@@ -1,7 +1,7 @@
 ---
 phase: 13
 title: "Phase 13: Remotion transitions II"
-status: todo
+status: completed
 priority: P2
 effort: 3d
 dependencies: [11]
@@ -95,9 +95,9 @@ presentation except the pixel and shader ones, which the user deferred.
 
 ## Todo
 
-- [ ] Remotion props verified and recorded
-- [ ] `NoTransition`, `PushCut`, `ZoomInOut`
-- [ ] Blur family: `DreamyZoom`, `LinearBlur`, `BlurSlide`, `CrossZoom`
-- [ ] `Dissolve`, `FilmBurn`, `SwapCards`
-- [ ] Transition progress and the audio fade helper
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] Remotion props verified and recorded
+- [x] `NoTransition`, `PushCut`, `ZoomInOut`
+- [x] Blur family: `DreamyZoom`, `LinearBlur`, `BlurSlide`, `CrossZoom`
+- [x] `Dissolve`, `FilmBurn`, `SwapCards`
+- [x] Transition progress and the audio fade helper
+- [x] Gallery scenes, e2e frames, docs and mapping rows

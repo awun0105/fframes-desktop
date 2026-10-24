@@ -6,7 +6,12 @@ use fframes::{
     usvgr::svgtree::SvgAttributeValue,
 };
 
-use crate::{anim::Anim, explain::Space, theme::Theme};
+use crate::{
+    anim::Anim,
+    explain::Space,
+    theme::Theme,
+    transitions::{Side, TransitionProgress, TransitionState},
+};
 
 /// What a component renders with: the local frame, the time left, the render context and
 /// the theme.
@@ -27,6 +32,9 @@ pub struct Ui<'a, 'c, 'm> {
     /// The coordinate system of the explain components, [`Space::FULL_HD`] unless a
     /// [`Canvas`](crate::explain::Canvas) sets another.
     pub space: Space,
+    /// Where the enclosing [`TransitionSeries`](crate::transitions::TransitionSeries)
+    /// sequence is in its transitions, see [`Ui::transition_progress`].
+    pub(crate) transition: TransitionState,
     /// The props document this `Ui` renders editable components with, see [`Ui::with_props`].
     #[cfg(feature = "studio")]
     pub(crate) props: Option<crate::props::PropsView<'a>>,
@@ -113,6 +121,7 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             ctx,
             theme,
             space: Space::FULL_HD,
+            transition: TransitionState::default(),
             #[cfg(feature = "studio")]
             props: None,
             #[cfg(feature = "studio")]
@@ -141,6 +150,7 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             ctx,
             theme,
             space: Space::FULL_HD,
+            transition: TransitionState::default(),
             #[cfg(feature = "studio")]
             props: None,
             #[cfg(feature = "studio")]
@@ -161,6 +171,7 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             ctx: self.ctx,
             theme: self.theme,
             space: self.space,
+            transition: self.transition,
             #[cfg(feature = "studio")]
             props: self.props.clone(),
             #[cfg(feature = "studio")]
@@ -183,6 +194,25 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
         Some(ui)
     }
 
+    /// How far the transitions of the enclosing
+    /// [`TransitionSeries`](crate::transitions::TransitionSeries) sequence have got
+    /// (Remotion's `useTransitionProgress`): `entering` runs from 0 to 1 while the sequence
+    /// comes in and is 1 otherwise, `exiting` runs from 0 to 1 while it goes away and is 0
+    /// otherwise. Outside a series it is 1, 0 and `in_series: false`.
+    pub fn transition_progress(&self) -> TransitionProgress {
+        self.transition.progress
+    }
+
+    /// The length in seconds of the transition on `side` of the enclosing sequence, or
+    /// `None` when that side has no transition now. For presentations that count in
+    /// seconds or frames rather than progress.
+    pub fn transition_seconds(&self, side: Side) -> Option<f32> {
+        match side {
+            Side::Entering => self.transition.entering_seconds,
+            Side::Exiting => self.transition.exiting_seconds,
+        }
+    }
+
     /// A `Ui` at the same time whose explain components measure in `space`.
     pub fn with_space(&self, space: Space) -> Ui<'a, 'c, 'm> {
         Ui {
@@ -191,6 +221,7 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
             ctx: self.ctx,
             theme: self.theme,
             space,
+            transition: self.transition,
             #[cfg(feature = "studio")]
             props: self.props.clone(),
             #[cfg(feature = "studio")]

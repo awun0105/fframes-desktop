@@ -1,5 +1,5 @@
-//! Transitions: a `TransitionSeries` per presentation, `SceneFade`, and two core scenes that
-//! slide over each other through an `Overlap`.
+//! Transitions: a `TransitionSeries` per presentation, the progress a sequence reads,
+//! `SceneFade`, and two core scenes that slide over each other through an `Overlap`.
 
 use fframes_kit::prelude::*;
 
@@ -19,6 +19,17 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Iris", 2.2, iris),
         GalleryScene::new("CircleWipe", 2.2, circle_wipe),
         GalleryScene::new("SlantWipe", 2.2, slant_wipe),
+        GalleryScene::new("NoTransition", 2.2, no_transition),
+        GalleryScene::new("PushCut", 2.2, push_cut),
+        GalleryScene::new("ZoomInOut", 2.2, zoom_in_out),
+        GalleryScene::new("DreamyZoom", 2.2, dreamy_zoom),
+        GalleryScene::new("LinearBlur", 2.2, linear_blur),
+        GalleryScene::new("BlurSlide", 2.2, blur_slide),
+        GalleryScene::new("CrossZoom", 2.2, cross_zoom),
+        GalleryScene::new("Dissolve", 2.2, dissolve),
+        GalleryScene::new("FilmBurn", 2.2, film_burn),
+        GalleryScene::new("SwapCards", 2.2, swap_cards),
+        GalleryScene::new("TransitionProgress", 2.2, transition_progress),
         GalleryScene::new("SceneFade", 2.0, scene_fade),
         GalleryScene::new("BeforeOverlap", 1.5, before_overlap),
         GalleryScene::new("SceneOverlap", 1.5, scene_overlap).with_overlap(OVERLAP),
@@ -119,6 +130,118 @@ fn slant_wipe<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ..ui.defaults()
     };
     series(ui, "SlantWipe", timing, wipe)
+}
+
+fn no_transition<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    series(ui, "NoTransition", timing, NoTransition)
+}
+
+fn push_cut<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    // linear: a spring would cross the cut more than once
+    let timing = Timing::Linear {
+        duration: 0.8,
+        easing: RateFunc::Linear,
+    };
+    series(ui, "PushCut", timing, PushCut::default())
+}
+
+fn zoom_in_out<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    series(ui, "ZoomInOut", timing, ZoomInOut::default())
+}
+
+fn dreamy_zoom<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    // a spring is past the white flash at the middle frame, so that frame shows the zoom
+    let timing = Timing::Spring {
+        mass: 1.0,
+        stiffness: 120.0,
+        damping: 20.0,
+        duration: Some(0.8),
+    };
+    series(ui, "DreamyZoom", timing, DreamyZoom::default())
+}
+
+fn linear_blur<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    let blur = LinearBlur {
+        axes: (1.0, 0.25),
+        ..LinearBlur::default()
+    };
+    series(ui, "LinearBlur", timing, blur)
+}
+
+fn blur_slide<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = Timing::Linear {
+        duration: 0.8,
+        easing: RateFunc::Linear,
+    };
+    let slide = BlurSlide {
+        direction: Direction::FromRight,
+        ..BlurSlide::default()
+    };
+    series(ui, "BlurSlide", timing, slide)
+}
+
+fn cross_zoom<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    series(ui, "CrossZoom", timing, CrossZoom::default())
+}
+
+fn dissolve<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = Timing::Linear {
+        duration: 0.8,
+        easing: RateFunc::Linear,
+    };
+    series(ui, "Dissolve", timing, Dissolve::default())
+}
+
+fn film_burn<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = Timing::Linear {
+        duration: 0.8,
+        easing: RateFunc::Linear,
+    };
+    series(ui, "FilmBurn", timing, FilmBurn::default())
+}
+
+fn swap_cards<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let timing = ui.defaults();
+    let swap: SwapCards = ui.defaults();
+    series(ui, "SwapCards", timing, swap)
+}
+
+/// A bar per sequence that fills with how far its transition has got, under a cut that
+/// leaves the whole overlap to the scenes.
+fn transition_progress<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let c = ui.theme.colors;
+    let scene = move |background: Color, label: &'static str| {
+        children(move |ui| {
+            let p = ui.transition_progress();
+            let panel = panel(ui, background, label);
+            // at least a pixel: an empty rect is invalid
+            let entering = (1200.0 * p.entering).max(1.0);
+            let exiting = (1200.0 * p.exiting).max(1.0);
+            svgr!(
+                <g>
+                    {panel}
+                    <rect x="96" y="700" width="1200" height="24" fill={c.muted} />
+                    <rect x="96" y="700" width={entering} height="24" fill={c.title} />
+                    <rect x="96" y="760" width="1200" height="24" fill={c.muted} />
+                    <rect x="96" y="760" width={exiting} height="24" fill={c.highlight} />
+                </g>
+            )
+        })
+    };
+    let items = ui.show(TransitionSeries {
+        key: Some("TransitionProgress"),
+        items: vec![
+            TransitionSeries::sequence(1.5, scene(c.surface, "exiting")),
+            TransitionSeries::transition(ui.defaults(), NoTransition),
+            TransitionSeries::sequence(1.5, scene(c.accent, "entering")),
+        ],
+    });
+    let head = title(ui, "TransitionProgress");
+    svgr!(<g>{items}{head}</g>)
 }
 
 fn scene_fade<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
