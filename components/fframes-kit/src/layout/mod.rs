@@ -3,7 +3,11 @@
 //! and boxes are pixels; every arrangement is centered on the origin, so add the point it
 //! goes to.
 
+mod graph_layouts;
+
 use kurbo::{Point, Rect, Vec2};
+
+pub use graph_layouts::{GraphLayout, LayoutFunction, graph_layout};
 
 /// Where `(x, y)` is on a box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
