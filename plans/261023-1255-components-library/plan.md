@@ -1,9 +1,9 @@
 ---
 title: "fframes-kit: component library"
 description: "Build fframes-kit in a fork-owned components/ workspace: a Remotion-style component library with Manim's vocabulary, LaTeX formulas through a user-installed TeX, and science kits, simple pieces first, with no changes to upstream fframes code."
-status: completed
+status: pending
 priority: P1
-effort: 47d
+effort: 95d
 branch: main
 tags: [feature, library, rust, components]
 blockedBy: []
@@ -23,7 +23,10 @@ explainer kits for math, physics, chemistry, computer science and biology. A com
 props struct plus `render(self, &mut Ui)`; time is local and set by `Sequence`, as in Remotion.
 
 The order is simple first: the core, shapes and basic transitions, then the general
-components, then LaTeX and the explainer kits, then the subject kits. The kit is independent of
+components, then LaTeX and the explainer kits, then the subject kits. Phases 13 to 23 (added
+2026-10-24) extend the catalog to the rest of Manim CE and its plugins (manim-physics,
+manim-chemistry, ManimML, manim-dsa, manim-circuit, manim-voiceover timing), the
+SVG-drawable Remotion transitions and effects, word captions, and three asset packs. The kit is independent of
 fframes Studio: it uses only upstream fframes APIs and never touches `desktop/` or the Studio
 crates.
 
@@ -48,6 +51,11 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
    only the science crates of section 4 (`rapier2d`, `chematic`, `mendeleev`,
    `rust-sugiyama`) and the parts problem of section 3. Its Typst engine, MiTeX, vendored Typst
    packages and CeTZ are **dropped**.
+6. [Manim and Remotion usage](../reports/research-261024-1748-manim-remotion-usage.md): the
+   inventories and usage counts behind phases 13 to 23, the **deferred** pixel and shader
+   effects, and the exclusions. Where it disagrees with the Manim API report's dropped
+   recorded `Script`, phase 22 decides: voiceover **timing** is in, recording and speech are
+   not.
 
 ## Decisions taken for this plan (2026-10-23)
 
@@ -68,6 +76,11 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | Phases 8 to 12 | **run them** (user, 2026-10-24: "Run 9 to 12"; phase 8 is reopened) | the loop runs phases 8 to 12; before, it stopped before phase 8 (2026-10-23) |
 | Commits | one conventional commit per finished slice on `main`: scope `kit` for `components/`, scope `studio-props` for Studio paths (2026-10-23; Studio scope 2026-10-24) | stage only the phase's own paths, never the unrelated dirty files already in the tree |
 | Push | **push `main` to origin after each completed phase** (user, 2026-10-24: "Push to origin") | replaces the earlier "do not push" rule |
+| Catalog extension (2026-10-24) | phases 13 to 23 (user: "add more remotion effect, transition and all the manim functions, manim-physic, manim-chemistry,...") | every Manim CE name and every listed plugin name maps to a kit construct; imperative Manim names (`Restore`, `MoveToTarget`, `UpdateFromFunc`, ...) are mapping rows with doc examples, not new types |
+| Pixel and shader effects | **deferred** (user, 2026-10-24: "temporary not implement it") | fisheye, pixelate, chromatic aberration, zoom blur, page turn, shatter and the like, and the `crosswarp`, `ripple`, `bookFlip`, `cube` transitions are listed in the usage report and not planned; SVG-filter effects and SVG-drawable transitions are planned (phases 13, 14) |
+| Plugins | manim-physics, manim-chemistry, ManimML, manim-dsa / manim-data-structures, manim-circuit, manim-voiceover (user, 2026-10-24) | phases 19 to 22; voiceover is timing only: bookmarks and word timings from user files, no recording, no TTS or STT |
+| Excluded | OpenGL and interactive-only Manim features, Typst mobjects, `ManimBanner` (user, 2026-10-24) | not planned |
+| Asset packs | a drawn cursor (no Apple artwork), animated emoji from user-supplied Noto Lottie files (CC BY 4.0, files not committed), a small CC0 SFX pack with helpers (user, 2026-10-24) | phase 23; SFX and voiceover helpers return `Vec<AudioTrack>` that the user adds to their own `fn audio` (no core change) |
 
 ## Phases
 
@@ -85,10 +98,28 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 10 | [CS and biology kits](./phase-10-cs-and-biology-kits.md) | 6 | 6d | Completed |
 | 11 | [Effects and more transitions](./phase-11-effects-and-more-transitions.md) | 3 | 3d | Completed |
 | 12 | [Getting started and packaging](./phase-12-scaffolding-and-studio-template.md) | 4 | 1d | Completed |
+| 13 | [Remotion transitions II](./phase-13-remotion-transitions-ii.md) | 11 | 3d | Pending |
+| 14 | [SVG-filter effects](./phase-14-svg-filter-effects.md) | 11 | 5d | Pending |
+| 15 | [Manim shapes II](./phase-15-manim-shapes-ii.md) | 2 | 5d | Pending |
+| 16 | [Manim animations II](./phase-16-manim-animations-ii.md) | 2 | 5d | Pending |
+| 17 | [Coordinate systems, fields, graphs, tables and text mobjects](./phase-17-coordinates-fields-graphs-text.md) | 6 | 6d | Pending |
+| 18 | [Cameras and 3D](./phase-18-cameras-and-3d.md) | 6 | 5d | Pending |
+| 19 | [Physics kit II and circuit symbols](./phase-19-physics-ii-and-circuits.md) | 9 | 5d | Pending |
+| 20 | [Chemistry kit II](./phase-20-chemistry-ii.md) | 9 | 3d | Pending |
+| 21 | [ML kit and data-structure additions](./phase-21-ml-kit-and-dsa.md) | 10, 17 | 5d | Pending |
+| 22 | [Word captions, text layout and voiceover timing](./phase-22-captions-and-voiceover-timing.md) | 4 | 3d | Pending |
+| 23 | [Cursor, animated emoji and sound effects](./phase-23-asset-packs.md) | 11 | 3d | Pending |
 
 Phases 2 and 3 can run in parallel after phase 1; 4, 5, 6 and 7 can run in parallel after phase 2;
 9, 10 and 11 can run in parallel after phase 6 (11 after phase 3). Each owns its own module, gallery file and skill
 reference.
+
+Phases 13 to 23 depend only on completed phases, except 21, which needs 17's graph layouts.
+The loop runs them in number order. They touch disjoint files except for the shared
+`prelude.rs`, `lib.rs` mapping table, `components/gallery/src/scenes/mod.rs`,
+`components/scripts/e2e.mjs` and `docs/components/components.md`, so run them one at a time.
+Phase 16's number animations use phase 17's `DecimalNumber` when it exists and the kit's
+`Counter` before that.
 
 ## Success criteria (whole plan)
 
@@ -108,6 +139,12 @@ All kit commands run from `components/` (its own workspace) or as `just -f compo
 - [ ] `docs/latex-setup.md` explains installing MiKTeX on Windows, Ubuntu and macOS, and a
       missing TeX gives that guidance in the error.
 - [ ] Every subject kit has a gallery scene per figure and a skill reference file.
+- [ ] Every name in the usage report's gap lists (Manim CE, the six plugins, the SVG-drawable
+      Remotion transitions and effects, captions and layout utils) has a row in the mapping
+      table of `components/fframes-kit/src/lib.rs`; the deferred names are listed in
+      `docs/components/components.md` as not yet available.
+- [ ] No committed asset lacks a recorded licence (`components/fframes-kit/sfx/LICENSE.md`);
+      no emoji file is committed.
 
 ## Verification environment
 
@@ -209,6 +246,18 @@ Status words: the table uses `Pending`, `In progress`, `Completed`, `Blocked`, `
   later.
 - Whether `chematic` exposes 2D coordinates (phase 9 checks first).
 - Remotion transition names beyond `fade`, `slide`, `wipe` are unverified (phase 11 checks).
+- Pushing for phases 13 to 23: the loop rule above pushes after each phase, but the user has
+  not yet confirmed it for this extension, and the fix commits `9149af84` and `b892569f` are
+  still local. Confirm before starting the loop.
+- The boolean-operations crate (`i_overlay` is the candidate) and its wasm32 build (phase 15,
+  step 1).
+- `rapier2d` on wasm32 and its determinism (phase 19, step 1).
+- Whether CC0 sources exist for each planned sound (phase 23, step 3); missing sounds are
+  left out and reported.
+- The CPU and Skia renders of `feDisplacementMap` and `feTurbulence` may differ (phase 14,
+  step 1).
+- Remotion's `<Gif>` (4,258 files in the sweep) needs a GIF decoder that fframes does not
+  have; adding one is a core change, so it is not planned.
 
 ## Validation Log
 
@@ -251,5 +300,20 @@ to 12", "Push to origin". Phase 8 was reopened and redesigned so that it changes
 and the fork-owned Studio crates. The stop before phase 8 was lifted. Phases 9 to 11 no longer
 list 8 as a dependency. `main` is pushed after each completed phase, and Studio commits use the
 scope `studio-props`, which has its own boundary check.
+
+Round 6 (2026-10-24, user direction): "I want to edit plan to add more remotion effect,
+transition and all the manim functions, manim-physic, manim-chemistry,...". Four questions:
+pixel effects and shader transitions, "temporary not implement it" (deferred); plugins beyond
+manim-physics and manim-chemistry: manim-ml, manim-dsa / data structures, manim-circuit,
+manim-voiceover (timing only, no TTS); excluded: OpenGL/interactive-only, Typst mobjects,
+`ManimBanner`; asset packs: cursor components (own drawing, no Apple artwork), animated emoji
+(Noto Lottie, user-supplied, CC BY 4.0), sound effects (small CC0 pack with helpers). Phases
+13 to 23 added from the usage report; the plan status went back to pending. Checked against
+the code: the kit module folders named in the new phases (`transitions/`, `effects/`,
+`shapes/`, `animate/`, `explain/`, `text/`, `overlay/`, `kits/{physics,chemistry,cs}/`),
+`layout.rs` with `layered`, the empty `lottie` feature and the `3d` feature in
+`components/fframes-kit/Cargo.toml`, the gallery's `media/` folder, the one-figure
+`Circuit`, and `ctx.render_svgr` at `fframes/src/fframes_context.rs:179` (for the deferred
+tier). Plugin inventories were read from the plugin source trees, not their READMEs.
 
 Note: the plan directory is named `components-library`; the crate it builds is `fframes-kit`.
