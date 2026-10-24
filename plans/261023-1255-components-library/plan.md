@@ -83,7 +83,7 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 8 | [Studio props panel](./phase-08-studio-props-panel.md) | 3, 4, 6, 7 | 5d | Completed |
 | 9 | [Physics and chemistry kits](./phase-09-physics-and-chemistry-kits.md) | 6 | 6d | Completed |
 | 10 | [CS and biology kits](./phase-10-cs-and-biology-kits.md) | 6 | 6d | Completed |
-| 11 | [Effects and more transitions](./phase-11-effects-and-more-transitions.md) | 3 | 3d | In progress |
+| 11 | [Effects and more transitions](./phase-11-effects-and-more-transitions.md) | 3 | 3d | Completed |
 | 12 | [Getting started and packaging](./phase-12-scaffolding-and-studio-template.md) | 4 | 1d | Pending |
 
 Phases 2 and 3 can run in parallel after phase 1; 4, 5, 6 and 7 can run in parallel after phase 2;

@@ -16,7 +16,9 @@ pub const MAX_SAMPLES: usize = 16;
 ///
 /// The children render `samples + 1` times a frame, so a frame costs about that many times
 /// theirs. The earlier copies run at a finer frame rate than the video's; children that work
-/// in local seconds (`ui.seconds()`, `ui.frames()`) see the right time.
+/// in local seconds (`ui.seconds()`, `ui.frames()`) see the right time. A clip path, gradient or
+/// filter the children define has the same id in every copy, so all copies draw one copy's
+/// definition; that only shows when the definition changes over time.
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Trail<'a> {
     pub samples: usize,
@@ -70,7 +72,8 @@ impl<'a> Component<'a> for Trail<'a> {
 /// opacity `1 / k` for the `k`-th, so all count the same where the children are opaque.
 ///
 /// The children render `samples` times a frame. The samples run at a finer frame rate than
-/// the video's; children that work in local seconds see the right time.
+/// the video's; children that work in local seconds see the right time. Ids the children
+/// define are shared by all samples, as with [`Trail`].
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct CameraMotionBlur<'a> {
     pub shutter_angle: f32,

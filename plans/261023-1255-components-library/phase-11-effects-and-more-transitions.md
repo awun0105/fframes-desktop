@@ -1,7 +1,7 @@
 ---
 phase: 11
 title: "Phase 11: Effects and more transitions"
-status: in-progress
+status: completed
 priority: P3
 effort: 3d
 dependencies: [3]
@@ -70,7 +70,7 @@ Extend the basic transitions of phase 3 with more presentations, and ship the ef
 
 ## Todo
 
-- [ ] Remotion names verified
-- [ ] `Flip`, `ClockWipe`, `Iris`, `SlantWipe`, `CircleWipe`
-- [ ] Effects, with shader compile tests behind `skia`
-- [ ] Gallery scenes and e2e frames
+- [x] Remotion names verified
+- [x] `Flip`, `ClockWipe`, `Iris`, `SlantWipe`, `CircleWipe`
+- [x] Effects, with shader compile tests behind `skia`
+- [x] Gallery scenes and e2e frames

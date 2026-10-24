@@ -602,6 +602,8 @@ impl Scene for Second {
 `BenchKit` on the CPU backend. The copies run at a finer frame rate than the video's, so the
 children should count in local seconds (`ui.seconds()`, `ui.frames()`);
 `frame.global_index` keeps the video frame. Before the local start there is nothing to repeat.
+A clip path, gradient or filter inside the children has the same id in every copy, so all
+copies draw one copy's definition: fine while it stays the same, wrong for one that animates.
 `key` names the SVG ids when two of the same effect share a frame. The glow and the drop
 shadow are the `Glow` and `DropShadow` filter definitions above.
 
