@@ -6,8 +6,7 @@ pub mod biology;
 pub mod chemistry;
 #[cfg(feature = "cs")]
 pub mod cs;
-#[cfg(any(feature = "cs", feature = "biology"))]
-mod draw;
+pub(crate) mod draw;
 #[cfg(feature = "math")]
 pub mod math;
 #[cfg(feature = "physics")]

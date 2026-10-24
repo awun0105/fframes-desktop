@@ -33,9 +33,10 @@ pub use crate::effects::{
 };
 pub use crate::explain::{
     Area, ArrowVectorField, Axes, AxesMap, AzimuthDirection, AzimuthUnits, Canvas, ComplexPlane,
-    Curve, Flow, Func, FunctionGraph, Implicit, ImplicitFunction, Matrix, NumberLine, NumberPlane,
-    ParametricFunction, PolarPlane, Range, RiemannRectangles, SampleAt, SampleColumn, SampleRow,
-    SampleSpace, Scaling, Space, StreamLines, Table, VGroup, VectorField,
+    Curve, DiGraph, EdgeStyle, Flow, Func, FunctionGraph, Implicit, ImplicitFunction, Matrix,
+    NumberLine, NumberPlane, ParametricFunction, PolarPlane, Range, RiemannRectangles, SampleAt,
+    SampleColumn, SampleRow, SampleSpace, Scaling, Space, StreamLines, Table, VGroup, VectorField,
+    VertexStyle,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(all(feature = "biology", feature = "3d"))]
@@ -81,7 +82,7 @@ pub use crate::latex::{
     ChemEq, Formula, FormulaView, MathTex, Part, Tex, TexEngine, TexError, TexTemplate,
     TransformMatchingTex,
 };
-pub use crate::layout::Anchor;
+pub use crate::layout::{Anchor, GraphLayout};
 pub use crate::media::KenBurns;
 pub use crate::motion::{self, Beat};
 pub use crate::overlay::{

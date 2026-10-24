@@ -7,6 +7,8 @@ use kurbo::{BezPath, CubicBez, ParamCurve, ParamCurveArclen, Point, Shape as _, 
 use crate::geometry::Shape;
 
 /// Blends two colours, `p` from 0 (`a`) to 1 (`b`).
+// the explain layer draws only links and tips
+#[cfg_attr(not(any(feature = "cs", feature = "biology")), allow(dead_code))]
 pub(crate) fn mix(a: Color, b: Color, p: f32) -> Color {
     Animatable::apply_progress(&a, &b, p)
 }
@@ -76,6 +78,8 @@ pub(crate) fn link(a: Point, b: Point, ra: f64, rb: f64, bend: f64) -> CubicBez 
 /// The bend nearest to `base` (in steps of 40 pixels) that keeps the link from `a` to `b`
 /// `clearance` pixels away from every point of `obstacles`, so a long edge goes round the
 /// nodes in its way instead of through them.
+// the explain layer draws only links and tips
+#[cfg_attr(not(any(feature = "cs", feature = "biology")), allow(dead_code))]
 pub(crate) fn clear_bend(
     a: Point,
     b: Point,
@@ -99,8 +103,6 @@ pub(crate) fn clear_bend(
 }
 
 /// Where the label of a link sits: beside its middle, on the side it bends to.
-// only the computer science kit labels its links
-#[cfg_attr(not(feature = "cs"), allow(dead_code))]
 pub(crate) fn label_point(curve: &CubicBez, offset: f64) -> Point {
     let middle = curve.eval(0.5);
     let side = left_of(curve.p0, curve.p3);
@@ -110,6 +112,8 @@ pub(crate) fn label_point(curve: &CubicBez, offset: f64) -> Point {
 }
 
 /// The first `fraction` of the polyline `points`, by length.
+// the explain layer draws only links and tips
+#[cfg_attr(not(any(feature = "cs", feature = "biology")), allow(dead_code))]
 pub(crate) fn partial(points: &[Point], fraction: f64) -> Vec<Point> {
     let total: f64 = points.windows(2).map(|w| (w[1] - w[0]).hypot()).sum();
     let mut left = total * fraction.clamp(0.0, 1.0);
@@ -130,6 +134,8 @@ pub(crate) fn partial(points: &[Point], fraction: f64) -> Vec<Point> {
 }
 
 /// `curve` drawn as an arrow (with a tip at its end when `head`).
+// the explain layer draws only links and tips
+#[cfg_attr(not(any(feature = "cs", feature = "biology")), allow(dead_code))]
 pub(crate) fn arrow_along<'a>(
     curve: CubicBez,
     head: bool,

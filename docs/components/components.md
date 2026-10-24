@@ -478,6 +478,53 @@ fn fields<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Graphs
+
+Manim's `Graph` is `explain::Graph`; the prelude's `Graph` is the computer science kit's
+searchable graph, so write the module path.
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `explain::Graph` | `vertices` (names), `edges: Vec<(usize, usize)>`, `layout: GraphLayout` (spring), `layout_scale` (2 units), `center`, `labels`, `radius` (0.1 units), `vertex_fill`, `vertex_stroke`, `label_style`, `label_fill`, `edge_color`, `edge_width`, `edge_bend` (pixels), `tip_length`, `vertex_styles: Vec<VertexStyle>`, `edge_styles: Vec<EdgeStyle>`, `enter`, `exit`, `labels_enter`, `labels_exit` | vertices placed by the layout, joined by straight or bent edges; with `labels` each vertex holds its name. `Graph::new(ui, &names, &edges)`, `vertex_point(space, v)` gives a vertex's pixel |
+| `DiGraph` | `graph: Graph` | the same with a tip on every edge; two edges between the same vertices bend apart |
+| `VertexStyle` | `vertex`, `fill`, `stroke`, `radius`, `label` | one vertex's look and text |
+| `EdgeStyle` | `edge: (from, to)`, `color`, `width`, `bend`, `label` | one edge's look, and a label beside its middle |
+
+`GraphLayout` (in the prelude) has networkx's layouts: `Circular`, `KamadaKawai`, `Planar`,
+`Random { seed }`, `Shell { shells }`, `Spectral`, `Spiral`, `Spring { seed, iterations }`
+(the default), `Partite { parts }`, `Tree { root }` and `Function(fn(count, edges, scale))`
+for your own positions. `layout::graph_layout(&layout, count, &edges, scale)` returns the
+positions alone, centered and scaled to `scale` and pushed `0.4 * scale / √count` apart. The
+same arguments give the same positions everywhere, and a graph computes its layout once.
+`Planar` computes no embedding: it is `Spring` with seed 0, so crossings can stay.
+`Spectral` is `Spring` above 400 vertices.
+
+```rust
+use fframes_kit::{explain, prelude::*};
+
+fn graphs<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let tree = ui.show(explain::Graph {
+        layout: GraphLayout::Tree { root: 0 },
+        labels: true,
+        enter: Some(Create::default().into()),
+        ..explain::Graph::new(ui, &["a", "b", "c", "d"], &[(0, 1), (0, 2), (2, 3)])
+    });
+    let flow = ui.show(DiGraph {
+        graph: explain::Graph {
+            layout: GraphLayout::Circular,
+            center: (4.0, 0.0),
+            edge_styles: vec![EdgeStyle {
+                edge: (0, 1),
+                label: Some("start".into()),
+                ..EdgeStyle::default()
+            }],
+            ..explain::Graph::new(ui, &["x", "y", "z"], &[(0, 1), (1, 2), (2, 1)])
+        },
+    });
+    svgr!(<g>{tree}{flow}</g>)
+}
+```
+
 ## Shapes
 
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,

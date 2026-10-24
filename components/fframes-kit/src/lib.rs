@@ -86,6 +86,8 @@
 //! | `FunctionGraph` | [`FunctionGraph`](explain::FunctionGraph), from `Axes::plot` or with its own `x_range` |
 //! | `VectorField`, `ArrowVectorField` | [`VectorField`](explain::VectorField) (the field and its colours), [`ArrowVectorField`](explain::ArrowVectorField) |
 //! | `StreamLines`, `start_animation` | [`StreamLines`](explain::StreamLines), traced once and cached; `flow: Some(`[`Flow`](explain::Flow)`)` |
+//! | `Graph`, `DiGraph` (`labels`, `vertex_config`, `edge_config`, `layout_scale`) | `explain::Graph` (not in the prelude, the CS kit's `Graph` is), [`DiGraph`](explain::DiGraph), [`VertexStyle`](explain::VertexStyle), [`EdgeStyle`](explain::EdgeStyle) |
+//! | `layout="circular"`, `"kamada_kawai"`, `"planar"`, `"random"`, `"shell"`, `"spectral"`, `"spiral"`, `"spring"`, `"partite"`, `"tree"`, a layout callable | [`GraphLayout`](layout::GraphLayout) and [`LayoutFunction`](layout::LayoutFunction), also as [`graph_layout`](layout::graph_layout) |
 //! | `axes.c2p`, `p2c`, `plot`, `i2gp`, `get_vertical_line`, `get_graph_label`, `get_riemann_rectangles`, `get_area` | `Axes::c2p`, `p2c`, `plot`, `FunctionGraph::point`, `Axes::vertical_line`, `graph_label`, `riemann_rectangles`, `area` |
 //! | `m.next_to(point, UR)` | [`Label`](label::Label) `{ direction: Anchor::TopRight, .. }` |
 //! | `ParametricFunction` | [`ParametricFunction`](explain::ParametricFunction) |

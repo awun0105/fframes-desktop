@@ -1,6 +1,6 @@
 //! Numbers, text, coordinate systems, fields and graphs, one scene per group.
 
-use fframes_kit::{kurbo, prelude::*};
+use fframes_kit::{explain, kurbo, prelude::*};
 
 use crate::{GalleryScene, scenes::core::title};
 
@@ -33,6 +33,10 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("ArrowVectorField", 2.0, arrow_vector_field),
         // a piece of every stream line runs along it
         GalleryScene::new("StreamLines", 4.0, stream_lines),
+        // one graph in eight layouts, created
+        GalleryScene::new("GraphLayouts", 2.0, graph_layouts),
+        // a labelled directed graph with styled and curved edges
+        GalleryScene::new("DiGraph", 2.0, di_graph),
     ]
 }
 
@@ -324,4 +328,111 @@ fn stream_lines<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ..ui.defaults()
     });
     svgr!(<g>{lines}{head}</g>)
+}
+
+/// A ring of six with two chords and a tail of two.
+const RING: [(usize, usize); 10] = [
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 4),
+    (4, 5),
+    (5, 0),
+    (0, 3),
+    (1, 4),
+    (5, 6),
+    (6, 7),
+];
+
+fn graph_layouts<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "GraphLayouts");
+    let layouts = [
+        ("circular", GraphLayout::Circular),
+        ("kamada_kawai", GraphLayout::KamadaKawai),
+        (
+            "shell",
+            GraphLayout::Shell {
+                shells: vec![vec![0], vec![1, 2, 3, 4, 5]],
+            },
+        ),
+        ("spectral", GraphLayout::Spectral),
+        (
+            "spring",
+            GraphLayout::Spring {
+                seed: 1,
+                iterations: 50,
+            },
+        ),
+        (
+            "partite",
+            GraphLayout::Partite {
+                parts: vec![vec![0, 2, 4], vec![1, 3, 5]],
+            },
+        ),
+        ("tree", GraphLayout::Tree { root: 0 }),
+        ("spiral", GraphLayout::Spiral),
+    ];
+    let names = ["0", "1", "2", "3", "4", "5", "6", "7"];
+    let caption = ui.theme.typography.caption;
+    let muted = ui.theme.colors.muted;
+    let mut parts = Vec::new();
+    for (i, (name, layout)) in layouts.into_iter().enumerate() {
+        let center = (-5.1 + 3.4 * (i % 4) as f64, 1.2 - 3.5 * (i / 4) as f64);
+        let graph = ui.show(explain::Graph {
+            layout,
+            layout_scale: 1.1,
+            center,
+            radius: 0.09,
+            vertex_styles: vec![VertexStyle {
+                vertex: 0,
+                fill: Some(ui.theme.colors.highlight),
+                ..VertexStyle::default()
+            }],
+            enter: Some(create()),
+            ..explain::Graph::new(ui, &names, &RING)
+        });
+        let at = ui.space.to_px(center.0, center.1 - 1.55);
+        parts.push(graph);
+        parts.push(svgr!(
+            <text x={at.x} y={at.y} font-family={caption.family} font-size={caption.size}
+                  fill={muted} text-anchor="middle">{name}</text>
+        ));
+    }
+    let parts: Svgr<'a> = parts.into_iter().collect();
+    svgr!(<g>{head}{parts}</g>)
+}
+
+fn di_graph<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "DiGraph");
+    let accent = ui.theme.colors.accent;
+    let graph = ui.show(DiGraph {
+        graph: explain::Graph {
+            layout: GraphLayout::Circular,
+            layout_scale: 2.6,
+            center: (0.0, -0.4),
+            labels: true,
+            edge_styles: vec![
+                EdgeStyle {
+                    edge: (0, 1),
+                    color: Some(accent),
+                    width: Some(6.0),
+                    label: Some("start".into()),
+                    ..EdgeStyle::default()
+                },
+                EdgeStyle {
+                    edge: (4, 0),
+                    bend: Some(-60.0),
+                    ..EdgeStyle::default()
+                },
+            ],
+            enter: Some(create()),
+            labels_enter: Some(fade_in(0.6)),
+            ..explain::Graph::new(
+                ui,
+                &["A", "B", "C", "D", "E"],
+                &[(0, 1), (1, 2), (2, 1), (2, 3), (3, 4), (4, 0), (1, 3)],
+            )
+        },
+    });
+    svgr!(<g>{head}{graph}</g>)
 }

@@ -33,6 +33,7 @@ mod axes;
 mod canvas;
 mod complex_plane;
 mod graph;
+mod graph_mobject;
 mod implicit;
 mod matrix;
 mod polar_plane;
@@ -51,6 +52,7 @@ pub use graph::{
     sample_curve, sample_scaled,
 };
 pub(crate) use graph::{graph_px, smooth};
+pub use graph_mobject::{DiGraph, EdgeStyle, Graph, VertexStyle};
 pub use implicit::{Implicit, ImplicitFunction, march};
 pub use matrix::Matrix;
 pub use polar_plane::{AzimuthDirection, AzimuthUnits, PolarPlane};

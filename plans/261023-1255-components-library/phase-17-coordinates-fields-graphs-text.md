@@ -134,7 +134,7 @@ Add the remaining 2D mobjects of the Manim CE reference:
 - [x] Numbers and text mobjects
 - [x] Coordinate systems and `LogBase`
 - [x] Implicit functions, vector fields, stream lines
-- [ ] Graph layouts, `Graph` and `DiGraph`
+- [x] Graph layouts, `Graph` and `DiGraph`
 - [ ] Typed matrices and tables
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
 
@@ -175,3 +175,15 @@ Add the remaining 2D mobjects of the Manim CE reference:
   from a seeded phase (`slice_path`), rather than Manim's dash and fade. Starts where the field
   is zero draw nothing.
 - Extra e2e frames: `ImplicitFunction@end`, `ArrowVectorField@end`.
+- The layouts are `layout::GraphLayout` and `layout::graph_layout` in `layout/graph_layouts.rs`,
+  written in the crate without a new dependency: Fruchterman-Reingold for `spring`, stress
+  majorization for `kamada_kawai`, Jacobi rotations for `spectral` (`spring` above 400
+  vertices), `tidy_tree` for `tree`. `planar` is `spring` with seed 0 (the documented
+  fallback). Every layout is rescaled like networkx and then pushed `0.4 * scale / √n` apart.
+  `LayoutFunction` is a plain `fn(count, edges, scale)`, so the layout cache keys it by address.
+- Manim's `Graph` is `explain::Graph`, outside the prelude, because the CS kit's `Graph` is in
+  it; `DiGraph { graph }` wraps it like `ComplexPlane { plane }`. Labelled vertices grow by the
+  length of their name (no font measurement), and the label colour is one prop, `label_fill`.
+  The kit's shared drawing helpers (`kits/draw.rs`) are now compiled without the CS and biology
+  features.
+- Extra e2e frame: `DiGraph@end`.
