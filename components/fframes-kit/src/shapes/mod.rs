@@ -19,6 +19,7 @@
 //! }
 //! ```
 
+mod angles;
 mod arcs;
 mod arrows;
 mod basic;
@@ -26,23 +27,31 @@ mod brace;
 mod dashed;
 mod labeled;
 mod matchers;
+mod polygram;
 mod remotion;
 
 pub use crate::text_outline::TextPath;
+pub use angles::{Angle, Elbow, RightAngle, Segment, TangentLine};
 pub use arcs::{
     AnnularSector, ArcBetweenPoints, ArcPolygon, ArcPolygonFromArcs, CubicBezier,
     CurvedDoubleArrow, TangentialArc,
 };
 pub(crate) use arrows::straight;
-pub use arrows::{Arrow, CurvedArrow, DoubleArrow, Vector};
+pub use arrows::{Arrow, ArrowTip, CurvedArrow, DoubleArrow, Vector};
 pub use basic::{
     Annulus, Arc, Circle, DashedLine, Dot, Ellipse, Line, Polygon, Rectangle, RegularPolygon,
     RoundedRectangle, Sector, Square, Star, Triangle,
 };
 pub use brace::Brace;
 pub use dashed::{CurvesAsSubmobjects, DashedVMobject, curves, dash_path};
-pub use labeled::{AnnotationDot, LabeledArrow, LabeledDot, LabeledLine, ShapeLabel};
+pub use labeled::{
+    AnnotationDot, LabeledArrow, LabeledDot, LabeledLine, LabeledPolygram, ShapeLabel,
+};
 pub use matchers::{BackgroundRectangle, Cross, SMALL_BUFF, SurroundingRectangle, Underline};
+pub use polygram::{
+    ConvexHull, Cutout, FullScreenRectangle, Polygram, RegularPolygram, ScreenRectangle,
+    convex_hull, polylabel,
+};
 pub use remotion::{BlockArrow, Callout, Heart, Pie, Rect, Spark};
 
 use fframes::Color;

@@ -7,7 +7,8 @@ use kurbo::{BezPath, Point, Vec2};
 
 use super::{
     Paint, TOLERANCE,
-    arrows::{curved, shaft_and_tips},
+    angles::crossing,
+    arrows::{ArrowTip, arrow_parts, curved},
     basic::{ChordArc, arc, polar},
     pt, shape,
 };
@@ -79,6 +80,8 @@ shape! {
         angle: f32 = std::f32::consts::FRAC_PI_2,
         tip_length: f32 = 24.0,
         tip_width: f32 = 20.0,
+        tip_start: Option<ArrowTip> = Some(ArrowTip::TriangleFilled),
+        tip_end: Option<ArrowTip> = Some(ArrowTip::TriangleFilled),
     }
     paint: Paint::arrow(t);
     path(s) {
@@ -86,25 +89,14 @@ shape! {
             pt(s.x1, s.y1),
             pt(s.x2, s.y2),
             f64::from(s.angle),
-            f64::from(s.tip_length),
-            f64::from(s.tip_width),
-            true,
+            (f64::from(s.tip_length), f64::from(s.tip_width)),
+            s.tip_start,
+            s.tip_end,
         )
     }
     parts(s) {
-        shaft_and_tips(s.shape())
+        arrow_parts(s.shape(), s.tip_start, s.tip_end, false)
     }
-}
-
-/// Where two lines cross, `None` when they are parallel.
-fn crossing(a: (Point, Point), b: (Point, Point)) -> Option<Point> {
-    let (da, db) = (a.1 - a.0, b.1 - b.0);
-    let det = da.cross(db);
-    if det.abs() < 1e-9 {
-        return None;
-    }
-    let t = (b.0 - a.0).cross(db) / det;
-    Some(a.0 + da * t)
 }
 
 shape! {

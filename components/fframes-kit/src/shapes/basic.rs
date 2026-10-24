@@ -73,7 +73,7 @@ pub(crate) fn closed(points: impl IntoIterator<Item = Point>) -> BezPath {
 }
 
 /// Manim's default first vertex: on the right for an even count, at the top for an odd one.
-fn first_vertex(n: usize, start_angle: Option<f32>) -> f64 {
+pub(crate) fn first_vertex(n: usize, start_angle: Option<f32>) -> f64 {
     start_angle.map_or(if n.is_multiple_of(2) { 0.0 } else { FRAC_PI_2 }, f64::from)
 }
 

@@ -363,9 +363,9 @@ accent outlines by default, Remotion shapes (and Manim's `Dot`, `Annulus`, `Sect
 | `Triangle` | `cx`, `cy`, `radius` (equilateral, pointing up) | Manim, Remotion |
 | `Rectangle`, `Square`, `RoundedRectangle` | `cx`, `cy`, `width`/`height` or `side_length`, `corner_radius` | Manim |
 | `Star` | `cx`, `cy`, `n`, `outer_radius`, `inner_radius` | Manim, Remotion |
-| `Arrow`, `DoubleArrow` | `x1`, `y1`, `x2`, `y2`, `tip_length`, `tip_width` | Manim |
-| `Vector` | `x`, `y`, `dx`, `dy`, `tip_length`, `tip_width` | Manim |
-| `CurvedArrow` | `x1`, `y1`, `x2`, `y2`, `angle`, `tip_length`, `tip_width`; the shaft an outline, the tip filled | Manim |
+| `Arrow`, `DoubleArrow` | `x1`, `y1`, `x2`, `y2`, `tip_length`, `tip_width`, `tip_start`, `tip_end` | Manim |
+| `Vector` | `x`, `y`, `dx`, `dy`, `tip_length`, `tip_width`, `tip_start`, `tip_end` | Manim |
+| `CurvedArrow` | `x1`, `y1`, `x2`, `y2`, `angle`, `tip_length`, `tip_width`, `tip_start`, `tip_end`; the shaft an outline, the tip filled | Manim |
 | `Brace` | `x1`, `y1`, `x2`, `y2`, `depth`; `brace.tip()` places a label | Manim |
 | `Rect` | `cx`, `cy`, `width`, `height`, `corner_radius` | Remotion |
 | `BlockArrow` | `cx`, `cy`, `length`, `head_width`, `head_length`, `shaft_width`, `angle` | Remotion `Arrow` |
@@ -464,6 +464,58 @@ fn distance<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     });
     let bend = ui.show(ArcBetweenPoints { x1: 400.0, y1: 600.0, x2: 1100.0, y2: 600.0, ..ui.defaults() });
     svgr!(<g>{a}{d}{bend}</g>)
+}
+```
+
+### Angles, polygrams and tips
+
+| Shape | Props (defaults) | Source |
+| --- | --- | --- |
+| `Angle` | `line1`, `line2` (two points each), `radius` (54), `quadrant` ((1, 1)), `other_angle`, `dot`, `dot_radius` (5), `dot_distance` (0.55), `label`, `label_buff` (`3 * SMALL_BUFF`) | Manim |
+| `RightAngle` | as `Angle`, drawn as a square corner | Manim |
+| `Elbow` | `x`, `y`, `width` (27), `angle` | Manim |
+| `TangentLine` | `path`, `alpha` (0.5, by arc length), `length` (135) | Manim |
+| `Polygram` | `vertex_groups: Vec<Vec<(f32, f32)>>`, each group a closed polygon | Manim |
+| `RegularPolygram` | `cx`, `cy`, `radius` (100), `num_vertices` (5), `density` (2), `start_angle: Option<f32>` | Manim |
+| `ConvexHull` | `points` | Manim |
+| `Cutout` | `outer`, `holes` (paths); filled | Manim |
+| `ScreenRectangle`, `FullScreenRectangle` | `cx`, `cy` (the canvas centre), `height` (540, 1080), `aspect_ratio` (16:9) | Manim |
+| `LabeledPolygram` | `vertex_groups`, `label`, `precision` (1 px), `label_style`, `label_color` | Manim |
+
+An angle runs counterclockwise on screen from `line1` to `line2` around the point where they
+cross. `quadrant` picks the half of each line the mark sits on, `1` along its direction and
+`-1` against it, and `other_angle` marks the rest of the turn instead. `value()` gives the
+marked angle in radians. `TangentLine` touches any path at `alpha` of its length;
+`kits::math::Tangent` is the tangent of a function graph on `Axes`. `RegularPolygram` with
+`density` `d` joins every `d`-th vertex, `{6/2}` gives two triangles. `Cutout` reverses the
+holes, so they stay empty under either fill rule. `LabeledPolygram` puts its label at the
+inside point furthest from every edge (`polylabel`), Manim's pole of inaccessibility.
+
+Every arrow (`Arrow`, `Vector`, `DoubleArrow`, `CurvedArrow`, `CurvedDoubleArrow`,
+`LabeledArrow`) has `tip_start` and `tip_end`, an `Option<ArrowTip>`: `Triangle`,
+`TriangleFilled` (the default), `Circle`, `CircleFilled`, `Square`, `SquareFilled` and
+`Stealth`. The tip ends at the arrow's point, `tip_length` along the shaft and `tip_width`
+across it. Outline tips are drawn unfilled on their own, and the shaft runs into the notch
+of a stealth tip.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn corner<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let (a, b) = (((400.0, 600.0), (800.0, 600.0)), ((400.0, 600.0), (700.0, 380.0)));
+    let theta = ui.show(Angle { line1: a, line2: b, label: "θ".into(), ..ui.defaults() });
+    let arrow = ui.show(Arrow {
+        x1: 900.0,
+        y1: 600.0,
+        x2: 1300.0,
+        y2: 600.0,
+        tip_start: Some(ArrowTip::Circle),
+        tip_end: Some(ArrowTip::Stealth),
+        enter: Some(GrowArrow::default().into()),
+        ..ui.defaults()
+    });
+    let star = ui.show(RegularPolygram { cx: 1600.0, cy: 600.0, num_vertices: 7, density: 3, ..ui.defaults() });
+    svgr!(<g>{theta}{arrow}{star}</g>)
 }
 ```
 

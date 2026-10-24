@@ -6,7 +6,12 @@
 use fframes::{Color, Svgr};
 use kurbo::{BezPath, Point, Rect, Shape as _};
 
-use super::{Paint, SMALL_BUFF, TOLERANCE, pt, shape, straight};
+use super::{
+    Paint, SMALL_BUFF, TOLERANCE,
+    arrows::{ArrowTip, arrow_parts, tipped},
+    polygram::{polylabel, ring_path, rings},
+    pt, shape,
+};
 use crate::{
     animate::{Emphasis, EnterAnim, ExitAnim, draw_animated},
     geometry::Shape,
@@ -42,21 +47,21 @@ impl<'a> From<&'a crate::latex::Formula> for ShapeLabel<'a> {
 
 /// The animation props a labelled shape hands to its label.
 #[derive(Clone, Copy)]
-struct Anims<'p> {
-    enter: Option<&'p EnterAnim>,
-    exit: Option<&'p ExitAnim>,
-    emphasis: Option<&'p Emphasis>,
+pub(super) struct Anims<'p> {
+    pub enter: Option<&'p EnterAnim>,
+    pub exit: Option<&'p ExitAnim>,
+    pub emphasis: Option<&'p Emphasis>,
 }
 
 /// A label centered on a point: its outlines and box, or, when the font or formula has no
 /// outlines, the element that draws it instead.
-struct Placed<'a> {
+pub(super) struct Placed<'a> {
     parts: Vec<Shape>,
     bounds: Option<Rect>,
     fallback: Option<Svgr<'a>>,
 }
 
-fn place<'a>(
+pub(super) fn place<'a>(
     ui: &mut Ui<'a, '_, '_>,
     label: ShapeLabel<'a>,
     style: TextStyle,
@@ -133,15 +138,16 @@ fn place<'a>(
     }
 }
 
-/// `shape`, then a box behind the label when `boxed`, then the label, animated as one.
-fn draw_labeled<'a>(
+/// `shapes`, then a box behind the label when `boxed`, then the label, animated as one.
+pub(super) fn draw_labeled<'a>(
     ui: &mut Ui<'a, '_, '_>,
-    shape: Shape,
+    shapes: Vec<Shape>,
     label: Placed<'a>,
     boxed: bool,
     anims: Anims<'_>,
 ) -> Svgr<'a> {
-    let mut parts = vec![shape];
+    let opacity = shapes.first().map_or(1.0, |s| s.opacity);
+    let mut parts = shapes;
     if let (true, Some(b)) = (boxed, label.bounds) {
         let pad = f64::from(SMALL_BUFF) / 2.0;
         parts.push(Shape {
@@ -150,7 +156,7 @@ fn draw_labeled<'a>(
             stroke: None,
             stroke_width: 0.0,
             dash: None,
-            opacity: parts[0].opacity,
+            opacity,
         });
     }
     parts.extend(label.parts);
@@ -249,7 +255,7 @@ impl<'a> Component<'a> for LabeledDot<'a> {
             dash: None,
             opacity: self.opacity,
         };
-        draw_labeled(ui, dot, label, false, anims)
+        draw_labeled(ui, vec![dot], label, false, anims)
     }
 }
 
@@ -262,6 +268,7 @@ macro_rules! labeled_line {
         }
         paint: $paint:expr;
         path($s:ident) $path:block
+        parts($ps:ident, $shape:ident) $parts:block
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq)]
@@ -345,7 +352,11 @@ macro_rules! labeled_line {
                     dash: None,
                     opacity: self.opacity,
                 };
-                draw_labeled(ui, line, label, self.label_box, anims)
+                let parts = {
+                    let ($ps, $shape) = (&self, line);
+                    $parts
+                };
+                draw_labeled(ui, parts, label, self.label_box, anims)
             }
         }
     };
@@ -361,6 +372,9 @@ labeled_line! {
         path.line_to(pt(s.x2, s.y2));
         path
     }
+    parts(_s, line) {
+        vec![line]
+    }
 }
 
 labeled_line! {
@@ -368,16 +382,103 @@ labeled_line! {
     LabeledArrow(t) {
         tip_length: f32 = 24.0,
         tip_width: f32 = 20.0,
+        tip_start: Option<ArrowTip> = None,
+        tip_end: Option<ArrowTip> = Some(ArrowTip::TriangleFilled),
     }
     paint: Paint::arrow(t);
     path(s) {
-        straight(
+        tipped(
             pt(s.x1, s.y1),
             pt(s.x2, s.y2),
             f64::from(s.tip_length),
             f64::from(s.tip_width),
-            false,
+            s.tip_start,
+            s.tip_end,
         )
+    }
+    parts(s, arrow) {
+        arrow_parts(arrow, s.tip_start, s.tip_end, true)
+    }
+}
+
+/// Closed polygons with a label where it fits best (Manim `LabeledPolygram`): at the point
+/// inside furthest from every edge, found to within `precision` pixels.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
+pub struct LabeledPolygram<'a> {
+    pub vertex_groups: Vec<Vec<(f32, f32)>>,
+    pub label: ShapeLabel<'a>,
+    pub precision: f32,
+    pub label_style: TextStyle,
+    pub label_color: Color,
+    pub fill: Option<Color>,
+    pub stroke: Option<Color>,
+    pub stroke_width: f32,
+    pub opacity: f32,
+    pub enter: Option<EnterAnim>,
+    pub exit: Option<ExitAnim>,
+    pub emphasis: Option<Emphasis>,
+}
+
+impl Themed for LabeledPolygram<'_> {
+    fn themed(t: &Theme) -> Self {
+        let paint = Paint::outline(t);
+        Self {
+            vertex_groups: Vec::new(),
+            label: ShapeLabel::None,
+            precision: 1.0,
+            label_style: t.typography.body,
+            label_color: t.colors.title,
+            fill: paint.fill,
+            stroke: paint.stroke,
+            stroke_width: paint.stroke_width,
+            opacity: 1.0,
+            enter: None,
+            exit: None,
+            emphasis: None,
+        }
+    }
+}
+
+impl Default for LabeledPolygram<'_> {
+    fn default() -> Self {
+        Self::themed(&Theme::default())
+    }
+}
+
+impl LabeledPolygram<'_> {
+    /// Where the label goes: the inside point furthest from the edges.
+    pub fn label_point(&self) -> Option<(f32, f32)> {
+        let rings = rings(&self.vertex_groups);
+        polylabel(&rings, f64::from(self.precision)).map(|p| (p.x as f32, p.y as f32))
+    }
+}
+
+impl<'a> Component<'a> for LabeledPolygram<'a> {
+    fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let anims = Anims {
+            enter: self.enter.as_ref(),
+            exit: self.exit.as_ref(),
+            emphasis: self.emphasis.as_ref(),
+        };
+        let at = self.label_point().map_or(Point::ZERO, |(x, y)| pt(x, y));
+        let label = place(
+            ui,
+            self.label,
+            self.label_style,
+            self.label_color,
+            at,
+            anims,
+        );
+        let shape = Shape {
+            path: ring_path(&rings(&self.vertex_groups)),
+            fill: self.fill,
+            stroke: self.stroke,
+            stroke_width: self.stroke_width,
+            dash: None,
+            opacity: self.opacity,
+        };
+        draw_labeled(ui, vec![shape], label, false, anims)
     }
 }
 
@@ -403,5 +504,15 @@ mod tests {
         let arrow = LabeledArrow::default();
         // shaft and tip
         assert_eq!(crate::paths::get_subpaths(&arrow.path()).len(), 2);
+    }
+
+    #[test]
+    fn labeled_polygram_puts_the_label_inside() {
+        let square = LabeledPolygram {
+            vertex_groups: vec![vec![(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]],
+            ..LabeledPolygram::default()
+        };
+        let (x, y) = square.label_point().unwrap();
+        assert!((x - 50.0).abs() < 1.0 && (y - 50.0).abs() < 1.0, "{x} {y}");
     }
 }

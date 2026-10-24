@@ -2,7 +2,7 @@
 
 use std::f32::consts::{FRAC_PI_2, PI};
 
-use fframes_kit::{kurbo, prelude::*};
+use fframes_kit::{kurbo, prelude::*, shapes::Segment};
 
 use crate::{
     GalleryScene,
@@ -15,6 +15,10 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Matchers", 2.0, matchers),
         // the arcs and curves are created, the dots grow and the labels are written
         GalleryScene::new("Arcs", 2.0, arcs),
+        // the angle marks and the tangent are created, the tips grow with their arrows
+        GalleryScene::new("Angles", 2.0, angles),
+        // the polygrams are created and the label is written into the widest place
+        GalleryScene::new("Polygrams", 2.0, polygrams),
     ]
 }
 
@@ -276,4 +280,231 @@ fn arcs<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
             {captions}
         </g>
     )
+}
+
+/// Two lines from `corner` along the directions `a` and `b`, `length` long.
+fn rays(corner: (f32, f32), a: (f32, f32), b: (f32, f32), length: f32) -> (Segment, Segment) {
+    let end = |d: (f32, f32)| (corner.0 + d.0 * length, corner.1 + d.1 * length);
+    ((corner, end(a)), (corner, end(b)))
+}
+
+#[allow(clippy::too_many_lines)]
+fn angles<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Angles");
+    let enter = Some(create());
+    let muted = ui.theme.colors.muted;
+    let mut lines: Vec<Svgr<'a>> = Vec::new();
+    let mut line = |ui: &mut Ui<'a, '_, '_>, l: Segment| {
+        lines.push(ui.show(Line {
+            x1: l.0.0,
+            y1: l.0.1,
+            x2: l.1.0,
+            y2: l.1.1,
+            stroke: Some(muted),
+            ..ui.defaults()
+        }));
+    };
+    // an angle with a label, the other angle with a dot, a right angle
+    let (a1, a2) = rays((160.0, 440.0), (1.0, 0.0), (0.8, -0.6), 300.0);
+    line(ui, a1);
+    line(ui, a2);
+    let theta = ui.show(Angle {
+        line1: a1,
+        line2: a2,
+        radius: 90.0,
+        label: (&formulas().theta).into(),
+        enter,
+        ..ui.defaults()
+    });
+    let (b1, b2) = rays((620.0, 440.0), (1.0, 0.0), (0.8, -0.6), 300.0);
+    line(ui, b1);
+    line(ui, b2);
+    let other = ui.show(Angle {
+        line1: b1,
+        line2: b2,
+        radius: 36.0,
+        other_angle: true,
+        dot: true,
+        enter,
+        ..ui.defaults()
+    });
+    let (c1, c2) = rays((1080.0, 440.0), (1.0, 0.0), (0.0, -1.0), 240.0);
+    line(ui, c1);
+    line(ui, c2);
+    let right = ui.show(RightAngle {
+        line1: c1,
+        line2: c2,
+        radius: 48.0,
+        dot: true,
+        enter,
+        ..ui.defaults()
+    });
+    let elbow = ui.show(Elbow {
+        x: 1480.0,
+        y: 440.0,
+        width: 80.0,
+        angle: 0.4,
+        enter,
+        ..ui.defaults()
+    });
+    let circle = Circle {
+        cx: 1720.0,
+        cy: 340.0,
+        radius: 90.0,
+        stroke: Some(muted),
+        ..ui.defaults()
+    };
+    let tangent = ui.show(TangentLine {
+        path: circle.path(),
+        alpha: 0.15,
+        length: 240.0,
+        enter,
+        ..ui.defaults()
+    });
+    let circle = ui.show(circle);
+    // every tip kind on an arrow, growing with it
+    let tips = [
+        ArrowTip::Triangle,
+        ArrowTip::TriangleFilled,
+        ArrowTip::Circle,
+        ArrowTip::CircleFilled,
+        ArrowTip::Square,
+        ArrowTip::SquareFilled,
+        ArrowTip::Stealth,
+    ];
+    let arrows: Vec<Svgr<'a>> = tips
+        .iter()
+        .enumerate()
+        .map(|(i, &tip)| {
+            let x = 160.0 + i as f32 * 240.0;
+            ui.show(Arrow {
+                x1: x,
+                y1: 900.0,
+                x2: x + 160.0,
+                y2: 700.0,
+                tip_length: 36.0,
+                tip_width: 32.0,
+                tip_end: Some(tip),
+                enter: Some(GrowArrow::default().into()),
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let captions: Vec<Svgr<'a>> = [
+        ("Angle", 310.0, 520.0),
+        ("Angle, other_angle, dot", 770.0, 520.0),
+        ("RightAngle", 1200.0, 520.0),
+        ("Elbow", 1500.0, 520.0),
+        ("TangentLine", 1720.0, 520.0),
+        ("Triangle", 240.0, 960.0),
+        ("TriangleFilled", 480.0, 960.0),
+        ("Circle", 720.0, 960.0),
+        ("CircleFilled", 960.0, 960.0),
+        ("Square", 1200.0, 960.0),
+        ("SquareFilled", 1440.0, 960.0),
+        ("Stealth", 1680.0, 960.0),
+    ]
+    .into_iter()
+    .map(|(text, x, y)| caption(ui, text, x, y))
+    .collect();
+    svgr!(
+        <g>
+            {head}{lines}{theta}{other}{right}{elbow}{circle}{tangent}{arrows}{captions}
+        </g>
+    )
+}
+
+fn polygrams<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Polygrams");
+    let enter = Some(create());
+    let c = ui.theme.colors;
+    let polygram = ui.show(Polygram {
+        vertex_groups: vec![
+            vec![(160.0, 300.0), (420.0, 300.0), (420.0, 520.0)],
+            vec![(160.0, 560.0), (420.0, 560.0), (160.0, 360.0)],
+        ],
+        enter,
+        ..ui.defaults()
+    });
+    let star = ui.show(RegularPolygram {
+        cx: 700.0,
+        cy: 430.0,
+        radius: 140.0,
+        num_vertices: 7,
+        density: 3,
+        enter,
+        ..ui.defaults()
+    });
+    let points = [
+        (980.0, 340.0),
+        (1120.0, 300.0),
+        (1240.0, 380.0),
+        (1200.0, 540.0),
+        (1060.0, 560.0),
+        (1100.0, 430.0),
+        (1020.0, 470.0),
+    ];
+    let hull = ui.show(ConvexHull {
+        points: points.to_vec(),
+        enter,
+        ..ui.defaults()
+    });
+    let dots: Vec<Svgr<'a>> = points
+        .iter()
+        .map(|&(cx, cy)| {
+            ui.show(Dot {
+                cx,
+                cy,
+                radius: 6.0,
+                fill: Some(c.highlight),
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let outer = kurbo::Shape::to_path(&kurbo::Rect::new(1400.0, 300.0, 1760.0, 560.0), 0.1);
+    let hole = Circle {
+        cx: 1580.0,
+        cy: 430.0,
+        radius: 80.0,
+        ..ui.defaults()
+    }
+    .path();
+    let cutout = ui.show(Cutout {
+        outer,
+        holes: vec![hole],
+        enter: Some(GrowFromCenter::default().into()),
+        ..ui.defaults()
+    });
+    let screen = ui.show(ScreenRectangle {
+        cx: 420.0,
+        cy: 840.0,
+        height: 220.0,
+        enter,
+        ..ui.defaults()
+    });
+    let labeled = ui.show(LabeledPolygram {
+        vertex_groups: vec![vec![
+            (900.0, 690.0),
+            (1000.0, 690.0),
+            (1000.0, 760.0),
+            (1560.0, 760.0),
+            (1560.0, 980.0),
+            (900.0, 980.0),
+        ]],
+        label: "widest place".into(),
+        enter: Some(Write::default().into()),
+        ..ui.defaults()
+    });
+    let captions: Vec<Svgr<'a>> = [
+        ("Polygram", 290.0, 620.0),
+        ("RegularPolygram {7/3}", 700.0, 620.0),
+        ("ConvexHull", 1110.0, 620.0),
+        ("Cutout", 1580.0, 620.0),
+        ("ScreenRectangle", 420.0, 990.0),
+        ("LabeledPolygram", 1230.0, 1030.0),
+    ]
+    .into_iter()
+    .map(|(text, x, y)| caption(ui, text, x, y))
+    .collect();
+    svgr!(<g>{head}{polygram}{star}{hull}{dots}{cutout}{screen}{labeled}{captions}</g>)
 }

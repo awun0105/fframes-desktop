@@ -22,6 +22,7 @@ macro_rules! scenes {
 #[derive(Debug)]
 pub(super) struct Formulas {
     pub(super) euler: Formula,
+    pub(super) theta: Formula,
     sum: Formula,
     pythagoras: Formula,
     solved: Formula,
@@ -51,6 +52,7 @@ impl Formulas {
             \\end{tikzpicture}";
         Self {
             euler: math("e^{i\\pi} + 1 = 0"),
+            theta: math("\\theta"),
             sum: math("\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}"),
             pythagoras: math("{{a}}^2 + {{b}}^2 = {{c}}^2"),
             solved: math("{{a}}^2 = {{c}}^2 - {{b}}^2"),
