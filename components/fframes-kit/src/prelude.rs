@@ -22,11 +22,12 @@ pub use crate::effects::{
     ColorCorrection, ColorKey, ColorMatrix, ColorStack, Contrast, Curves, DotGrid, Duotone, Emboss,
     Evolve, EvolveDirection, Exposure, Flannel, FractalNoise, FractalType, Grayscale, Gridlines,
     Halftone, HalftoneColor, HalftoneLinearGradient, HalftoneShape, HueRotate, Invert, Levels,
-    LightLeak, LightTrail, LineDirection, LinearGradient, LinearGradientTint, Lines, LongShadows,
-    Lut, Mirror, MirrorDirection, Noise, Outline, Paper, Pattern, Rings, RoughenEdges, Saturation,
-    Scale, Scanlines, ShadowsHighlights, Shrinkwrap, Skew, Speckle, Starburst, ThermalVision, Tile,
-    Tint, Trail, Translate, TvSignalOff, VenetianBlinds, Vibrance, Vignette, VignetteMode,
-    WhiteBalance, WhiteNoise,
+    LightLeak, LightTrail, LineDirection, LinearGradient, LinearGradientTint,
+    LinearProgressiveBlur, Lines, LongShadows, Lut, Mirror, MirrorDirection, Noise, Outline, Paper,
+    Pattern, RadialProgressiveBlur, RegionBlur, Rings, RoughenEdges, Saturation, Scale, Scanlines,
+    ShadowsHighlights, Shrinkwrap, Skew, Speckle, Starburst, ThermalVision, Tile, Tint, Trail,
+    Translate, TvSignalOff, VenetianBlinds, Vibrance, Vignette, VignetteMode, WhiteBalance,
+    WhiteNoise,
 };
 pub use crate::explain::{
     Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, Matrix, NumberLine, NumberPlane,

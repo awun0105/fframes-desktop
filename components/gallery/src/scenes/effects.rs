@@ -24,9 +24,23 @@ pub fn scenes() -> Vec<GalleryScene> {
     ]
 }
 
-/// The bench card behind an eight-copy trail, against `BenchKit` for the cost of the copies.
+/// The bench card behind an eight-copy trail and the three area blurs, against `BenchKit` for
+/// the cost of the copies and the filters.
 pub fn bench_scenes() -> Vec<GalleryScene> {
-    vec![GalleryScene::new("BenchTrail", 5.0, bench_trail)]
+    vec![
+        GalleryScene::new("BenchTrail", 5.0, bench_trail),
+        GalleryScene::new("BenchRegionBlur", 5.0, bench_region_blur),
+        GalleryScene::new(
+            "BenchLinearProgressiveBlur",
+            5.0,
+            bench_linear_progressive_blur,
+        ),
+        GalleryScene::new(
+            "BenchRadialProgressiveBlur",
+            5.0,
+            bench_radial_progressive_blur,
+        ),
+    ]
 }
 
 /// A ball on a wave across the screen.
@@ -126,6 +140,27 @@ fn noise<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 fn bench_trail<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ui.show(Trail {
         samples: 8,
+        children: children(bench_kit),
+        ..ui.defaults()
+    })
+}
+
+fn bench_region_blur<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(RegionBlur {
+        children: children(bench_kit),
+        ..ui.defaults()
+    })
+}
+
+fn bench_linear_progressive_blur<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(LinearProgressiveBlur {
+        children: children(bench_kit),
+        ..ui.defaults()
+    })
+}
+
+fn bench_radial_progressive_blur<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(RadialProgressiveBlur {
         children: children(bench_kit),
         ..ui.defaults()
     })

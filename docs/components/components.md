@@ -1029,6 +1029,62 @@ fn intro<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Region and progressive blur
+
+| Component | Props (defaults) | What it does |
+| --- | --- | --- |
+| `RegionBlur` | `top_left` (0.25, 0.25), `bottom_right` (0.75, 0.75), `radius` (40, animatable), `feather` (0 units), `roundness` (0 to 1) | the children blurred inside a rectangle with soft edges and round corners |
+| `LinearProgressiveBlur` | `start` (0, 0.5), `end` (1, 0.5), `start_blur` (0), `end_blur` (50) | the blur grows along a line |
+| `RadialProgressiveBlur` | `center` (0.5, 0.5), `width` (1), `height` (1), `rotation` (degrees), `start` (0), `start_blur` (0), `end_blur` (50) | the blur grows from the centre out to an ellipse |
+
+Positions are shares of the `area`. Radii are Remotion's: a Gaussian with a standard deviation
+of a third of the radius, so `RegionBlur { radius: 30.0, .. }` blurs like `Blur { radius:
+10.0, .. }`. The progressive blurs draw blurred copies under graded masks: one copy for every 6
+units of radius, at most `MAX_BLUR_LEVELS` (8) after the sharp one, cross-faded in between.
+`blur_levels(start, end)` returns the radii. Near the edges of the area a blurred copy fades
+out, where Remotion repeats the edge pixels, so the less blurred copy below shows through.
+
+What they cost, from the bench card filling a 1080p frame (`BenchKit`, 5 seconds, CPU backend,
+the median of three `render` runs):
+
+| Scene | Seconds | Against `BenchKit` |
+| --- | --- | --- |
+| `BenchKit` | 1.05 | 1.0 |
+| `BenchRegionBlur` | 1.80 | 1.7 |
+| `BenchLinearProgressiveBlur` | 7.39 | 7.0 |
+| `BenchRadialProgressiveBlur` | 7.38 | 7.0 |
+
+Every copy is a blur of the whole area, about 5 ms a frame each at 1080p on the CPU backend;
+a smaller `end_blur` takes fewer copies.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn photo<'a>(_: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    svgr!(<rect x="0" y="0" width="1920" height="1080" fill="#f6d365" />)
+}
+
+fn tilt_shift<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(RadialProgressiveBlur {
+        width: 1.2,
+        height: 0.5,
+        start: 0.4,
+        end_blur: 36.0,
+        children: children(|ui| {
+            ui.show(RegionBlur {
+                top_left: (0.7, 0.05),
+                bottom_right: (0.95, 0.2),
+                feather: 24.0,
+                roundness: 0.5,
+                children: children(photo),
+                ..ui.defaults()
+            })
+        }),
+        ..ui.defaults()
+    })
+}
+```
+
 ## Animated props
 
 `Anim<T>` is a fixed value or a `timeline!` stored once in the video; `ui.sample(&anim)`

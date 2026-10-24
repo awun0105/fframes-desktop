@@ -12,6 +12,7 @@
 //! streaks light behind them; [`Pattern`] tiles them and [`Paper`], [`Burlap`], [`Flannel`]
 //! and [`Speckle`] texture them. [`Mirror`], [`Tile`], [`Skew`], [`Scale`] and [`Translate`]
 //! move them; [`VenetianBlinds`], [`Evolve`] and [`TvSignalOff`] reveal or replace them.
+//! [`RegionBlur`], [`LinearProgressiveBlur`] and [`RadialProgressiveBlur`] blur part of them.
 
 use fframes::Svgr;
 
@@ -157,6 +158,7 @@ mod light_leak;
 mod motion_blur;
 mod noise;
 mod patterns;
+mod progressive_blur;
 mod reveal;
 mod textures;
 
@@ -178,6 +180,9 @@ pub use noise::{GRAIN_SKSL, ShaderNoise, grain_shader};
 pub use patterns::{
     Checkerboard, DotGrid, Gridlines, LineDirection, LinearGradient, LinearGradientTint, Lines,
     MAX_PATTERN_SHAPES, MAX_RINGS, Rings, Scanlines, Vignette, VignetteMode,
+};
+pub use progressive_blur::{
+    LinearProgressiveBlur, MAX_BLUR_LEVELS, RadialProgressiveBlur, RegionBlur, blur_levels,
 };
 pub use reveal::{BlindsDirection, Evolve, EvolveDirection, TvSignalOff, VenetianBlinds};
 pub use textures::{Burlap, Flannel, MAX_TILES, Paper, Pattern, Speckle};

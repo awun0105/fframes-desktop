@@ -23,6 +23,8 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("HalftoneEffects", 2.0, halftone_effects),
         // the picture skews, shrinks and slides, the blinds open and the bars come in
         GalleryScene::new("GeometryEffects", 2.0, geometry_effects),
+        // the region blur grows over the scene
+        GalleryScene::new("BlurEffects", 2.0, blur_effects),
     ]
 }
 
@@ -816,5 +818,60 @@ fn geometry_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ];
     let figure = grid(ui, 4, cells);
     let head = title(ui, "Geometry and reveals");
+    svgr!(<g>{figure}{head}</g>)
+}
+
+fn blur_effects<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let t = ui.seconds();
+    let cells = vec![
+        (
+            "Region blur",
+            ui.show(RegionBlur {
+                top_left: (0.1, 0.15),
+                bottom_right: (0.55, 0.6),
+                radius: Anim::Fixed(30.0 * t),
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Region blur, round",
+            ui.show(RegionBlur {
+                top_left: (0.35, 0.1),
+                bottom_right: (0.95, 0.9),
+                radius: Anim::Fixed(60.0),
+                feather: 80.0,
+                roundness: 1.0,
+                key: Some("round"),
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Linear progressive",
+            ui.show(LinearProgressiveBlur {
+                start: (0.0, 0.3),
+                end: (0.0, 1.0),
+                end_blur: 90.0,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        (
+            "Radial progressive",
+            ui.show(RadialProgressiveBlur {
+                width: 0.8,
+                height: 0.9,
+                rotation: 20.0,
+                start: 0.3,
+                end_blur: 90.0,
+                children: children(photo),
+                ..ui.defaults()
+            }),
+        ),
+        ("original", photo(ui)),
+    ];
+    let figure = grid(ui, 3, cells);
+    let head = title(ui, "Blur");
     svgr!(<g>{figure}{head}</g>)
 }
