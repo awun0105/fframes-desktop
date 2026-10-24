@@ -104,6 +104,15 @@ pub struct Structure {
     pub bonds: Vec<ChemBond>,
 }
 
+/// `mol` with its aromatic rings as alternating single and double bonds, or as it is when
+/// they cannot be.
+pub(crate) fn kekulized(mol: chematic::core::Molecule) -> chematic::core::Molecule {
+    match kekulize(&mol) {
+        Ok(kekule) => apply_kekule(&mol, &kekule),
+        Err(_) => mol,
+    }
+}
+
 /// The layout units of `chematic` per bond length.
 const DEPICT_BOND: f64 = 40.0;
 
@@ -118,11 +127,12 @@ impl Structure {
     pub fn from_smiles(smiles: &str) -> Result<Self, SmilesError> {
         let parsed =
             chematic::smiles::parse(smiles).map_err(|e| SmilesError(format!("{smiles}: {e}")))?;
-        let mol = match kekulize(&parsed) {
-            Ok(kekule) => apply_kekule(&parsed, &kekule),
-            Err(_) => parsed,
-        };
-        let data = compute_depict_data(&mol);
+        Ok(Self::laid_out(&kekulized(parsed)))
+    }
+
+    /// Lays out a `chematic` molecule in 2D, centred on the origin.
+    pub(crate) fn laid_out(mol: &chematic::core::Molecule) -> Self {
+        let data = compute_depict_data(mol);
         let index: HashMap<u32, usize> = data
             .atoms
             .iter()
@@ -136,7 +146,7 @@ impl Structure {
                 symbol: a.element.symbol().to_owned(),
                 x: a.pos.x / DEPICT_BOND,
                 y: -a.pos.y / DEPICT_BOND,
-                hydrogens: implicit_hcount(&mol, a.idx),
+                hydrogens: implicit_hcount(mol, a.idx),
                 charge: a.charge,
                 label: a.label.is_some(),
             })
@@ -161,7 +171,7 @@ impl Structure {
             .collect();
         let mut structure = Self { atoms, bonds };
         structure.center();
-        Ok(structure)
+        structure
     }
 
     /// The smallest box around the atoms: `(min_x, min_y, max_x, max_y)` in bond lengths.
@@ -205,7 +215,7 @@ impl Structure {
 
     /// The side of bond `bond` its neighbours lie on: positive to the left of `a` to `b` (in
     /// bond lengths, `y` up), 0 when they balance.
-    fn side(&self, bond: &ChemBond) -> f64 {
+    pub(crate) fn side(&self, bond: &ChemBond) -> f64 {
         let (a, b) = (&self.atoms[bond.a], &self.atoms[bond.b]);
         let along = Vec2::new(b.x - a.x, b.y - a.y);
         let normal = Vec2::new(-along.y, along.x);

@@ -148,6 +148,7 @@
 //! | manim-physics `RadialWave` (feature `physics`) | `kits::physics::RadialWave { sources, .. }`: crest and trough rings in 2D, the surface in a `three::ThreeDView` with the `3d` feature |
 //! | manim-circuit `Resistor`, `Capacitor`, `Inductor`, `VoltageSource`, `CurrentSource`, `Ground`, `Opamp` (feature `physics`) | `kits::physics::Symbol { kind: SymbolKind::Resistor, .. }` and the other kinds, with `Battery`, `Switch`, `Bulb` and `Diode`: a label, a rotation and named terminals (`Symbol::terminal`) |
 //! | manim-circuit wires between symbols (feature `physics`) | `kits::physics::Schematic { symbols, wires: vec![Connection::new((0, "b"), (1, "a")).via([..])] }`: right angles through given corners, junction dots, the current as moving dots |
+//! | manim-chemistry `MMoleculeObject`, `ThreeDMolecule` from a file (feature `chemistry`) | `kits::chemistry::MolFile::parse` (V2000 `.mol`, the first record of an `.sdf`), drawn from `structure()` by `kits::chemistry::Molecule2D`, from `structure_3d()` by `kits::chemistry::Molecule3D` with `3d` |
 
 // The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
 extern crate self as fframes_kit;

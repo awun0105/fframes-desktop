@@ -200,8 +200,40 @@ fn figures<'a>(ui: &mut Ui<'a, '_, '_>, water: &'a Structure3D) -> Svgr<'a> {
     svgr!(<g>{molecule}{orbital}</g>)
 }
 ```
-## ReactionEquation
+## MolFile
 
+`MolFile::parse` reads a V2000 molfile (`.mol`), or the first record of an `.sdf` file: the
+title, the atoms with their positions and charges (`M  CHG` lines replace the charges of
+the atom block) and the bonds. V3000 files return `MolError::V3000`; save them as V2000.
+
+- `structure()` gives the skeletal formula for `Molecule2D`. Hydrogens bonded to another
+  atom are counted on it instead of drawn, and aromatic bonds become alternating single and
+  double bonds. A 2D file keeps its positions, scaled so bonded atoms are one bond length
+  apart, with its wedges and hashes. A file without positions, or with 3D ones, is laid out
+  by `chematic` like a SMILES string.
+- `structure_3d()` (with the `3d` feature) gives every atom, hydrogens too, at its position
+  in the file for `Molecule3D`. It returns `None` when the file has no positions.
+
+Gallery scene: `MolFile` (paracetamol from a 2D file, ethanol from a 3D SDF record).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn read(text: &str) -> Result<Structure, MolError> {
+    Ok(MolFile::parse(text)?.structure())
+}
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>, structure: &'a Structure) -> Svgr<'a> {
+    ui.show(Molecule2D {
+        structure: Some(structure),
+        bond_length: 90.0,
+        enter: Some(Create::default().into()),
+        ..ui.defaults()
+    })
+}
+```
+
+## ReactionEquation
 `Reaction` holds a reaction's formulas. `atom_counts` reads one, with parentheses (`Ca(OH)2`).
 `balance` finds the smallest whole coefficients. It returns `None` when the reaction cannot be
 balanced or has more than one balance. `tally` counts each element on both sides.

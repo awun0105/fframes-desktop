@@ -4,6 +4,7 @@ pub mod animate;
 pub mod animate_ii;
 pub mod biology;
 pub mod chemistry;
+pub mod chemistry_ii;
 pub mod core;
 pub mod cs;
 pub mod effects;
@@ -44,6 +45,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(physics::scenes());
     scenes.extend(physics_ii::scenes());
     scenes.extend(chemistry::scenes());
+    scenes.extend(chemistry_ii::scenes());
     scenes.extend(cs::scenes());
     scenes.extend(biology::scenes());
     scenes.extend(tags::scenes());

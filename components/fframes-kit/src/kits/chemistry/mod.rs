@@ -5,6 +5,7 @@ mod bohr;
 mod bond_formation;
 mod energy_profile;
 mod equilibrium;
+mod mol_file;
 mod molecule;
 #[cfg(feature = "3d")]
 mod molecule_3d;
@@ -19,6 +20,7 @@ pub use bohr::BohrAtom;
 pub use bond_formation::{BondFormation, BondType, bond_electrons, missing, valence};
 pub use energy_profile::EnergyProfile;
 pub use equilibrium::{Equilibrium, EquilibriumModel};
+pub use mol_file::{MolAtom, MolBond, MolError, MolFile};
 pub use molecule::{BondKind, ChemAtom, ChemBond, Molecule, Molecule2D, SmilesError, Structure};
 #[cfg(feature = "3d")]
 pub use molecule_3d::{Atom3D, Molecule3D, Structure3D, XyzError};

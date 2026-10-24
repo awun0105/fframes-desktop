@@ -1,7 +1,7 @@
 ---
 phase: 20
 title: "Phase 20: Chemistry kit II"
-status: todo
+status: in-progress
 priority: P3
 effort: 3d
 dependencies: [9]
@@ -98,9 +98,19 @@ Cover the rest of manim-chemistry in the chemistry kit (feature `chemistry`):
 
 ## Todo
 
-- [ ] `.mol` support checked and recorded
-- [ ] `MolFile`
+- [x] `.mol` support checked and recorded
+- [x] `MolFile`
 - [ ] Name table and `NamedMolecule`
 - [ ] Graph molecule animations
 - [ ] `ElementCard`
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
+
+## Notes
+
+- `.mol` support (2026-10-25): `chematic` reads MOL and SDF behind its `mol` feature
+  (`chematic-mol` 1.2.1). It reads about 40 formats and brings six more `chematic` crates,
+  `flate2`, `roxmltree` and `serde_json` into the editor's wasm, so `MolFile` is a V2000
+  parser of its own (fixed columns, `M  CHG`, the first `.sdf` record). Files without
+  positions are laid out by `chematic` through the same code as SMILES.
+- A file with 3D positions is laid out again for the 2D skeletal formula; its positions go
+  to `Molecule3D` as they are.
