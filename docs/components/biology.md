@@ -296,3 +296,34 @@ fn pond_web<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     ui.show(FoodWeb { flow: false, ..ui.defaults() })
 }
 ```
+
+## Circulation
+
+`Circulation` draws double circulation: the four chambers of the heart, with the lungs above
+and the body below. The right side of the heart sits on the viewer's left, as in a textbook.
+
+- **Path:** the vessels follow the blood. It leaves the right ventricle, goes up the
+  pulmonary artery to the lungs, back down the pulmonary vein to the left atrium, through the
+  left ventricle, then along the aorta to the body and up the vena cava to the right atrium.
+  The vena cava passes over the pulmonary artery with a gap of `gap_color`.
+- **Colour:** each vessel is coloured by the blood in it, from `deoxygenated` to
+  `oxygenated`. The blood turns red across the lungs and blue across the body.
+- **Motion:** from `delay` the chambers appear and the vessels draw along the loop. Each name
+  fades in as the line reaches it. Then blood cells run round at `speed` pixels a second,
+  passing under the chambers, and the heart beats `bpm` times a minute, atria first.
+- **Labels:** with `labels`, the lungs, the body and the four vessels are named.
+
+Gallery scene: `Circulation`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn heart<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Circulation {
+        delay: 0.5,
+        bpm: 90.0,      // a faster beat
+        labels: false,  // only the chambers' names
+        ..ui.defaults()
+    })
+}
+```

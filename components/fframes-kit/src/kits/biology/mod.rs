@@ -5,6 +5,7 @@
 
 mod callouts;
 mod cell;
+mod circulation;
 mod dna;
 mod expression;
 mod food_web;
@@ -14,6 +15,7 @@ mod phylo;
 mod population;
 
 pub use cell::{Cell, CellKind, CellPalette, Organelle};
+pub use circulation::Circulation;
 pub use dna::{BaseColors, DnaHelix, complement};
 pub use expression::{Transcription, Translation, amino_acid, reading_frame, transcribe};
 pub use food_web::FoodWeb;

@@ -142,6 +142,16 @@ fn food_web<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+fn circulation<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Circulation");
+    let figure = ui.show(Circulation {
+        delay: 0.6,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight parts half a second apart from 0.6 s, the last name at about 5.1 s
@@ -166,5 +176,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("PhyloTree", 7.0, phylo_tree),
         // five levels of 0.8 s from 0.6 s, then energy flows from about 4.6 s
         GalleryScene::new("FoodWeb", 7.5, food_web),
+        // the vessels draw from 1 s to 4.2 s, then the blood flows
+        GalleryScene::new("Circulation", 8.0, circulation),
     ]
 }

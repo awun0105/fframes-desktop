@@ -22,9 +22,9 @@ pub use crate::explain::{
 pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(feature = "biology")]
 pub use crate::kits::biology::{
-    ActionPotential, BaseColors, Cell, CellKind, CellPalette, DnaHelix, FoodWeb, MitosisStage,
-    MitosisStages, Neuron, Organelle, PhyloTree, PopulationCurve, PopulationModel, Transcription,
-    Translation,
+    ActionPotential, BaseColors, Cell, CellKind, CellPalette, Circulation, DnaHelix, FoodWeb,
+    MitosisStage, MitosisStages, Neuron, Organelle, PhyloTree, PopulationCurve, PopulationModel,
+    Transcription, Translation,
 };
 #[cfg(all(feature = "chemistry", feature = "latex"))]
 pub use crate::kits::chemistry::ReactionEquation;
