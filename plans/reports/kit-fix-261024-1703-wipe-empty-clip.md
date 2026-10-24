@@ -26,7 +26,13 @@ The phase 11 report ([kit-phase-11-261024-1414.md](kit-phase-11-261024-1414.md))
 item open: that `Glow` and `DropShadow` blur in linear light. That is not the case. The
 converted SVG of `Glow@50%` carries `color-interpolation-filters="sRGB"` on every primitive
 (`feGaussianBlur`, `feOffset`, `feFlood`, `feComposite`, `feMerge`), because usvgr inherits
-the attribute from the `<filter>` element. No change is needed in `decor/filters.rs`.
+the attribute from the `<filter>` element. The pixels agree: with the attribute added to
+every primitive, the `Glow@50%` and `DropShadow@50%` e2e snapshots differ by 0.000 %. The
+phase 11 claim that moving it changes these snapshots did not reproduce. No change is
+needed in `decor/filters.rs`.
+
+This does not explain the `Blur` darkening recorded in phase 11, which was fixed there by
+putting the attribute on `feGaussianBlur`. It was not investigated further.
 
 ## Checks
 
