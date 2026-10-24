@@ -4,18 +4,24 @@
 mod bohr;
 mod bond_formation;
 mod energy_profile;
+mod equilibrium;
 mod molecule;
 mod periodic;
 mod reaction;
+mod states;
+mod titration;
 
 pub use bohr::BohrAtom;
 pub use bond_formation::{BondFormation, BondType, bond_electrons, missing, valence};
 pub use energy_profile::EnergyProfile;
+pub use equilibrium::{Equilibrium, EquilibriumModel};
 pub use molecule::{BondKind, ChemAtom, ChemBond, Molecule, Molecule2D, SmilesError, Structure};
 pub use periodic::{ElementTile, PeriodicTable, Trend};
 #[cfg(feature = "latex")]
 pub use reaction::ReactionEquation;
 pub use reaction::{Reaction, atom_counts};
+pub use states::{MatterState, StatesOfMatter};
+pub use titration::{PhScale, Titration, TitrationCurve, indicator_color};
 
 use fframes::Color;
 use mendeleev::{ALL_ELEMENTS, Element};

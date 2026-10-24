@@ -236,3 +236,123 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
+
+## TitrationCurve and PhScale
+
+`Titration` is an acid titrated with sodium hydroxide: the acid's concentration and volume,
+the base's concentration, and a `pka` for a weak acid (`Titration::weak`) or none for a strong
+one (`Titration::strong`). `ph(added)` solves the charge balance exactly, so the start, the
+buffer region and the equivalence point all come out right: 25 mL of 0.1 M acetic acid starts
+at pH 2.88, is at 4.76 at half equivalence and at 8.72 at equivalence. `equivalence()` gives
+the base needed and `curve(until, steps)` the points.
+
+`TitrationCurve` draws the curve on the `axes` of an `Axes` you show yourself (mL across, pH
+up). From `delay` the base pours in at a constant rate up to `until` mL over `run_time`
+seconds, with a dot at the current pH. As the pour passes them, the equivalence point is marked
+with guides to both axes and its pH. For a weak acid, the half-equivalence point is marked too,
+where the pH equals the pKa. `ph_at(seconds)` gives the pH at a time, for a readout or a
+`PhScale` pointer.
+
+`PhScale` is the scale as 15 cells in the colours of universal indicator (`indicator_color`
+blends them), with the values and "acidic", "neutral" and "basic" under it. Each of `markers`,
+a name and a pH, points at its place from above. They appear `stagger` seconds apart after
+`delay`, in two rows. A `pointer` marks a pH on the bar. Gallery scenes: `TitrationCurve`
+(acetic acid, with a scale following the pH) and `PhScale` (everyday substances).
+
+```rust
+use fframes_kit::prelude::*;
+
+let acetic = Titration::weak(0.1, 25.0, 0.1, 4.76);
+assert_eq!(acetic.equivalence(), 25.0);
+assert!((acetic.ph(12.5) - 4.76).abs() < 0.01);
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let axes = Axes {
+        x_range: Range::new(0.0, 50.0, 10.0),
+        y_range: Range::new(0.0, 14.0, 2.0),
+        x_length: 8.0,
+        y_length: 4.2,
+        y_label: Some("pH".into()),
+        ..ui.defaults()
+    };
+    let curve = TitrationCurve {
+        titration: Titration::strong(0.1, 25.0, 0.1),
+        axes: Some(axes.map(ui)),
+        delay: 0.5,
+        ..ui.defaults()
+    };
+    let ph = curve.ph_at(ui.seconds());
+    let curve = ui.show(curve);
+    let axes = ui.show(axes);
+    let scale = ui.show(PhScale {
+        center: (0.0, -3.0),
+        width: 900.0,
+        height: 36.0,
+        pointer: Some(ph),
+        ..ui.defaults()
+    });
+    svgr!(<g>{axes}{curve}{scale}</g>)
+}
+```
+
+## StatesOfMatter
+
+Particles in a box going from `from` to `to` (`MatterState::Solid`, `Liquid` or `Gas`) over
+`duration` seconds after `at`:
+
+- in a solid they vibrate on a lattice at the bottom;
+- in a liquid they spread over the floor and wander past each other;
+- in a gas they fly across the whole box and bounce off its walls.
+
+Between two states the motions blend and the particles turn from `cold_color` to `hot_color`.
+The positions are a function of the time and `seed` only, not a stepped simulation, so any
+frame renders on its own and comes out the same everywhere. `positions(seconds)` gives them.
+With `labels` the state, or the change under way ("melting", "boiling", "condensing",
+"freezing"), is written under the box. Gallery scene: `StatesOfMatter` (solid to gas).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(StatesOfMatter {
+        seed: 3,
+        from: MatterState::Gas,
+        to: MatterState::Solid,
+        at: 1.0,
+        duration: 4.0,
+        ..ui.defaults()
+    })
+}
+```
+
+## Equilibrium
+
+`EquilibriumModel` is a reaction in a closed vessel. Each species has a name, a coefficient
+(negative for a reactant) and a starting concentration in mol/L. The mixture moves along the
+reaction to where the reaction quotient `Q` equals `k`, closing in by a factor of `e` every
+`settle` seconds. `disturb(at, species, delta)` adds or removes some of a species later, and the
+mixture settles again, as Le Chatelier's principle says. `concentrations(seconds)` and
+`quotient` give the numbers.
+
+`Equilibrium` shows the concentrations as bars, reactants in `reactant_color` and products in
+`product_color`, starting the model's clock at `delay`. With `labels` each bar has its formula
+under it (the digits set as subscripts) and its concentration over it. A line above compares
+`Q` with `K`: whether the reaction runs forward, runs in reverse or is at equilibrium. Gallery
+scene: `Equilibrium` (hydrogen iodide, then more hydrogen).
+
+```rust
+use fframes_kit::prelude::*;
+
+let model = EquilibriumModel::new(&[("H2", -1, 1.0), ("I2", -1, 1.0), ("HI", 2, 0.0)], 49.0, 0.5)
+    .disturb(3.0, 0, 1.0);
+// settled again long after the extra hydrogen
+assert!((model.quotient(&model.concentrations(30.0)) - 49.0).abs() < 1e-6);
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>, model: &'a EquilibriumModel) -> Svgr<'a> {
+    ui.show(Equilibrium {
+        model: Some(model),
+        delay: 0.5,
+        ..ui.defaults()
+    })
+}
+```

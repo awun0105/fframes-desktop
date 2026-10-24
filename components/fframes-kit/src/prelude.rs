@@ -25,7 +25,8 @@ pub use crate::kits::chemistry::ReactionEquation;
 #[cfg(feature = "chemistry")]
 pub use crate::kits::chemistry::{
     BohrAtom, BondFormation, BondKind, BondType, Category, ChemAtom, ChemBond, ElementTile,
-    EnergyProfile, Molecule, Molecule2D, PeriodicTable, Reaction, SmilesError, Structure, Trend,
+    EnergyProfile, Equilibrium, EquilibriumModel, MatterState, Molecule, Molecule2D, PeriodicTable,
+    PhScale, Reaction, SmilesError, StatesOfMatter, Structure, Titration, TitrationCurve, Trend,
 };
 #[cfg(feature = "math")]
 pub use crate::kits::math::{
