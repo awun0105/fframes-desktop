@@ -1,7 +1,7 @@
 ---
 phase: 20
 title: "Phase 20: Chemistry kit II"
-status: in-progress
+status: completed
 priority: P3
 effort: 3d
 dependencies: [9]
