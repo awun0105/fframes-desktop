@@ -365,5 +365,38 @@ pub fn scenes() -> Vec<GalleryScene> {
             let f = ApplyPointwiseFunctionToCenter { delay: 0.25, run_time: 1.5, ..ApplyPointwiseFunctionToCenter::new(a, |x, y| (-x, y + 1.0)) };
             ui.show(f)
         },
+        "ChangeDecimalToValue", 2.0 => |ui| {
+            let n = DecimalNumber { x: CX, y: CY + 40.0, anchor: TextAnchor::Middle, value: 0.0.into(), ..ui.defaults() };
+            ui.show(ChangeDecimalToValue { delay: 0.25, run_time: 1.5, ..ChangeDecimalToValue::new(n, 1000.0) })
+        },
+        "ChangingDecimal", 2.0 => |ui| {
+            let n = DecimalNumber { x: CX, y: CY + 40.0, anchor: TextAnchor::Middle, num_decimal_places: 4, ..ui.defaults() };
+            ui.show(ChangingDecimal { delay: 0.25, run_time: 1.5, ..ChangingDecimal::new(n, |a| (a * std::f32::consts::PI).sin()) })
+        },
+        "ChangeSpeed", 2.5 => |ui| {
+            // the dot crosses at an even pace inside; the speed curve starts it slow and ends it fast
+            let speed = ChangeSpeed {
+                run_time: 2.0,
+                speed: vec![(0.0, 0.2), (1.0, 2.0)],
+                children: children(|ui| {
+                    let x = CX - 600.0 + 1200.0 * (ui.seconds() / 2.0).clamp(0.0, 1.0);
+                    let trail = Line { x1: CX - 600.0, y1: CY, x2: x, y2: CY, ..ui.defaults() };
+                    let dot = Dot { cx: x, cy: CY, radius: 30.0, fill: Some(ui.theme.colors.accent), ..ui.defaults() };
+                    let (trail, dot) = (ui.show(trail), ui.show(dot));
+                    svgr!(<g>{trail}{dot}</g>)
+                }),
+            };
+            ui.show(speed)
+        },
+        "LaggedStartMap", 2.0 => |ui| {
+            let lagged = LaggedStart {
+                lag_ratio: 0.15,
+                ..LaggedStart::map(0..7, |ui, &i| {
+                    let grow = GrowFromCenter { run_time: 0.8, ..ui.defaults() };
+                    ui.show(Dot { cx: CX - 480.0 + 160.0 * i as f32, cy: CY, radius: 48.0, enter: Some(grow.into()), ..ui.defaults() })
+                })
+            };
+            ui.show(lagged)
+        },
     ]
 }

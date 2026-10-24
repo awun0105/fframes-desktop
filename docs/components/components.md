@@ -871,6 +871,10 @@ for the second.
 | `LaggedStart` | `lag_ratio`, `run_time`, `children` | child `i` starts `i * lag_ratio * run_time` seconds in |
 | `AnimationGroup` | `children` | every child at once |
 | `Succession` | `run_time`, `children` | each child `run_time` after the one before |
+| `LaggedStart::map` (Manim `LaggedStartMap`) | `items`, `f(ui, &item)` | a `LaggedStart` with one child per item, lag ratio 0.05 |
+| `ChangeSpeed` | `run_time`, `speed: Vec<(fraction, speed)>`, `children` | the children play slower or faster over `run_time` and still start and end on time |
+| `ChangeDecimalToValue` | `number: DecimalNumber`, `target`, timing | counts the number from its tracker's value to `target` |
+| `ChangingDecimal` | `number`, `number_update_func: fn(alpha) -> value`, timing | shows the function of the progress |
 
 The homotopies cut the path into about `HOMOTOPY_SEGMENTS` (256) pieces and map every point
 each frame; `PhaseFlow` takes up to `PHASE_FLOW_STEPS` (120) Runge-Kutta steps per point.

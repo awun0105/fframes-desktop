@@ -11,15 +11,16 @@ pub use crate::anim::{
 pub use crate::animate::{
     AddTextLetterByLetter, AnimatedBoundary, AnimationGroup, ApplyComplexFunction, ApplyFunction,
     ApplyMatrix, ApplyPointwiseFunction, ApplyPointwiseFunctionToCenter, ApplyWave, Blink,
-    Broadcast, Circumscribe, ClockwiseTransform, ComplexHomotopy, CounterclockwiseTransform,
-    Create, CyclicReplace, DrawBorderThenFill, Emphasis, EnterAnim, ExitAnim, FadeToColor,
-    FadeTransform, FadeTransformPieces, Flash, FocusOn, GrowArrow, GrowFromCenter, GrowFromEdge,
-    GrowFromPoint, Homotopy, Indicate, LaggedStart, MoveAlongPath, PhaseFlow,
-    RemoveTextLetterByLetter, ReplacementTransform, Rotate, Rotating, ScaleInPlace,
-    ShowIncreasingSubsets, ShowPartial, ShowPassingFlash, ShowPassingFlashWithThinningStrokeWidth,
-    ShowSubmobjectsOneByOne, ShrinkToCenter, SmoothedVectorizedHomotopy, SpinInFromNothing,
-    SpiralIn, Succession, Swap, TracedPath, Transform as Morph, TransformAnimations,
-    TransformFromCopy, TransformMatchingShapes, Uncreate, Unwrite, Wiggle, Write,
+    Broadcast, ChangeDecimalToValue, ChangeSpeed, ChangingDecimal, Circumscribe,
+    ClockwiseTransform, ComplexHomotopy, CounterclockwiseTransform, Create, CyclicReplace,
+    DrawBorderThenFill, Emphasis, EnterAnim, ExitAnim, FadeToColor, FadeTransform,
+    FadeTransformPieces, Flash, FocusOn, GrowArrow, GrowFromCenter, GrowFromEdge, GrowFromPoint,
+    Homotopy, Indicate, LaggedStart, MoveAlongPath, PhaseFlow, RemoveTextLetterByLetter,
+    ReplacementTransform, Rotate, Rotating, ScaleInPlace, ShowIncreasingSubsets, ShowPartial,
+    ShowPassingFlash, ShowPassingFlashWithThinningStrokeWidth, ShowSubmobjectsOneByOne,
+    ShrinkToCenter, SmoothedVectorizedHomotopy, SpinInFromNothing, SpiralIn, Succession, Swap,
+    TracedPath, Transform as Morph, TransformAnimations, TransformFromCopy,
+    TransformMatchingShapes, Uncreate, Unwrite, Wiggle, Write,
 };
 pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
 pub use crate::data::BarChart;

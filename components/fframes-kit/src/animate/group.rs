@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use fframes::Svgr;
 
 use crate::{
@@ -34,6 +36,29 @@ fn stagger<'a>(ui: &mut Ui<'a, '_, '_>, children: Vec<Children<'a>>, step: f32) 
             })
         })
         .collect()
+}
+
+impl<'a> LaggedStart<'a> {
+    /// One child per item, drawn by `f` (Manim's `LaggedStartMap`), with Manim's lag ratio of
+    /// 0.05 and children that run 1 second.
+    pub fn map<T: 'a>(
+        items: impl IntoIterator<Item = T>,
+        f: impl Fn(&mut Ui<'a, '_, '_>, &T) -> Svgr<'a> + 'a,
+    ) -> Self {
+        let f = Rc::new(f);
+        let children = items
+            .into_iter()
+            .map(|item| {
+                let f = Rc::clone(&f);
+                Box::new(move |ui: &mut Ui<'a, '_, '_>| f(ui, &item)) as Children<'a>
+            })
+            .collect();
+        Self {
+            lag_ratio: 0.05,
+            run_time: 1.0,
+            children,
+        }
+    }
 }
 
 impl<'a> Component<'a> for LaggedStart<'a> {

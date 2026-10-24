@@ -91,6 +91,9 @@
 //! | `FadeToColor`, `ScaleInPlace` | [`FadeToColor`](animate::FadeToColor), [`ScaleInPlace`](animate::ScaleInPlace), `emphasis` |
 //! | `ShrinkToCenter` | [`ShrinkToCenter`](animate::ShrinkToCenter), `exit` |
 //! | `ApplyMatrix`, `ApplyPointwiseFunction`, `ApplyComplexFunction`, `ApplyFunction`, `ApplyPointwiseFunctionToCenter` | the same names in [`animate`], components over a shape in `ui.space` units, `y` up |
+//! | `LaggedStartMap` | [`LaggedStart::map`](animate::LaggedStart::map) |
+//! | `ChangeSpeed` | [`ChangeSpeed`](animate::ChangeSpeed) `{ speed: vec![(fraction, speed), ..], .. }` around the children |
+//! | `ChangeDecimalToValue`, `ChangingDecimal` | [`ChangeDecimalToValue`](animate::ChangeDecimalToValue), [`ChangingDecimal`](animate::ChangingDecimal) over a [`DecimalNumber`](text::DecimalNumber) |
 //! | `Wait` | no call: what follows starts later, [`Sequence`](time::Sequence) `{ from, .. }` |
 //! | `ApplyMethod`, `.animate`, `MoveToTarget` | [`animate::Transform`] (`Morph`) from the shape to a copy with the change made (the target) |
 //! | `save_state`, `Restore` | a clone of the shape kept, [`animate::Transform`] from the changed shape back to it |

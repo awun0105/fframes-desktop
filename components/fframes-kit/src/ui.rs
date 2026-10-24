@@ -13,6 +13,9 @@ use crate::{
     transitions::{Side, TransitionProgress, TransitionState},
 };
 
+/// Sub-frames per video frame of the `Ui`s that land between frames.
+const SUBFRAMES: usize = 8;
+
 /// What a component renders with: the local frame, the time left, the render context and
 /// the theme.
 ///
@@ -184,14 +187,27 @@ impl<'a, 'c, 'm> Ui<'a, 'c, 'm> {
     /// `duration` scaled to match: children that count in seconds see the right time, while
     /// `frame.global_index` keeps the video frame and so `into_global` is wrong inside.
     pub(crate) fn earlier(&self, seconds: f32) -> Option<Ui<'a, 'c, 'm>> {
-        const SUBFRAMES: usize = 8;
-        let fps = self.frame.fps * SUBFRAMES;
-        let back = (seconds.max(0.0) * fps as f32).round() as usize;
+        let back = (seconds.max(0.0) * (self.frame.fps * SUBFRAMES) as f32).round() as usize;
         let index = (self.frame.index * SUBFRAMES).checked_sub(back)?;
+        Some(self.at_subframe(index))
+    }
+
+    /// A `Ui` at `seconds` of local time, earlier or later than now, or `None` before the
+    /// local start; on the same sub-frame grid as [`Ui::earlier`], with the same caveat.
+    pub(crate) fn at_local(&self, seconds: f32) -> Option<Ui<'a, 'c, 'm>> {
+        if seconds < 0.0 {
+            return None;
+        }
+        let index = (seconds * (self.frame.fps * SUBFRAMES) as f32).round() as usize;
+        Some(self.at_subframe(index))
+    }
+
+    /// This `Ui` at sub-frame `index` of a frame rate `SUBFRAMES` times the video's.
+    fn at_subframe(&self, index: usize) -> Ui<'a, 'c, 'm> {
         let mut ui = self.shifted(0, self.duration.map(|d| d * SUBFRAMES));
-        ui.frame.fps = fps;
+        ui.frame.fps *= SUBFRAMES;
         ui.frame.index = index;
-        Some(ui)
+        ui
     }
 
     /// How far the transitions of the enclosing

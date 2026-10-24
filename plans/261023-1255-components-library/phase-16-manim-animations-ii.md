@@ -130,5 +130,19 @@ exist.
 - [x] Growth and indication
 - [x] Movement and `TracedPath`
 - [x] Transforms and shape matching
-- [ ] Numbers and time
-- [ ] Gallery scenes, e2e frames, docs
+- [x] Numbers and time
+- [x] Gallery scenes, e2e frames, docs
+
+## Notes
+
+- `inspect --pops` on every new scene (2026-10-25). Expected pops, all by design:
+  - steps that change in one frame: `ShowIncreasingSubsets`, `ShowSubmobjectsOneByOne`,
+    `AddTextLetterByLetter`, `RemoveTextLetterByLetter`, the `TypeWithCursor` letters and
+    cursor, the `ChangeDecimalToValue` and `ChangingDecimal` digits;
+  - fast motion that crosses a cell in one frame: the `SpiralIn` dots in their first frames,
+    the `ShowPassingFlash` head;
+  - `AnimatedBoundary` switching colour, as in Manim.
+  The transforms, `Apply*`, homotopies, `Blink`, `ChangeSpeed` and `LaggedStartMap` report none.
+- `Rotate`, `Swap` and `Broadcast` are in the prelude: nothing else there has those names.
+- `TransformMatchingShapes` matches keys within one step of the rounding: glyph outlines
+  are f32 and land a hair differently at other positions.

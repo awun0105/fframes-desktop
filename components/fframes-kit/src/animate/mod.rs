@@ -16,6 +16,7 @@ mod grow;
 mod homotopy;
 mod indicate_ii;
 mod rotate;
+mod speed;
 mod subsets;
 mod text_by;
 mod traced_path;
@@ -40,6 +41,7 @@ pub use indicate_ii::{
     ShowPassingFlashWithThinningStrokeWidth,
 };
 pub use rotate::{Rotate, Rotating};
+pub use speed::{ChangeDecimalToValue, ChangeSpeed, ChangingDecimal};
 pub use subsets::{ShowIncreasingSubsets, ShowPartial, ShowSubmobjectsOneByOne, SpiralIn};
 pub use text_by::{AddTextLetterByLetter, RemoveTextLetterByLetter};
 pub use traced_path::{MAX_TRACE_SAMPLES, TracedPath};
