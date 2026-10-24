@@ -7,6 +7,8 @@ mod callouts;
 mod cell;
 mod circulation;
 mod dna;
+#[cfg(feature = "3d")]
+mod dna_3d;
 mod enzyme;
 mod expression;
 mod food_web;
@@ -19,6 +21,8 @@ mod punnett;
 pub use cell::{Cell, CellKind, CellPalette, Organelle};
 pub use circulation::Circulation;
 pub use dna::{BaseColors, DnaHelix, complement};
+#[cfg(feature = "3d")]
+pub use dna_3d::DnaHelix3D;
 pub use enzyme::EnzymeFit;
 pub use expression::{Transcription, Translation, amino_acid, reading_frame, transcribe};
 pub use food_web::FoodWeb;

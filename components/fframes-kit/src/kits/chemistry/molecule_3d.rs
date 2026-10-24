@@ -12,7 +12,8 @@ use crate::{
     ui::{Component, Themed, Ui},
 };
 
-use super::stage::{chem, fitting_camera, picture, rgb, stage};
+use super::chem;
+use crate::kits::stage::{fitting_camera, picture, rgb, stage};
 
 /// An atom of a [`Structure3D`]: its element symbol and its position in ångström.
 #[derive(Debug, Clone, PartialEq)]

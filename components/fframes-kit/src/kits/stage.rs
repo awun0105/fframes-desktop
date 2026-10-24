@@ -1,5 +1,5 @@
-//! What the 3D figures share: the lit scene, the mapping from chemistry axes and the image
-//! in the frame.
+//! What the 3D figures of the kits share: the lit scene, a camera that fits a figure and the
+//! image in the frame.
 
 use fframes::{
     Color, Svgr,
@@ -10,13 +10,6 @@ use kurbo::Point;
 /// A kit colour for the 3D renderer.
 pub(super) fn rgb(color: Color) -> Rgb {
     Rgb::srgb8(color.r, color.g, color.b)
-}
-
-/// A point in chemistry axes (z up; seen from azimuth 0, x to the right and y into the image)
-/// in the renderer's axes (y up, z towards the viewer). The mapping is a rotation, so handedness
-/// is kept.
-pub(super) fn chem(x: f32, y: f32, z: f32) -> Vec3 {
-    vec3(x, z, -y)
 }
 
 /// An empty scene with a studio environment, a sun from the upper left and no background,

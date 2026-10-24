@@ -14,7 +14,8 @@ use crate::{
     ui::{Component, Themed, Ui},
 };
 
-use super::stage::{chem, fitting_camera, rgb, stage};
+use super::chem;
+use crate::kits::stage::{fitting_camera, rgb, stage};
 
 /// An atomic orbital: the s orbital, the three p orbitals and the five d orbitals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -222,7 +223,7 @@ impl<'a> Component<'a> for Orbital {
         let middle = ui.space.to_px(self.center.0, self.center.1);
         let (w, h) = (f64::from(self.width), f64::from(self.height));
         let corner = Point::new(middle.x - w / 2.0, middle.y - h / 2.0);
-        let image = super::stage::picture(&scene, &camera, middle, self.width, self.height);
+        let image = crate::kits::stage::picture(&scene, &camera, middle, self.width, self.height);
         let mut parts = vec![image];
         if self.axes {
             for (name, d) in [("x", Vec3::X), ("y", Vec3::Y), ("z", Vec3::Z)] {

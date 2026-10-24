@@ -20,6 +20,8 @@ pub use crate::explain::{
     ParametricFunction, Range, RiemannRectangles, SampleAt, Space, Table, VGroup,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
+#[cfg(all(feature = "biology", feature = "3d"))]
+pub use crate::kits::biology::DnaHelix3D;
 #[cfg(feature = "biology")]
 pub use crate::kits::biology::{
     ActionPotential, BaseColors, Cell, CellKind, CellPalette, Circulation, DnaHelix, EnzymeFit,

@@ -12,8 +12,6 @@ mod molecule_3d;
 mod orbital;
 mod periodic;
 mod reaction;
-#[cfg(feature = "3d")]
-mod stage;
 mod states;
 mod titration;
 
@@ -80,6 +78,14 @@ fn subscript_text<'a>(
     }
     drawn.into()
 }
+/// A point in chemistry axes (z up; seen from azimuth 0, x to the right and y into the image)
+/// in the renderer's axes (y up, z towards the viewer). The mapping is a rotation, so handedness
+/// is kept.
+#[cfg(feature = "3d")]
+fn chem(x: f32, y: f32, z: f32) -> fframes::three_d::Vec3 {
+    fframes::three_d::vec3(x, z, -y)
+}
+
 /// The element with atomic number `number` (1 to 118).
 fn element(number: u32) -> Option<Element> {
     let index = usize::try_from(number).ok()?.checked_sub(1)?;

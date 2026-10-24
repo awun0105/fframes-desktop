@@ -12,6 +12,8 @@ mod draw;
 pub mod math;
 #[cfg(feature = "physics")]
 pub mod physics;
+#[cfg(all(feature = "3d", any(feature = "chemistry", feature = "biology")))]
+mod stage;
 
 #[cfg(any(feature = "physics", feature = "chemistry"))]
 use crate::{layout::Anchor, ui::Ui};

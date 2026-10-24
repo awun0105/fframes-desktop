@@ -2,8 +2,8 @@
 
 The biology kit is the `biology` feature of `fframes-kit`
 (`fframes-kit = { .., features = ["biology"] }`) and needs no other crate. It builds for
-wasm32, so every figure here also runs in the editor. Every entry names its scene
-in the components gallery (`cargo run --release -p components-gallery -- strip <Scene> -n 8`).
+wasm32, so every figure here also runs in the editor, except `DnaHelix3D`, which needs the
+`3d` feature as well. Every entry names its scene in the components gallery (`cargo run --release -p components-gallery -- strip <Scene> -n 8`).
 
 - **Placement.** A figure is placed in units of `ui.space` (Manim's frame: 8 units tall, `y`
   up, the origin in the middle). Its sizes are in pixels.
@@ -69,6 +69,39 @@ fn replication<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+## DnaHelix3D
+
+`DnaHelix3D` needs the `3d` feature as well (`features = ["biology", "3d"]`), which turns on
+`fframes/3d`. It renders the helix with `fframes::three_d` on every frame, on the CPU or, with
+`wgpu`, on the GPU, into a `width` x `height` image around `center`.
+
+- **Model:** the helix has B-DNA proportions, with ten pairs a turn and a minor and a major
+  groove. Each pair is a rung of its two bases in `bases` colours, the same as `DnaHelix`.
+  The rung runs between two backbones of beads in `strand_color`.
+- **View:** the axis runs across the image and the camera fits the whole length. The camera
+  looks from `elevation` degrees above while the helix turns `spin` degrees a second about
+  its own axis.
+- **Motion:** from `delay` the pairs build up from the left, one every `pair_time` seconds.
+  Their beads grow, the backbone reaches over from the pair before, and the two bases meet
+  in the middle.
+
+Gallery scene: `DnaHelix3D`. Its five seconds of 24 pairs render on the CPU in about three
+seconds on this machine's 32 threads.
+
+```rust
+use fframes_kit::prelude::*;
+
+# #[cfg(feature = "3d")]
+fn helix<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(DnaHelix3D {
+        sequence: "GATTACAGATTACA".into(),
+        width: 1000.0,
+        height: 420.0,
+        spin: 20.0,
+        ..ui.defaults()
+    })
+}
+```
 ## Transcription
 
 `Transcription` copies a gene into mRNA. The DNA of `coding` (its coding strand on top, the

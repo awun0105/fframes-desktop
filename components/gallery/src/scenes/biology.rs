@@ -44,6 +44,19 @@ fn dna_helix<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+/// The helix in 3D, its pairs building from the left while it turns.
+#[cfg(feature = "three-d")]
+fn dna_helix_3d<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "DnaHelix3D");
+    let figure = ui.show(DnaHelix3D {
+        delay: 0.6,
+        center: (0.0, -0.2),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 fn transcription<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     let head = title(ui, "Transcription");
     let figure = ui.show(Transcription {
@@ -218,7 +231,7 @@ fn dihybrid<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 
 pub fn scenes() -> Vec<GalleryScene> {
-    vec![
+    let scenes = vec![
         // eight parts half a second apart from 0.6 s, the last name at about 5.1 s
         GalleryScene::new("Cell", 6.5, animal_cell),
         GalleryScene::new("PlantCell", 7.5, plant_cell),
@@ -249,5 +262,14 @@ pub fn scenes() -> Vec<GalleryScene> {
         // the gametes split off by 2.3 s, then the cells fill from 2.4 s to 4.8 s
         GalleryScene::new("PunnettSquare", 6.5, monohybrid),
         GalleryScene::new("DihybridCross", 6.5, dihybrid),
-    ]
+    ];
+    // the 3D helix follows the 2D one
+    #[cfg(feature = "three-d")]
+    let scenes = {
+        let mut scenes = scenes;
+        // 24 pairs of 0.12 s from 0.6 s, then it keeps turning
+        scenes.insert(3, GalleryScene::new("DnaHelix3D", 5.0, dna_helix_3d));
+        scenes
+    };
+    scenes
 }
