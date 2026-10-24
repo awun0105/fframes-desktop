@@ -5,7 +5,9 @@ pub use fframes::{
     TextAlign, Transform, Video, animation::Easing, svgr, timeline,
 };
 
-pub use crate::anim::{Anim, Enter, Exit, FadeIn, FadeOut, RateFunc, ValueTracker};
+pub use crate::anim::{
+    Anim, ComplexValueTracker, Enter, Exit, FadeIn, FadeOut, RateFunc, ValueTracker,
+};
 pub use crate::animate::{
     AnimationGroup, Circumscribe, Create, DrawBorderThenFill, Emphasis, EnterAnim, ExitAnim, Flash,
     GrowArrow, GrowFromCenter, GrowFromPoint, Indicate, LaggedStart, MoveAlongPath,
@@ -30,8 +32,10 @@ pub use crate::effects::{
     WhiteNoise,
 };
 pub use crate::explain::{
-    Area, Axes, AxesMap, Canvas, Curve, Func, FunctionGraph, Matrix, NumberLine, NumberPlane,
-    ParametricFunction, Range, RiemannRectangles, SampleAt, Space, Table, VGroup,
+    Area, Axes, AxesMap, AzimuthDirection, AzimuthUnits, Canvas, ComplexPlane, Curve, Func,
+    FunctionGraph, Matrix, NumberLine, NumberPlane, ParametricFunction, PolarPlane, Range,
+    RiemannRectangles, SampleAt, SampleColumn, SampleRow, SampleSpace, Scaling, Space, Table,
+    VGroup,
 };
 pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(all(feature = "biology", feature = "3d"))]

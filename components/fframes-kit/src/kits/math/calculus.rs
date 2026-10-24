@@ -434,6 +434,7 @@ mod tests {
                 origin: (0.0, 0.0),
                 unit: 100.0,
             },
+            ..AxesMap::default()
         }
     }
 

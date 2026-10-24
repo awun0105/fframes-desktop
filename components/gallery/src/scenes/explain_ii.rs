@@ -1,13 +1,32 @@
 //! Numbers, text, coordinate systems, fields and graphs, one scene per group.
 
-use fframes_kit::prelude::*;
+use fframes_kit::{kurbo, prelude::*};
 
-use crate::GalleryScene;
+use crate::{GalleryScene, scenes::core::title};
+
+fn create() -> EnterAnim {
+    Create::default().into()
+}
+
+fn fade_in(delay: f32) -> FadeIn {
+    FadeIn {
+        delay,
+        ..FadeIn::default()
+    }
+}
 
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // the numbers change on every frame, their digits stay in their slots
         GalleryScene::new("DecimalNumber", 3.0, decimal_number),
+        // the plane is created, a tracked number moves along a path with its label
+        GalleryScene::new("ComplexPlane", 2.0, complex_plane),
+        // the grid is created and a rose is drawn on it
+        GalleryScene::new("PolarPlane", 2.0, polar_plane),
+        // log axes with an exponential drawn straight, a unit interval below
+        GalleryScene::new("LogBase", 2.0, log_base),
+        // the cells grow in, the braces and labels fade in
+        GalleryScene::new("SampleSpace", 2.0, sample_space),
     ]
 }
 
@@ -73,4 +92,158 @@ fn decimal_number<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ..ui.defaults()
     });
     svgr!(<g>{head}{money}{signed}{count}{variable}{list}{markup}</g>)
+}
+
+fn complex_plane<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "ComplexPlane");
+    let plane = ComplexPlane {
+        plane: NumberPlane {
+            axes: Axes {
+                x_range: Range::new(-5.0, 5.0, 1.0),
+                y_range: Range::new(-3.0, 3.0, 1.0),
+                x_length: 10.0,
+                y_length: 6.0,
+                center: (0.0, -0.5),
+                x_numbers: vec![-4.0, -2.0, 2.0, 4.0],
+                y_numbers: vec![-2.0, -1.0, 1.0, 2.0],
+                enter: Some(create()),
+                labels_enter: Some(fade_in(0.6)),
+                ..ui.defaults()
+            },
+            enter: Some(create()),
+            ..ui.defaults()
+        },
+    };
+    // z moves from 1 to 3 + 2i on a quarter turn, as a closure of time
+    let t = f64::from(motion::clamp01((ui.seconds() - 0.8) / 1.0));
+    let z = (1.0 + 2.0 * t, 2.0 * (t * std::f64::consts::FRAC_PI_2).sin());
+    let (x, y) = plane.n2p(ui, z);
+    let label = plane.label(ui, z, 1);
+    let grid = ui.show(plane);
+    let dot = ui.show(Dot {
+        cx: x,
+        cy: y,
+        enter: Some(
+            GrowFromCenter {
+                delay: 0.6,
+                ..ui.defaults()
+            }
+            .into(),
+        ),
+        ..ui.defaults()
+    });
+    let label = ui.show(Label {
+        enter: Some(fade_in(0.6)),
+        ..label
+    });
+    svgr!(<g>{grid}{head}{dot}{label}</g>)
+}
+
+/// A four-petal rose, `r = 3 |cos 2θ|`, in pixels of the plane.
+fn rose(plane: &PolarPlane, space: Space, until: f64) -> kurbo::BezPath {
+    let mut path = kurbo::BezPath::new();
+    let steps = 360;
+    for i in 0..=steps {
+        let theta = std::f64::consts::TAU * until * f64::from(i) / f64::from(steps);
+        let p = plane.pr2pt_in(space, (3.0 * (2.0 * theta).cos().abs(), theta));
+        if i == 0 {
+            path.move_to(p);
+        } else {
+            path.line_to(p);
+        }
+    }
+    path
+}
+
+fn polar_plane<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "PolarPlane");
+    let plane = PolarPlane {
+        center: (0.0, -0.2),
+        size: 6.0,
+        enter: Some(create()),
+        labels_enter: Some(fade_in(0.6)),
+        ..ui.defaults()
+    };
+    let curve = rose(&plane, ui.space, 1.0);
+    let grid = ui.show(plane);
+    let curve = ui.show(SvgPath {
+        path: curve,
+        stroke: Some(ui.theme.colors.highlight),
+        stroke_width: 5.0,
+        fill: None,
+        enter: Some(
+            Create {
+                delay: 0.6,
+                ..ui.defaults()
+            }
+            .into(),
+        ),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{grid}{curve}</g>)
+}
+
+fn log_base<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "LogBase");
+    let axes = Axes {
+        x_range: Range::new(0.0, 10.0, 1.0),
+        y_range: Range::new(0.0, 4.0, 1.0),
+        y_scaling: Scaling::LogBase(10.0),
+        x_length: 10.0,
+        y_length: 4.4,
+        center: (0.0, 0.5),
+        x_numbers: vec![2.0, 4.0, 6.0, 8.0, 10.0],
+        y_numbers: vec![10.0, 100.0, 1000.0],
+        enter: Some(create()),
+        labels_enter: Some(fade_in(0.6)),
+        ..ui.defaults()
+    };
+    // 2^x is a straight line on a log axis
+    let graph = FunctionGraph {
+        enter: Some(
+            Create {
+                delay: 0.6,
+                ..ui.defaults()
+            }
+            .into(),
+        ),
+        ..axes.plot(ui, |x| 2f64.powf(x * 1.2))
+    };
+    let axes = ui.show(axes);
+    let graph = ui.show(graph);
+    let unit = ui.show(NumberLine {
+        center: (0.0, -2.9),
+        enter: Some(create()),
+        numbers_enter: Some(fade_in(0.6)),
+        ..NumberLine::unit_interval(ui.theme)
+    });
+    svgr!(<g>{head}{axes}{graph}{unit}</g>)
+}
+
+fn sample_space<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "SampleSpace");
+    let space = ui.show(SampleSpace {
+        columns: vec![
+            SampleColumn::new(
+                0.35,
+                "rain",
+                vec![SampleRow::new(0.8, "late"), SampleRow::new(0.2, "on time")],
+            ),
+            SampleColumn::new(
+                0.65,
+                "no rain",
+                vec![
+                    SampleRow::new(0.25, "late"),
+                    SampleRow::new(0.75, "on time"),
+                ],
+            ),
+        ],
+        center: (0.0, 0.2),
+        width: 8.0,
+        height: 4.6,
+        enter: Some(GrowFromCenter::default().into()),
+        labels_enter: Some(fade_in(0.6)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{space}</g>)
 }

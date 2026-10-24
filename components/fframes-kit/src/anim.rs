@@ -54,6 +54,11 @@ impl<'a, T: Animatable + Copy + Default> From<&'a KeyFramesAnimation<T>> for Ani
 /// ```
 pub type ValueTracker<'a> = Anim<'a, f32>;
 
+/// Manim's `ComplexValueTracker`: a complex number `(re, im)` that changes over time, a
+/// `timeline!` of `(f32, f32)` read with [`Ui::sample`]. Place it with
+/// [`ComplexPlane::n2p`](crate::explain::ComplexPlane::n2p).
+pub type ComplexValueTracker<'a> = Anim<'a, (f32, f32)>;
+
 /// How an animation's progress maps to time, with Manim's names. `Smooth` is the default.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum RateFunc {

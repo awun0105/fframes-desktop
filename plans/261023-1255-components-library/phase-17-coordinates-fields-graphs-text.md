@@ -132,7 +132,7 @@ Add the remaining 2D mobjects of the Manim CE reference:
 ## Todo
 
 - [x] Numbers and text mobjects
-- [ ] Coordinate systems and `LogBase`
+- [x] Coordinate systems and `LogBase`
 - [ ] Implicit functions, vector fields, stream lines
 - [ ] Graph layouts, `Graph` and `DiGraph`
 - [ ] Typed matrices and tables
@@ -151,3 +151,15 @@ Add the remaining 2D mobjects of the Manim CE reference:
   and italic need the family's bold and italic faces in the media (the gallery has only DM Sans
   Medium, so they look regular there).
 - `BulletedList` draws its bullets as circles, independent of the font.
+- `Scaling::{Linear, LogBase}` is on `Axes` (`x_scaling`, `y_scaling`), `NumberLine` (`scaling`)
+  and `AxesMap`, which gained the two fields and `a2p` (axis units to pixels): a change to the
+  shape of a public struct. Ranges are in axis units (exponents), as in Manim; points, numbers
+  and graph ranges take values. Graphs on a log x-axis sample evenly by exponent
+  (`sample_scaled`). Every existing axes frame stayed at 0.000% on both backends.
+- `UnitInterval` is the constructor `NumberLine::unit_interval(theme)`.
+- `ComplexValueTracker` (`Anim<(f32, f32)>`) came with the complex plane instead of with the
+  trackers, and `ComplexPlane::label` writes `a+bi` with `format_complex`.
+- `SampleSpace` scales probabilities that do not add up to 1 and divides one level (columns,
+  then rows), which covers Manim's conditional-probability figures.
+- DM Sans has `π` but not `τ`; the gallery uses `PiRadians` and the docs name the font need.
+- Extra e2e frames: `PolarPlane@end`, `LogBase@end`, `SampleSpace@end`.

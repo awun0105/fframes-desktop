@@ -77,6 +77,11 @@
 //! | `TransformMatchingTex` (feature `latex`) | `latex::TransformMatchingTex` |
 //! | the frame: 8 units tall, `y` up, origin in the middle | [`Space`](explain::Space) in `ui.space`, [`Canvas`](explain::Canvas) for another one |
 //! | `NumberLine`, `Axes`, `NumberPlane` | [`explain`]: the same names, `x_range: Range::new(min, max, step)` |
+//! | `LinearBase`, `LogBase` (`scaling=`) | [`Scaling`](explain::Scaling) in `Axes::x_scaling`, `y_scaling`, `NumberLine::scaling`; the range in exponents |
+//! | `UnitInterval` | [`NumberLine::unit_interval`](explain::NumberLine::unit_interval) |
+//! | `ComplexPlane`, `n2p`, `p2n`, `ComplexValueTracker` | [`ComplexPlane`](explain::ComplexPlane), `(re, im)` pairs, [`ComplexValueTracker`](anim::ComplexValueTracker) |
+//! | `PolarPlane`, `pr2pt`, `pt2pr` | [`PolarPlane`](explain::PolarPlane) with [`AzimuthUnits`](explain::AzimuthUnits) |
+//! | `SampleSpace`, `divide_vertically`, `divide_horizontally` | [`SampleSpace`](explain::SampleSpace) of [`SampleColumn`](explain::SampleColumn)s of [`SampleRow`](explain::SampleRow)s |
 //! | `axes.c2p`, `p2c`, `plot`, `i2gp`, `get_vertical_line`, `get_graph_label`, `get_riemann_rectangles`, `get_area` | `Axes::c2p`, `p2c`, `plot`, `FunctionGraph::point`, `Axes::vertical_line`, `graph_label`, `riemann_rectangles`, `area` |
 //! | `m.next_to(point, UR)` | [`Label`](label::Label) `{ direction: Anchor::TopRight, .. }` |
 //! | `ParametricFunction` | [`ParametricFunction`](explain::ParametricFunction) |

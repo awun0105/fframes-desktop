@@ -62,6 +62,39 @@ impl Range {
     }
 }
 
+/// How the values of an axis are spread along it (Manim `LinearBase`, `LogBase`).
+///
+/// The ranges of an [`Axes`] or [`NumberLine`] are in axis units: with `LogBase(10.0)`,
+/// `x_range: Range::new(0.0, 3.0, 1.0)` runs from 1 to 1000 with a tick at every power of
+/// ten, as in Manim. Everything built from them takes data values: `c2p(250.0, ..)`, the
+/// numbers to write, a graph's `x_range` and `point(x)`.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Scaling {
+    #[default]
+    Linear,
+    /// Logarithmic with this base; values that are not positive are not drawn.
+    LogBase(f64),
+}
+
+impl Scaling {
+    /// The position along the axis, in axis units, of the value `v`.
+    pub fn to_axis(self, v: f64) -> f64 {
+        match self {
+            Scaling::Linear => v,
+            Scaling::LogBase(base) if v > 0.0 => v.log(base),
+            Scaling::LogBase(_) => f64::NAN,
+        }
+    }
+
+    /// The value at the position `a` in axis units.
+    pub fn from_axis(self, a: f64) -> f64 {
+        match self {
+            Scaling::Linear => a,
+            Scaling::LogBase(base) => base.powf(a),
+        }
+    }
+}
+
 /// The mapping of axes from data to pixels: their ranges, their size in units, the unit
 /// point of their center and the space they are drawn in. It is `Copy`, so graphs, lines and
 /// labels built from the same axes each keep one.
@@ -75,6 +108,8 @@ pub struct AxesMap {
     /// The middle of the axes' box, in units of `space`.
     pub center: (f64, f64),
     pub space: Space,
+    pub x_scaling: Scaling,
+    pub y_scaling: Scaling,
 }
 
 impl Default for AxesMap {
@@ -86,9 +121,14 @@ impl Default for AxesMap {
 impl AxesMap {
     /// The point in units of `space` of the data point `(x, y)`.
     pub fn to_space(&self, x: f64, y: f64) -> (f64, f64) {
+        self.axis_to_space(self.x_scaling.to_axis(x), self.y_scaling.to_axis(y))
+    }
+
+    /// The point in units of `space` of a point in axis units.
+    fn axis_to_space(&self, ax: f64, ay: f64) -> (f64, f64) {
         (
-            self.center.0 + (self.x.fraction(x) - 0.5) * self.x_length,
-            self.center.1 + (self.y.fraction(y) - 0.5) * self.y_length,
+            self.center.0 + (self.x.fraction(ax) - 0.5) * self.x_length,
+            self.center.1 + (self.y.fraction(ay) - 0.5) * self.y_length,
         )
     }
 
@@ -102,9 +142,17 @@ impl AxesMap {
             }
         };
         (
-            back(sx, self.center.0, self.x_length, self.x),
-            back(sy, self.center.1, self.y_length, self.y),
+            self.x_scaling
+                .from_axis(back(sx, self.center.0, self.x_length, self.x)),
+            self.y_scaling
+                .from_axis(back(sy, self.center.1, self.y_length, self.y)),
         )
+    }
+
+    /// The pixel of a point in axis units: exponents on a `LogBase` axis.
+    pub fn a2p(&self, ax: f64, ay: f64) -> Point {
+        let (sx, sy) = self.axis_to_space(ax, ay);
+        self.space.to_px(sx, sy)
     }
 
     /// The pixel of the data point `(x, y)` (Manim `coords_to_point`, `c2p`).
@@ -119,14 +167,16 @@ impl AxesMap {
         self.from_space(sx, sy)
     }
 
-    /// The data `y` the x-axis is drawn at: 0, or the nearest end of the y range.
+    /// The data `y` the x-axis is drawn at: 0 (1 on a `LogBase` axis), or the nearest end
+    /// of the y range.
     pub fn x_axis_y(&self) -> f64 {
-        self.y.clamp(0.0)
+        self.y_scaling.from_axis(self.y.clamp(0.0))
     }
 
-    /// The data `x` the y-axis is drawn at: 0, or the nearest end of the x range.
+    /// The data `x` the y-axis is drawn at: 0 (1 on a `LogBase` axis), or the nearest end
+    /// of the x range.
     pub fn y_axis_x(&self) -> f64 {
-        self.x.clamp(0.0)
+        self.x_scaling.from_axis(self.x.clamp(0.0))
     }
 }
 
@@ -190,7 +240,7 @@ impl AxisLook {
 }
 
 /// `v` with `decimals` decimals, without a sign on zero.
-fn number(v: f64, decimals: usize) -> String {
+pub(crate) fn number(v: f64, decimals: usize) -> String {
     let s = format!("{v:.decimals$}");
     if s.starts_with('-') && s[1..].chars().all(|c| c == '0' || c == '.') {
         s[1..].to_owned()
@@ -201,10 +251,13 @@ fn number(v: f64, decimals: usize) -> String {
 
 /// A horizontal number line (Manim `NumberLine`): `range` spread over `length` units
 /// centered on `center`, with ticks at every step and the `numbers` written below them.
+/// [`NumberLine::unit_interval`] is Manim's `UnitInterval`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct NumberLine {
+    /// In axis units, see [`Scaling`].
     pub range: Range,
+    pub scaling: Scaling,
     /// Length in units of `ui.space`.
     pub length: f64,
     /// The middle of the line, in units of `ui.space`.
@@ -235,6 +288,7 @@ impl Themed for NumberLine {
     fn themed(t: &Theme) -> Self {
         Self {
             range: Range::new(-8.0, 8.0, 1.0),
+            scaling: Scaling::Linear,
             length: 12.0,
             center: (0.0, 0.0),
             color: t.colors.text,
@@ -275,9 +329,25 @@ impl NumberLine {
         }
     }
 
+    /// Manim's `UnitInterval`: 0 to 1 in tenths, 10 units long, 0, 0.5 and 1 written.
+    pub fn unit_interval(t: &Theme) -> Self {
+        Self {
+            range: Range::new(0.0, 1.0, 0.1),
+            length: 10.0,
+            numbers: vec![0.0, 0.5, 1.0],
+            decimals: 1,
+            ..Self::themed(t)
+        }
+    }
+
     /// The pixel of the number `x` in `space` (Manim `number_to_point`, `n2p`).
     pub fn n2p_in(&self, space: Space, x: f64) -> Point {
-        let sx = self.center.0 + (self.range.fraction(x) - 0.5) * self.length;
+        self.a2p_in(space, self.scaling.to_axis(x))
+    }
+
+    /// The pixel of the position `a` in axis units.
+    fn a2p_in(&self, space: Space, a: f64) -> Point {
+        let sx = self.center.0 + (self.range.fraction(a) - 0.5) * self.length;
         space.to_px(sx, self.center.1)
     }
 
@@ -289,11 +359,17 @@ impl NumberLine {
 
     /// The number at the pixel column `px` (Manim `point_to_number`, `p2n`).
     pub fn p2n(&self, ui: &Ui<'_, '_, '_>, px: f32) -> f64 {
-        let (sx, _) = ui.space.from_px(Point::new(f64::from(px), 0.0));
+        self.p2n_in(ui.space, f64::from(px))
+    }
+
+    /// The number at the pixel column `px` in `space`.
+    pub fn p2n_in(&self, space: Space, px: f64) -> f64 {
+        let (sx, _) = space.from_px(Point::new(px, 0.0));
         if self.length == 0.0 {
-            return self.range.min;
+            return self.scaling.from_axis(self.range.min);
         }
-        self.range.min + ((sx - self.center.0) / self.length + 0.5) * self.range.span()
+        let a = self.range.min + ((sx - self.center.0) / self.length + 0.5) * self.range.span();
+        self.scaling.from_axis(a)
     }
 }
 
@@ -301,8 +377,8 @@ impl<'a> Component<'a> for NumberLine {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         let look = self.look();
         let (start, end) = (
-            self.n2p_in(ui.space, self.range.min),
-            self.n2p_in(ui.space, self.range.max),
+            self.a2p_in(ui.space, self.range.min),
+            self.a2p_in(ui.space, self.range.max),
         );
         let mut lines = BezPath::new();
         look.line(&mut lines, start, end);
@@ -312,7 +388,7 @@ impl<'a> Component<'a> for NumberLine {
                 .range
                 .ticks()
                 .into_iter()
-                .map(|t| self.n2p_in(ui.space, t));
+                .map(|t| self.a2p_in(ui.space, t));
             look.ticks(&mut ticks, points, Vec2::new(0.0, 1.0));
         }
         let drawn = draw_animated(
@@ -357,8 +433,11 @@ impl<'a> Component<'a> for NumberLine {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Axes<'a> {
+    /// In axis units, see [`Scaling`].
     pub x_range: Range,
     pub y_range: Range,
+    pub x_scaling: Scaling,
+    pub y_scaling: Scaling,
     /// Length of the x-axis in units of `ui.space`.
     pub x_length: f64,
     pub y_length: f64,
@@ -399,6 +478,8 @@ impl Themed for Axes<'_> {
         Self {
             x_range: Range::new(-6.0, 6.0, 1.0),
             y_range: Range::new(-3.0, 3.0, 1.0),
+            x_scaling: Scaling::Linear,
+            y_scaling: Scaling::Linear,
             x_length: 12.0,
             y_length: 6.0,
             center: (0.0, 0.0),
@@ -443,6 +524,8 @@ impl Axes<'_> {
             y_length: self.y_length,
             center: self.center,
             space,
+            x_scaling: self.x_scaling,
+            y_scaling: self.y_scaling,
         }
     }
 
@@ -467,7 +550,10 @@ impl Axes<'_> {
     pub fn plot(&self, ui: &Ui<'_, '_, '_>, f: Func) -> FunctionGraph {
         FunctionGraph {
             f,
-            x_range: (self.x_range.min, self.x_range.max),
+            x_range: (
+                self.x_scaling.from_axis(self.x_range.min),
+                self.x_scaling.from_axis(self.x_range.max),
+            ),
             axes: self.map(ui),
             ..ui.defaults()
         }
@@ -566,23 +652,24 @@ impl Axes<'_> {
     /// The axis lines and ticks.
     fn shapes(&self, map: &AxesMap) -> [Shape; 2] {
         let look = self.look();
-        let (ax, ay) = (map.y_axis_x(), map.x_axis_y());
+        // where the axes cross, in axis units
+        let (ax, ay) = (map.x.clamp(0.0), map.y.clamp(0.0));
         let mut lines = BezPath::new();
         look.line(
             &mut lines,
-            map.c2p(self.x_range.min, ay),
-            map.c2p(self.x_range.max, ay),
+            map.a2p(self.x_range.min, ay),
+            map.a2p(self.x_range.max, ay),
         );
         look.line(
             &mut lines,
-            map.c2p(ax, self.y_range.min),
-            map.c2p(ax, self.y_range.max),
+            map.a2p(ax, self.y_range.min),
+            map.a2p(ax, self.y_range.max),
         );
         let mut ticks = BezPath::new();
         if self.include_ticks {
-            let xs = self.x_range.ticks().into_iter().map(|x| map.c2p(x, ay));
+            let xs = self.x_range.ticks().into_iter().map(|x| map.a2p(x, ay));
             look.ticks(&mut ticks, xs, Vec2::new(0.0, 1.0));
-            let ys = self.y_range.ticks().into_iter().map(|y| map.c2p(ax, y));
+            let ys = self.y_range.ticks().into_iter().map(|y| map.a2p(ax, y));
             look.ticks(&mut ticks, ys, Vec2::new(1.0, 0.0));
         }
         look.shapes(lines, ticks)
@@ -591,6 +678,17 @@ impl Axes<'_> {
 
 impl<'a> Component<'a> for Axes<'a> {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        self.render_with(ui, number)
+    }
+}
+
+impl<'a> Axes<'a> {
+    /// The axes with the y numbers written by `y_number(value, decimals)`.
+    pub(crate) fn render_with(
+        self,
+        ui: &mut Ui<'a, '_, '_>,
+        y_number: fn(f64, usize) -> String,
+    ) -> Svgr<'a> {
         let map = self.map(ui);
         let drawn = draw_animated(
             ui,
@@ -625,13 +723,13 @@ impl<'a> Component<'a> for Axes<'a> {
                 TextAnchor::End,
                 0.0,
                 1.0,
-                Cow::Owned(number(y, self.decimals)),
+                Cow::Owned(y_number(y, self.decimals)),
             )
         });
         let mut texts: Vec<Svgr<'a>> = x_numbers.chain(y_numbers).collect();
         let ends = [
-            (self.x_label, map.c2p(self.x_range.max, ay)),
-            (self.y_label, map.c2p(ax, self.y_range.max)),
+            (self.x_label, map.a2p(self.x_range.max, map.y.clamp(0.0))),
+            (self.y_label, map.a2p(map.x.clamp(0.0), self.y_range.max)),
         ];
         for (label, end) in ends {
             if let Some(text) = label {
@@ -716,9 +814,9 @@ impl NumberPlane<'_> {
                 for k in 0..subs {
                     let v = t + range.step * k as f64 / ratio as f64;
                     let (a, b) = if vertical {
-                        (map.c2p(v, y.min), map.c2p(v, y.max))
+                        (map.a2p(v, y.min), map.a2p(v, y.max))
                     } else {
-                        (map.c2p(x.min, v), map.c2p(x.max, v))
+                        (map.a2p(x.min, v), map.a2p(x.max, v))
                     };
                     let path = if k == 0 { &mut main } else { &mut faded };
                     path.move_to(a);
@@ -745,6 +843,17 @@ impl NumberPlane<'_> {
 
 impl<'a> Component<'a> for NumberPlane<'a> {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        self.render_with(ui, number)
+    }
+}
+
+impl<'a> NumberPlane<'a> {
+    /// The plane with the y numbers written by `y_number(value, decimals)`.
+    pub(crate) fn render_with(
+        self,
+        ui: &mut Ui<'a, '_, '_>,
+        y_number: fn(f64, usize) -> String,
+    ) -> Svgr<'a> {
         let map = self.axes.map(ui);
         let grid = draw_animated(
             ui,
@@ -753,7 +862,7 @@ impl<'a> Component<'a> for NumberPlane<'a> {
             self.exit.as_ref(),
             None,
         );
-        let axes = ui.show(self.axes);
+        let axes = self.axes.render_with(ui, y_number);
         fframes::svgr!(<g>{grid}{axes}</g>)
     }
 }
@@ -813,6 +922,54 @@ mod tests {
         assert_eq!(p, Point::new(960.0, 405.0));
         let p = nl.n2p_in(Space::FULL_HD, 0.0);
         assert_eq!(p.x, 960.0 - 5.0 * 135.0);
+    }
+
+    #[test]
+    fn log_axes_map_values_by_their_exponent() {
+        let axes = Axes {
+            x_range: Range::new(0.0, 3.0, 1.0),
+            y_range: Range::new(-2.0, 2.0, 1.0),
+            x_scaling: Scaling::LogBase(10.0),
+            y_scaling: Scaling::LogBase(10.0),
+            ..Axes::default()
+        };
+        let map = axes.map_in(Space::FULL_HD);
+        for (x, y) in [(250.0, 0.37), (1.0, 1.0), (1000.0, 0.01)] {
+            let (bx, by) = map.p2c(map.c2p(x, y));
+            assert!(
+                (bx / x - 1.0).abs() < 1e-9 && (by / y - 1.0).abs() < 1e-9,
+                "{x} {y}"
+            );
+        }
+        // 100 is two thirds along an axis from 1 to 1000
+        assert_eq!(map.c2p(100.0, 1.0), map.a2p(2.0, 0.0));
+        let left = map.c2p(1.0, 1.0).x;
+        let right = map.c2p(1000.0, 1.0).x;
+        assert!((map.c2p(100.0, 1.0).x - (left + (right - left) * 2.0 / 3.0)).abs() < 1e-9);
+        // the axes cross at 1, and values that are not positive are not drawn
+        assert_eq!((map.y_axis_x(), map.x_axis_y()), (1.0, 1.0));
+        assert!(map.c2p(-5.0, 1.0).x.is_nan());
+
+        let line = NumberLine {
+            range: Range::new(-3.0, 3.0, 1.0),
+            scaling: Scaling::LogBase(10.0),
+            length: 6.0,
+            ..NumberLine::default()
+        };
+        for v in [0.001, 0.5, 1.0, 42.0, 1000.0] {
+            let p = line.n2p_in(Space::FULL_HD, v);
+            let back = line.p2n_in(Space::FULL_HD, p.x);
+            assert!((back / v - 1.0).abs() < 1e-9, "{v} {back}");
+        }
+        assert_eq!(line.n2p_in(Space::FULL_HD, 10.0).x, 960.0 + 135.0);
+    }
+
+    #[test]
+    fn unit_interval_runs_from_0_to_1_in_tenths() {
+        let unit = NumberLine::unit_interval(&Theme::default());
+        assert_eq!(unit.range.ticks().len(), 11);
+        assert_eq!(unit.n2p_in(Space::FULL_HD, 0.5).x, 960.0);
+        assert_eq!(unit.n2p_in(Space::FULL_HD, 1.0).x, 960.0 + 5.0 * 135.0);
     }
 
     #[test]

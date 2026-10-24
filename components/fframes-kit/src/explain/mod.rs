@@ -31,20 +31,26 @@
 
 mod axes;
 mod canvas;
+mod complex_plane;
 mod graph;
 mod matrix;
+mod polar_plane;
+mod sample_space;
 mod space;
 mod table;
 mod vgroup;
 
-pub use axes::{Axes, AxesMap, NumberLine, NumberPlane, Range};
+pub use axes::{Axes, AxesMap, NumberLine, NumberPlane, Range, Scaling};
 pub use canvas::Canvas;
+pub use complex_plane::{ComplexPlane, format_complex};
 pub use graph::{
     Area, Curve, Func, FunctionGraph, ParametricFunction, RiemannRectangles, SampleAt, sample,
-    sample_curve,
+    sample_curve, sample_scaled,
 };
 pub(crate) use graph::{graph_px, smooth};
 pub use matrix::Matrix;
+pub use polar_plane::{AzimuthDirection, AzimuthUnits, PolarPlane};
+pub use sample_space::{SampleColumn, SampleRow, SampleSpace};
 pub use space::Space;
 pub use table::Table;
 pub use vgroup::VGroup;

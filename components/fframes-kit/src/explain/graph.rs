@@ -13,7 +13,7 @@ use crate::{
     ui::Ui,
 };
 
-use super::{AxesMap, Space};
+use super::{AxesMap, Scaling, Space};
 
 /// A function of one variable. A plain `fn` (or a closure that captures nothing), so a graph
 /// can cache its samples by the function's address.
@@ -22,9 +22,9 @@ pub type Func = fn(f64) -> f64;
 /// A curve `t -> (x, y)`, a plain `fn` like [`Func`].
 pub type Curve = fn(f64) -> (f64, f64);
 
-/// What was sampled (a graph or a curve), the function's address, the range bits and the
-/// count.
-type SampleKey = (u8, usize, u64, u64, usize);
+/// What was sampled (a graph, a curve or a graph on a log axis), the function's address, the
+/// range bits, the count and the bits of the log base.
+type SampleKey = (u8, usize, u64, u64, usize, u64);
 
 /// Most sample runs kept; the cache starts over when it is full.
 const CACHE_ENTRIES: usize = 512;
@@ -59,10 +59,45 @@ fn cached(key: SampleKey, points: impl FnOnce() -> Arc<[(f64, f64)]>) -> Arc<[(f
 /// computed once per function, range and count, so every frame of a graph reuses them.
 pub fn sample(f: Func, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
     let samples = samples.max(1);
-    cached((0, f as usize, a.to_bits(), b.to_bits(), samples), || {
+    cached(
+        (0, f as usize, a.to_bits(), b.to_bits(), samples, 0),
+        || {
+            (0..=samples)
+                .map(|i| {
+                    let x = a + (b - a) * i as f64 / samples as f64;
+                    (x, f(x))
+                })
+                .collect()
+        },
+    )
+}
+
+/// `samples + 1` points `(x, f(x))` from `a` to `b`, evenly spaced along an axis with
+/// `scaling` (by their exponent on a `LogBase` axis), cached like [`sample`].
+pub fn sample_scaled(
+    f: Func,
+    a: f64,
+    b: f64,
+    samples: usize,
+    scaling: Scaling,
+) -> Arc<[(f64, f64)]> {
+    let Scaling::LogBase(base) = scaling else {
+        return sample(f, a, b, samples);
+    };
+    let samples = samples.max(1);
+    let key = (
+        2,
+        f as usize,
+        a.to_bits(),
+        b.to_bits(),
+        samples,
+        base.to_bits(),
+    );
+    cached(key, || {
+        let (a, b) = (scaling.to_axis(a), scaling.to_axis(b));
         (0..=samples)
             .map(|i| {
-                let x = a + (b - a) * i as f64 / samples as f64;
+                let x = scaling.from_axis(a + (b - a) * i as f64 / samples as f64);
                 (x, f(x))
             })
             .collect()
@@ -73,11 +108,14 @@ pub fn sample(f: Func, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
 /// [`sample`].
 pub fn sample_curve(f: Curve, a: f64, b: f64, samples: usize) -> Arc<[(f64, f64)]> {
     let samples = samples.max(1);
-    cached((1, f as usize, a.to_bits(), b.to_bits(), samples), || {
-        (0..=samples)
-            .map(|i| f(a + (b - a) * i as f64 / samples as f64))
-            .collect()
-    })
+    cached(
+        (1, f as usize, a.to_bits(), b.to_bits(), samples, 0),
+        || {
+            (0..=samples)
+                .map(|i| f(a + (b - a) * i as f64 / samples as f64))
+                .collect()
+        },
+    )
 }
 /// Values beyond this many units from the axes' range start a new piece of the curve, like
 /// a value that is not finite: `tan` near its poles.
@@ -116,10 +154,13 @@ pub(crate) fn smooth(points: impl IntoIterator<Item = Option<Point>>) -> BezPath
     path
 }
 
-/// The pixel of a data point, `None` when `y` is not drawable.
+/// The pixel of a data point, `None` when it is not drawable: not finite, far outside the
+/// y range, or not positive on a `LogBase` axis.
 pub(crate) fn graph_px(map: &AxesMap, x: f64, y: f64) -> Option<Point> {
     let span = (map.y.max - map.y.min).abs().max(1.0);
-    (y.is_finite() && (y - map.y.min).abs() < FAR * span).then(|| map.c2p(x, y))
+    let (ax, ay) = (map.x_scaling.to_axis(x), map.y_scaling.to_axis(y));
+    (ax.is_finite() && ay.is_finite() && (ay - map.y.min).abs() < FAR * span)
+        .then(|| map.a2p(ax, ay))
 }
 
 shape! {
@@ -136,7 +177,7 @@ shape! {
     }
     paint: Paint::outline(t);
     path(s) {
-        let points = sample(s.f, s.x_range.0, s.x_range.1, s.samples);
+        let points = sample_scaled(s.f, s.x_range.0, s.x_range.1, s.samples, s.axes.x_scaling);
         smooth(points.iter().map(|&(x, y)| graph_px(&s.axes, x, y)))
     }
 }
@@ -332,6 +373,8 @@ mod tests {
                 origin: (0.0, 0.0),
                 unit: 100.0,
             },
+            x_scaling: Scaling::Linear,
+            y_scaling: Scaling::Linear,
         }
     }
 

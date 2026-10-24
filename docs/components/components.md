@@ -396,6 +396,57 @@ assert_eq!(fframes_kit::latex::chem_source(reaction.ce).matches("{{").count(), 4
 # }
 ```
 
+## Coordinate systems
+
+The explain layer measures in units of `ui.space`, 8 units tall with `y` up, like Manim
+(see the `explain` module docs for `NumberLine`, `Axes`, `NumberPlane` and their graphs).
+These build on it:
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `Scaling` | `Linear`, `LogBase(base)` on `Axes::x_scaling`, `y_scaling` and `NumberLine::scaling` | a logarithmic axis; its `Range` is in exponents (`Range::new(0.0, 3.0, 1.0)` runs from 1 to 1000), everything else takes values: `c2p(250.0, ..)`, the numbers to write, a graph's `x_range` |
+| `NumberLine::unit_interval(theme)` | a `NumberLine` | Manim's `UnitInterval`: 0 to 1 in tenths, 10 units long |
+| `ComplexPlane` | `plane: NumberPlane` | the imaginary numbers written `i`, `2i`, `-i`; `n2p((re, im))`, `p2n`, `label(z, decimals)` writes `3+2i` at its point (`format_complex`) |
+| `PolarPlane` | `center`, `size`, `radius_max` (4), `radius_step` (1), `azimuth_step` (12 spokes), `azimuth_units` (`PiRadians`, `TauRadians`, `Degrees`, `Gradians`, `None`), `azimuth_offset`, `azimuth_direction` (`Ccw`, `Cw`), `radius_numbers`, line and number paints, `enter`, `exit`, `labels_enter`, `labels_exit` | circles and spokes with the radii and azimuths written; `pr2pt((r, θ))`, `pt2pr` |
+| `SampleSpace` | `columns: Vec<SampleColumn>` (each `p`, `label`, `rows: Vec<SampleRow>`), `center`, `width`, `height`, `colors`, `fill_opacity`, `stroke`, `label_style`, `brace_depth`, `enter`, `exit`, `labels_enter`, `labels_exit` | a rectangle split into columns by probability and each column into rows, so a cell's area is the joint probability; column labels under braces; `cells_in(space)` gives the rectangles |
+
+`ComplexValueTracker` is a `(re, im)` that follows a `timeline!` of `(f32, f32)`, read with
+`ui.sample` like a `ValueTracker`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn planes<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let plane = ComplexPlane::default();
+    let z = (2.0, 1.0 + f64::from(ui.seconds()));
+    let (x, y) = plane.n2p(ui, z);
+    let label = plane.label(ui, z, 1);
+    let plane = ui.show(plane);
+    let dot = ui.show(Dot { cx: x, cy: y, ..ui.defaults() });
+    let label = ui.show(label);
+    let growth = Axes {
+        x_range: Range::new(0.0, 10.0, 1.0),
+        y_range: Range::new(0.0, 3.0, 1.0),
+        y_scaling: Scaling::LogBase(10.0),
+        y_numbers: vec![10.0, 100.0, 1000.0],
+        ..ui.defaults()
+    };
+    let curve = growth.plot(ui, |x| 2f64.powf(x));
+    let growth = ui.show(growth);
+    let curve = ui.show(curve);
+    svgr!(<g>{plane}{dot}{label}{growth}{curve}</g>)
+}
+
+let polar = PolarPlane::default();
+let p = polar.pr2pt_in(Space::FULL_HD, (2.0, 1.0));
+let (r, theta) = polar.pt2pr_in(Space::FULL_HD, p);
+assert!((r - 2.0).abs() < 1e-9 && (theta - 1.0).abs() < 1e-9);
+assert_eq!(fframes_kit::explain::format_complex((0.0, -1.0), 0), "-i");
+```
+
+The `PiRadians` azimuths need a font with `π`, `TauRadians` one with `τ` (DM Sans has no
+`τ`, and `inspect` reports the fallback).
+
 ## Shapes
 
 Every shape is a component with its geometry props, the paint props `fill`, `stroke`,

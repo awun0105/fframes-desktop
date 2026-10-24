@@ -9,7 +9,8 @@ with `ui.sample`. Every entry names its scene in the components gallery
 
 The calculus figures are overlays. They take the mapping of the line or axes they sit on
 and draw only themselves, so you show the line or axes once and put several figures on it.
-`FunctionPlot` draws its axes too. The geometry figures (`UnitCircle`, `LinearTransform`,
+`FunctionPlot` draws its axes too. An `Axes` with `y_scaling: Scaling::LogBase(10.0)` (or
+`x_scaling`) is logarithmic; its range is in exponents and the figures on it take values. The geometry figures (`UnitCircle`, `LinearTransform`,
 `VectorSum`, `Pythagoras`) stand alone and are placed in units of `ui.space`; show them in
 a `ui.with_space(..)` to draw them at another scale.
 
