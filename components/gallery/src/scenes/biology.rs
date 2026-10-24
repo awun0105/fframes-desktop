@@ -173,6 +173,50 @@ fn lock_and_key<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     enzyme(ui, false, "LockAndKey")
 }
 
+fn punnett<'a>(
+    ui: &mut Ui<'a, '_, '_>,
+    name: &'static str,
+    parents: (&str, &str),
+    traits: &[(&str, &str)],
+    colors: Option<&[&str]>,
+) -> Svgr<'a> {
+    let head = title(ui, name);
+    let figure = ui.show(PunnettSquare {
+        parents: (parents.0.into(), parents.1.into()),
+        traits: traits.iter().map(|&(d, r)| (d.into(), r.into())).collect(),
+        phenotype_colors: colors.map_or_else(
+            || ui.defaults::<PunnettSquare>().phenotype_colors,
+            |c| c.iter().map(|&h| Color::hex(h)).collect(),
+        ),
+        delay: 0.6,
+        center: (0.0, -0.2),
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+fn monohybrid<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    punnett(
+        ui,
+        "PunnettSquare",
+        ("Pp", "Pp"),
+        &[("purple", "white")],
+        None,
+    )
+}
+
+fn dihybrid<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    punnett(
+        ui,
+        "DihybridCross",
+        ("YyRr", "YyRr"),
+        &[("yellow", "green"), ("round", "wrinkled")],
+        // yellow round, yellow wrinkled, green round, green wrinkled
+        Some(&["#ffd43b", "#f59f00", "#8ce99a", "#2f9e44"]),
+    )
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight parts half a second apart from 0.6 s, the last name at about 5.1 s
@@ -202,5 +246,8 @@ pub fn scenes() -> Vec<GalleryScene> {
         // the substrate arrives from 1.2 s, splits at 5.4 s and the products are gone by 6.8 s
         GalleryScene::new("EnzymeFit", 7.5, induced_fit),
         GalleryScene::new("LockAndKey", 7.5, lock_and_key),
+        // the gametes split off by 2.3 s, then the cells fill from 2.4 s to 4.8 s
+        GalleryScene::new("PunnettSquare", 6.5, monohybrid),
+        GalleryScene::new("DihybridCross", 6.5, dihybrid),
     ]
 }

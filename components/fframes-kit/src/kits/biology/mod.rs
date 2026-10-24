@@ -14,6 +14,7 @@ mod mitosis;
 mod neuron;
 mod phylo;
 mod population;
+mod punnett;
 
 pub use cell::{Cell, CellKind, CellPalette, Organelle};
 pub use circulation::Circulation;
@@ -25,3 +26,4 @@ pub use mitosis::{MitosisStage, MitosisStages};
 pub use neuron::{ActionPotential, Neuron, membrane_potential};
 pub use phylo::{Newick, NewickError, NewickNode, PhyloTree};
 pub use population::{PopulationCurve, PopulationModel};
+pub use punnett::{Punnett, PunnettSquare, gametes};

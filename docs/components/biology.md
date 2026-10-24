@@ -356,3 +356,42 @@ fn lock_and_key<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
+
+## PunnettSquare
+
+`PunnettSquare` crosses two `parents`, genotypes of one to three genes written as pairs of a
+letter with the dominant allele in upper case (`"Pp"`, `"YyRr"`). Both parents must have the
+same genes; otherwise nothing is drawn.
+
+- **Square:** the first parent's gametes run across the top and the second's down the side,
+  each in a circle. Every cell shows its genotype, dominant allele first, and is coloured by
+  its phenotype from `phenotype_colors`. The colours are spread over the list, so with one
+  gene the recessive phenotype takes the last colour. Text shrinks to fit the cells.
+- **Ratios:** below the square, the genotype and phenotype ratios count up from zero as the
+  cells fill. Phenotypes are named from `traits`, one (dominant, recessive) pair per gene,
+  or written as `P_` and `pp` without them. Each name takes its phenotype's colour.
+- **Motion:** from `delay` the square appears, the gametes split off each parent over
+  0.5..1.7 s, and from 1.8 s the cells fill row by row over `fill_time` seconds. The gamete
+  circles of the filling cell light up.
+
+`Punnett::cross` gives the same cross as data, and `gametes` the gametes of one genotype.
+
+Gallery scenes: `PunnettSquare` (`Pp` × `Pp`, purple and white flowers) and `DihybridCross`
+(`YyRr` × `YyRr`, yellow or green and round or wrinkled seeds).
+
+```rust
+use fframes_kit::kits::biology::{Punnett, gametes};
+use fframes_kit::prelude::*;
+
+assert_eq!(gametes("AaBb").unwrap(), ["AB", "Ab", "aB", "ab"]);
+let test_cross = Punnett::cross("Pp", "pp").unwrap();
+assert_eq!(test_cross.genotype_ratio(), [("Pp".to_owned(), 2), ("pp".to_owned(), 2)]);
+
+fn seeds<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(PunnettSquare {
+        parents: ("YyRr".into(), "YyRr".into()),
+        traits: vec![("yellow".into(), "green".into()), ("round".into(), "wrinkled".into())],
+        ..ui.defaults()
+    })
+}
+```
