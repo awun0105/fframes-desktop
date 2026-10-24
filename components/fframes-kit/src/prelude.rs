@@ -28,9 +28,9 @@ pub use crate::kits::math::{
 };
 #[cfg(feature = "physics")]
 pub use crate::kits::physics::{
-    Charge, Circuit, Collision1D, EnergyBars, Field, FieldLines, Force, FreeBody, Optic, Orbit,
-    Pendulum, PendulumMotion, Projectile, RayDiagram, Refraction, SpringMass, SpringMotion, Wave,
-    WaveKind,
+    Charge, Circuit, Collision1D, Doppler, EnergyBars, Field, FieldLines, Force, FreeBody, GasBox,
+    GasMotion, GasSetup, Heat, Optic, Orbit, Pendulum, PendulumMotion, Projectile, RayDiagram,
+    Refraction, SpringMass, SpringMotion, Wave, WaveKind,
 };
 pub use crate::label::{BraceLabel, Label, Leader};
 #[cfg(feature = "latex")]

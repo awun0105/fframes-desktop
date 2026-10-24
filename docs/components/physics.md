@@ -321,3 +321,70 @@ fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
+## Doppler
+
+A source moving right from `start` at `source_speed` m/s sends out a front every `period`
+seconds, and the fronts spread at `wave_speed` m/s. They bunch up ahead of the source and
+spread out behind it. At or above the wave speed they pile into a cone. A front fades as it
+grows and is gone at `max_radius` meters. Listeners `ahead` and `behind` (meters from
+`start`) show the frequency they hear, `f c / (c ∓ v)`, once the first front has reached
+them. The source's own frequency sits above it, on a chip of the background. `heard` and
+`fronts` give the numbers. Gallery scene: `Doppler`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn figure<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(Doppler {
+        start: (-3.5, 0.0),
+        scale: 0.7,
+        source_speed: 1.0,
+        wave_speed: 3.0,
+        period: 0.4,
+        ahead: Some(8.0),
+        behind: Some(-4.0),
+        ..ui.defaults()
+    })
+}
+```
+
+## GasBox
+
+`GasMotion::new(GasSetup { .. })` steps `count` hard balls in a box once, at 240 steps a
+second: elastic collisions between equal masses and with the walls, with an optional
+`Heat { at, to, over }` that brings the temperature to `to` times its start. The start
+positions (a grid with jitter) and the directions come from `seed`. The steps use only
+`+ - × ÷` and `√`, so the same setup gives the same frames on every run and machine.
+`GasBox` draws the particles, slow ones in `slow_color` and those faster than the start's
+root mean square speed in `fast_color`, and a thermometer with the factor `T × ..`. Build
+the motion in the video's constructor. `particles`, `temperature` and `rms_speed` give the
+numbers. Gallery scene: `GasBox`.
+
+```rust
+use fframes_kit::prelude::*;
+
+struct Lesson {
+    gas: GasMotion,
+}
+
+impl Lesson {
+    fn new() -> Self {
+        let setup = GasSetup {
+            seed: 7,
+            count: 60,
+            seconds: 7.0,
+            heat: Some(Heat { at: 2.5, to: 3.0, over: 1.5 }),
+            ..GasSetup::default()
+        };
+        Self { gas: GasMotion::new(setup) }
+    }
+
+    fn figure<'a>(&'a self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        ui.show(GasBox {
+            motion: Some(&self.gas),
+            scale: 1.4,
+            ..ui.defaults()
+        })
+    }
+}
+```

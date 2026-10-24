@@ -82,7 +82,7 @@ Ship the `physics` and `chemistry` features: the figures from the strategy's tab
 ## Todo
 
 - [x] `chematic` coordinates and `rapier2d` wasm32 checks
-- [ ] Physics figures in table order
+- [x] Physics figures in table order
 - [ ] Chemistry figures in table order
 - [ ] `physics.md` and `chemistry.md` doctested
 - [ ] Determinism tests; e2e subset

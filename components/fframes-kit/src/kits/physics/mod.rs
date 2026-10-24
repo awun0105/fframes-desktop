@@ -10,9 +10,11 @@
 
 mod circuit;
 mod collision;
+mod doppler;
 mod energy;
 mod field_lines;
 mod free_body;
+mod gas;
 mod optics;
 mod orbit;
 mod pendulum;
@@ -22,9 +24,11 @@ mod wave;
 
 pub use circuit::Circuit;
 pub use collision::Collision1D;
+pub use doppler::Doppler;
 pub use energy::EnergyBars;
 pub use field_lines::{Charge, Field, FieldLines};
 pub use free_body::{Force, FreeBody};
+pub use gas::{GasBox, GasMotion, GasSetup, Heat};
 pub use optics::{Optic, RayDiagram, Refraction};
 pub use orbit::{Orbit, eccentric_anomaly};
 pub use pendulum::{Pendulum, PendulumMotion};

@@ -291,6 +291,59 @@ fn collision<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+/// A source moving right at a third of the wave speed: the fronts bunch up ahead of it, and
+/// the listener ahead hears a higher pitch than the one behind.
+fn doppler<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Doppler");
+    let figure = ui.show(Doppler {
+        start: (-3.5, -0.6),
+        scale: 0.7,
+        ahead: Some(8.0),
+        behind: Some(-4.0),
+        max_radius: 10.0,
+        delay: 0.5,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.2)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// Sixty particles of a gas, heated to three times the temperature after three seconds.
+fn gas_box<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static MOTION: OnceLock<GasMotion> = OnceLock::new();
+    let motion = MOTION.get_or_init(|| GasMotion::new(gas_setup()));
+    let head = title(ui, "GasBox");
+    let figure = ui.show(GasBox {
+        motion: Some(motion),
+        center: (-0.6, -0.5),
+        scale: 1.4,
+        delay: 0.5,
+        enter: Some(create(0.0)),
+        parts_enter: Some(fade(0.2)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// The gas of the `GasBox` scene.
+fn gas_setup() -> GasSetup {
+    GasSetup {
+        seed: 7,
+        count: 60,
+        width: 6.0,
+        height: 4.0,
+        radius: 0.1,
+        speed: 1.5,
+        seconds: 7.0,
+        heat: Some(Heat {
+            at: 2.5,
+            to: 3.0,
+            over: 1.5,
+        }),
+    }
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("Projectile", 3.5, projectile),
@@ -307,5 +360,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Refraction", 3.5, refraction),
         // B reaches the end of the track just after the scene
         GalleryScene::new("Collision1D", 3.8, collision),
+        GalleryScene::new("Doppler", 5.5, doppler),
+        GalleryScene::new("GasBox", 7.0, gas_box),
     ]
 }
