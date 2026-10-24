@@ -24,7 +24,7 @@ physics = []
 chemistry = ["dep:chematic", "dep:mendeleev"]
 # The layered graph layout of `layout::layered` is shared by both kits.
 cs = ["dep:rust-sugiyama"]
-biology = ["dep:rust-sugiyama"]
+biology = []
 skia = []
 3d = ["fframes/3d"]
 lottie = []

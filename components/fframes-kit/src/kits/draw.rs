@@ -99,6 +99,8 @@ pub(crate) fn clear_bend(
 }
 
 /// Where the label of a link sits: beside its middle, on the side it bends to.
+// only the computer science kit labels its links
+#[cfg_attr(not(feature = "cs"), allow(dead_code))]
 pub(crate) fn label_point(curve: &CubicBez, offset: f64) -> Point {
     let middle = curve.eval(0.5);
     let side = left_of(curve.p0, curve.p3);

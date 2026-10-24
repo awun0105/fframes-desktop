@@ -1,9 +1,8 @@
 # fframes-kit: biology kit
 
 The biology kit is the `biology` feature of `fframes-kit`
-(`fframes-kit = { .., features = ["biology"] }`). It shares the layered graph layout of the
-computer science kit (`layout::layered`, through `rust-sugiyama`) and needs nothing else. It
-builds for wasm32, so every figure here also runs in the editor. Every entry names its scene
+(`fframes-kit = { .., features = ["biology"] }`) and needs no other crate. It builds for
+wasm32, so every figure here also runs in the editor. Every entry names its scene
 in the components gallery (`cargo run --release -p components-gallery -- strip <Scene> -n 8`).
 
 - **Placement.** A figure is placed in units of `ui.space` (Manim's frame: 8 units tall, `y`
@@ -261,5 +260,39 @@ fn pets<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         highlight_at: 3.0,
         ..ui.defaults()
     })
+}
+```
+## FoodWeb
+
+`FoodWeb` draws who eats whom: `species`, and the arrows of `eats` as `(prey, predator)`
+pairs pointing the way energy flows. Names that are not in `species` are left out.
+
+- **Levels:** producers (species that eat nothing here) sit at the bottom, and every other
+  species sits one level above its highest prey, so the longest food chain sets its trophic
+  level (`levels()`).
+- **Order:** each level is ordered by where its prey and predators sit, to keep arrows from
+  crossing. Arrows that would run through another species bend round it.
+- **Look:** each species is a pill coloured by its level from `level_colors`, and the levels
+  are named at the left from `level_names`.
+- **Motion:** from `delay` the levels appear from the bottom, one every `level_time` seconds,
+  and the arrows into each level draw as it does. With `flow`, dots of energy then run along
+  every arrow.
+
+Gallery scene: `FoodWeb`.
+
+```rust
+use fframes_kit::prelude::*;
+
+let pond = FoodWeb {
+    species: ["Algae", "Snail", "Fish", "Heron"].map(String::from).to_vec(),
+    eats: [("Algae", "Snail"), ("Snail", "Fish"), ("Algae", "Fish"), ("Fish", "Heron")]
+        .map(|(a, b)| (a.to_owned(), b.to_owned()))
+        .to_vec(),
+    ..FoodWeb::default()
+};
+assert_eq!(pond.levels(), [0, 1, 2, 3]); // the fish eats the snail, so it sits above it
+
+fn pond_web<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(FoodWeb { flow: false, ..ui.defaults() })
 }
 ```

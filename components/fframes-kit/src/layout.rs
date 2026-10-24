@@ -311,7 +311,7 @@ pub fn tidy_tree(children: &[Vec<usize>], root: usize) -> Vec<(f64, f64)> {
 /// connected parts sit side by side, one slot apart, in the order the layout returns them,
 /// and nodes without edges follow in layer 0. Self-loops and edges to missing nodes are
 /// left out. The result is the same on every run and machine.
-#[cfg(any(feature = "cs", feature = "biology"))]
+#[cfg(feature = "cs")]
 pub fn layered(count: usize, edges: &[(usize, usize)]) -> Vec<(f64, f64)> {
     use rust_sugiyama::configure::Config;
 
@@ -507,7 +507,7 @@ mod tests {
         assert_eq!(q, vec![(0.0, 0.0), (0.0, 1.0), (0.0, 0.0)]);
     }
 
-    #[cfg(any(feature = "cs", feature = "biology"))]
+    #[cfg(feature = "cs")]
     #[test]
     fn layered_graphs_point_down_and_keep_every_node() {
         let edges = [(0, 1), (0, 2), (1, 3), (2, 3), (3, 1), (5, 6), (4, 4)];

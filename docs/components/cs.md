@@ -25,7 +25,7 @@ compute once and give the same result on every run and machine.
   `x` is in slots (siblings and neighbouring subtrees are at least one slot apart at every
   depth), `y` is the depth. Parents sit midway over their children, and the leftmost node is
   at `x = 0`.
-- `layered(count, edges)` (with `cs` or `biology`) places a directed graph in layers with
+- `layered(count, edges)` (with `cs`) places a directed graph in layers with
   Sugiyama's method: `y` is the layer, sources at 0 and edges pointing down, and `x` the slot
   in the layer, with crossings reduced. Cycles are fine. Connected parts sit side by side,
   and nodes without edges follow in layer 0.

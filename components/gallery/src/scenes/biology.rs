@@ -132,6 +132,16 @@ fn phylo_tree<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+fn food_web<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "FoodWeb");
+    let figure = ui.show(FoodWeb {
+        delay: 0.6,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight parts half a second apart from 0.6 s, the last name at about 5.1 s
@@ -154,5 +164,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("PredatorPrey", 7.0, predator_prey),
         // six levels of 0.55 s after the stem, then the mammals light up at 5.6 s
         GalleryScene::new("PhyloTree", 7.0, phylo_tree),
+        // five levels of 0.8 s from 0.6 s, then energy flows from about 4.6 s
+        GalleryScene::new("FoodWeb", 7.5, food_web),
     ]
 }

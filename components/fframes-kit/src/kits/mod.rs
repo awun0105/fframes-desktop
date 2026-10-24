@@ -7,8 +7,6 @@ pub mod chemistry;
 #[cfg(feature = "cs")]
 pub mod cs;
 #[cfg(any(feature = "cs", feature = "biology"))]
-// the links and arrows wait for the biology kit's food web
-#[cfg_attr(not(feature = "cs"), allow(dead_code))]
 mod draw;
 #[cfg(feature = "math")]
 pub mod math;
