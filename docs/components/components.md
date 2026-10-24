@@ -494,7 +494,7 @@ inside point furthest from every edge (`polylabel`), Manim's pole of inaccessibi
 Every arrow (`Arrow`, `Vector`, `DoubleArrow`, `CurvedArrow`, `CurvedDoubleArrow`,
 `LabeledArrow`) has `tip_start` and `tip_end`, an `Option<ArrowTip>`: `Triangle`,
 `TriangleFilled` (the default), `Circle`, `CircleFilled`, `Square`, `SquareFilled` and
-`Stealth`. The tip ends at the arrow's point, `tip_length` along the shaft and `tip_width`
+`Stealth`, Manim's `ArrowTriangleTip` to `StealthTip`. The tip ends at the arrow's point, `tip_length` along the shaft and `tip_width`
 across it. Outline tips are drawn unfilled on their own, and the shaft runs into the notch
 of a stealth tip.
 

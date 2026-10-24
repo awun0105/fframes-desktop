@@ -1,7 +1,7 @@
 ---
 phase: 15
 title: "Phase 15: Manim shapes II"
-status: in-progress
+status: completed
 priority: P1
 effort: 5d
 dependencies: [2]
@@ -138,4 +138,19 @@ geometry name maps to a kit construct.
 - [x] Arcs, curves, dots and labels
 - [x] Angles, polygrams and tips (with `LabeledPolygram`, which needs `Polygram`)
 - [x] Braces, boolean operations, SVG import, image mapping
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] Gallery scenes, e2e frames, docs and mapping rows
+
+## Notes
+
+Where the result differs from the plan:
+
+- `ArrowTip` lives in `arrows.rs`, not `tips.rs`.
+- `SvgPath` takes a path from `paths::parse_path` (kurbo); `SvgShape` parses through
+  usvgr as planned.
+- `BraceBetweenPoints` and `BraceText` are mapping rows onto `Brace` and `BraceLabel`,
+  like `TangentLine` and `ImageMobject`.
+- `Brace` with a negative `depth` bent its ends outward; it now turns over whole (fixed in
+  the commit that added `ArcBrace`).
+- Extra e2e frames: `Polygrams@end`, `Braces@end`.
+- `i_overlay` is in the workspace dependency table; the inputs are read with the nonzero
+  rule (the probe used even-odd, which carves out a self-crossing star's middle).

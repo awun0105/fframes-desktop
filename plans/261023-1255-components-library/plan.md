@@ -100,7 +100,7 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 12 | [Getting started and packaging](./phase-12-scaffolding-and-studio-template.md) | 4 | 1d | Completed |
 | 13 | [Remotion transitions II](./phase-13-remotion-transitions-ii.md) | 11 | 3d | Completed |
 | 14 | [SVG-filter effects](./phase-14-svg-filter-effects.md) | 11 | 5d | Completed |
-| 15 | [Manim shapes II](./phase-15-manim-shapes-ii.md) | 2 | 5d | In progress |
+| 15 | [Manim shapes II](./phase-15-manim-shapes-ii.md) | 2 | 5d | Completed |
 | 16 | [Manim animations II](./phase-16-manim-animations-ii.md) | 2, 17 | 5d | Pending |
 | 17 | [Coordinate systems, fields, graphs, tables and text mobjects](./phase-17-coordinates-fields-graphs-text.md) | 6 | 6d | Pending |
 | 18 | [Cameras and 3D](./phase-18-cameras-and-3d.md) | 6 | 5d | Pending |

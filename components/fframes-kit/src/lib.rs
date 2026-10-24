@@ -57,7 +57,7 @@
 //! | `Circle`, `Square`, `Arrow`, `Brace`, ... (mobjects) | [`shapes`], placed by center in canvas pixels |
 //! | `SurroundingRectangle`, `BackgroundRectangle`, `Cross`, `Underline` | [`SurroundingRectangle`](shapes::SurroundingRectangle), [`BackgroundRectangle`](shapes::BackgroundRectangle), [`Cross`](shapes::Cross), [`Underline`](shapes::Underline) around a `kurbo::Rect` (`shape.bbox()`, [`TextPath::bounds`](shapes::TextPath::bounds)) |
 //! | `DashedVMobject`, `CurvesAsSubmobjects` | [`DashedVMobject`](shapes::DashedVMobject) ([`dash_path`](shapes::dash_path)), [`CurvesAsSubmobjects`](shapes::CurvesAsSubmobjects) ([`curves`](shapes::curves)) |
-//! | `ArcBetweenPoints`, `CurvedDoubleArrow`, `TangentialArc`, `CubicBezier`, `AnnularSector`, `ArcPolygon`, `ArcPolygonFromArcs` | the same names in [`shapes`] |
+//! | `ArcBetweenPoints`, `CurvedArrow`, `CurvedDoubleArrow`, `TangentialArc`, `CubicBezier`, `AnnularSector`, `ArcPolygon`, `ArcPolygonFromArcs` | the same names in [`shapes`] |
 //! | `AnnotationDot`, `LabeledDot`, `LabeledLine`, `LabeledArrow` | the same names in [`shapes`], the label a [`ShapeLabel`](shapes::ShapeLabel): text, or a formula with the `latex` feature |
 //! | `Angle`, `RightAngle`, `Elbow` | [`Angle`](shapes::Angle), [`RightAngle`](shapes::RightAngle), [`Elbow`](shapes::Elbow), with `quadrant`, `other_angle`, `dot` and a label |
 //! | `TangentLine` | [`TangentLine`](shapes::TangentLine) for any path; `kits::math::Tangent` (feature `math`) for a function graph on `Axes` |
