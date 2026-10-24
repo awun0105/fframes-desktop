@@ -151,6 +151,7 @@
 //! | manim-chemistry `MMoleculeObject`, `ThreeDMolecule` from a file (feature `chemistry`) | `kits::chemistry::MolFile::parse` (V2000 `.mol`, the first record of an `.sdf`), drawn from `structure()` by `kits::chemistry::Molecule2D`, from `structure_3d()` by `kits::chemistry::Molecule3D` with `3d` |
 //! | manim-chemistry `NamedMolecule` (feature `chemistry`) | `kits::chemistry::NamedMolecule { name, .. }` from a table of about a hundred common molecules (`kits::chemistry::named_smiles`), no network lookups |
 //! | manim-chemistry `GraphMolecule`, `GMAnimationBuilder` (feature `chemistry`) | `kits::chemistry::GraphMolecule { structure, rotations, recolors, highlights, .. }` with `BondRotation`, `Recolor` of `MoleculePart`s and `GroupHighlight`; `kits::chemistry::functional_groups` finds the atoms of a group |
+//! | manim-chemistry `MElementObject` (feature `chemistry`) | `kits::chemistry::ElementCard { element, layout, .. }` with the atomic number, symbol, name, mass, electron configuration and Pauling electronegativity (`kits::chemistry::electronegativity`), `CardLayout::Square` or `Wide` |
 
 // The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
 extern crate self as fframes_kit;

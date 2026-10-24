@@ -200,10 +200,36 @@ fn bond_rotation<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     });
     svgr!(<g>{head}{figure}</g>)
 }
+
+/// Carbon and iron as square cards and bromine as a wide card, one after the other.
+fn element_card<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "ElementCard");
+    let cards: Vec<_> = [
+        (6, -5.0, CardLayout::Square),
+        (26, -2.2, CardLayout::Square),
+        (35, 3.3, CardLayout::Wide),
+    ]
+    .into_iter()
+    .zip(0_u8..)
+    .map(|((element, x, layout), i)| {
+        ui.show(ElementCard {
+            element,
+            center: (x, 0.0),
+            size: 300.0,
+            layout,
+            enter: Some(fade(0.3 * f32::from(i))),
+            ..ui.defaults()
+        })
+    })
+    .collect();
+    svgr!(<g>{head}{cards}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("MolFile", 3.0, mol_file),
         GalleryScene::new("NamedMolecule", 3.0, named_molecule),
         GalleryScene::new("BondRotation", 4.0, bond_rotation),
+        GalleryScene::new("ElementCard", 2.0, element_card),
     ]
 }

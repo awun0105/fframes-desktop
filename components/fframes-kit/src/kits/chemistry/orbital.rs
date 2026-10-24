@@ -242,11 +242,15 @@ impl<'a> Component<'a> for Orbital {
         }
         if self.label {
             let (letter, sub) = self.kind.name();
-            let runs = [(letter.to_owned(), false), (sub.to_owned(), true)];
+            let runs = [
+                (letter.to_owned(), super::Script::Base),
+                (sub.to_owned(), super::Script::Sub),
+            ];
             let top = corner.y + h + f64::from(ui.theme.spacing.sm);
             parts.push(super::subscript_text(
                 ui,
                 &runs,
+                ui.theme.typography.caption,
                 middle.x,
                 top,
                 self.label_color,

@@ -102,8 +102,8 @@ Cover the rest of manim-chemistry in the chemistry kit (feature `chemistry`):
 - [x] `MolFile`
 - [x] Name table and `NamedMolecule`
 - [x] Graph molecule animations
-- [ ] `ElementCard`
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] `ElementCard`
+- [x] Gallery scenes, e2e frames, docs and mapping rows
 
 ## Notes
 
@@ -114,3 +114,10 @@ Cover the rest of manim-chemistry in the chemistry kit (feature `chemistry`):
   positions are laid out by `chematic` through the same code as SMILES.
 - A file with 3D positions is laid out again for the 2D skeletal formula; its positions go
   to `Molecule3D` as they are.
+- Electronegativity (2026-10-25): `mendeleev` 0.8.4, its latest release, has no electronegativity.
+  `ElementCard` carries the Pauling values as tabulated on Wikipedia's electronegativity data
+  page (facts, no licence issue), with none for He, Ne, Ar and elements 103 and up. Number,
+  symbol, name, mass and configuration come from `mendeleev` and a test checks all 118.
+- `subscript_text` takes a `Script` (base, sub, super) and a style, and draws a space as a gap
+  between two `<text>` elements: a space inside a run was measured narrower than drawn, so the
+  superscript after `[Ar] 3d` overlapped the `d`.

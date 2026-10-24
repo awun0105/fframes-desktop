@@ -228,7 +228,19 @@ fn runs(formula: &str) -> Vec<(String, bool)> {
 
 /// `formula` centred on `x` with its top at `top`, the digits as subscripts.
 fn formula_text<'a>(ui: &Ui<'a, '_, '_>, formula: &str, x: f64, top: f64, fill: Color) -> Svgr<'a> {
-    super::subscript_text(ui, &runs(formula), x, top, fill)
+    let runs: Vec<_> = runs(formula)
+        .into_iter()
+        .map(|(run, digit)| {
+            let script = if digit {
+                super::Script::Sub
+            } else {
+                super::Script::Base
+            };
+            (run, script)
+        })
+        .collect();
+    let style = ui.theme.typography.caption;
+    super::subscript_text(ui, &runs, style, x, top, fill)
 }
 
 impl<'a> Component<'a> for Equilibrium<'a> {

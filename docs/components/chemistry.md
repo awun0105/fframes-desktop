@@ -86,6 +86,37 @@ fn figures<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+## ElementCard
+
+`ElementCard` is the larger card of one element, `size` pixels high: the atomic number, the
+symbol, the name, the atomic mass, the ground state electron configuration and the Pauling
+electronegativity, tinted like `ElementTile`.
+
+- **Layouts.** `CardLayout::Square` puts the number and the electronegativity in the top
+  corners and the rest under each other. `CardLayout::Wide` is twice as wide: the number,
+  symbol and name on the left, the other three listed with their names on the right.
+- **Values.** The mass is the standard atomic weight to three decimals, or the mass number of
+  the most stable isotope in brackets (`[294]`). The configuration comes from `mendeleev`
+  with the electron counts drawn as raised runs, so the font needs no superscript digits.
+- **Electronegativity.** `mendeleev` has none, so the kit carries the Pauling values
+  (`electronegativity(9)` is `Some(3.98)`). He, Ne, Ar and the elements from 103 have no
+  value: a square card leaves the corner empty, a wide card writes `n/a`.
+
+Gallery scene: `ElementCard` (carbon and iron square, bromine wide).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn card<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(ElementCard {
+        element: 26,
+        size: 300.0,
+        layout: CardLayout::Wide,
+        ..ui.defaults()
+    })
+}
+```
+
 ## Molecule2D and Molecule
 
 `Molecule2D` draws a skeletal formula from a `Structure`: atoms with positions in bond

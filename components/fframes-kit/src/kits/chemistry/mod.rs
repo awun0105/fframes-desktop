@@ -3,6 +3,7 @@
 
 mod bohr;
 mod bond_formation;
+mod element_card;
 mod energy_profile;
 mod equilibrium;
 mod graph_anim;
@@ -20,6 +21,7 @@ mod titration;
 
 pub use bohr::BohrAtom;
 pub use bond_formation::{BondFormation, BondType, bond_electrons, missing, valence};
+pub use element_card::{CardLayout, ElementCard, electronegativity};
 pub use energy_profile::EnergyProfile;
 pub use equilibrium::{Equilibrium, EquilibriumModel};
 pub use graph_anim::{
@@ -45,46 +47,72 @@ use mendeleev::{ALL_ELEMENTS, Element};
 
 use crate::ui::Ui;
 
-/// Runs of text centred on `x` with their top at `top`; the runs marked `true` are smaller and
-/// lowered as subscripts. Drawn as runs, so it needs no subscript glyphs in the font.
+/// Where a run of [`subscript_text`] sits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Script {
+    Base,
+    /// Smaller and lowered.
+    Sub,
+    /// Smaller and raised.
+    Super,
+}
+
+/// Runs of text in `style` centred on `x` with their top at `top`; subscript and superscript
+/// runs are smaller and lowered or raised. Drawn as runs, so it needs no subscript or
+/// superscript glyphs in the font. A space in a run is drawn as a gap between two `<text>`
+/// elements, since SVG drops spaces at the ends of a text.
 fn subscript_text<'a>(
     ui: &Ui<'a, '_, '_>,
-    runs: &[(String, bool)],
+    runs: &[(String, Script)],
+    style: crate::theme::TextStyle,
     x: f64,
     top: f64,
     fill: Color,
 ) -> Svgr<'a> {
-    let style = ui.theme.typography.caption;
     let mut small = style;
     small.size = (style.size as f32 * 0.7).round() as usize;
-    let size = |run: &str, sub: bool| {
-        let style = if sub { small } else { style };
+    let space = style.size as f32 * 0.28;
+    let size = |word: &str, script: Script| {
+        let style = if script == Script::Base { style } else { small };
         let em = style.size as f32;
-        crate::text::width(ui, style, run).unwrap_or(run.chars().count() as f32 * em * 0.55)
+        crate::text::width(ui, style, word).unwrap_or(word.chars().count() as f32 * em * 0.55)
     };
-    let total: f32 = runs.iter().map(|(run, sub)| size(run, *sub)).sum();
-    let baseline = top as f32 + style.size as f32 * 0.72;
-    let mut left = x as f32 - total / 2.0;
-    let mut drawn = Vec::new();
-    for (run, sub) in runs {
-        let (style, y) = if *sub {
-            (small, baseline + style.size as f32 * 0.22)
-        } else {
-            (style, baseline)
-        };
-        let w = size(run, *sub);
-        drawn.push(crate::text::line(
-            left,
-            y,
-            style,
-            fill,
-            crate::text::TextAnchor::Start,
-            0.0,
-            1.0,
-            run.clone().into(),
-        ));
-        left += w;
+    // every word with its script and its left edge from the start of the text
+    let mut words = Vec::new();
+    let mut total = 0.0;
+    for (run, script) in runs {
+        for (i, word) in run.split(' ').enumerate() {
+            if i > 0 {
+                total += space;
+            }
+            if !word.is_empty() {
+                words.push((word, *script, total));
+                total += size(word, *script);
+            }
+        }
     }
+    let baseline = top as f32 + style.size as f32 * 0.72;
+    let left = x as f32 - total / 2.0;
+    let drawn: Vec<_> = words
+        .into_iter()
+        .map(|(word, script, offset)| {
+            let (style, y) = match script {
+                Script::Base => (style, baseline),
+                Script::Sub => (small, baseline + style.size as f32 * 0.22),
+                Script::Super => (small, baseline - style.size as f32 * 0.38),
+            };
+            crate::text::line(
+                left + offset,
+                y,
+                style,
+                fill,
+                crate::text::TextAnchor::Start,
+                0.0,
+                1.0,
+                word.to_owned().into(),
+            )
+        })
+        .collect();
     drawn.into()
 }
 /// A point in chemistry axes (z up; seen from azimuth 0, x to the right and y into the image)
