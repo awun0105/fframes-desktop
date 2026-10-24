@@ -1,12 +1,13 @@
 //! Seeded simulations draw the same frames in two separately built videos: the gas and the
-//! field lines are stepped in each video's constructor, and their SVG, with every path's
-//! coordinates, must match exactly.
+//! field lines are stepped in each video's constructor, the particles of a change of state are
+//! placed from their seed, and their SVG, with every path's coordinates, must match exactly.
 
 use components_gallery::GalleryMedia;
 use fframes::{Previewer, RenderOptions, StaticMediaProvider};
 use fframes_kit::prelude::*;
 
-/// A heated gas box over the field of a dipole, both built when the probe is.
+/// A heated gas box over the field of a dipole, both built when the probe is, and a solid
+/// melting next to them.
 #[derive(Debug)]
 struct Probe {
     theme: Theme,
@@ -63,7 +64,14 @@ impl Video for Probe {
             scale: 0.5,
             ..ui.defaults()
         });
-        svgr!(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">{field}{gas}</svg>)
+        let states = ui.show(StatesOfMatter {
+            seed: 5,
+            at: 0.2,
+            duration: 1.6,
+            center: (2.5, 0.0),
+            ..ui.defaults()
+        });
+        svgr!(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">{field}{gas}{states}</svg>)
     }
 }
 

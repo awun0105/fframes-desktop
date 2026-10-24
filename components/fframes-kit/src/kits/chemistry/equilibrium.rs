@@ -226,42 +226,9 @@ fn runs(formula: &str) -> Vec<(String, bool)> {
     runs
 }
 
-/// `formula` centred on `x` with its top at `top`, the digits smaller and lowered as
-/// subscripts. Drawn as runs, so it needs no subscript glyphs in the font.
+/// `formula` centred on `x` with its top at `top`, the digits as subscripts.
 fn formula_text<'a>(ui: &Ui<'a, '_, '_>, formula: &str, x: f64, top: f64, fill: Color) -> Svgr<'a> {
-    let style = ui.theme.typography.caption;
-    let mut small = style;
-    small.size = (style.size as f32 * 0.7).round() as usize;
-    let size = |run: &str, digit: bool| {
-        let style = if digit { small } else { style };
-        let em = style.size as f32;
-        crate::text::width(ui, style, run).unwrap_or(run.chars().count() as f32 * em * 0.55)
-    };
-    let runs = runs(formula);
-    let total: f32 = runs.iter().map(|(run, digit)| size(run, *digit)).sum();
-    let baseline = top as f32 + style.size as f32 * 0.72;
-    let mut left = x as f32 - total / 2.0;
-    let mut drawn = Vec::new();
-    for (run, digit) in runs {
-        let (style, y) = if digit {
-            (small, baseline + style.size as f32 * 0.22)
-        } else {
-            (style, baseline)
-        };
-        let w = size(&run, digit);
-        drawn.push(crate::text::line(
-            left,
-            y,
-            style,
-            fill,
-            crate::text::TextAnchor::Start,
-            0.0,
-            1.0,
-            run.into(),
-        ));
-        left += w;
-    }
-    drawn.into()
+    super::subscript_text(ui, &runs(formula), x, top, fill)
 }
 
 impl<'a> Component<'a> for Equilibrium<'a> {

@@ -24,7 +24,7 @@ chemistry = ["dep:chematic", "dep:mendeleev"]
 cs = []
 biology = []
 skia = []
-3d = []
+3d = ["fframes/3d"]
 lottie = []
 # Props that fframes Studio edits (`props`): uses the fork's editor identity in fframes.
 studio = ["dep:fframes-studio-protocol", "dep:serde_json"]

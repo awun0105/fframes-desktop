@@ -1,7 +1,7 @@
 ---
 phase: 9
 title: "Phase 9: Physics and chemistry kits"
-status: in-progress
+status: completed
 priority: P2
 effort: 6d
 dependencies: [6]
@@ -83,6 +83,6 @@ Ship the `physics` and `chemistry` features: the figures from the strategy's tab
 
 - [x] `chematic` coordinates and `rapier2d` wasm32 checks
 - [x] Physics figures in table order
-- [ ] Chemistry figures in table order
-- [ ] `physics.md` and `chemistry.md` doctested
-- [ ] Determinism tests; e2e subset
+- [x] Chemistry figures in table order
+- [x] `physics.md` and `chemistry.md` doctested
+- [x] Determinism tests; e2e subset

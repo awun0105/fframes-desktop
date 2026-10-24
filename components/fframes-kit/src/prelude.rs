@@ -22,6 +22,8 @@ pub use crate::explain::{
 pub use crate::geometry::{Geometry, Look, Shape};
 #[cfg(all(feature = "chemistry", feature = "latex"))]
 pub use crate::kits::chemistry::ReactionEquation;
+#[cfg(all(feature = "chemistry", feature = "3d"))]
+pub use crate::kits::chemistry::{Atom3D, Molecule3D, Orbital, OrbitalKind, Structure3D};
 #[cfg(feature = "chemistry")]
 pub use crate::kits::chemistry::{
     BohrAtom, BondFormation, BondKind, BondType, Category, ChemAtom, ChemBond, ElementTile,

@@ -26,8 +26,10 @@ fframes-kit = { workspace = true, features = ["studio"] }
 serde_json.workspace = true
 
 [features]
-default = ["renderer"]
+default = ["renderer", "three-d"]
 renderer = ["fframes/compile-time-svgtree", "fframes/cli"]
+# The 3D figures, rendered on the CPU or wgpu. The editor bridge leaves them out.
+three-d = ["fframes-kit/3d"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

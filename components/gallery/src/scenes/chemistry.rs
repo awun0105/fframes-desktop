@@ -319,8 +319,68 @@ fn equilibrium<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+/// Ethanol from an XYZ file, turning, its C-O bond lighting up.
+#[cfg(feature = "three-d")]
+fn molecule_3d<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static ETHANOL: OnceLock<Structure3D> = OnceLock::new();
+    let ethanol = ETHANOL.get_or_init(|| {
+        Structure3D::from_xyz(
+            "9\nethanol\n\
+             C 1.1879 -0.3829 0.0000\n\
+             C 0.0000 0.5526 0.0000\n\
+             O -1.1867 -0.2472 0.0000\n\
+             H -1.9237 0.3850 0.0000\n\
+             H 2.0985 0.2306 0.0000\n\
+             H 1.1184 -1.0093 0.8869\n\
+             H 1.1184 -1.0093 -0.8869\n\
+             H -0.0227 1.1812 0.8852\n\
+             H -0.0227 1.1812 -0.8852\n",
+        )
+        .unwrap_or_default()
+    });
+    let head = title(ui, "Molecule3D");
+    // the C-O bond, found by its atoms
+    let c_o = ethanol.bonds.iter().position(|&(i, j, _)| (i, j) == (1, 2));
+    let figure = ui.show(Molecule3D {
+        structure: Some(ethanol),
+        center: (0.0, -0.4),
+        width: 1100.0,
+        height: 760.0,
+        highlight: c_o.into_iter().collect(),
+        highlight_at: 2.0,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{figure}</g>)
+}
+
+/// The s, `p_z`, `d_xy` and `d_z²` orbitals side by side, their lobes growing in turn.
+#[cfg(feature = "three-d")]
+fn orbital<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Orbital");
+    let kinds = [
+        OrbitalKind::S,
+        OrbitalKind::Pz,
+        OrbitalKind::Dxy,
+        OrbitalKind::Dz2,
+    ];
+    let figures: Vec<_> = kinds
+        .into_iter()
+        .zip(0_u8..)
+        .map(|(kind, i)| {
+            ui.show(Orbital {
+                kind,
+                center: (-5.4 + 3.6 * f64::from(i), 0.2),
+                delay: 0.3 * f32::from(i),
+                enter: Some(fade(0.3 * f32::from(i))),
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    svgr!(<g>{head}{figures}</g>)
+}
 pub fn scenes() -> Vec<GalleryScene> {
-    vec![
+    let scenes = vec![
         GalleryScene::new("BohrAtom", 5.0, bohr_atom),
         GalleryScene::new("ElementTile", 2.5, element_tile),
         GalleryScene::new("PeriodicTable", 4.0, periodic_table),
@@ -335,5 +395,19 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("PhScale", 3.5, ph_scale),
         GalleryScene::new("StatesOfMatter", 7.0, states_of_matter),
         GalleryScene::new("Equilibrium", 7.0, equilibrium),
-    ]
+    ];
+    // the 3D figures follow the 2D molecules
+    #[cfg(feature = "three-d")]
+    let scenes = {
+        let mut scenes = scenes;
+        scenes.splice(
+            6..6,
+            [
+                GalleryScene::new("Molecule3D", 6.0, molecule_3d),
+                GalleryScene::new("Orbital", 5.0, orbital),
+            ],
+        );
+        scenes
+    };
+    scenes
 }

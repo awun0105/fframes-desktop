@@ -6,8 +6,14 @@ mod bond_formation;
 mod energy_profile;
 mod equilibrium;
 mod molecule;
+#[cfg(feature = "3d")]
+mod molecule_3d;
+#[cfg(feature = "3d")]
+mod orbital;
 mod periodic;
 mod reaction;
+#[cfg(feature = "3d")]
+mod stage;
 mod states;
 mod titration;
 
@@ -16,6 +22,10 @@ pub use bond_formation::{BondFormation, BondType, bond_electrons, missing, valen
 pub use energy_profile::EnergyProfile;
 pub use equilibrium::{Equilibrium, EquilibriumModel};
 pub use molecule::{BondKind, ChemAtom, ChemBond, Molecule, Molecule2D, SmilesError, Structure};
+#[cfg(feature = "3d")]
+pub use molecule_3d::{Atom3D, Molecule3D, Structure3D, XyzError};
+#[cfg(feature = "3d")]
+pub use orbital::{Orbital, OrbitalKind};
 pub use periodic::{ElementTile, PeriodicTable, Trend};
 #[cfg(feature = "latex")]
 pub use reaction::ReactionEquation;
@@ -23,9 +33,53 @@ pub use reaction::{Reaction, atom_counts};
 pub use states::{MatterState, StatesOfMatter};
 pub use titration::{PhScale, Titration, TitrationCurve, indicator_color};
 
-use fframes::Color;
+use fframes::{Color, Svgr};
 use mendeleev::{ALL_ELEMENTS, Element};
 
+use crate::ui::Ui;
+
+/// Runs of text centred on `x` with their top at `top`; the runs marked `true` are smaller and
+/// lowered as subscripts. Drawn as runs, so it needs no subscript glyphs in the font.
+fn subscript_text<'a>(
+    ui: &Ui<'a, '_, '_>,
+    runs: &[(String, bool)],
+    x: f64,
+    top: f64,
+    fill: Color,
+) -> Svgr<'a> {
+    let style = ui.theme.typography.caption;
+    let mut small = style;
+    small.size = (style.size as f32 * 0.7).round() as usize;
+    let size = |run: &str, sub: bool| {
+        let style = if sub { small } else { style };
+        let em = style.size as f32;
+        crate::text::width(ui, style, run).unwrap_or(run.chars().count() as f32 * em * 0.55)
+    };
+    let total: f32 = runs.iter().map(|(run, sub)| size(run, *sub)).sum();
+    let baseline = top as f32 + style.size as f32 * 0.72;
+    let mut left = x as f32 - total / 2.0;
+    let mut drawn = Vec::new();
+    for (run, sub) in runs {
+        let (style, y) = if *sub {
+            (small, baseline + style.size as f32 * 0.22)
+        } else {
+            (style, baseline)
+        };
+        let w = size(run, *sub);
+        drawn.push(crate::text::line(
+            left,
+            y,
+            style,
+            fill,
+            crate::text::TextAnchor::Start,
+            0.0,
+            1.0,
+            run.clone().into(),
+        ));
+        left += w;
+    }
+    drawn.into()
+}
 /// The element with atomic number `number` (1 to 118).
 fn element(number: u32) -> Option<Element> {
     let index = usize::try_from(number).ok()?.checked_sub(1)?;

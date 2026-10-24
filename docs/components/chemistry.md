@@ -4,7 +4,7 @@ The chemistry kit is the `chemistry` feature of `fframes-kit`
 (`fframes-kit = { .., features = ["chemistry"] }`). It brings two crates:
 [`mendeleev`](https://crates.io/crates/mendeleev) for the element data and
 [`chematic`](https://crates.io/crates/chematic) to read SMILES strings and lay molecules out in
-2D. Both build for wasm32, so every figure here also runs in the editor. Every entry names its
+2D. Both build for wasm32, so every figure here also runs in the editor, except the 3D\nfigures, which need the `3d` feature as well. Every entry names its
 scene in the components gallery
 (`cargo run --release -p components-gallery -- strip <Scene> -n 8`).
 
@@ -141,6 +141,65 @@ fn figures<'a>(ui: &mut Ui<'a, '_, '_>, water: &'a Structure) -> Svgr<'a> {
 }
 ```
 
+## Molecule3D and Orbital
+
+These two need the `3d` feature as well (`features = ["chemistry", "3d"]`), which turns on
+`fframes/3d`. They render a 3D scene with `fframes::three_d` on every frame, on the CPU or,
+with the `wgpu` features, on the GPU, and place it as an image of `width` x `height` pixels
+around `center`. The scene uses chemistry axes: `z` up, `x` towards the viewer, `y` to the
+right. The gallery's eleven seconds of 3D scenes render on the CPU in about seven seconds on 32
+threads. The gallery leaves them out of the editor bridge.
+
+`Molecule3D` draws a `Structure3D` as balls and sticks in CPK colours. `Structure3D::from_xyz`
+reads an XYZ file (the number of atoms, a comment line, then `symbol x y z` in ångström) and
+finds single bonds between atoms closer than 1.2 times the sum of their covalent radii. It
+returns an `XyzError` for a broken file. Set `bonds` yourself (`(from, to, order)`) for double
+and triple bonds, which draw as two or three thinner sticks. The camera fits the whole
+molecule and turns `spin` degrees a second around the vertical axis. The bonds listed in
+`highlight` (indices into `bonds`) turn `highlight_color` and glow over half a second from
+`highlight_at`. Gallery scene: `Molecule3D` (ethanol, its C-O bond lighting up).
+
+`Orbital` draws an `OrbitalKind`: `S`, `Px`, `Py`, `Pz`, `Dxy`, `Dxz`, `Dyz`, `Dx2y2` or `Dz2`.
+The lobes are the polar plot of `size · cos²θ`, `positive` and `negative` for the sign of the
+wave function, and `d_z²` has its ring of opposite sign. `OrbitalKind::lobes` lists the
+directions and signs. The lobes grow and fade in over `grow` seconds from `delay`, then the
+view turns. `axes` draws and labels x, y and z, and `label` names the orbital under the
+image with its subscript. Gallery scene: `Orbital` (s, p_z, d_xy and d_z²).
+
+```rust
+use fframes_kit::prelude::*;
+
+# #[cfg(feature = "3d")]
+let water = {
+    let water = Structure3D::from_xyz(
+        "3\nwater\nO 0 0 0.117\nH 0 0.757 -0.469\nH 0 -0.757 -0.469\n",
+    )
+    .expect("a valid XYZ file");
+    // two O-H bonds, the hydrogens too far apart for a third
+    assert_eq!(water.bonds, vec![(0, 1, 1), (0, 2, 1)]);
+    water
+};
+
+# #[cfg(feature = "3d")]
+fn figures<'a>(ui: &mut Ui<'a, '_, '_>, water: &'a Structure3D) -> Svgr<'a> {
+    let molecule = ui.show(Molecule3D {
+        structure: Some(water),
+        center: (-3.0, 0.0),
+        width: 600.0,
+        height: 600.0,
+        highlight: vec![0],
+        highlight_at: 1.0,
+        ..ui.defaults()
+    });
+    let orbital = ui.show(Orbital {
+        kind: OrbitalKind::Dz2,
+        center: (3.0, 0.0),
+        delay: 0.5,
+        ..ui.defaults()
+    });
+    svgr!(<g>{molecule}{orbital}</g>)
+}
+```
 ## ReactionEquation
 
 `Reaction` holds a reaction's formulas. `atom_counts` reads one, with parentheses (`Ca(OH)2`).
