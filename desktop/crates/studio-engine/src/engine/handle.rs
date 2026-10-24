@@ -283,13 +283,13 @@ impl EngineHandle {
                         .freeze_export_source()
                         .map_err(|error| error.to_string())
                         .and_then(|source| {
-                            controller
-                                .timing_for_export()
-                                .map(|timing| (source, timing))
+                            let timing = controller.timing_for_export()?;
+                            let props = controller.props_for_export()?;
+                            Ok((source, timing, props))
                         })
                 };
                 drop(controller);
-                let result = prepared.and_then(|(source, timing_json)| {
+                let result = prepared.and_then(|(source, timing_json, props_json)| {
                     export_video(
                         ExportRequest {
                             source,
@@ -298,6 +298,7 @@ impl EngineHandle {
                             destination,
                             settings,
                             timing_json,
+                            props_json,
                         },
                         service,
                         processes,

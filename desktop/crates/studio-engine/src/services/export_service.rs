@@ -112,6 +112,8 @@ pub struct ExportRequest {
     pub settings: ExportSettings,
     /// The timing document to export with; `None` exports the scenes in code order.
     pub timing_json: Option<String>,
+    /// The props document to export with; `None` exports the code's values.
+    pub props_json: Option<String>,
 }
 
 /// Compiles and renders a frozen revision to an exclusive sibling temporary file.
@@ -130,6 +132,7 @@ pub fn export_video(
         destination,
         settings,
         timing_json,
+        props_json,
     } = request;
     let revision = source.revision().as_str().to_owned();
     progress(ExportProgress::Started {
@@ -163,7 +166,7 @@ pub fn export_video(
     if processes.is_shutdown() || control.is_cancelled() {
         return Err("export cancelled after compilation".into());
     }
-    if !settings.is_default() || timing_json.is_some() {
+    if !settings.is_default() || timing_json.is_some() || props_json.is_some() {
         let capabilities = export_capabilities(&build, &processes)?;
         capabilities
             .accepts(&settings)
@@ -171,8 +174,14 @@ pub fn export_video(
         if timing_json.is_some() && !capabilities.timing {
             return Err("this project's worker cannot export edited timing".into());
         }
+        if props_json.is_some() && !capabilities.props {
+            return Err(
+                "this project's worker cannot export edited props; remove props.json or wire props hooks into its worker".into(),
+            );
+        }
     }
     let timing_file = timing_json.as_deref().map(write_timing_file).transpose()?;
+    let props_file = props_json.as_deref().map(write_props_file).transpose()?;
 
     let destination = prepare_destination(&destination, settings.container)?;
     if destination.exists() {
@@ -202,6 +211,10 @@ pub fn export_video(
     if let Some(timing_file) = &timing_file {
         options.arg("--timing-file");
         options.arg(timing_file);
+    }
+    if let Some(props_file) = &props_file {
+        options.arg("--props-file");
+        options.arg(props_file);
     }
     options.stdin(Stdio::null());
     options.stdout(Stdio::null());
@@ -429,20 +442,33 @@ fn export_capabilities(
 
 /// Writes the timing document for the worker to read; it is removed when dropped.
 fn write_timing_file(json: &str) -> Result<tempfile::TempPath, String> {
-    if json.len() > MAX_TIMING_DOC_BYTES {
+    write_document_file(json, "timing", MAX_TIMING_DOC_BYTES)
+}
+
+/// Writes the props document for the worker to read; it is removed when dropped.
+fn write_props_file(json: &str) -> Result<tempfile::TempPath, String> {
+    write_document_file(json, "props", fframes_studio_protocol::MAX_PROPS_DOC_BYTES)
+}
+
+fn write_document_file(
+    json: &str,
+    kind: &str,
+    max_bytes: usize,
+) -> Result<tempfile::TempPath, String> {
+    if json.len() > max_bytes {
         return Err(format!(
-            "timing document is {} bytes; the limit is {MAX_TIMING_DOC_BYTES}",
+            "{kind} document is {} bytes; the limit is {max_bytes}",
             json.len()
         ));
     }
     let mut file = tempfile::Builder::new()
-        .prefix(".fframes-timing-")
+        .prefix(&format!(".fframes-{kind}-"))
         .suffix(".json")
         .tempfile()
-        .map_err(|error| format!("could not create the export timing file: {error}"))?;
+        .map_err(|error| format!("could not create the export {kind} file: {error}"))?;
     file.write_all(json.as_bytes())
         .and_then(|()| file.flush())
-        .map_err(|error| format!("could not write the export timing file: {error}"))?;
+        .map_err(|error| format!("could not write the export {kind} file: {error}"))?;
     Ok(file.into_temp_path())
 }
 

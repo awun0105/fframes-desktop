@@ -300,6 +300,7 @@ impl StudioShell {
         value["export"]["settings"] =
             serde_json::to_value(self.export_settings()).unwrap_or_default();
         value["presets"] = self.preset_panel.read(cx).telemetry();
+        value["props"] = self.props_panel.read(cx).telemetry();
         value["output_devices"] = self.audio.devices().into();
         value
     }

@@ -49,6 +49,8 @@ pub struct Presentation {
     pub preset: Option<PresetView>,
     /// The open project's timing document, its clips and what can be edited now.
     pub timeline: Option<crate::timing::TimelineSnapshot>,
+    /// The open project's props document and what can be edited now.
+    pub props: Option<crate::props::PropsSnapshot>,
 }
 
 #[derive(Clone)]
@@ -81,6 +83,8 @@ pub enum Command {
     Preset(PresetCommand, Option<studio_project::SourceRevision>),
     /// A timeline edit of the open project (split, trim, move, a drag, undo or redo).
     Timeline(crate::timing::TimelineCommand),
+    /// A props edit of the open project (a field, a drag, undo or redo).
+    Props(crate::props::PropsCommand),
 }
 pub struct Backend {
     pub paths: Option<AppPaths>,
@@ -406,6 +410,11 @@ impl Backend {
                 .lock()
                 .timeline_command(command)
                 .map_err(|e| e.to_string())?,
+            Command::Props(command) => self
+                .current()?
+                .lock()
+                .props_command(command)
+                .map_err(|e| e.to_string())?,
         }
         Ok(())
     }
@@ -601,12 +610,14 @@ impl Backend {
             let mut controller = c.lock();
             let project = ProjectPresentation::from_controller(&controller);
             let timeline = controller.timeline_snapshot();
+            let props = controller.props_snapshot();
             (
                 project,
                 controller.state().clone(),
                 controller.processes.clone(),
                 PresetView::capture(&mut controller, &self.catalog),
                 timeline,
+                props,
             )
         });
         Ok(Presentation {
@@ -615,8 +626,9 @@ impl Backend {
             recents,
             sdk: self.sdk.clone(),
             state: open.as_ref().map(|(_, state, ..)| state.clone()),
-            preset: open.as_ref().map(|(_, _, _, preset, _)| preset.clone()),
-            timeline: open.as_ref().map(|(.., timeline)| timeline.clone()),
+            preset: open.as_ref().map(|(_, _, _, preset, ..)| preset.clone()),
+            timeline: open.as_ref().map(|(.., timeline, _)| timeline.clone()),
+            props: open.as_ref().map(|(.., props)| props.clone()),
             owner: open.map(|(_, _, owner, ..)| owner),
             paths: self.paths.clone(),
             agent_sdk: self.agent_sdk.clone(),

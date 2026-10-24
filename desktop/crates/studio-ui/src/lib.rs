@@ -8,6 +8,7 @@ pub mod frame_image;
 pub mod kit;
 pub mod preset_panel;
 pub mod probe;
+pub mod props_panel;
 pub mod setup_view;
 pub mod shell;
 pub mod timeline;

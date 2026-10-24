@@ -8,6 +8,7 @@ mod observation;
 mod onboarding;
 mod overflow;
 mod player;
+mod props_edits;
 mod review;
 mod sections;
 mod settings;
@@ -50,6 +51,7 @@ use crate::{
     canvas_view::CanvasViewState,
     frame_image::ImagePresentationManager,
     preset_panel::PresetPanel,
+    props_panel::{PropsEvent, PropsPanel},
     timeline::{TimelineControls, TimelineEvent, TimelineView},
 };
 use left_column::SidebarTab;
@@ -132,6 +134,14 @@ pub struct StudioShell {
     timeline_queue: VecDeque<studio_engine::timing::TimelineCommand>,
     /// The timeline edit the engine is running.
     timeline_in_flight: Option<(CommandId, studio_engine::timing::TimelineCommand)>,
+    /// The props generation last handed to the preview coordinator.
+    props_sent: Option<u64>,
+    /// The selection the coordinator was last asked the props of.
+    props_selection: Option<fframes_studio_protocol::EditorObjectIdentity>,
+    /// Props edits waiting for the engine, oldest first.
+    props_queue: VecDeque<studio_engine::props::PropsCommand>,
+    /// The props edit the engine is running.
+    props_in_flight: Option<(CommandId, studio_engine::props::PropsCommand)>,
     _activation_subscription: gpui::Subscription,
     transport: studio_engine::PlaybackClock,
     /// The one-shot wait for the next frame boundary while playing; replaced on every pump.
@@ -206,6 +216,8 @@ pub struct StudioShell {
     _panel_subscription: gpui::Subscription,
     preset_panel: gpui::Entity<PresetPanel>,
     _preset_subscription: gpui::Subscription,
+    props_panel: gpui::Entity<PropsPanel>,
+    _props_subscription: gpui::Subscription,
     agent: AgentHost,
     /// A promotion changed the source: take a fresh presentation (without cancelling the
     /// staged preview that was just adopted for exactly that source).
@@ -337,6 +349,15 @@ impl StudioShell {
             cx.subscribe_in(&preset_panel, window, |shell, _, event, window, cx| {
                 shell.preset_event(event.clone(), window, cx)
             });
+        let props_panel = cx.new(|cx| PropsPanel::new(window, cx));
+        let props_subscription = cx.subscribe_in(
+            &props_panel,
+            window,
+            |shell, _, event, window, cx| match event {
+                PropsEvent::Run(command) => shell.props_edit(command.clone(), cx),
+                PropsEvent::Leave => window.focus(&shell.focus, cx),
+            },
+        );
         let (engine, events) = EngineHandle::new(environment.clone(), app_version);
         let app = cx.new(|cx| AppState::new(engine.clone(), events, cx));
         let app_subscription = cx.subscribe(&app, |shell, _, event: &AppEvent, cx| {
@@ -453,6 +474,10 @@ impl StudioShell {
             timeline_controls: TimelineControls::default(),
             timeline_queue: VecDeque::new(),
             timeline_in_flight: None,
+            props_sent: None,
+            props_selection: None,
+            props_queue: VecDeque::new(),
+            props_in_flight: None,
             _activation_subscription: activation_subscription,
             transport: studio_engine::PlaybackClock::install(30, 0, 0, 0.)
                 .expect("valid empty clock"),
@@ -466,6 +491,8 @@ impl StudioShell {
             _panel_subscription: panel_subscription,
             preset_panel,
             _preset_subscription: preset_subscription,
+            props_panel,
+            _props_subscription: props_subscription,
             agent,
             refresh_wanted: false,
             presentation_refresh_pending: false,

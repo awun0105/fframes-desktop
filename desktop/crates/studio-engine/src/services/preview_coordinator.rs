@@ -28,6 +28,17 @@ pub struct PreviewTiming {
     pub generation: u64,
 }
 
+/// The props document the preview draws, with the generation that names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviewProps {
+    /// `None` draws the code's values.
+    pub json: Option<String>,
+    pub generation: u64,
+}
+
+/// The props of the selected object, or why the preview cannot tell them.
+pub type PropsInfoEvent = (EditorObjectIdentity, Result<Option<PropsInfo>, String>);
+
 pub struct BuildSpec {
     pub project: studio_project::OpenProject,
     pub sdk: PathBuf,
@@ -67,6 +78,8 @@ pub struct StagedParts {
     /// The document the worker plays (`None`: code order), to go back to when a retime
     /// fails halfway.
     timing_json: Option<String>,
+    /// The props generation this worker was last asked to draw; `None` until one was.
+    props_attempt: Option<u64>,
     /// Accounts the PCM a retimed layout prepares.
     service: BuildService,
 }
@@ -158,6 +171,10 @@ pub struct PreviewEvents {
     /// or why it could not be. It replaces the displayed preview's timeline, frame and
     /// audio; the worker stays the same.
     pub retimed: Option<Result<Arc<ReadyPreview>, (OperationTag, String)>>,
+    /// The displayed worker applied the props of this generation, or why it did not.
+    pub props_applied: Option<Result<u64, String>>,
+    /// The props of the object [`PreviewCoordinator::want_props_info`] asked for.
+    pub props_info: Option<PropsInfoEvent>,
 }
 #[derive(Default, Clone, serde::Serialize)]
 pub struct PumpMetrics {
@@ -265,6 +282,12 @@ struct Mailbox {
     /// The timing the displayed preview and later builds should play.
     timing: Option<PreviewTiming>,
     retimed: Option<Result<Arc<ReadyPreview>, (OperationTag, String)>>,
+    /// The props the displayed preview and later builds should draw.
+    props: Option<PreviewProps>,
+    props_applied: Option<Result<u64, String>>,
+    /// The object whose props the shell shows, with a serial that changes with every ask.
+    props_wanted: Option<(EditorObjectIdentity, u64)>,
+    props_info: Option<PropsInfoEvent>,
     closed: bool,
     /// The listener was told about the news now waiting; it is told again only after
     /// [`PreviewCoordinator::events`] took it.
@@ -279,6 +302,8 @@ impl Mailbox {
             || self.thumbnail.is_some()
             || self.error.is_some()
             || self.retimed.is_some()
+            || self.props_applied.is_some()
+            || self.props_info.is_some()
     }
 }
 
@@ -411,6 +436,27 @@ impl PreviewCoordinator {
             s.timing = Some(timing);
         }
     }
+    /// Draws `props` from now on: the pump applies them to the displayed worker and
+    /// renders the current frame again, reporting [`PreviewEvents::props_applied`]; builds
+    /// apply them before their first frame.
+    pub fn set_props(&self, props: PreviewProps) {
+        let mut s = self.shared.lock();
+        if !s.closed {
+            s.props = Some(props);
+        }
+    }
+    /// Asks for the props of `identity` (`None`: of nothing) as the displayed preview
+    /// draws it; [`PreviewEvents::props_info`] answers, and answers again after the props
+    /// change or another build is displayed.
+    pub fn want_props_info(&self, identity: Option<EditorObjectIdentity>) {
+        let mut s = self.shared.lock();
+        if s.closed {
+            return;
+        }
+        let serial = s.props_wanted.as_ref().map_or(0, |(_, serial)| serial + 1);
+        s.props_wanted = identity.map(|identity| (identity, serial));
+        s.props_info = None;
+    }
     /// Called on the coordinator's thread, never under its lock, when news (a compiled or
     /// ready candidate, a frame, a thumbnail, an error) is waiting for [`Self::events`];
     /// once until it is taken.
@@ -428,6 +474,8 @@ impl PreviewCoordinator {
             thumbnail: s.thumbnail.take(),
             error: s.error.take(),
             retimed: s.retimed.take(),
+            props_applied: s.props_applied.take(),
+            props_info: s.props_info.take(),
         }
     }
     pub fn metrics(&self) -> PumpMetrics {
@@ -500,6 +548,8 @@ impl PreviewCoordinator {
             s.thumbnails.clear();
             s.thumbnail = None;
             s.retimed = None;
+            s.props_applied = None;
+            s.props_info = None;
             s.displayed_scope.take()
         };
         self.fence_build().teardown_now();
@@ -543,9 +593,17 @@ fn prepare(
             }
             s.compiled = Some(tag.clone());
         }
-        let worker = launch_preview_worker(build, preview_identity(&tag), &spec.worker)?;
-        let timing = shared.lock().timing.clone();
-        prepare_preview(
+        let mut worker = launch_preview_worker(build, preview_identity(&tag), &spec.worker)?;
+        let (timing, props) = {
+            let s = shared.lock();
+            (s.timing.clone(), s.props.clone())
+        };
+        // Props before the first frame; one the worker refuses is reported by the pump,
+        // which tries the latest generation again once the preview is displayed.
+        let props_attempt = props
+            .filter(|props| apply_props(&mut worker, props).is_ok())
+            .map(|props| props.generation);
+        let mut staged = prepare_preview(
             worker,
             &tag,
             &spec.compiler,
@@ -554,7 +612,9 @@ fn prepare(
             None,
             timing,
             &spec.service,
-        )
+        )?;
+        staged.props_attempt = props_attempt;
+        Ok(staged)
     })();
     if result.is_err() {
         spec.worker.shutdown(Duration::ZERO);
@@ -655,6 +715,7 @@ pub(crate) fn prepare_preview(
         ready: Arc::new(ready),
         timing_attempt,
         timing_json,
+        props_attempt: None,
         service: service.clone(),
     }))
 }
@@ -779,6 +840,9 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
     // Its blocking worker requests never run on the displayed-worker pump.
     let mut preparation: Option<std::thread::JoinHandle<()>> = None;
     let mut rendered: Option<SeekIntent> = None;
+    // The props info last asked of the displayed worker: the ask's serial and the props
+    // generation the worker drew then.
+    let mut info_asked: Option<(u64, Option<u64>)> = None;
     loop {
         if shared.lock().closed {
             break;
@@ -823,6 +887,7 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
                 scale: new.ready.frame.as_ref().map_or(1., |f| f.response.scale),
             });
             displayed = Some(new);
+            info_asked = None;
         }
         if let Some(spec) = spec {
             let mailbox = shared.clone();
@@ -886,6 +951,22 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
                 s.retimed = Some(result);
             }
         }
+        let props = shared.lock().props.clone();
+        if let (Some(c), Some(props)) = (displayed.as_deref_mut(), props)
+            && c.props_attempt != Some(props.generation)
+        {
+            // Tried once per generation, like a retime.
+            c.props_attempt = Some(props.generation);
+            let result = apply_props(&mut c.worker, &props).map(|()| props.generation);
+            if result.is_ok() {
+                // The frame on screen shows the previous props: render it again.
+                rendered = None;
+            }
+            let mut s = shared.lock();
+            if !s.closed {
+                s.props_applied = Some(result);
+            }
+        }
         let parts: Option<&mut StagedParts> = displayed.as_deref_mut();
         if let (Some(c), Some(d)) = (parts, &desired)
             && c.ready.identity() == &d.identity
@@ -924,6 +1005,30 @@ fn pump(shared: Arc<Mutex<Mailbox>>, listener: Listener) {
                     .max(started.elapsed().as_secs_f64() * 1000.);
             }
             rendered = Some(d.clone());
+        }
+        let wanted = shared.lock().props_wanted.clone();
+        if let (Some(c), Some((identity, serial))) = (displayed.as_deref_mut(), wanted)
+            && rendered.as_ref() == desired.as_ref()
+            && info_asked != Some((serial, c.props_attempt))
+        {
+            // Asked after the frame rendered, so the answer describes the frame on screen.
+            info_asked = Some((serial, c.props_attempt));
+            let info = if c.worker.supports_props() {
+                c.worker
+                    .props_info(identity.clone())
+                    .map(|response| response.info)
+                    .map_err(|error| error.to_string())
+            } else {
+                Err(NO_PROPS_WORKER.to_owned())
+            };
+            let mut s = shared.lock();
+            if !s.closed
+                && s.props_wanted
+                    .as_ref()
+                    .is_some_and(|(_, now)| *now == serial)
+            {
+                s.props_info = Some((identity, info));
+            }
         }
         if let Some(c) = displayed.as_deref_mut() {
             let key = {
@@ -1068,6 +1173,23 @@ fn reprime(c: &mut StagedParts, d: &SeekIntent) -> Result<(), String> {
     )?;
     c.ready = Arc::new(ready);
     Ok(())
+}
+
+/// Why a preview cannot show or draw props edits.
+const NO_PROPS_WORKER: &str = "This preview's worker cannot edit props: the project does not wire props hooks into its preview worker";
+
+/// Hands `props` to `worker`. A worker without props support draws the code's values,
+/// so only an empty document is fine for it.
+fn apply_props(worker: &mut PreviewWorkerClient, props: &PreviewProps) -> Result<(), String> {
+    if !worker.supports_props() {
+        return match props.json {
+            None => Ok(()),
+            Some(_) => Err(NO_PROPS_WORKER.into()),
+        };
+    }
+    worker
+        .set_props(props.json.clone(), props.generation)
+        .map_err(|error| error.to_string())
 }
 
 /// Lays the displayed worker out with `timing` and primes it at `d`: the new layout's
@@ -1237,6 +1359,95 @@ mod tests {
         );
         assert_eq!(preference::worker_args(), ["--renderer", "cpu"]);
         preference::reset_for_tests();
+    }
+
+    #[test]
+    fn applied_props_change_the_next_frame_and_the_selected_objects_values() {
+        use crate::services::preview_worker_client::PreviewWorkerClient;
+        let cwd = tempfile::tempdir().unwrap();
+        std::fs::write(
+            cwd.path().join("fframes-fake-worker.json"),
+            br#"{"editor_objects": [{"component": "Title", "object": "headline", "bounds": [0, 0, 4, 2]}],
+                "props": {"fields": [{"name": "pixel", "kind": "integer", "min": 0, "max": 255}],
+                          "values": {"pixel": 7}}}"#,
+        )
+        .unwrap();
+        let script = std::path::Path::new(studio_test_support::ENGINE_TESTS_DIR)
+            .join("support/fake-preview-worker.py");
+        let manager = studio_bootstrap::ProcessTreeManager::new();
+        let mut transport = WorkerClient::new("r", 1);
+        transport.set_request_timeout(std::time::Duration::from_secs(5));
+        transport
+            .spawn_worker(
+                studio_test_support::python(),
+                &[
+                    script.to_str().unwrap(),
+                    "--renderer",
+                    "cpu",
+                    "--project-id",
+                    "p",
+                    "--open-session",
+                    "s",
+                    "--audio-cache",
+                    "audio",
+                ],
+                Some(cwd.path()),
+                studio_bootstrap::ChildEnvironment::default_allowlist(),
+                &manager,
+            )
+            .unwrap();
+        let identity = PreviewIdentity {
+            project_id: "p".into(),
+            open_session: "s".into(),
+            source_revision: "r".into(),
+            worker_generation: 1,
+        };
+        let mut worker = PreviewWorkerClient::new(transport, identity);
+        worker.negotiate().unwrap();
+        assert!(worker.supports_props());
+        worker.timeline().unwrap();
+        assert_eq!(worker.frame(0, 1, 1.0).unwrap().pixels[0], 7);
+
+        let headline = EditorObjectIdentity {
+            scene_instance_key: "scene-0".into(),
+            component_key: "Title".into(),
+            object_key: "headline".into(),
+            repeat_key: "primary".into(),
+        };
+        let mut doc = fframes_studio_protocol::PropsDocument::default();
+        doc.set(&headline, "pixel", Some(serde_json::json!(40)));
+        apply_props(
+            &mut worker,
+            &PreviewProps {
+                json: Some(doc.to_json()),
+                generation: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(worker.frame(0, 2, 1.0).unwrap().pixels[0], 40);
+        let answer = worker.props_info(headline.clone()).unwrap();
+        assert_eq!(answer.props_generation, 2);
+        let info = answer.info.expect("the headline is editable");
+        assert_eq!(info.schema.component, "Title");
+        assert_eq!(info.code_values["pixel"], serde_json::json!(7));
+        assert_eq!(info.values["pixel"], serde_json::json!(40));
+        let unknown = EditorObjectIdentity {
+            object_key: "caption".into(),
+            ..headline
+        };
+        assert_eq!(worker.props_info(unknown).unwrap().info, None);
+
+        // `None` restores the code's values.
+        apply_props(
+            &mut worker,
+            &PreviewProps {
+                json: None,
+                generation: 3,
+            },
+        )
+        .unwrap();
+        assert_eq!(worker.frame(0, 3, 1.0).unwrap().pixels[0], 7);
+        worker.shutdown();
     }
 
     fn inspection(diagnostics: Vec<PreviewDiagnostic>, truncated: bool) -> InspectResponse {

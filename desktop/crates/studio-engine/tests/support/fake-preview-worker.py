@@ -11,7 +11,9 @@ every revision can describe its own timeline, diagnostics and audio:
   for, `cpu` for `auto`), hang_frame (stops answering at that frame), fail_start, delay_ms,
   export_hang, timing (offer set_timing_v1: scenes are keyed s0, s1 ... and a timing document
   trims, splits and reorders them), editor_objects [{component, object, bounds: [x, y, width, height]}] (every
-  frame carries them as exact-bounds editor metadata in video pixels)
+  frame carries them as exact-bounds editor metadata in video pixels), props (offer set_props_v1:
+  every editor object is editable with the fields `{"fields": [PropField], "values": {..}}` and
+  a props document's `pixel` value of any object replaces the base byte of the frames)
 
 With `--export-v1` it stands in for the MP4 renderer, which it cannot be: it reports the
 first frame rendered, then holds until it is killed (`export_hang`) or fails.
@@ -68,6 +70,9 @@ MAX_HEIGHT = 720
 TIMING = bool(CONFIG.get("timing"))
 timing_doc = None
 timing_generation = 0
+PROPS = CONFIG.get("props")
+props_doc = None
+props_generation = 0
 cache = arg("--audio-cache")
 os.makedirs(cache, exist_ok=True)
 
@@ -157,6 +162,23 @@ def editor_metadata(index, seek_serial):
                 status="supported", reason=None, objects=objects)
 
 
+def props_values(identity):
+    """An object's values after the props document: the code's, then the document's."""
+    values = dict(PROPS.get("values", {}))
+    for entry in (props_doc or {}).get("objects", []):
+        if entry["identity"] == identity:
+            values.update(entry["values"])
+    return values
+
+
+def props_pixel():
+    """The `pixel` value the document gives any object, if it gives one."""
+    for entry in (props_doc or {}).get("objects", []):
+        if "pixel" in entry["values"]:
+            return int(entry["values"]["pixel"])
+    return None
+
+
 def make_pcm(path):
     samples = -(-FRAMES * RATE // FPS)
     mode = CONFIG.get("audio", "silent")
@@ -197,7 +219,7 @@ while True:
             sdk_version=arg("--sdk-version", "test"),
             backend=CONFIG.get("backend") or {"skia-cpu": "skia-cpu", "gpu": "skia-gpu"}.get(arg("--renderer"), "cpu"),
             capabilities=["preview_identity_v1", "scaled_frame_v1", "inspect_v1", "prepared_audio_v1"]
-            + (["set_timing_v1"] if TIMING else []),
+            + (["set_timing_v1"] if TIMING else []) + (["set_props_v1"] if PROPS is not None else []),
             capability_gaps=CONFIG.get("capability_gaps", []), max_frame_bytes=64 * 1024 * 1024, max_control_bytes=1024 * 1024,
             max_preview_width=MAX_WIDTH, max_preview_height=MAX_HEIGHT, audio_sample_rates=[48000],
             audio_sample_format="f32le_stereo_interleaved"))
@@ -212,6 +234,25 @@ while True:
         _, total, orphans, appended = layout()
         send(dict(type="TimingApplied", envelope=env, timing_generation=timing_generation,
                   total_frames=total, orphan_clips=orphans, appended_scenes=appended))
+    elif kind == "SetProps" and PROPS is not None:
+        env = request["envelope"]
+        try:
+            doc = json.loads(request["props_json"]) if request["props_json"] else None
+        except ValueError:
+            send(dict(type="Error", envelope=env, code="props", message="fake props document is not JSON"))
+            continue
+        props_doc, props_generation = doc, request["props_generation"]
+        send(dict(type="PropsApplied", envelope=env, props_generation=props_generation))
+    elif kind == "PropsInfo" and PROPS is not None:
+        env = request["envelope"]
+        wanted = request["identity"]
+        known = any(o["object"] == wanted["object_key"] for o in CONFIG.get("editor_objects", []))
+        info = None
+        if known:
+            info = dict(schema=dict(component=wanted["component_key"], fields=PROPS.get("fields", [])),
+                        code_values=PROPS.get("values", {}), values=props_values(wanted))
+        send(dict(type="PropsInfo", envelope=env, identity=wanted, props_generation=props_generation,
+                  info=info))
     elif kind == "Timeline" and TIMING:
         env = envelope_of(request)
         placed, total, _, _ = layout()
@@ -251,7 +292,8 @@ while True:
             continue
         scale = effective_scale(request["scale"])
         w, h = scaled(WIDTH, scale), scaled(HEIGHT, scale)
-        base = int(CONFIG.get("pixel", 7)) + (index if CONFIG.get("vary_pixels") else 0)
+        pixel = props_pixel() if PROPS is not None else None
+        base = (pixel if pixel is not None else int(CONFIG.get("pixel", 7))) + (index if CONFIG.get("vary_pixels") else 0)
         payload = bytes([base % 256, (base * 3) % 256, 11, 255]) * (w * h)
         header = dict(protocol_version=1, source_revision=identity["source_revision"],
                       worker_generation=identity["worker_generation"], request_id=env["request_id"],

@@ -76,6 +76,7 @@ mod tests {
             height: 1080,
             fps: 60,
             timing: true,
+            props: false,
             formats: formats.to_vec(),
         }))
     }

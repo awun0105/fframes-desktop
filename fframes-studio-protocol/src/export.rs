@@ -241,6 +241,10 @@ pub struct ExportCapabilities {
     pub fps: u32,
     /// The worker reads a timing document from `--timing-file`.
     pub timing: bool,
+    /// The worker reads a props document from `--props-file`. Workers older than it say
+    /// nothing, which reads as `false`.
+    #[serde(default)]
+    pub props: bool,
     /// Every container and codec whose encoders this worker's FFmpeg has.
     pub formats: Vec<ExportFormat>,
 }
@@ -324,12 +328,18 @@ mod tests {
             height: 1080,
             fps: 30,
             timing: true,
+            props: false,
             formats: vec![ExportFormat {
                 container: ExportContainer::Mp4,
                 codec: ExportCodec::Mpeg4,
             }],
         };
         assert!(capabilities.accepts(&ExportSettings::default()).is_ok());
+        // Capabilities of a worker from before props read as "no props".
+        let mut old = serde_json::to_value(&capabilities).unwrap();
+        old.as_object_mut().unwrap().remove("props");
+        let old: ExportCapabilities = serde_json::from_value(old).unwrap();
+        assert!(!old.props);
         let h264 = ExportSettings {
             codec: ExportCodec::H264,
             ..Default::default()

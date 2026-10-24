@@ -550,6 +550,8 @@ pub enum Boundary {
     },
     /// Controller-side: a step of a `timeline.json` write (no journal record).
     TimingWrite(crate::timing::file::WriteStep),
+    /// Controller-side: a step of a `props.json` write (no journal record).
+    PropsWrite(crate::timing::file::WriteStep),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

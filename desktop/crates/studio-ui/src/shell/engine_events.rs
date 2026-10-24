@@ -14,7 +14,9 @@ use studio_engine::engine::handle::{CommandFinished, EngineEvent, WorkflowOpen};
 use studio_engine::presets::{PresetCommand, PresetReport};
 use studio_engine::services::build_service::BuildService;
 use studio_engine::services::export_service::{ExportControl, ExportProgress};
-use studio_engine::services::preview_coordinator::{PreviewCoordinator, PreviewTiming, SeekIntent};
+use studio_engine::services::preview_coordinator::{
+    PreviewCoordinator, PreviewProps, PreviewTiming, SeekIntent,
+};
 
 use super::{Picker, StudioShell};
 use crate::agent::Attachment;
@@ -225,6 +227,7 @@ impl StudioShell {
         self.preview_gate_pending = false;
         self.busy = false;
         let edit = self.timeline_in_flight.take_if(|(sent, _)| *sent == id);
+        let props_edit = self.props_in_flight.take_if(|(sent, _)| *sent == id);
         if let Some(presentation) = presentation {
             let changed_session =
                 self.preview_session.as_ref() != presentation.state.as_ref().map(|s| s.session());
@@ -294,7 +297,11 @@ impl StudioShell {
         if let Some((_, command)) = edit {
             self.timeline_edit_finished(command, refused, cx);
         }
+        if let Some((_, command)) = props_edit {
+            self.props_edit_finished(command, refused);
+        }
         self.flush_timeline_edits(cx);
+        self.flush_props_edits(cx);
         cx.notify();
     }
 
@@ -337,6 +344,18 @@ impl StudioShell {
             });
             self.timing_sent = Some(timeline.generation);
         }
+        let props = self.presentation.props.clone();
+        if let (Some(preview), Some(props)) = (&self.preview, &props)
+            && self.props_sent != Some(props.generation)
+        {
+            preview.set_props(PreviewProps {
+                json: props.props_json.clone(),
+                generation: props.generation,
+            });
+            self.props_sent = Some(props.generation);
+        }
+        self.props_panel
+            .update(cx, |panel, cx| panel.set_snapshot(props, cx));
     }
 
     pub(super) fn run_preset(&mut self, command: PresetCommand, cx: &mut Context<Self>) {

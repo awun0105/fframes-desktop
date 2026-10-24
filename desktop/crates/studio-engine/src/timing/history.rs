@@ -1,28 +1,29 @@
 //! Snapshot undo and redo of the timing document (Cap's editor history): every step
 //! stores the whole document, and a gesture (a drag) collects its changes into one step.
+//! The props document uses the same history.
 use super::doc::TimingDoc;
 
 /// Undo steps kept; the oldest go first.
 pub const MAX_HISTORY: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Gesture {
+enum Gesture<D> {
     None,
     /// The document when the gesture began.
-    Active(TimingDoc),
+    Active(D),
     /// The document changed outside the studio during the gesture: its remaining
     /// edits are refused until it ends.
     Aborted,
 }
 
 #[derive(Debug, Clone)]
-pub struct History {
-    undo: Vec<TimingDoc>,
-    redo: Vec<TimingDoc>,
-    gesture: Gesture,
+pub struct History<D = TimingDoc> {
+    undo: Vec<D>,
+    redo: Vec<D>,
+    gesture: Gesture<D>,
 }
 
-impl Default for History {
+impl<D> Default for History<D> {
     fn default() -> Self {
         Self {
             undo: Vec::new(),
@@ -32,7 +33,7 @@ impl Default for History {
     }
 }
 
-impl History {
+impl<D: Clone + PartialEq> History<D> {
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
@@ -47,14 +48,14 @@ impl History {
     }
 
     /// Starts collecting changes into one step. A second begin keeps the first start.
-    pub fn begin_gesture(&mut self, current: &TimingDoc) {
+    pub fn begin_gesture(&mut self, current: &D) {
         if self.gesture == Gesture::None {
             self.gesture = Gesture::Active(current.clone());
         }
     }
 
     /// Ends the gesture; true when it changed the document and became one undo step.
-    pub fn end_gesture(&mut self, current: &TimingDoc) -> bool {
+    pub fn end_gesture(&mut self, current: &D) -> bool {
         match std::mem::replace(&mut self.gesture, Gesture::None) {
             Gesture::Active(start) if start != *current => {
                 self.push(start);
@@ -65,13 +66,13 @@ impl History {
     }
 
     /// Records `before` as an undo step for a change, unless a gesture collects it.
-    pub fn record(&mut self, before: &TimingDoc) {
+    pub fn record(&mut self, before: &D) {
         if self.gesture == Gesture::None {
             self.push(before.clone());
         }
     }
 
-    fn push(&mut self, before: TimingDoc) {
+    fn push(&mut self, before: D) {
         self.undo.push(before);
         if self.undo.len() > MAX_HISTORY {
             self.undo.remove(0);
@@ -80,13 +81,13 @@ impl History {
     }
 
     /// The document to go back to, remembering `current` for redo.
-    pub fn undo(&mut self, current: &TimingDoc) -> Option<TimingDoc> {
+    pub fn undo(&mut self, current: &D) -> Option<D> {
         let previous = self.undo.pop()?;
         self.redo.push(current.clone());
         Some(previous)
     }
 
-    pub fn redo(&mut self, current: &TimingDoc) -> Option<TimingDoc> {
+    pub fn redo(&mut self, current: &D) -> Option<D> {
         let next = self.redo.pop()?;
         self.undo.push(current.clone());
         Some(next)

@@ -32,12 +32,14 @@ impl StudioShell {
         }
         self.preview_session = None;
         self.timing_sent = None;
+        self.props_sent = None;
         self.awaiting_preview = None;
         self.preview_state.close();
         self.displayed = None;
         self.pending_ready = None;
         self.pending_frame = None;
         self.canvas.clear();
+        self.sync_props_selection(cx);
         self.canvas_pan_position = None;
         self.clear_images = true;
         let _ = self
@@ -77,6 +79,14 @@ impl StudioShell {
         {
             self.pending_frame = Some(frame);
             self.notify_player(cx);
+        }
+        if let Some(Err(error)) = events.props_applied {
+            self.error = Some(format!("The props edit could not be previewed: {error}"));
+            cx.notify();
+        }
+        if let Some((identity, info)) = events.props_info {
+            self.props_panel
+                .update(cx, |panel, cx| panel.set_info(identity, info, cx));
         }
         if events.compiled.is_none() && events.ready.is_none() && events.error.is_none() {
             return;
@@ -363,6 +373,7 @@ impl StudioShell {
         scope: Result<Option<TaskScope>, String>,
         cx: &mut Context<Self>,
     ) {
+        self.sync_props_selection(cx);
         let scope = scope.and_then(|scope| match scope {
             Some(mut scope) => {
                 scope.canvas_selection = self.canvas.task_scope_selection();
@@ -492,6 +503,7 @@ impl StudioShell {
         if let Err(error) = self.canvas.cycle_last_hit() {
             self.canvas.message = Some(error.to_string());
         }
+        self.sync_props_selection(cx);
         cx.notify();
     }
 

@@ -36,6 +36,7 @@ The layout ([`shell/layout.rs`](../../desktop/crates/studio-ui/src/shell/layout.
 | Canvas edit   | Click a supported element, then prompt               | Resolve frame-specific ID/source ownership and attach evidence             |
 | Preset change | Choose a preset or edit tokens                       | Update bound values and ask the agent to adapt unbound design where needed |
 | Timing edit   | Split, trim or move clips on the timeline            | Rewrite `timeline.json` without a rebuild                                  |
+| Props edit    | Change an editable component's props in the Props tab | Rewrite `props.json` and re-render the preview without a rebuild          |
 | Review/undo   | Read the diff, accept a subset, or undo a task       | Revalidate the subset; restore an accepted revision without discarding unrelated user changes |
 | Handoff       | Continue with a different coding agent               | Stop the previous writer and transfer grounded project/task context        |
 | Export        | Choose format/quality and save                       | Render an immutable accepted revision with progress/cancel                 |
@@ -120,6 +121,7 @@ my-video/
     overrides.json                user-owned overrides
     guide.md                      design and motion instructions
   timeline.json                   timing document: play order, trims, splits
+  props.json                      props document: values of editable components
   studio.json                     portable app metadata and SDK pin
   AGENTS.md                       generated project guidance
   .fframes/
@@ -135,6 +137,7 @@ App data outside the project stores adapter installs, the agent draft, stored ag
 | --------------------------------------------------- | ------------------------------------------------------------------- |
 | Scene layout, animation and audio placement         | Rust source plus any explicit runtime configuration it reads        |
 | Play order, trims and splits                        | `timeline.json`, applied by the worker at run time                  |
+| Values of editable components                       | `props.json`, applied by the worker at run time                     |
 | Active preset and local overrides                   | Style files, versioned with the project                             |
 | Scene/object editor identities and source anchors   | Explicit source registration plus a revision-specific derived index |
 | Timeline durations, overlaps and track positions    | Compiled renderer output                                            |
@@ -163,6 +166,12 @@ Project import preserves pre-existing dirty files and Git history. Checkpoints u
 The inventory classifies the file as `FileKind::Timing`. It is part of the source revision but not of the build revision (`SourceInventory::build_revision`), so a timing-only change keeps the build, its preview and its export binding.
 
 The open project owns a timing session on its controller ([`timing/mod.rs`](../../desktop/crates/studio-engine/src/timing/mod.rs), [`controller/timing.rs`](../../desktop/crates/studio-engine/src/controller/timing.rs)): split, trim and move, a drag bracketed as one gesture, and snapshot undo and redo. `TimelineSnapshot::generation` changes with every document the preview should play, and the preview coordinator lays the displayed worker out again without a rebuild. The end of a gesture writes the file once ([`timing/file.rs`](../../desktop/crates/studio-engine/src/timing/file.rs)): the new bytes are staged in `.fframes/cache/timing/`, the live file must still be the one the session loaded or wrote, and both moves are atomic no-replace renames; an interrupted write is adopted on the next open. A timing edit writes no journal record. It is refused during an agent task, while a publication is blocked, while an earlier mutation is unresolved and until a preview of the current build has reported its scenes. An outside change or an agent edit that publishes a new document reloads it and clears the history with a notice. History lasts for the project session. Export plays the session's document.
+
+### Props document
+
+`props.json` is a `fframes_studio_protocol::PropsDocument`: per editable object (its editor identity), the values that replace the code's. The kit reads it through `PropsStore` ([editable props](../components/components.md#editable-props-fframes-studio)). The inventory keeps the file as `FileKind::Other`, and `SourceInventory::build_revision` leaves it out like `timeline.json` (`revision::run_time_document`), so a props-only change keeps the build.
+
+The controller's props session ([`props.rs`](../../desktop/crates/studio-engine/src/props.rs), [`controller/props.rs`](../../desktop/crates/studio-engine/src/controller/props.rs)) shares the timing session's file write (`timing::file::write_doc`, staged in `.fframes/cache/props/`), its snapshot history and its gates, except that it needs no scene report. It also stops on an invalid document: editing and export are refused until the file is fixed. `PropsSnapshot::generation` changes with every document the preview should draw. The preview coordinator sends it with `SetProps` to workers that offer `set_props_v1`, before their first frame and again on each change, and re-renders the shown frame. When an object is selected on the canvas, the coordinator asks for its schema and values with `PropsInfo` once the frame it wanted is drawn, again after each seek or props change. Export passes the document as `--props-file` and needs `props: true` in the worker's export capabilities.
 
 ## 4. Agent integration and handoff
 

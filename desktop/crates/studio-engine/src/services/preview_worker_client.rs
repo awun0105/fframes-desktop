@@ -132,6 +132,16 @@ impl PreviewWorkerClient {
                 .any(|capability| capability == SET_TIMING_CAPABILITY)
         })
     }
+    /// Whether the worker accepts `SetProps` and `PropsInfo`: only workers whose project
+    /// wired props hooks offer it.
+    pub fn supports_props(&self) -> bool {
+        self.hello.as_ref().is_some_and(|hello| {
+            hello
+                .capabilities
+                .iter()
+                .any(|capability| capability == SET_PROPS_CAPABILITY)
+        })
+    }
     pub fn identity(&self) -> &PreviewIdentity {
         &self.identity
     }
@@ -248,6 +258,8 @@ impl PreviewWorkerClient {
                 PreviewResponse::AudioRead(r) => Some(&r.envelope),
                 PreviewResponse::Ack(r) => Some(&r.envelope),
                 PreviewResponse::TimingApplied(r) => Some(&r.envelope),
+                PreviewResponse::PropsApplied(r) => Some(&r.envelope),
+                PreviewResponse::PropsInfo(r) => Some(&r.envelope),
                 PreviewResponse::Error(r) => r.envelope.as_ref(),
                 PreviewResponse::Hello(_) => None,
             };
@@ -319,6 +331,8 @@ impl PreviewWorkerClient {
                 | (PreviewRequest::PrepareAudio(_), PreviewResponse::PreparedAudio(_))
                 | (PreviewRequest::ReleaseAudio(_), PreviewResponse::Ack(_))
                 | (PreviewRequest::SetTiming(_), PreviewResponse::TimingApplied(_))
+                | (PreviewRequest::SetProps(_), PreviewResponse::PropsApplied(_))
+                | (PreviewRequest::PropsInfo(_), PreviewResponse::PropsInfo(_))
                 | (PreviewRequest::Shutdown(_), PreviewResponse::Ack(_)) => (),
                 _ => return Err(invalid("Unexpected typed preview destination")),
             }
@@ -524,6 +538,71 @@ impl PreviewWorkerClient {
         }
         Ok(timeline)
     }
+    /// Applies a props document (`None`: the code's values) to the frames rendered from
+    /// now on. A rejected document leaves the worker's previous props in place and returns
+    /// the worker's reason. Props change no layout and no audio.
+    pub fn set_props(
+        &mut self,
+        props_json: Option<String>,
+        props_generation: u64,
+    ) -> Result<(), WorkerClientError> {
+        if !self.supports_props() {
+            return Err(invalid("Preview worker does not support props documents"));
+        }
+        if props_json
+            .as_ref()
+            .is_some_and(|json| json.len() > MAX_PROPS_DOC_BYTES)
+        {
+            return Err(invalid(format!(
+                "Props document exceeds {MAX_PROPS_DOC_BYTES} bytes"
+            )));
+        }
+        let e = self.envelope()?;
+        match self
+            .exchange(
+                &PreviewRequest::SetProps(SetPropsRequest {
+                    envelope: e.clone(),
+                    props_generation,
+                    props_json,
+                }),
+                &e,
+                false,
+            )?
+            .0
+        {
+            PreviewResponse::PropsApplied(applied)
+                if applied.props_generation == props_generation =>
+            {
+                Ok(())
+            }
+            _ => Err(invalid("Expected props acknowledgment")),
+        }
+    }
+    /// The schema and values of an editable object as it last rendered; `None` when it is
+    /// not editable or has not rendered.
+    pub fn props_info(
+        &mut self,
+        identity: EditorObjectIdentity,
+    ) -> Result<PropsInfoResponse, WorkerClientError> {
+        if !self.supports_props() {
+            return Err(invalid("Preview worker does not support props documents"));
+        }
+        let e = self.envelope()?;
+        match self
+            .exchange(
+                &PreviewRequest::PropsInfo(PropsInfoRequest {
+                    envelope: e.clone(),
+                    identity: identity.clone(),
+                }),
+                &e,
+                false,
+            )?
+            .0
+        {
+            PreviewResponse::PropsInfo(info) if info.identity == identity => Ok(info),
+            _ => Err(invalid("Expected props info")),
+        }
+    }
     pub fn prepare_audio(
         &mut self,
         rate: u32,
@@ -723,11 +802,25 @@ mod tests {
         timing: bool,
         responses: Vec<PreviewResponse>,
     ) -> PreviewWorkerClient {
-        let mut capabilities: Vec<String> =
-            PREVIEW_CAPABILITIES.iter().map(|c| (*c).into()).collect();
-        if timing {
-            capabilities.push(SET_TIMING_CAPABILITY.into());
-        }
+        let extra: &[&str] = if timing {
+            &[SET_TIMING_CAPABILITY]
+        } else {
+            &[]
+        };
+        scripted_worker_with(backend, extra, responses)
+    }
+
+    /// [`scripted_worker`] with a worker that also offers `extra` capabilities.
+    fn scripted_worker_with(
+        backend: &str,
+        extra: &[&str],
+        responses: Vec<PreviewResponse>,
+    ) -> PreviewWorkerClient {
+        let capabilities: Vec<String> = PREVIEW_CAPABILITIES
+            .iter()
+            .chain(extra)
+            .map(|c| (*c).into())
+            .collect();
         let hello = PreviewResponse::Hello(PreviewHelloResponse {
             contract_version: PREVIEW_CONTRACT_VERSION,
             supported_versions: vec![PREVIEW_CONTRACT_VERSION],
@@ -1004,6 +1097,70 @@ mod tests {
         let oversized = "x".repeat(MAX_TIMING_DOC_BYTES + 1);
         assert!(bounded.set_timing(Some(oversized), 1).is_err());
         assert_eq!(bounded.next_request, 1);
+    }
+
+    fn props_identity() -> EditorObjectIdentity {
+        EditorObjectIdentity {
+            scene_instance_key: "intro".into(),
+            component_key: "Title".into(),
+            object_key: "headline".into(),
+            repeat_key: "main".into(),
+        }
+    }
+
+    #[test]
+    fn set_props_checks_the_capability_size_and_acknowledged_generation() {
+        let applied = |request_id, props_generation| {
+            PreviewResponse::PropsApplied(PropsAppliedResponse {
+                envelope: timing_envelope(request_id),
+                props_generation,
+            })
+        };
+        let mut worker = scripted_worker_with("cpu", &[SET_PROPS_CAPABILITY], vec![applied(2, 3)]);
+        assert!(worker.supports_props());
+        worker.set_props(Some("{}".into()), 3).unwrap();
+
+        let mut stale = scripted_worker_with("cpu", &[SET_PROPS_CAPABILITY], vec![applied(2, 2)]);
+        assert!(stale.set_props(None, 3).is_err());
+
+        // A worker without the capability cannot parse the request: nothing is sent.
+        let mut old = scripted_worker(true, vec![]);
+        assert!(!old.supports_props());
+        assert!(old.set_props(None, 1).is_err());
+        assert!(old.props_info(props_identity()).is_err());
+        assert_eq!(old.next_request, 1);
+
+        let mut bounded = scripted_worker_with("cpu", &[SET_PROPS_CAPABILITY], vec![]);
+        let oversized = "x".repeat(MAX_PROPS_DOC_BYTES + 1);
+        assert!(bounded.set_props(Some(oversized), 1).is_err());
+        assert_eq!(bounded.next_request, 1);
+    }
+
+    #[test]
+    fn props_info_answers_only_for_the_object_asked_about() {
+        let info = |request_id, identity| {
+            PreviewResponse::PropsInfo(PropsInfoResponse {
+                envelope: timing_envelope(request_id),
+                identity,
+                props_generation: 0,
+                info: None,
+            })
+        };
+        let mut worker = scripted_worker_with(
+            "cpu",
+            &[SET_PROPS_CAPABILITY],
+            vec![info(2, props_identity())],
+        );
+        let answer = worker.props_info(props_identity()).unwrap();
+        assert_eq!(answer.info, None, "not editable or not rendered");
+
+        let other = EditorObjectIdentity {
+            object_key: "subtitle".into(),
+            ..props_identity()
+        };
+        let mut confused =
+            scripted_worker_with("cpu", &[SET_PROPS_CAPABILITY], vec![info(2, other)]);
+        assert!(confused.props_info(props_identity()).is_err());
     }
 
     #[test]

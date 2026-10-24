@@ -74,11 +74,12 @@ impl StudioShell {
         }
     }
 
-    /// The selected Project, Assets or Style tab's contents (a cached section).
+    /// The selected Project, Assets, Style or Props tab's contents (a cached section).
     pub(super) fn render_drawer(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let content = match self.sidebar_tab {
             SidebarTab::Assets => self.render_assets_tab(cx),
             SidebarTab::Style => self.render_style_tab(cx),
+            SidebarTab::Props => self.props_panel.clone().into_any_element(),
             // The Agent tab draws the agent section instead; this one is not in the tree.
             SidebarTab::Project | SidebarTab::Agent => self.render_project_tab(cx),
         };
@@ -606,6 +607,7 @@ pub(super) enum SidebarTab {
     Project,
     Assets,
     Style,
+    Props,
 }
 
 /// Height of a file or asset row.
@@ -633,11 +635,12 @@ fn sdk_status_tone(busy: bool, ready: bool) -> Tone {
 }
 
 impl SidebarTab {
-    const ALL: [SidebarTab; 4] = [
+    const ALL: [SidebarTab; 5] = [
         SidebarTab::Agent,
         SidebarTab::Project,
         SidebarTab::Assets,
         SidebarTab::Style,
+        SidebarTab::Props,
     ];
 
     /// Also the tab's element id, `sidebar-tab-{name}`.
@@ -647,6 +650,7 @@ impl SidebarTab {
             SidebarTab::Project => "Project",
             SidebarTab::Assets => "Assets",
             SidebarTab::Style => "Style",
+            SidebarTab::Props => "Props",
         }
     }
 
@@ -656,6 +660,7 @@ impl SidebarTab {
             SidebarTab::Project => Icon::Folder,
             SidebarTab::Assets => Icon::Image,
             SidebarTab::Style => Icon::Palette,
+            SidebarTab::Props => Icon::Layers,
         }
     }
 
@@ -684,7 +689,7 @@ mod tests {
     #[test]
     fn sidebar_tabs_keep_their_element_ids() {
         let names: Vec<_> = SidebarTab::ALL.iter().map(|t| t.name()).collect();
-        assert_eq!(names, ["Agent", "Project", "Assets", "Style"]);
+        assert_eq!(names, ["Agent", "Project", "Assets", "Style", "Props"]);
         for (index, tab) in SidebarTab::ALL.into_iter().enumerate() {
             assert_eq!(SidebarTab::from_index(index), tab);
         }

@@ -802,6 +802,7 @@ let config = config.with_props_args(&args).with_props(PropsHooks::new(
     move |identity| info.info(identity),
 ));
 // export: run_export_with_props(&video, &options, &args, &hooks)
+// export capabilities: print_export_capabilities_with_props::<MyVideo>()
 ```
 
 ## A whole video

@@ -20,6 +20,7 @@ pub mod preset_state;
 pub mod presets;
 pub mod preview_state;
 pub mod project_presentation;
+pub mod props;
 pub mod providers;
 pub mod sdk_setup;
 pub mod services;

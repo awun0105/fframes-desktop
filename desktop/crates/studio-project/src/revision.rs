@@ -57,6 +57,14 @@ pub enum FileKind {
 }
 /// The project's timing document, at the project root.
 pub const TIMING_FILE: &str = "timeline.json";
+/// The project's props document, at the project root: the values Studio's props panel
+/// gives editable components. Like the timing document it is applied at run time, so
+/// it stays out of the build; its kind is [`FileKind::Other`].
+pub const PROPS_FILE: &str = "props.json";
+/// Whether `path` is a document the preview and export apply at run time.
+pub fn run_time_document(path: &str) -> bool {
+    path == TIMING_FILE || path == PROPS_FILE
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceFile {
     pub path: ProjectPath,
@@ -152,13 +160,14 @@ impl SourceInventory {
     pub fn matches_revision(&self, recorded: &SourceRevision) -> bool {
         inventory_revision(&self.files, HASH_PREFIX) == *recorded
     }
-    /// What a build depends on: the revision of every file except the timing document,
-    /// which the preview and export apply at run time. A timing-only change keeps it.
+    /// What a build depends on: the revision of every file except the timing and props
+    /// documents, which the preview and export apply at run time. A change of only those
+    /// keeps it.
     pub fn build_revision(&self) -> SourceRevision {
         let files: Vec<SourceFile> = self
             .files
             .iter()
-            .filter(|file| file.path.as_str() != TIMING_FILE)
+            .filter(|file| !run_time_document(file.path.as_str()))
             .cloned()
             .collect();
         inventory_revision(&files, BUILD_HASH_PREFIX)
@@ -168,6 +177,12 @@ impl SourceInventory {
         self.files
             .iter()
             .find(|file| file.path.as_str() == TIMING_FILE)
+    }
+    /// The props document's entry, when the project has one.
+    pub fn props_file(&self) -> Option<&SourceFile> {
+        self.files
+            .iter()
+            .find(|file| file.path.as_str() == PROPS_FILE)
     }
     /// Includes all ordinary files except the four exact root-relative exclusions.
     /// Unknown durable files are included to avoid silently dropping imported source.

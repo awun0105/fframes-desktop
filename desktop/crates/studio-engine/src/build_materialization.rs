@@ -9,7 +9,7 @@ use std::{
 use studio_project::{
     OpenProject, ProjectError, ProjectPath, SourceInventory,
     lifecycle::read_cargo,
-    revision::{FileKind, SourceFile, TIMING_FILE},
+    revision::{FileKind, SourceFile, run_time_document},
 };
 use studio_sdk::{
     CompatibilityManifest, environment::SdkEnvironment, manifest::FRAMEWORK_REL_PATH,
@@ -155,7 +155,7 @@ pub fn reuse_unchanged_sources(
     };
     for file in files {
         // Cargo manifests are rewritten for the SDK, and Cargo does not track their times.
-        if file.kind == FileKind::Cargo || file.path.as_str() == TIMING_FILE {
+        if file.kind == FileKind::Cargo || run_time_document(file.path.as_str()) {
             continue;
         }
         if record.files.get(file.path.as_str()) == Some(&file.sha256) {
@@ -273,11 +273,11 @@ pub fn materialize_in_environment(
     let root = staging.path().join("project");
     fs::create_dir(&root).map_err(|e| error(&root, e.to_string()))?;
     let mut buffer = [0; 64 * 1024];
-    // The timing document stays out: the build is shared by every timing of the same
-    // code, which the preview and export hand to the worker at run time.
+    // The timing and props documents stay out: the build is shared by every timing and
+    // props of the same code, which the preview and export hand to the worker at run time.
     let build_revision = project.inventory.build_revision();
     for source in &project.inventory.files {
-        if source.path.as_str() == TIMING_FILE {
+        if run_time_document(source.path.as_str()) {
             continue;
         }
         let target = root.join(source.path.as_str());

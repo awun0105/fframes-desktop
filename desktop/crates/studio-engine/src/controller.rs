@@ -28,11 +28,12 @@ use std::{
 use studio_project::{
     OpenProject,
     checkpoint::Checkpoints,
-    revision::{FileKind, TIMING_FILE},
+    revision::{FileKind, PROPS_FILE, TIMING_FILE},
 };
 
 mod preset;
 mod promotion;
+mod props;
 mod review;
 mod timing;
 pub use preset::{PresetMutation, PresetOutcome};
@@ -96,6 +97,8 @@ pub struct Controller {
     drafts: DraftStore,
     /// The timing document of this session and its edit history.
     timing: crate::timing::TimingSession,
+    /// The props document of this session and its edit history.
+    props: crate::props::PropsSession,
 }
 
 /// The process scope of one agent task, keyed by the task that owns it so cleanup can
@@ -204,7 +207,14 @@ impl Controller {
         let timing_recovery = crate::timing::file::recover(&project.root).map_err(|error| {
             format!("{TIMING_FILE} could not be recovered from an interrupted save: {error}")
         });
-        if recovery.touched_source || matches!(timing_recovery, Ok(Some(_))) {
+        let props_recovery = crate::timing::file::recover_doc(&project.root, &crate::props::PROPS)
+            .map_err(|error| {
+                format!("{PROPS_FILE} could not be recovered from an interrupted save: {error}")
+            });
+        if recovery.touched_source
+            || matches!(timing_recovery, Ok(Some(_)))
+            || matches!(props_recovery, Ok(Some(_)))
+        {
             (project, source_degraded) = open_source(root)?;
         }
         let task_records = task_replay.committed();
@@ -339,7 +349,12 @@ impl Controller {
             Ok(Some(note)) | Err(note) => notices.push(note),
             Ok(None) => {}
         }
+        match props_recovery {
+            Ok(Some(note)) | Err(note) => notices.push(note),
+            Ok(None) => {}
+        }
         let timing = crate::timing::TimingSession::load(&project.root);
+        let props = crate::props::PropsSession::load(&project.root);
         let recovery_notice = (!notices.is_empty()).then(|| notices.join(" "));
         let mut controller = Self {
             project,
@@ -370,6 +385,7 @@ impl Controller {
             agent,
             drafts,
             timing,
+            props,
         };
         controller.heal_manifest_reference();
         Ok(controller)
@@ -586,6 +602,7 @@ impl Controller {
         self.record.state.reconcile_source(&project.inventory)?;
         self.project = project;
         self.observe_timing_file();
+        self.observe_props_file();
         if self.state().source() != &previous {
             // A timing-only change keeps the generation: the running job and its
             // processes still describe the source.

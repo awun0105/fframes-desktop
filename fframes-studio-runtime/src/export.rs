@@ -38,6 +38,7 @@ pub fn export_capabilities<V: Video>() -> ExportCapabilities {
         height: V::HEIGHT as u32,
         fps: V::FPS as u32,
         timing: true,
+        props: false,
         formats,
     }
 }
@@ -45,6 +46,17 @@ pub fn export_capabilities<V: Video>() -> ExportCapabilities {
 /// Prints [`export_capabilities`] as one JSON document on stdout.
 pub fn print_export_capabilities<V: Video>() -> ExportResult<()> {
     println!("{}", serde_json::to_string(&export_capabilities::<V>())?);
+    Ok(())
+}
+
+/// [`print_export_capabilities`] of a worker that exports with
+/// [`run_export_with_props`](crate::run_export_with_props), which reads `--props-file`.
+pub fn print_export_capabilities_with_props<V: Video>() -> ExportResult<()> {
+    let capabilities = ExportCapabilities {
+        props: true,
+        ..export_capabilities::<V>()
+    };
+    println!("{}", serde_json::to_string(&capabilities)?);
     Ok(())
 }
 
