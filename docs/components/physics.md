@@ -129,7 +129,8 @@ double pendulum keeps its energy within 1e-6 on the steps. Sampled between two s
 blended state is off by about 1e-3, which does not show. `state(t)`, `positions(t)` (meters
 from the pivot, `y` up) and `energy(t)` give the numbers. `MultiPendulum` draws it from
 `pivot`, `scale` units per meter. With `trail` the last bob leaves a trail, sampled like
-`TracedPath`, over the last `trail_time` seconds. Gallery scene: `MultiPendulum`.
+`TracedPath`, over the last `trail_time` seconds. Gallery scenes: `MultiPendulum`, and `ChaosFan`:
+24 double pendulums released 0.002 rad apart, which swing as one and then fan out.
 
 ```rust
 use fframes_kit::prelude::*;

@@ -119,7 +119,8 @@ fn search<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a ArrayTrace) -> Svgr<'a> {
 value. The compared bars light up, moved bars slide to their place and bars in their final
 place turn green. `name` is written above with the comparisons and moves so far, `values`
 writes each value under its bar and `notes` the step under the figure. Gallery scene:
-`SortVisualizer` (the four sorts racing on the same twelve values, one step every 0.07 s).
+`SortVisualizer` (the four sorts racing on the same twelve values, one step every 0.07 s), and
+`RadialSort`, an `ArrayTrace::quick` of 120 values drawn as wedges round a circle.
 
 ```rust
 use fframes_kit::prelude::*;

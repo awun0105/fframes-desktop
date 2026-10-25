@@ -194,7 +194,8 @@ dendrites branching from the cell body (placed from `seed`), the axon wrapped in
 nodes of Ranvier between the segments, and the terminals. It grows in from `delay`, and with
 `labels` each part is then named above or below it. At each time in `impulses` the cell body
 fires and the impulse jumps from node to node along the axon at `speed` pixels a second; at
-the terminals it releases neurotransmitter. Gallery scene: `Neuron`.
+the terminals it releases neurotransmitter. Gallery scenes: `Neuron`, and `NeuralRelay`: three
+neurons whose terminals touch the next one's dendrites, each firing as the impulse arrives.
 
 ```rust
 use fframes_kit::prelude::*;

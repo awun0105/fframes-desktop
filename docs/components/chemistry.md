@@ -276,7 +276,8 @@ the network.
 
 Case, hyphens and underscores do not matter (`"Vitamin-C"` finds `"vitamin c"`). A name
 that is not in the table draws nothing, and `inspect` warns about it. `named_smiles(name)`
-gives the SMILES, and `named_molecules()` lists the table. Gallery scene: `NamedMolecule`
+gives the SMILES, and `named_molecules()` lists the table. Gallery scenes: `MoleculeParade`
+(five named molecules drawn in turn into a lineup) and `NamedMolecule`
 (caffeine, vanillin and dopamine).
 
 ```rust

@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use fframes_kit::prelude::*;
 
-use super::core::title;
+use super::core::{hue, neon, title};
 use crate::GalleryScene;
 
 fn fade(delay: f32) -> FadeIn {
@@ -653,6 +653,78 @@ fn sequence_diagram<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+/// How many values [`radial_sort`] sorts, one wedge each.
+const WHEEL: usize = 120;
+
+/// A wedge of the wheel: cell `k` of [`WHEEL`] from radius `inner` out to `outer`.
+fn wedge(k: usize, inner: f32, outer: f32) -> String {
+    let step = std::f32::consts::TAU / WHEEL as f32;
+    let (a, b) = (k as f32 * step - 0.47 * step, k as f32 * step + 0.47 * step);
+    let at = |r: f32, angle: f32| (r * angle.sin(), -r * angle.cos());
+    let (p0, p1, p2, p3) = (at(inner, a), at(outer, a), at(outer, b), at(inner, b));
+    format!(
+        "M{:.1} {:.1} L{:.1} {:.1} L{:.1} {:.1} L{:.1} {:.1} Z",
+        p0.0, p0.1, p1.0, p1.1, p2.0, p2.1, p3.0, p3.1
+    )
+}
+
+/// Quicksort on 120 shuffled values laid round a circle, each as long and as coloured as its
+/// value: the noise sorts itself into a colour wheel, which then turns.
+fn radial_sort<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACE: OnceLock<ArrayTrace> = OnceLock::new();
+    let trace = TRACE.get_or_init(|| {
+        let mut values: Vec<i64> = (0..WHEEL as i64).collect();
+        // a fixed shuffle: ordered by a hash of the value
+        values.sort_by(|a, b| {
+            motion::hash(*a as u32 * 7 + 3).total_cmp(&motion::hash(*b as u32 * 7 + 3))
+        });
+        ArrayTrace::quick(&values)
+    });
+    let head = title(ui, "RadialSort");
+    let t = ui.seconds();
+    let c = ui.theme.colors;
+    let step_time = 3.6 / trace.len().max(1) as f32;
+    let Some(at) = trace.at(t - 0.6, step_time) else {
+        return head;
+    };
+    let step = at.step;
+    let wedges: Vec<Svgr<'a>> = step
+        .values
+        .iter()
+        .enumerate()
+        .map(|(k, &value)| {
+            let v = value as f32 / WHEEL as f32;
+            let d = wedge(k, 70.0, 110.0 + 290.0 * v);
+            let fill = if step.compare.contains(&k) {
+                c.title
+            } else {
+                hue(v)
+            };
+            svgr!(<path d={d} fill={fill} />)
+        })
+        .collect();
+    // the finished wheel turns
+    let done = motion::progress(t, 4.4, 6.0);
+    let turn = 40.0 * motion::cubic_in_out(done);
+    let (comparisons, moves) = at.counts;
+    let count = format!("quicksort   {comparisons} comparisons   {moves} moves");
+    let style = ui.theme.typography.caption;
+    let glow = neon("gallery-wheel-glow", 6.0);
+    svgr!(
+        <g>
+            <defs>{glow}</defs>
+            {head}
+            <g transform={Transform { translate_x: 960.0, translate_y: 585.0, rotate: turn.into(), ..Default::default() }}>
+                <g filter="url(#gallery-wheel-glow)">{wedges}</g>
+            </g>
+            <text x="1824" y="1020" text-anchor="end" font-family={style.family} font-size={style.size}
+                  fill={c.muted}>
+                {count}
+            </text>
+        </g>
+    )
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         // eight steps of a second from 0.6 s
@@ -679,5 +751,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("ComplexityPlot", 7.0, complexity_plot),
         GalleryScene::new("CodeBlock", 9.0, code_block),
         GalleryScene::new("SequenceDiagram", 7.0, sequence_diagram),
+        GalleryScene::new("RadialSort", 6.0, radial_sort),
     ]
 }

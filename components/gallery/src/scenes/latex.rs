@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use fframes_kit::prelude::*;
 
-use super::core::title;
+use super::core::{neon, title};
 use crate::GalleryScene;
 
 /// The scene with `title`, as in the other gallery files.
@@ -28,6 +28,10 @@ pub(super) struct Formulas {
     solved: Formula,
     water: Formula,
     tikz: Formula,
+    /// Euler's formula at theta, at pi, then the identity, and the identity with its five
+    /// constants as parts.
+    journey: [Formula; 4],
+    identity: Formula,
     /// Functions and their derivatives, row by row.
     derivatives: Vec<[Formula; 2]>,
 }
@@ -54,6 +58,14 @@ impl Formulas {
             \\end{tikzpicture}";
         Self {
             euler: math("e^{i\\pi} + 1 = 0"),
+            journey: [
+                "e^{i\\theta} = \\cos\\theta + i\\sin\\theta",
+                "e^{i\\pi} = \\cos\\pi + i\\sin\\pi",
+                "e^{i\\pi} = -1",
+                "e^{i\\pi} + 1 = 0",
+            ]
+            .map(math),
+            identity: math("{{e}}^{ {{i}} {{\\pi}} } + {{1}} = {{0}}"),
             theta: math("\\theta"),
             sum: math("\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}"),
             pythagoras: math("{{a}}^2 + {{b}}^2 = {{c}}^2"),
@@ -147,6 +159,97 @@ fn bench_formula_text<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         .into()
 }
 
+/// When each morph of [`euler_journey`] starts: from step i of the journey to step i + 1.
+const MORPHS: [f32; 3] = [1.7, 2.9, 4.0];
+
+/// Euler's formula written by hand, then morphed step by step (theta to pi, the cosine and
+/// sine worked out, the -1 brought over) into the identity, whose five constants light up.
+fn euler_journey<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let f = formulas();
+    let c = ui.theme.colors;
+    let t = ui.seconds();
+    let theme = ui.theme;
+    let view = |of| FormulaView {
+        size: 150.0,
+        x: 960.0,
+        y: 300.0,
+        anchor: Anchor::Center,
+        ..FormulaView::new(of).themed(theme)
+    };
+    let step = MORPHS.iter().filter(|&&at| t >= at).count();
+    let formula = if step == 0 {
+        ui.show(FormulaView {
+            enter: Some(
+                Write {
+                    delay: 0.2,
+                    run_time: 1.2,
+                    ..ui.defaults()
+                }
+                .into(),
+            ),
+            ..view(&f.journey[0])
+        })
+    } else {
+        let (from, to) = (view(&f.journey[step - 1]), view(&f.journey[step]));
+        ui.show(TransformMatchingTex {
+            delay: MORPHS[step - 1],
+            run_time: 0.8,
+            ..TransformMatchingTex::new(from, to)
+        })
+    };
+    // the identity in colour over the plain one, glowing
+    let lit = motion::progress(t, 4.9, 5.4);
+    let map = [
+        (Part::Index(0), Color::hex("#ff6b9d")),
+        (Part::Index(1), c.highlight),
+        (Part::Index(2), Color::hex("#3ddc97")),
+        (Part::Index(3), c.accent),
+        (Part::Index(4), Color::hex("#a78bfa")),
+    ];
+    let identity = if lit > 0.0 {
+        let view = ui.show(FormulaView {
+            color_map: &map,
+            opacity: lit,
+            ..view(&f.identity)
+        });
+        svgr!(<g filter="url(#gallery-tex-glow)">{view}</g>)
+    } else {
+        Svgr::empty()
+    };
+    // the same turn on the unit circle: a general angle, then half a turn to -1
+    let angle = motion::lerp(0.0, 0.9, motion::progress(t, 0.4, 1.6))
+        + motion::lerp(
+            0.0,
+            std::f32::consts::PI - 0.9,
+            motion::progress(t, 1.7, 2.5),
+        );
+    let circle = ui.show(UnitCircle {
+        center: (0.0, -1.35),
+        radius: 1.9,
+        angle: angle.into(),
+        labels: false,
+        color: c.muted,
+        enter: Some(
+            Create {
+                delay: 0.2,
+                run_time: 1.0,
+                ..ui.defaults()
+            }
+            .into(),
+        ),
+        ..ui.defaults()
+    });
+    let glow = neon("gallery-tex-glow", lit * 10.0);
+    svgr!(
+        <g>
+            <defs>{glow}</defs>
+            {circle}
+            <g opacity={1.0 - lit}>{formula}</g>
+            {identity}
+        </g>
+    )
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     // typeset now, in the video's constructor, not in the first frame
     formulas();
@@ -236,5 +339,6 @@ pub fn scenes() -> Vec<GalleryScene> {
             };
             ui.show(view)
         },
+        "EulerJourney", 6.0 => |ui| euler_journey(ui),
     ]
 }

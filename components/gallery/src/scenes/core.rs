@@ -20,6 +20,32 @@ pub fn scenes() -> Vec<GalleryScene> {
     ]
 }
 
+/// A filter with the id `id` that lays a blur of `blur` pixels under what it filters, the
+/// neon glow of the showpiece scenes. Use it as `filter="url(#id)"` on a group that is never
+/// empty: an empty group has no box to filter.
+pub(crate) fn neon<'a>(id: &'static str, blur: f32) -> Svgr<'a> {
+    svgr!(
+        <filter id={id} x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation={blur} result="blur" />
+            <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    )
+}
+
+/// A bright colour `turn` of the way round the colour wheel (0 red, 1/3 green, 2/3 blue).
+pub(crate) fn hue(turn: f32) -> Color {
+    let channel = |offset: f32| {
+        let k = (turn * 6.0 + offset).rem_euclid(6.0);
+        let v = 1.0 - (k.min(4.0 - k).clamp(0.0, 1.0));
+        // a pastel neon: saturated but never dark
+        (255.0 * (0.35 + 0.65 * v)) as u8
+    };
+    Color::rgb(channel(5.0), channel(3.0), channel(1.0))
+}
+
 /// The scene's title in the top left corner.
 pub(crate) fn title<'a>(ui: &Ui<'a, '_, '_>, text: &'static str) -> Svgr<'a> {
     let c = ui.theme.colors;

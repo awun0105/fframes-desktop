@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use fframes_kit::prelude::*;
 
-use super::core::title;
+use super::core::{hue, neon, title};
 use crate::GalleryScene;
 
 fn fade(delay: f32) -> FadeIn {
@@ -118,6 +118,55 @@ fn multi_pendulum<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
         ..ui.defaults()
     });
     svgr!(<g>{double}{triple}{head}</g>)
+}
+
+/// How many pendulums [`chaos_fan`] swings, and how far apart their first links start.
+const FAN: usize = 24;
+const FAN_SPREAD: f64 = 0.002;
+
+/// Twenty-four double pendulums released a thousandth of a radian apart: they swing as one,
+/// then chaos fans them out into a rainbow.
+fn chaos_fan<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static MOTIONS: OnceLock<Vec<MultiPendulumMotion>> = OnceLock::new();
+    let motions = MOTIONS.get_or_init(|| {
+        (0..FAN)
+            .map(|i| {
+                let angle = 2.5 + FAN_SPREAD * i as f64;
+                MultiPendulumMotion::new(&[1.25, 1.05], &[1.0, 1.0], &[angle, 2.9], 7.0)
+            })
+            .collect()
+    });
+    let head = title(ui, "ChaosFan");
+    let pendulums: Vec<Svgr<'a>> = motions
+        .iter()
+        .enumerate()
+        .map(|(i, motion)| {
+            let color = hue(i as f32 / FAN as f32);
+            ui.show(MultiPendulum {
+                motion: Some(motion),
+                pivot: (0.0, 0.3),
+                delay: 0.5,
+                bob_radius: 9.0,
+                trail_time: Some(1.2),
+                color: color.with_alpha(110),
+                bob_color: color,
+                trail_color: color,
+                stroke_width: 2.0,
+                parts_enter: Some(fade(0.0)),
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let glow = neon("gallery-chaos-glow", 6.0);
+    let c = ui.theme.colors;
+    svgr!(
+        <g>
+            <defs>{glow}</defs>
+            {head}
+            <g filter="url(#gallery-chaos-glow)">{pendulums}</g>
+            <circle cx="960" cy={540.0 - 0.3 * 135.0} r="10" fill={c.title} />
+        </g>
+    )
 }
 
 /// Balls, boxes and polygons dropped into a box with a ramp, bouncing and settling.
@@ -286,6 +335,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Lens", 3.5, lens),
         GalleryScene::new("RigidWorld", 4.0, rigid_world),
         GalleryScene::new("MultiPendulum", 4.0, multi_pendulum),
+        GalleryScene::new("ChaosFan", 6.5, chaos_fan),
         GalleryScene::new("RadialWave", 4.0, radial_wave),
         GalleryScene::new("Schematic", 3.5, schematic),
     ];

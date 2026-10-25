@@ -2,7 +2,7 @@
 
 The `3d` feature of `fframes-kit` (`fframes-kit = { .., features = ["3d"] }`) adds the
 `three` module and its names to the prelude. Gallery scenes: `ThreeDAxes`, `Surface`,
-`Solids`, `Polyhedra`.
+`Solids`, `Polyhedra`, `LorenzAttractor` (the attractor as `Line3D` segments, the camera turning).
 
 ## ThreeDView
 

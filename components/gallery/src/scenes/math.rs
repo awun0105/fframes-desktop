@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 use fframes::animation::KeyFramesAnimation;
 use fframes_kit::prelude::*;
 
-use super::core::title;
+use super::core::{neon, title};
 use crate::GalleryScene;
 
 fn create(delay: f32) -> EnterAnim {
@@ -560,6 +560,103 @@ fn epicycles<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{chain}</g>)
 }
 
+/// One letter of [`fourier_word`]: its Fourier series, the mean point the series turns
+/// around (pixels) and its outline for the fill.
+struct Glyph {
+    terms: Vec<fframes_kit::kits::math::Term>,
+    mean: (f64, f64),
+    outline: String,
+}
+
+/// The letters of "fframes" as glyph outlines on a baseline, each with its series. `None`
+/// while the font cannot be read.
+fn word_glyphs(ui: &Ui<'_, '_, '_>) -> Option<Vec<Glyph>> {
+    use fframes_kit::paths::{get_length, get_point_at_length, serialize};
+    const SAMPLES: usize = 1025;
+    let style = TextStyle {
+        size: 300,
+        ..ui.theme.typography.title
+    };
+    let word = fframes_kit::text_outline::outline(ui.ctx, style, "fframes")?;
+    let glyphs = word.placed(960.0 - word.advance / 2.0, 640.0);
+    let glyphs = glyphs
+        .iter()
+        .map(|path| {
+            let length = get_length(path);
+            let points: Vec<_> = (0..SAMPLES)
+                .filter_map(|i| get_point_at_length(path, length * i as f64 / SAMPLES as f64))
+                .collect();
+            let n = points.len().max(1) as f64;
+            let mean = points
+                .iter()
+                .fold((0.0, 0.0), |(x, y), p| (x + p.x / n, y + p.y / n));
+            Glyph {
+                terms: fframes_kit::kits::math::fourier(path, SAMPLES, 160),
+                mean,
+                outline: serialize(path),
+            }
+        })
+        .collect();
+    Some(glyphs)
+}
+
+/// Seven chains of turning circles, one per letter, draw "fframes" in neon from their
+/// Fourier series, then shrink away and the word fills in.
+fn fourier_word<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static GLYPHS: OnceLock<Vec<Glyph>> = OnceLock::new();
+    const COLORS: [&str; 7] = [
+        "#ff6b9d", "#ff9f43", "#ffc94d", "#3ddc97", "#22d3ee", "#4f8cff", "#a78bfa",
+    ];
+    let head = title(ui, "FourierWord");
+    // the series are only kept once the font was read
+    let glyphs = match GLYPHS.get() {
+        Some(glyphs) => glyphs,
+        None => match word_glyphs(ui) {
+            Some(glyphs) => GLYPHS.get_or_init(|| glyphs),
+            None => return head,
+        },
+    };
+    let t = ui.seconds();
+    let space = ui.space;
+    let mut chains = Vec::new();
+    let mut fills = Vec::new();
+    for (i, glyph) in glyphs.iter().enumerate() {
+        let color = Color::hex(COLORS[i % COLORS.len()]);
+        // the letters start one after another and finish together
+        let p = motion::progress(t, 0.3 + 0.18 * i as f32, 4.4);
+        let turns = motion::cubic_in_out(p);
+        chains.push(ui.show(Epicycles {
+            terms: &glyph.terms,
+            center: space.from_px(fframes_kit::kurbo::Point::new(glyph.mean.0, glyph.mean.1)),
+            scale: 1.0 / f64::from(space.unit),
+            turns: turns.into(),
+            circle_color: color.with_alpha(70),
+            vector_color: color.with_alpha(150),
+            trace_color: color,
+            trace_width: 5.0,
+            stroke_width: 1.5,
+            enter: Some(EnterAnim::FadeIn(fade(0.1 + 0.18 * i as f32))),
+            exit: Some(ExitAnim::ShrinkToCenter(ShrinkToCenter {
+                delay: 1.3,
+                run_time: 0.5,
+                ..ShrinkToCenter::default()
+            })),
+            ..ui.defaults()
+        }));
+        let fill = motion::progress(t, 4.5 + 0.06 * i as f32, 5.1 + 0.06 * i as f32);
+        let d = glyph.outline.as_str();
+        fills.push(svgr!(<path d={d} fill={color} opacity={fill * 0.9} />));
+    }
+    let glow = neon("gallery-word-glow", 9.0);
+    svgr!(
+        <g>
+            <defs>{glow}</defs>
+            {head}
+            <g filter="url(#gallery-word-glow)">{fills}{chains}</g>
+        </g>
+    )
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("NumberLinePoint", 4.0, number_line_point),
@@ -576,5 +673,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Plots", 4.0, plots),
         GalleryScene::new("HistogramToNormal", 4.6, histogram_to_normal),
         GalleryScene::new("Epicycles", 6.0, epicycles),
+        GalleryScene::new("FourierWord", 6.0, fourier_word),
     ]
 }

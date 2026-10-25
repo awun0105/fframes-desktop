@@ -392,8 +392,9 @@ largest terms first, centered on the path's mean point (y up). `Epicycles` place
 `center` in units of `ui.space`, with `scale` units per unit of the path. `turns` (a tracker)
 is how far the series has turned. The trace is what the end drew in the last `trace_length`
 turns (1 keeps one full turn, the whole drawing). The circles and vectors draw with `enter` and
-leave with `exit`; the trace stays. Gallery scene:
-`Epicycles`.
+leave with `exit`; the trace stays. Gallery scenes:
+`Epicycles`, and `FourierWord`: seven chains, one per letter, draw `fframes` from the glyph
+outlines of `text_outline::outline`.
 
 ```rust
 use fframes::animation::KeyFramesAnimation;

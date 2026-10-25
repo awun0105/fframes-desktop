@@ -326,12 +326,93 @@ mod three_d {
         svgr!(<g>{figure}{head}</g>)
     }
 
+    /// The Lorenz attractor (sigma 10, rho 28, beta 8/3) once it has settled, in Manim units
+    /// around the origin: the points of [`lorenz`]'s trace.
+    fn lorenz_points() -> &'static [(f32, f32, f32)] {
+        static POINTS: std::sync::OnceLock<Vec<(f32, f32, f32)>> = std::sync::OnceLock::new();
+        POINTS.get_or_init(|| {
+            let f = |(x, y, z): (f64, f64, f64)| {
+                (10.0 * (y - x), x * (28.0 - z) - y, x * y - 8.0 / 3.0 * z)
+            };
+            let add = |a: (f64, f64, f64), b: (f64, f64, f64), k: f64| {
+                (a.0 + b.0 * k, a.1 + b.1 * k, a.2 + b.2 * k)
+            };
+            let dt = 0.005;
+            let mut p = (1.0, 1.0, 1.0);
+            let mut points = Vec::new();
+            for i in 0..7400 {
+                // fourth order Runge-Kutta
+                let k1 = f(p);
+                let k2 = f(add(p, k1, dt / 2.0));
+                let k3 = f(add(p, k2, dt / 2.0));
+                let k4 = f(add(p, k3, dt));
+                p = add(p, add(add(k1, k4, 1.0), add(k2, k3, 1.0), 2.0), dt / 6.0);
+                // the first steps fall onto the attractor from (1, 1, 1)
+                if i >= 1500 && i % 9 == 0 {
+                    let s = 0.115;
+                    points.push((
+                        (p.0 * s) as f32,
+                        (p.1 * s) as f32,
+                        ((p.2 - 25.0) * s) as f32,
+                    ));
+                }
+            }
+            points
+        })
+    }
+
+    /// The Lorenz attractor drawn out in 3D, its colour running round the wheel as it goes,
+    /// a bright dot at its head, the camera turning round it.
+    fn lorenz<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let head = title(ui, "LorenzAttractor");
+        let points = lorenz_points();
+        let shown = (motion::progress(ui.seconds(), 0.3, 5.2) * points.len() as f32) as usize;
+        let n = points.len() as f32;
+        let mut objects: Vec<Box<dyn Object3D + 'a>> = points
+            .windows(2)
+            .take(shown)
+            .enumerate()
+            .map(|(i, w)| -> Box<dyn Object3D + 'a> {
+                Box::new(Line3D {
+                    start: w[0],
+                    end: w[1],
+                    thickness: 0.025,
+                    color: crate::scenes::core::hue(i as f32 / n),
+                    ..ui.defaults()
+                })
+            })
+            .collect();
+        if let Some(&point) = points.get(shown.max(1) - 1) {
+            objects.push(Box::new(Dot3D {
+                point,
+                radius: 0.09,
+                ..ui.defaults()
+            }));
+        }
+        let figure = ui.show(ThreeDView {
+            phi: 78.0 * DEG,
+            theta: -125.0 * DEG,
+            ambient_rotation: 0.2,
+            objects,
+            ..ui.defaults()
+        });
+        let glow = crate::scenes::core::neon("gallery-lorenz-glow", 6.0);
+        svgr!(
+            <g>
+                <defs>{glow}</defs>
+                <g filter="url(#gallery-lorenz-glow)">{figure}</g>
+                {head}
+            </g>
+        )
+    }
+
     pub fn scenes() -> Vec<GalleryScene> {
         vec![
             GalleryScene::new("ThreeDAxes", 3.0, axes),
             GalleryScene::new("Surface", 3.0, surface),
             GalleryScene::new("Solids", 2.5, solids),
             GalleryScene::new("Polyhedra", 2.5, polyhedra),
+            GalleryScene::new("LorenzAttractor", 6.0, lorenz),
         ]
     }
 }

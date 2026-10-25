@@ -6,7 +6,7 @@ use fframes_kit::prelude::*;
 
 use crate::GalleryScene;
 
-use super::core::title;
+use super::core::{hue, neon, title};
 
 /// A small classifier: pulses run from the inputs to the outputs, lighting each layer.
 fn forward_pass<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
@@ -387,6 +387,87 @@ fn mcmc_chain<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{modes}{chain}{axes}</g>)
 }
 
+/// How many chains [`mcmc_swarm`] runs at once.
+const SWARM: usize = 10;
+
+/// Ten Metropolis chains in ten colours, started round the edge, find the three modes of a
+/// mixture together while its density rings glow in.
+fn mcmc_swarm<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "McmcSwarm");
+    let axes = Axes {
+        x_range: Range::new(-6.0, 6.0, 1.0),
+        y_range: Range::new(-3.0, 3.0, 1.0),
+        x_length: 12.6,
+        y_length: 6.3,
+        center: (0.0, -0.6),
+        ..ui.defaults()
+    };
+    let map = axes.map(ui);
+    let target = vec![
+        Gaussian2D {
+            mean: (-3.3, 1.0),
+            covariance: [[0.7, 0.25], [0.25, 0.45]],
+        },
+        Gaussian2D {
+            mean: (0.4, -1.1),
+            covariance: [[0.9, -0.3], [-0.3, 0.5]],
+        },
+        Gaussian2D {
+            mean: (3.6, 1.2),
+            covariance: [[0.5, 0.1], [0.1, 0.7]],
+        },
+    ];
+    let modes: Vec<Svgr<'a>> = target
+        .iter()
+        .zip(0_u8..)
+        .map(|(&gaussian, i)| {
+            ui.show(GaussianEllipse {
+                gaussian,
+                axes: map,
+                sigmas: vec![1.0, 2.0],
+                color: ui.theme.colors.muted,
+                fill_opacity: 0.08,
+                start: 0.2 + 0.25 * f32::from(i),
+                stagger: 0.2,
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let chains: Vec<Svgr<'a>> = (0..SWARM)
+        .map(|i| {
+            // round an ellipse near the edge of the plane
+            let a = std::f64::consts::TAU * i as f64 / SWARM as f64;
+            let color = hue(i as f32 / SWARM as f32);
+            ui.show(McmcChain {
+                target: target.clone(),
+                origin: (5.4 * a.cos(), 2.6 * a.sin()),
+                proposal: 0.75,
+                steps: 90,
+                seed: 11 + i as u64,
+                axes: map,
+                run: Some(ChainRun {
+                    start: 0.7 + 0.08 * i as f32,
+                    duration: 4.6,
+                }),
+                accepted_color: color,
+                rejected_color: color.with_alpha(60),
+                stroke_width: 3.0,
+                point_radius: 7.0,
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let glow = neon("gallery-swarm-glow", 5.0);
+    svgr!(
+        <g>
+            <defs>{glow}</defs>
+            {head}
+            {modes}
+            <g filter="url(#gallery-swarm-glow)">{chains}</g>
+        </g>
+    )
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("ForwardPass", 4.0, forward_pass),
@@ -398,5 +479,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("DecisionTree", 5.0, decision_tree),
         GalleryScene::new("GaussianEllipse", 4.0, gaussian_ellipse),
         GalleryScene::new("McmcChain", 5.0, mcmc_chain),
+        GalleryScene::new("McmcSwarm", 6.0, mcmc_swarm),
     ]
 }

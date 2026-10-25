@@ -146,7 +146,8 @@ covariance is not positive definite.
   proposed. Rejected proposals outside the axes are not drawn.
 
 Draw both before the `Axes` so the axis lines stay on top. Gallery scenes: `GaussianEllipse`,
-`McmcChain` (a chain finding both modes of a mixture).
+`McmcChain` (a chain finding both modes of a mixture), `McmcSwarm` (ten chains from the edge
+finding three modes together).
 
 ```rust
 use fframes_kit::prelude::*;

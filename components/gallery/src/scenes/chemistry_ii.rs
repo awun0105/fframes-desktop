@@ -7,7 +7,7 @@ use fframes_kit::prelude::*;
 
 use crate::GalleryScene;
 
-use super::core::title;
+use super::core::{hue, neon, title};
 
 fn create(delay: f32) -> EnterAnim {
     Create {
@@ -225,11 +225,83 @@ fn element_card<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{cards}</g>)
 }
 
+/// The molecules of [`molecule_parade`], in order.
+const PARADE: [&str; 5] = ["caffeine", "dopamine", "serotonin", "vitamin c", "aspirin"];
+
+/// Five molecules from their names: each draws on large in its own neon colour, then shrinks
+/// into its place in a lineup, which ends named.
+fn molecule_parade<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "MoleculeParade");
+    let t = ui.seconds();
+    let n = PARADE.len() as f32;
+    let figures: Vec<Svgr<'a>> = PARADE
+        .into_iter()
+        .zip(0_u8..)
+        .map(|(name, i)| {
+            let start = 0.3 + 0.95 * f32::from(i);
+            let color = hue(f32::from(i) / n);
+            let molecule = ui.show(NamedMolecule {
+                name: name.into(),
+                center: (0.0, 0.0),
+                bond_length: 80.0,
+                bond_color: color,
+                stroke_width: 5.0,
+                enter: Some(
+                    Create {
+                        delay: start,
+                        run_time: 0.7,
+                        ..Create::default()
+                    }
+                    .into(),
+                ),
+                parts_enter: Some(fade(start + 0.5)),
+                ..ui.defaults()
+            });
+            // from the middle, large, down into its slot in the row
+            let p = motion::cubic_in_out(motion::progress(t, start + 0.85, start + 1.3));
+            let slot = (960.0 + (f32::from(i) - 2.0) * 360.0, 600.0);
+            let (x, y) = (
+                motion::lerp(960.0, slot.0, p),
+                motion::lerp(520.0, slot.1, p),
+            );
+            let scale = motion::lerp(1.15, 0.58, p);
+            let label = ui.show(Label {
+                text: name.into(),
+                x: slot.0,
+                y: slot.1 + 190.0,
+                direction: Anchor::Center,
+                fill: color,
+                enter: Some(fade(start + 1.2)),
+                ..ui.defaults()
+            });
+            svgr!(
+                <g>
+                    <g transform={Transform::translate(x, y)}>
+                        <g transform={Transform::scale(scale)}>
+                            <g transform={Transform::translate(-960.0, -540.0)}>{molecule}</g>
+                        </g>
+                    </g>
+                    {label}
+                </g>
+            )
+        })
+        .collect();
+    let glow = neon("gallery-parade-glow", 5.0);
+    svgr!(
+        <g>
+            <defs>{glow}</defs>
+            {head}
+            <g filter="url(#gallery-parade-glow)">{figures}</g>
+        </g>
+    )
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("MolFile", 3.0, mol_file),
         GalleryScene::new("NamedMolecule", 3.0, named_molecule),
         GalleryScene::new("BondRotation", 4.0, bond_rotation),
         GalleryScene::new("ElementCard", 2.0, element_card),
+        GalleryScene::new("MoleculeParade", 6.5, molecule_parade),
     ]
 }
