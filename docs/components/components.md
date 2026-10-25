@@ -1310,6 +1310,183 @@ impl Scene for Second {
 # let _ = Second { theme: Theme::default() };
 ```
 
+## Cursors, emoji, sound effects and GIFs
+
+The kit draws its own mouse cursors (`@remotion/mac-cursors`), so they need no image files.
+Each cursor fades in over its `fade` seconds.
+
+| Component | Props | What it does |
+| --- | --- | --- |
+| `Cursor` | `shape`, `style`, `x`, `y`, `size`, `scale`, `opacity`, `shadow` | a still cursor with its hotspot at `(x, y)`. `CursorShape::{Arrow, Pointer, IBeam, Grab, Grabbing, Crosshair}` (`CursorShape::ALL`), `CursorStyle::{Dark, Light}` |
+| `CursorPath` | `points: Vec<CursorPoint>`, `shape`, `style`, `size`, `travel`, `motion`, `fade`, `click: ClickLook` | moves through timed points and arrives at each on time. It leaves a point `travel` seconds before the next is due. `CursorPoint::new(at, x, y).click()` presses the cursor and sends out a ring when it arrives. `position(t)` and `clicks()` give the path |
+| `Click` | `x`, `y`, `at`, `shape`, `style`, `size`, `fade`, `look: ClickLook` | one click at `at` seconds: the cursor presses and a ring spreads out |
+| `Drag` | `from`, `to`, `start`, `run_time`, `motion`, `style`, `size`, `swap`, `fade`, `children` | the open hand closes, carries its children from `from` to `to`, and opens again |
+| `TypeAt` | `typewriter: Typewriter`, `shape`, `style`, `size`, `lead`, `fade`, `click` | a text cursor clicks at the typewriter's position `lead` seconds before it starts typing |
+
+`CursorMotion::Spring { stiffness, damping }` (the default) and `CursorMotion::Smooth { overshoot }`
+both overshoot the target slightly and settle on it by the time it is due. `ClickLook` sets
+the ring's `color`, `radius` and `stroke_width`, how far the cursor presses (`depth`, `press`
+seconds) and how long the ring lasts (`run_time`).
+
+```rust
+use fframes_kit::prelude::*;
+
+fn demo<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let path = ui.show(CursorPath {
+        points: vec![
+            CursorPoint::new(0.3, 400.0, 700.0),
+            CursorPoint::new(1.2, 960.0, 540.0).click(),
+            CursorPoint::new(2.4, 1300.0, 620.0).click(),
+        ],
+        shape: CursorShape::Pointer,
+        travel: 0.9,
+        ..ui.defaults()
+    });
+    let drag = ui.show(Drag {
+        from: (700.0, 300.0),
+        to: (1200.0, 300.0),
+        start: 1.0,
+        children: children(|_| svgr!(<rect x="640" y="250" width="120" height="100" rx="12" fill="#4f7cff" />)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{path}{drag}</g>)
+}
+# let _ = demo;
+```
+
+### Animated emoji
+
+`AnimatedEmoji` (feature `lottie`, `@remotion/animated-emoji`) plays one of Google's Noto
+animated emoji. These files are licensed CC BY 4.0 and the kit does not ship them. Download
+the ones a video uses into its media folder, and show `emoji::ATTRIBUTION` in the video or
+its description.
+
+- `emoji::NAMES` lists the emoji by name and Noto code. `emoji::url(name, tone)` gives the
+  download URL, and `emoji::file_name(name, tone)` the file name the component looks for,
+  e.g. `thumbs-up-medium.json`.
+- The props are `name`, `skin_tone: Option<SkinTone>`, `x`, `y`, `size` (the longer side),
+  `start`, `speed`, `looping` and `fade`. A skin tone applies only to the emoji whose
+  `skin_tones` is set (hands and gestures); the others ignore it.
+- When the file is missing, the component draws nothing, and `inspect` warns with the URL
+  to download and the name to save it as.
+
+```rust
+# #[cfg(feature = "lottie")]
+# mod example {
+use fframes_kit::prelude::*;
+
+fn thumbs<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(AnimatedEmoji {
+        name: "thumbs-up",
+        skin_tone: Some(SkinTone::Medium),
+        size: 200.0,
+        ..ui.defaults()
+    })
+}
+# pub fn check() {
+#     let _ = thumbs;
+assert_eq!(emoji::file_name("thumbs-up", Some(SkinTone::Medium)), "thumbs-up-medium.json");
+# }
+# }
+# fn main() {
+# #[cfg(feature = "lottie")]
+# example::check();
+# }
+```
+
+### Sound effects
+
+The crate's `sfx/` folder holds a small pack of CC0 sounds (`@remotion/sfx`). Each is
+under 1 s long, mono, and peaks at -3 dBFS:
+
+| `Sfx` | File | Sound |
+| --- | --- | --- |
+| `Whoosh` | `whoosh.wav` | a stick swung through the air, for transitions |
+| `Click` | `click.wav` | a mouse click |
+| `Ding` | `ding.wav` | a bell |
+| `Pop` | `pop.wav` | a short pop, for things that appear |
+| `SwooshDown` | `swoosh-down.wav` | a falling sweep, for things that leave |
+| `Shutter` | `shutter.wav` | a camera shutter |
+| `Switch` | `switch.wav` | a toggle switch |
+
+`sfx/LICENSE.md` names the source of each file. Copy the files you use into the video's
+media folder: `include_media_dir!` cannot read the pack folder itself, because of its
+`LICENSE.md`. `Sfx::File("mine.wav")` plays a file of your own, and a file of your own with
+a pack name replaces the kit's.
+
+A video's audio is set in `fn audio`, so the helpers return `AudioTrack`s to add to it. Each
+hit plays at `sfx::DEFAULT_GAIN_DB` (-6 dB). Its rate changes by up to
+`sfx::RATE_VARIATION` (4 %), so repeats do not sound alike. The change depends only on the
+hit's index, so every render sounds the same.
+
+- `sfx::at(&[1.0, 2.5], Sfx::Pop)` gives one hit at each time.
+- `sfx::on_transitions(&series_lengths, fps, Sfx::Whoosh)` gives one hit where each transition
+  of a series starts, i.e. where its two sequences start to overlap. `sfx::transition_times`
+  gives those times.
+- `sfx::on_beats(&beat, 0.0..8.0, Sfx::Click)` gives one hit on each whole beat of the range.
+- `sfx::on_clicks(&path)` gives one click sound per click of a `CursorPath`.
+
+```rust
+use fframes::AudioMap;
+use fframes_kit::prelude::*;
+
+const FADE: Timing = Timing::Linear { duration: 0.5, easing: RateFunc::Smooth };
+
+fn audio() -> AudioMap<'static> {
+    let series = [
+        SeriesLength::Sequence(2.0),
+        SeriesLength::Transition(FADE),
+        SeriesLength::Sequence(2.0),
+    ];
+    let mut tracks = sfx::on_transitions(&series, 30, Sfx::Whoosh);
+    tracks.extend(sfx::on_beats(&Beat::from_bpm(120.0, 0.0), 0.0..4.0, Sfx::Click));
+    tracks.extend(sfx::at(&[3.2], Sfx::Ding));
+    AudioMap::from(tracks)
+}
+# let _ = audio;
+```
+
+Check the levels with `audio analyze`. Hits that overlap add up.
+
+### GIFs
+
+`Gif` (feature `gif`, `@remotion/gif`) plays an animated GIF. Decode the file once with
+`Gif::decode(bytes)` in the video's constructor and keep the `GifData`. The component's
+props are `gif`, `x`, `y`, `width`, `height`, `fit: GifFit::{Fill, Contain, Cover}`, `start`,
+`speed`, `looping` and `fade`.
+
+- Each frame shows for its own delay. A delay under 20 ms counts as 100 ms, as in browsers.
+- With `looping` the GIF starts again; without it, the last frame stays.
+- `include_media_dir!` does not take `.gif` files, so read the bytes with `include_bytes!`
+  or from a file.
+- The web editor draws a `placeholder` rectangle of the same size instead of the GIF.
+
+```rust
+# #[cfg(feature = "gif")]
+# mod example {
+use std::sync::LazyLock;
+
+use fframes_kit::prelude::*;
+
+static SPINNER: LazyLock<Option<GifData>> =
+    LazyLock::new(|| Gif::decode(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../gallery/media/gif/bounce.gif"))).ok());
+
+fn spinner<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let Some(gif) = SPINNER.as_ref() else {
+        return Svgr::empty();
+    };
+    ui.show(Gif { gif, x: 760.0, y: 340.0, width: 400.0, height: 400.0, fit: GifFit::Contain, ..ui.defaults() })
+}
+# pub fn check() {
+#     let _ = spinner;
+# }
+# }
+# fn main() {
+# #[cfg(feature = "gif")]
+# example::check();
+# }
+```
+
 ## Effects
 
 | Component | Props | What it does |
