@@ -1,7 +1,7 @@
 ---
 title: "Move fframes-kit to its own repository"
 description: "Cut the kit's tie to the fork (Studio props through a kit-owned trait, a Studio adapter crate here), move components/ to github.com/khanhthanhdev/fframes-kit building against crates.io fframes, then depend on it by git."
-status: in-progress
+status: completed
 priority: P1
 branch: main
 tags: [refactor, kit, studio]
@@ -44,16 +44,16 @@ this repository and keeps its props panel through a new adapter crate, `fframes-
 
 | # | Phase | Status |
 | --- | --- | --- |
-| 1 | [Seam and Studio adapter](./phase-01-seam-and-adapter.md) | In progress |
-| 2 | [New repository on crates.io fframes](./phase-02-new-repository.md) | Pending |
-| 3 | [Rewire and remove here](./phase-03-rewire-and-remove.md) | Pending |
+| 1 | [Seam and Studio adapter](./phase-01-seam-and-adapter.md) | Completed |
+| 2 | [New repository on crates.io fframes](./phase-02-new-repository.md) | Completed |
+| 3 | [Rewire and remove here](./phase-03-rewire-and-remove.md) | Completed |
 
 ## Acceptance criteria
 
-- [ ] `desktop/app/tests/kit_props_roundtrip.rs` passes with the adapter (phase 1, and again on the git dependency in phase 3).
-- [ ] In the new repo: `cargo test -p fframes-kit --all-features`, `just clippy`, `just check-wasm`, `just e2e cpu` pass against crates.io crates; `cargo package -p fframes-kit-macros -p fframes-kit` succeeds.
-- [ ] `examples/fframes-studio-intro` and the kit-props fixture build from the git dependency.
-- [ ] No `components/`, `docs/components/`, `docs/latex-setup.md` left here; `AGENTS.md` points to the new repo.
+- [x] `desktop/app/tests/kit_props_roundtrip.rs` passes with the adapter (phase 1, and again on the git dependency in phase 3).
+- [x] In the new repo: `cargo test -p fframes-kit --all-features`, `just clippy`, `just check-wasm`, `just e2e cpu` pass against crates.io crates; `cargo package -p fframes-kit-macros -p fframes-kit` succeeds.
+- [x] `examples/fframes-studio-intro` and the kit-props fixture build from the git dependency.
+- [x] No `components/`, `docs/components/`, `docs/latex-setup.md` left here; `AGENTS.md` points to the new repo.
 
 ## Constraints
 

@@ -1,2 +1,0 @@
-# dvisvgm output that fframes-kit writes with LF line ends: git must not convert it
-*.svg -text
