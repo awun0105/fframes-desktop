@@ -12,6 +12,7 @@ use fframes::{Color, Svgr};
 use crate::{theme::TextStyle, ui::Ui};
 
 mod bulleted_list;
+mod caption_files;
 mod counter;
 mod decimal;
 mod fit;
@@ -24,6 +25,9 @@ mod title;
 mod typewriter;
 
 pub use bulleted_list::BulletedList;
+pub use caption_files::{
+    CaptionFileError, CaptionWord, from_whisper_json, parse_srt, parse_vtt, serialize_srt,
+};
 pub use counter::Counter;
 pub(crate) use decimal::format_number;
 pub use decimal::{DecimalNumber, Integer, Variable};

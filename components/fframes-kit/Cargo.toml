@@ -12,7 +12,8 @@ fframes-kit-macros.workspace = true
 kurbo.workspace = true
 i_overlay.workspace = true
 fframes-studio-protocol = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
+# Whisper transcripts (`text::from_whisper_json`) and the studio props.
+serde_json.workspace = true
 chematic = { workspace = true, optional = true }
 mendeleev = { workspace = true, optional = true }
 rust-sugiyama = { workspace = true, optional = true }
@@ -44,7 +45,7 @@ skia = []
 3d = ["fframes/3d"]
 lottie = []
 # Props that fframes Studio edits (`props`): uses the fork's editor identity in fframes.
-studio = ["dep:fframes-studio-protocol", "dep:serde_json"]
+studio = ["dep:fframes-studio-protocol"]
 
 [lints]
 workspace = true

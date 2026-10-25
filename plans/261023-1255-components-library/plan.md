@@ -107,8 +107,8 @@ all of them on formulas: **LaTeX through a user-installed TeX, no Typst.**
 | 19 | [Physics kit II and circuit symbols](./phase-19-physics-ii-and-circuits.md) | 9 | 5d | Completed |
 | 20 | [Chemistry kit II](./phase-20-chemistry-ii.md) | 9 | 3d | Completed |
 | 21 | [ML kit and data-structure additions](./phase-21-ml-kit-and-dsa.md) | 10, 17 | 5d | Completed |
-| 22 | [Word captions, text layout and voiceover timing](./phase-22-captions-and-voiceover-timing.md) | 4 | 3d | Pending |
-| 23 | [Cursor, animated emoji and sound effects](./phase-23-asset-packs.md) | 11 | 3d | Pending |
+| 22 | [Word captions, text layout and voiceover timing](./phase-22-captions-and-voiceover-timing.md) | 4 | 3d | In progress |
+| 23 | [Cursor, animated emoji and sound effects](./phase-23-asset-packs.md) | 11 | 3d | In progress |
 
 Phases 2 and 3 can run in parallel after phase 1; 4, 5, 6 and 7 can run in parallel after phase 2;
 9, 10 and 11 can run in parallel after phase 6 (11 after phase 3). Each owns its own module, gallery file and skill
