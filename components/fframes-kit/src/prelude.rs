@@ -153,5 +153,6 @@ pub use crate::transitions::{
     TransitionSeries, Wipe, ZoomInOut, audio_fades, scene_transition,
 };
 pub use crate::ui::{BoxedComponent, Children, Component, DynComponent, Themed, Ui, children};
+pub use crate::voiceover::{BlockTime, Bookmark, VoiceoverBlock, VoiceoverScript};
 pub use fframes_kit_macros::ui;
 pub use kurbo::{BezPath, Point};

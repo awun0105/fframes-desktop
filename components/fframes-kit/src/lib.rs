@@ -206,6 +206,7 @@ pub mod three;
 pub mod time;
 pub mod transitions;
 pub mod ui;
+pub mod voiceover;
 
 pub use fframes_kit_macros::ui;
 pub use kurbo;
