@@ -1,7 +1,7 @@
 ---
 phase: 21
 title: "Phase 21: ML kit and data-structure additions"
-status: todo
+status: in-progress
 priority: P2
 effort: 5d
 dependencies: [10, 17]
@@ -129,7 +129,7 @@ dependencies: [10, 17]
 
 ## Todo
 
-- [ ] Network layout, feed-forward layers, forward pass
+- [x] Network layout, feed-forward layers, forward pass
 - [ ] Convolution, pooling and image layers
 - [ ] Embedding, vector, math operation, paired query, triplet layers
 - [ ] Dropout and layer changes

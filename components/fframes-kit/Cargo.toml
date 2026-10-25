@@ -38,6 +38,7 @@ chemistry = ["dep:chematic", "dep:mendeleev"]
 # The layered graph layout of `layout::layered` is shared by both kits.
 cs = ["dep:rust-sugiyama"]
 biology = []
+ml = []
 # ShaderNoise (SkSL grain); its shader compile tests build the Skia renderer.
 skia = []
 3d = ["fframes/3d"]

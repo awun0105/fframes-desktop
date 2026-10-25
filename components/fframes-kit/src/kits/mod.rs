@@ -9,6 +9,8 @@ pub mod cs;
 pub(crate) mod draw;
 #[cfg(feature = "math")]
 pub mod math;
+#[cfg(feature = "ml")]
+pub mod ml;
 #[cfg(feature = "physics")]
 pub mod physics;
 #[cfg(feature = "3d")]

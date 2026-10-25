@@ -14,6 +14,7 @@ pub mod explain_ii;
 pub mod general;
 pub mod latex;
 pub mod math;
+pub mod ml;
 pub mod overlay;
 pub mod physics;
 pub mod physics_ii;
@@ -48,6 +49,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(chemistry_ii::scenes());
     scenes.extend(cs::scenes());
     scenes.extend(biology::scenes());
+    scenes.extend(ml::scenes());
     scenes.extend(tags::scenes());
     scenes.extend(shapes::bench_scenes());
     scenes.extend(latex::bench_scenes());

@@ -152,6 +152,9 @@
 //! | manim-chemistry `NamedMolecule` (feature `chemistry`) | `kits::chemistry::NamedMolecule { name, .. }` from a table of about a hundred common molecules (`kits::chemistry::named_smiles`), no network lookups |
 //! | manim-chemistry `GraphMolecule`, `GMAnimationBuilder` (feature `chemistry`) | `kits::chemistry::GraphMolecule { structure, rotations, recolors, highlights, .. }` with `BondRotation`, `Recolor` of `MoleculePart`s and `GroupHighlight`; `kits::chemistry::functional_groups` finds the atoms of a group |
 //! | manim-chemistry `MElementObject` (feature `chemistry`) | `kits::chemistry::ElementCard { element, layout, .. }` with the atomic number, symbol, name, mass, electron configuration and Pauling electronegativity (`kits::chemistry::electronegativity`), `CardLayout::Square` or `Wide` |
+//! | `ManimML` `NeuralNetwork`, `FeedForwardLayer` (feature `ml`) | `kits::ml::NeuralNetwork { layers, .. }` with `Layer::FeedForward { nodes, activation }` |
+//! | `ManimML` `ReLU`, `Sigmoid` activation functions (feature `ml`) | `kits::ml::ActivationFunction::{Relu, Sigmoid, Tanh}`, plotted above the layer |
+//! | `ManimML` `make_forward_pass_animation` (feature `ml`) | `forward_pass: Some(kits::ml::ForwardPass { start, duration })` on `NeuralNetwork` |
 
 // The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
 extern crate self as fframes_kit;
@@ -216,3 +219,6 @@ struct ChemistryDocs;
 #[cfg(all(doctest, feature = "cs"))]
 #[doc = include_str!("../../../docs/components/cs.md")]
 struct CsDocs;
+#[cfg(all(doctest, feature = "ml"))]
+#[doc = include_str!("../../../docs/components/ml.md")]
+struct MlDocs;

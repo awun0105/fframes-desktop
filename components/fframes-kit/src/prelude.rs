@@ -84,6 +84,10 @@ pub use crate::kits::math::{
     MatrixView, NormalFit, NumberPoint, Pythagoras, RiemannSum, Secant, Tangent, UnitCircle,
     VectorSum,
 };
+#[cfg(feature = "ml")]
+pub use crate::kits::ml::{
+    ActivationFunction, ForwardPass, Layer, LayerGeometry, NeuralNetwork, Operation,
+};
 #[cfg(feature = "physics")]
 pub use crate::kits::physics::{
     Body, BodyShape, BodyView, Charge, ChargeGlow, Circuit, Collision1D, Connection, Doppler,
