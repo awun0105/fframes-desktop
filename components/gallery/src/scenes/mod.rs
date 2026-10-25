@@ -2,6 +2,7 @@ use crate::GalleryScene;
 
 pub mod animate;
 pub mod animate_ii;
+pub mod assets;
 pub mod biology;
 pub mod chemistry;
 pub mod chemistry_ii;
@@ -40,6 +41,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(text::scenes());
     scenes.extend(overlay::scenes());
     scenes.extend(voiceover::scenes());
+    scenes.extend(assets::scenes());
     scenes.extend(general::scenes());
     scenes.extend(latex::scenes());
     scenes.extend(explain::scenes());

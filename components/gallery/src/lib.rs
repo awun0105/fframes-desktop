@@ -1,7 +1,7 @@
 //! The fframes-kit gallery: one scene per component, named after the component, so
 //! `frame Sequence@50%` shows `Sequence` and the e2e harness addresses scenes by name.
 
-use fframes::{AudioTimestamp, include_media_dir};
+use fframes::{AudioTimestamp, AudioTrack, include_media_dir};
 use fframes_kit::prelude::*;
 
 pub mod scenes;
@@ -10,6 +10,9 @@ include_media_dir!(pub struct GalleryMedia, "gallery/media");
 
 /// Draws one gallery scene.
 pub type Draw = for<'a, 'c, 'm> fn(&mut Ui<'a, 'c, 'm>) -> Svgr<'a>;
+
+/// The audio tracks of a scene, in seconds of the scene.
+pub type Tracks = fn() -> Vec<AudioTrack<'static>>;
 
 /// A scene that shows one component; `name()` is the component name.
 #[derive(Debug)]
@@ -20,6 +23,8 @@ pub struct GalleryScene {
     pub overlap: f32,
     /// A file of the media that plays from the start of the scene.
     pub audio: Option<&'static str>,
+    /// Tracks placed in the scene, such as sound effects.
+    pub tracks: Option<Tracks>,
     pub theme: Theme,
     pub draw: Draw,
 }
@@ -31,6 +36,7 @@ impl GalleryScene {
             seconds,
             overlap: 0.0,
             audio: None,
+            tracks: None,
             theme: Theme::default(),
             draw,
         }
@@ -40,6 +46,14 @@ impl GalleryScene {
     pub fn with_audio(self, file: &'static str) -> Self {
         Self {
             audio: Some(file),
+            ..self
+        }
+    }
+
+    /// Plays the tracks `tracks` gives.
+    pub fn with_tracks(self, tracks: Tracks) -> Self {
+        Self {
+            tracks: Some(tracks),
             ..self
         }
     }
@@ -71,6 +85,9 @@ impl Scene for GalleryScene {
     }
 
     fn audio(&self) -> AudioMap<'_> {
+        if let Some(tracks) = self.tracks {
+            return AudioMap::from(tracks());
+        }
         self.audio.map_or_else(AudioMap::none, |file| {
             AudioMap::from([(file, AudioTimestamp::Second(0.0)..AudioTimestamp::Eof)])
         })
