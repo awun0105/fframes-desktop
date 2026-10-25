@@ -318,8 +318,9 @@ struct Shown<'l, 'a> {
 struct Joined {
     connection: Connection,
     opacity: f32,
-    /// The places of the layers it joins (see [`Shown::index`]): the first is its place in the
-    /// forward pass. None for a connection that fades out.
+    /// The place of the first layer it joins (see [`Shown::index`]), which is also its place
+    /// in the forward pass; the second layer is the next place. None for a connection that
+    /// fades out.
     from: Option<usize>,
 }
 

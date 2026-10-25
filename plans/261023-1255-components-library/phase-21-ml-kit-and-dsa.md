@@ -147,3 +147,12 @@ dependencies: [10, 17]
   and the ones before it are done. A forward pass and a change should not overlap, because
   the pass counts the layers after the running change. The same goes for dropout.
 - `layout` and `layout_at` stay the layout of the layers as given, before any change.
+- `ml/probability.rs` has its own Box-Muller transform. This duplicates
+  `kits::math::normal_samples` on purpose, because `kits::math` is behind another feature.
+- `e2e cpu --update` rewrites a snapshot only when it differs by more than 0.5%. While a
+  new scene changes before its first commit, delete its untracked PNG before each run, or
+  a small change keeps the old picture.
+- Observed on 2026-10-25: in the `--crop` render, and with it the small frames of
+  `inspect --pops`, an opacity group nested inside the enter fade's group drew as if fully
+  opaque. The full-size frame was right. Dropout frames 30714 to 30716 looked the same,
+  then jumped at 30717 when the fade ended, so the gallery's dropout starts after the enter fade.

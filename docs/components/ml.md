@@ -54,8 +54,9 @@ neighbouring layers.
   `LayerChange::Insert { index, layer }`, `Remove { index }` and `Replace { index, layer }`
   one after the other. The other layers slide to their new places, the layer that comes or
   goes fades, and so do the connections that are new or gone. An index counts the layers as
-  the changes before it left them; one out of range changes nothing. A change starts once
-  the one before it has finished, and should not overlap a forward pass or dropout.
+  the changes before it left them; one out of range changes nothing. Give the changes in the
+  order of their starts: a change that starts before the previous one has finished cuts it
+  short. A change should not overlap a forward pass or dropout.
 - **Layout.** `layout(ui)` gives every layer's `LayerGeometry` in pixels (its middle, its box,
   its neurons, maps, points, rows and images), for a label or an arrow pointing at a layer.
   It is the layout of `layers` as given, before any change.
