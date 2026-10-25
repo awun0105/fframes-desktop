@@ -11,7 +11,6 @@ fframes = { workspace = true }
 fframes-kit-macros.workspace = true
 kurbo.workspace = true
 i_overlay.workspace = true
-fframes-studio-protocol = { workspace = true, optional = true }
 # Whisper transcripts (`text::from_whisper_json`) and the studio props.
 serde_json.workspace = true
 chematic = { workspace = true, optional = true }
@@ -49,8 +48,8 @@ skia = []
 lottie = ["fframes/lottie"]
 # `Gif`: animated GIFs decoded once and drawn frame by frame.
 gif = ["dep:image"]
-# Props that fframes Studio edits (`props`): uses the fork's editor identity in fframes.
-studio = ["dep:fframes-studio-protocol"]
+# Props that an editor such as fframes Studio changes (`props`, `PropsSource`).
+studio = []
 
 [lints]
 workspace = true

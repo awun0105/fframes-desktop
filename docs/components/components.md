@@ -2137,7 +2137,7 @@ Keys must be unique within a scene.
     out, and `#[props(min = 0.0, max = 100.0, step = 1.0, unit = "px")]` to bound a number.
   - Enums whose variants have no fields get it with `#[derive(PropChoice)]`.
 
-The video keeps a `PropsStore` and renders with it through `Ui::with_props`:
+The `Ui` takes its values from a `PropsSource`, set with `Ui::with_props`:
 
 ```rust
 use fframes_kit::prelude::*;
@@ -2154,35 +2154,47 @@ fn title<'a>(frame: Frame, ctx: &FFramesContext<'a, '_>, theme: &'a Theme) -> Sv
 }
 
 # #[cfg(feature = "studio")]
-fn with_store<'a>(
+fn with_source<'a>(
     frame: Frame,
     ctx: &FFramesContext<'a, '_>,
     theme: &'a Theme,
-    store: &'a PropsStore, // `Arc<PropsStore>` in the video, `PropsStore::load("props.json")`
+    source: impl PropsSource + 'a,
 ) -> Svgr<'a> {
-    let mut ui = Ui::new(frame, ctx, theme).with_props(store);
+    let mut ui = Ui::new(frame, ctx, theme).with_props(source);
     ui!(<LowerThird editable="speaker" name="Ada" />)
 }
 ```
 
-When the component renders with a store:
-- the document's values for it replace the code's values;
-- it is drawn inside a `<g>` whose id is its editor identity: the scene's
-  `editor_instance_key` (else its name; `video` outside scenes), the type name, the key, and
-  `main`;
+When the component renders with a source:
+- the source's values for it replace the code's values (`PropsSource::values`);
+- it is drawn inside a `<g>` with the id the source gives (`PropsSource::element_id`);
+- while the source listens, it hears the schema, the code's values and the drawn values
+  (`PropsSource::rendered`);
 - a value that does not fit its field is skipped with a warning in `inspect`.
 
-A CLI render reads the same document with `PropsStore::load`, so exports match the preview.
-The project's Studio worker hands the store to the preview worker:
+The source is made per `Ui`, so it can hold one snapshot of the values; the `Ui`s of
+containers share it.
+
+### With fframes Studio
+
+The kit does not depend on Studio. Studio's source is the `PropsStore` of the
+`fframes-studio-kit` crate in the fframes Studio repository. It holds the project's
+`props.json`, names each object with Studio's editor identity (the scene's
+`editor_instance_key`, else its name; `video` outside scenes; the type name; the key;
+`main`), and answers the props panel:
 
 ```rust,ignore
+use fframes_studio_kit::PropsStore;
+
+// render_frame of a video, and of a scene
+let mut ui = Ui::new(frame, ctx, &self.theme).with_props(self.props.view());
+let mut ui = Ui::for_scene(frame, ctx, theme, self).with_props(props.scene_view(self));
+
+// the project's Studio worker
+let props = Arc::new(PropsStore::load("props.json")?); // exports read the same document
 props.listen(); // record each editable object's schema and values for the panel
-let (apply, info) = (props.clone(), props.clone());
-let config = config.with_props_args(&args).with_props(PropsHooks::new(
-    move |doc| apply.set(doc),
-    move |identity| info.info(identity),
-));
-// export: run_export_with_props(&video, &options, &args, &hooks)
+let config = config.with_props_args(&args).with_props(props.hooks());
+// export: run_export_with_props(&video, &options, &args, &props.hooks())
 // export capabilities: print_export_capabilities_with_props::<MyVideo>()
 ```
 

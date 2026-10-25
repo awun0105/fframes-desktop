@@ -2,22 +2,16 @@
 //!
 //! A component becomes editable with `#[derive(Props)]` (feature `studio`) and a key:
 //! `ui.show(LowerThird { .. }.editable("speaker"))`, or `<LowerThird editable="speaker" .. />`
-//! in [`ui!`](crate::ui!). The values in a [`PropsStore`] then replace the code's values when
-//! the component renders, and the component is drawn inside a `<g>` whose id names it for
-//! Studio's canvas selection. Without a store, or without the `studio` feature, `editable`
-//! renders the component unchanged.
+//! in [`ui!`](crate::ui!). The values of the `Ui`'s [`PropsSource`] then replace the code's
+//! values when the component renders, and the component is drawn inside a `<g>` whose id
+//! the source gives. Without a source, or without the `studio` feature, `editable` renders
+//! the component unchanged.
 //!
-//! The store holds the project's `props.json`. Renders read it with [`PropsStore::load`];
-//! Studio's preview worker changes it through the closures a project wires in:
+//! The kit does not know Studio. fframes Studio's source is the `PropsStore` of the
+//! `fframes-studio-kit` crate, which holds the project's `props.json`:
 //!
 //! ```ignore
-//! let props = video.props.clone(); // Arc<PropsStore>
-//! props.listen();
-//! let (apply, info) = (props.clone(), props.clone());
-//! let config = config.with_props(PropsHooks::new(
-//!     move |doc| apply.set(doc),
-//!     move |identity| info.info(identity),
-//! ));
+//! let mut ui = Ui::new(frame, ctx, &self.theme).with_props(self.store.view());
 //! ```
 
 use std::borrow::Cow;
@@ -66,19 +60,13 @@ impl<'a, C: Component<'a>> Component<'a> for Editable<'a, C> {
 #[cfg(feature = "studio")]
 mod studio {
     use std::borrow::Cow;
-    use std::collections::{BTreeMap, HashMap};
-    use std::path::Path;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Mutex, PoisonError, RwLock};
+    use std::collections::BTreeMap;
 
     pub use fframes_kit_macros::{PropChoice, Props};
-    pub use fframes_studio_protocol::{
-        EditorObjectIdentity, PropField, PropKind, PropsDocument, PropsInfo, PropsSchema,
-    };
     use serde_json::Value;
 
     use fframes::diagnostics::{Diagnostic, report};
-    use fframes::{Color, EditorObjectKey, Svgr};
+    use fframes::{Color, Svgr};
 
     use super::Editable;
     use crate::anim::Anim;
@@ -87,8 +75,84 @@ mod studio {
     /// Field values as JSON, keyed by field name.
     pub type PropValues = BTreeMap<String, Value>;
 
-    /// The repeat part of every kit identity: keys are unique per scene.
-    pub const REPEAT_KEY: &str = "main";
+    /// What a field holds, which decides the control an editor shows for it.
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum PropKind {
+        /// A JSON number.
+        Number,
+        /// A JSON integer.
+        Integer,
+        /// A JSON string.
+        Text,
+        /// A `#rrggbb` or `#rrggbbaa` string.
+        Color,
+        /// A JSON boolean.
+        Toggle,
+        /// One of `options`, as a string.
+        Choice { options: Vec<String> },
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct PropField {
+        pub name: String,
+        pub kind: PropKind,
+        pub min: Option<f64>,
+        pub max: Option<f64>,
+        pub step: Option<f64>,
+        pub unit: Option<String>,
+    }
+
+    /// The editable fields of a component type.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct PropsSchema {
+        pub component: String,
+        pub fields: Vec<PropField>,
+    }
+
+    /// An editable object as it rendered: its schema, the values its code gave it and the
+    /// values it drew with after the source's overrides.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct PropsInfo {
+        pub schema: PropsSchema,
+        pub code_values: PropValues,
+        pub values: PropValues,
+    }
+
+    /// One editable object, as a [`PropsSource`] sees it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct EditableObject<'k> {
+        /// The component's type name, [`Props::COMPONENT`].
+        pub component: &'static str,
+        /// The key given to `editable`.
+        pub key: &'k str,
+    }
+
+    /// Where editable components take their values from, and where they tell how they
+    /// rendered. Set on a `Ui` with [`Ui::with_props`]; its `Ui`s inside containers share it.
+    ///
+    /// A source is made per `Ui`, so it can hold one snapshot of its values: values that
+    /// change later apply from the next `Ui`.
+    pub trait PropsSource: Send + Sync {
+        /// The values that replace the code's values of `object`.
+        fn values(&self, object: EditableObject<'_>) -> Option<&PropValues>;
+
+        /// Whether [`rendered`](Self::rendered) wants to hear about objects; the code's
+        /// values are only collected then.
+        fn listening(&self) -> bool {
+            false
+        }
+
+        /// How `object` rendered, while [`listening`](Self::listening).
+        fn rendered(&self, object: EditableObject<'_>, info: PropsInfo) {
+            let _ = (object, info);
+        }
+
+        /// The id of the `<g>` the object is drawn in; `None` draws it without one.
+        fn element_id(&self, object: EditableObject<'_>) -> Option<String> {
+            let _ = object;
+            None
+        }
+    }
 
     /// A props struct whose fields Studio can edit. Derive it with `#[derive(Props)]`:
     /// fields whose type implements [`PropValue`] are editable, the others are left out.
@@ -353,102 +417,17 @@ mod studio {
         }
     }
 
-    /// The props document of a video plus, while Studio listens, how each editable object
-    /// last rendered. Shared between render threads; keep it in an `Arc` in the video.
-    #[derive(Debug, Default)]
-    pub struct PropsStore {
-        doc: RwLock<Arc<PropsDocument>>,
-        rendered: Mutex<HashMap<EditorObjectIdentity, PropsInfo>>,
-        listening: AtomicBool,
-    }
-
-    impl PropsStore {
-        pub fn new(doc: PropsDocument) -> Self {
-            Self {
-                doc: RwLock::new(Arc::new(doc)),
-                ..Default::default()
-            }
-        }
-
-        /// The document in `path`; a missing file is an empty document.
-        pub fn load(path: impl AsRef<Path>) -> Result<Self, String> {
-            let path = path.as_ref();
-            match std::fs::read_to_string(path) {
-                Ok(text) => PropsDocument::parse(&text)
-                    .map(Self::new)
-                    .map_err(|error| format!("{}: {error}", path.display())),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-                Err(error) => Err(format!("{}: {error}", path.display())),
-            }
-        }
-
-        /// Replaces the document from the next frame on; `None` restores the code's values.
-        pub fn set(&self, doc: Option<PropsDocument>) {
-            *self.doc.write().unwrap_or_else(PoisonError::into_inner) =
-                Arc::new(doc.unwrap_or_default());
-        }
-
-        pub fn document(&self) -> Arc<PropsDocument> {
-            self.doc
-                .read()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone()
-        }
-
-        /// Records how editable objects render from now on, for [`info`](Self::info).
-        pub fn listen(&self) {
-            self.listening.store(true, Ordering::Relaxed);
-        }
-
-        /// The schema and values of an object as it last rendered; `None` before
-        /// [`listen`](Self::listen) or when it has not rendered since.
-        pub fn info(&self, identity: &EditorObjectIdentity) -> Option<PropsInfo> {
-            self.rendered
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .get(identity)
-                .cloned()
-        }
-
-        fn record(&self, identity: EditorObjectIdentity, info: PropsInfo) {
-            self.rendered
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(identity, info);
-        }
-    }
-
-    /// The props a [`Ui`] renders with: one snapshot of the document per `Ui`, shared by
-    /// the `Ui`s of its containers.
-    #[derive(Clone)]
-    pub(crate) struct PropsView<'a> {
-        pub store: &'a PropsStore,
-        pub doc: Arc<PropsDocument>,
-    }
-
-    impl<'a> PropsView<'a> {
-        pub fn new(store: &'a PropsStore) -> Self {
-            Self {
-                store,
-                doc: store.document(),
-            }
-        }
-    }
-
     impl<'a, C: Component<'a> + Props> Component<'a> for Editable<'a, C> {
         fn render(mut self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
-            let Some(view) = ui.props.clone() else {
+            let Some(source) = ui.props.clone() else {
                 return ui.show(self.component);
             };
-            let identity = EditorObjectIdentity {
-                scene_instance_key: ui.scene_key().to_owned(),
-                component_key: C::COMPONENT.to_owned(),
-                object_key: self.key.to_string(),
-                repeat_key: REPEAT_KEY.to_owned(),
+            let object = EditableObject {
+                component: C::COMPONENT,
+                key: &self.key,
             };
-            let listening = view.store.listening.load(Ordering::Relaxed);
-            let code_values = listening.then(|| self.component.values());
-            if let Some(values) = view.doc.values(&identity) {
+            let code_values = source.listening().then(|| self.component.values());
+            if let Some(values) = source.values(object) {
                 let rejected = self.component.apply(values);
                 if !rejected.is_empty() {
                     report(Diagnostic::RendererWarning {
@@ -467,16 +446,9 @@ mod studio {
                     code_values,
                     values: self.component.values(),
                 };
-                view.store.record(identity.clone(), info);
+                source.rendered(object, info);
             }
-            let id = EditorObjectKey::new(
-                identity.scene_instance_key,
-                identity.component_key,
-                identity.object_key,
-                identity.repeat_key,
-            )
-            .ok()
-            .map(|key| key.render_id());
+            let id = source.element_id(object);
             let drawn = ui.show(self.component);
             match id {
                 Some(id) => fframes::svgr!(<g id={id}>{drawn}</g>),
@@ -618,29 +590,6 @@ mod studio {
             let out_of_range: PropValues = [("x".to_owned(), Value::from(5000.0))].into();
             assert_eq!(card.apply(&out_of_range), ["x"]);
             assert_eq!(card.x, 64.0);
-        }
-
-        #[test]
-        fn the_store_swaps_documents_whole() {
-            let store = PropsStore::default();
-            let identity = EditorObjectIdentity {
-                scene_instance_key: "s".into(),
-                component_key: "C".into(),
-                object_key: "o".into(),
-                repeat_key: REPEAT_KEY.into(),
-            };
-            let before = store.document();
-            let mut doc = PropsDocument::default();
-            doc.set(&identity, "x", Some(Value::from(1)));
-            store.set(Some(doc.clone()));
-            assert_eq!(*store.document(), doc);
-            assert_eq!(
-                *before,
-                PropsDocument::default(),
-                "snapshots keep their document"
-            );
-            store.set(None);
-            assert_eq!(*store.document(), PropsDocument::default());
         }
     }
 }

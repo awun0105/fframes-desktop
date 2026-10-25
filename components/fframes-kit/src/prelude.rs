@@ -125,7 +125,7 @@ pub use crate::paths;
 pub use crate::plot::{Heatmap, Histogram, LinePlot, ScatterPlot};
 pub use crate::props::{Editable, EditableExt};
 #[cfg(feature = "studio")]
-pub use crate::props::{PropChoice, PropValue, Props, PropsStore};
+pub use crate::props::{PropChoice, PropValue, Props, PropsSource};
 pub use crate::shapes::{
     Angle, AnnotationDot, AnnularSector, Annulus, Arc, ArcBetweenPoints, ArcBrace, ArcPolygon,
     ArcPolygonFromArcs, Arrow, ArrowTip, BackgroundRectangle, BlockArrow, BooleanOp, Brace,

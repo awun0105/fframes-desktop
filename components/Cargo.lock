@@ -771,7 +771,6 @@ dependencies = [
  "chematic",
  "fframes",
  "fframes-kit-macros",
- "fframes-studio-protocol",
  "fframes_skia_renderer",
  "i_overlay",
  "image",
@@ -819,14 +818,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
-]
-
-[[package]]
-name = "fframes-studio-protocol"
-version = "0.2.0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
