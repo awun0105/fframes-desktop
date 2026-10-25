@@ -2,6 +2,8 @@
 
 use kurbo::{BezPath, Point, Rect};
 
+use super::probability::Gaussian2D;
+
 /// The activation function of a feed-forward layer, drawn as a small plot above it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::PropChoice))]
@@ -125,7 +127,8 @@ impl Layer<'_> {
         }
     }
 
-    /// The short name drawn on layers that have no picture yet.
+    /// The short name drawn on a layer with nothing else to show: a pooling after a layer
+    /// without maps.
     pub(super) fn name(&self) -> &'static str {
         match self {
             Self::FeedForward { .. } => "dense",
@@ -200,7 +203,7 @@ fn panel_sizes(shape: MapShape, sizes: Sizes) -> (f64, f64, f64, f64) {
 }
 
 /// Where the parts of one layer are, in pixels.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct LayerGeometry {
     /// The middle of the layer.
     pub center: Point,
@@ -219,6 +222,12 @@ pub struct LayerGeometry {
     /// How many cells the window moves at a time: 1 for a convolution, the kernel for a
     /// pooling, whose windows do not overlap.
     pub stride: usize,
+    /// The point cloud of an embedding.
+    pub points: Vec<Point>,
+    /// The middle of each number of a vector, top to bottom.
+    pub rows: Vec<Point>,
+    /// The images of a paired query or a triplet, top to bottom.
+    pub images: Vec<Rect>,
 }
 
 impl LayerGeometry {
@@ -254,8 +263,57 @@ pub(super) fn extent(layer: &Layer<'_>, shape: Option<MapShape>, sizes: Sizes) -
                 (n - 1.0) * sizes.node_spacing + 2.0 * sizes.node_radius,
             )
         }
+        Layer::Embedding { .. } => (sizes.box_height * 0.8, sizes.box_height * 0.8),
+        Layer::Vector { values } => (
+            sizes.box_width,
+            values.len().max(1) as f64 * vector_row(sizes) + sizes.node_radius,
+        ),
+        Layer::MathOperation { .. } => (sizes.node_radius * 2.8, sizes.node_radius * 2.8),
+        Layer::PairedQuery { .. } => image_stack(2, sizes),
+        Layer::Triplet { .. } => image_stack(3, sizes),
         _ => (sizes.box_width, sizes.box_height),
     }
+}
+
+/// The height of one number of a vector.
+fn vector_row(sizes: Sizes) -> f64 {
+    sizes.node_radius * 1.7
+}
+
+/// The side of the images of a paired query or a triplet and the gap between them.
+fn image_side(sizes: Sizes) -> (f64, f64) {
+    (sizes.box_width * 1.1, sizes.node_radius * 0.6)
+}
+
+/// The size of `n` images above each other.
+fn image_stack(n: usize, sizes: Sizes) -> (f64, f64) {
+    let (side, gap) = image_side(sizes);
+    (side, n as f64 * side + (n - 1) as f64 * gap)
+}
+
+/// The covariance of an embedding's cloud, in units of its box's half width: tilted so the
+/// cloud reads as data, not noise.
+const EMBEDDING: Gaussian2D = Gaussian2D {
+    mean: (0.0, 0.0),
+    covariance: [[0.1, 0.05], [0.05, 0.06]],
+};
+
+/// `points` points of the embedding cloud for `seed` in `bounds`, those that would fall
+/// outside it pulled in to its edge.
+fn embedding_points(points: usize, seed: u64, bounds: Rect, margin: f64) -> Vec<Point> {
+    let half = bounds.width() / 2.0;
+    let inner = bounds.inset(-margin);
+    EMBEDDING
+        .samples(seed, points)
+        .into_iter()
+        .map(|(x, y)| {
+            // y grows downwards on screen, so the cloud rises to the right
+            Point::new(
+                (bounds.center().x + x * half).clamp(inner.x0, inner.x1),
+                (bounds.center().y - y * half).clamp(inner.y0, inner.y1),
+            )
+        })
+        .collect()
 }
 
 /// The left edges of boxes `widths` wide with `spacing` between neighbours, centred on 0.
@@ -316,6 +374,39 @@ pub(super) fn geometry(
         Layer::MaxPool2D { kernel } => (*kernel).max(1),
         _ => 1,
     };
+    let points = match layer {
+        Layer::Embedding { points, seed } => {
+            embedding_points(*points, *seed, bounds, sizes.node_radius * 0.5)
+        }
+        _ => Vec::new(),
+    };
+    let rows = match layer {
+        Layer::Vector { values } => {
+            let row = vector_row(sizes);
+            let top = bounds.y0 + sizes.node_radius / 2.0 + row / 2.0;
+            (0..values.len())
+                .map(|i| Point::new(center.x, top + i as f64 * row))
+                .collect()
+        }
+        _ => Vec::new(),
+    };
+    let images = match layer {
+        Layer::PairedQuery { .. } | Layer::Triplet { .. } => {
+            let (side, gap) = image_side(sizes);
+            let n = if matches!(layer, Layer::Triplet { .. }) {
+                3
+            } else {
+                2
+            };
+            (0..n)
+                .map(|i| {
+                    let top = bounds.y0 + f64::from(i) * (side + gap);
+                    Rect::new(bounds.x0, top, bounds.x0 + side, top + side)
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    };
     LayerGeometry {
         center,
         bounds,
@@ -324,6 +415,9 @@ pub(super) fn geometry(
         cells: shape.map_or(0, |s| s.size),
         window,
         stride,
+        points,
+        rows,
+        images,
     }
 }
 
@@ -410,6 +504,50 @@ mod tests {
                 .flatten()
                 .all(|p| (b.x0..=b.x1).contains(&p.x) && (b.y0..=b.y1).contains(&p.y))
         );
+    }
+
+    #[test]
+    fn the_other_kinds_place_their_parts_inside_the_box() {
+        let at = Point::new(0.0, 0.0);
+        let embedding = Layer::Embedding {
+            points: 200,
+            seed: 3,
+        };
+        let g = geometry(&embedding, None, at, SIZES);
+        assert_eq!(g.points.len(), 200);
+        assert_eq!(g.points, geometry(&embedding, None, at, SIZES).points);
+        assert!(g.points.iter().all(|p| g.bounds.contains(*p)));
+        // the cloud rises to the right
+        let right: Vec<&Point> = g.points.iter().filter(|p| p.x > 20.0).collect();
+        let left: Vec<&Point> = g.points.iter().filter(|p| p.x < -20.0).collect();
+        let mean_y = |ps: &[&Point]| ps.iter().map(|p| p.y).sum::<f64>() / ps.len() as f64;
+        assert!(mean_y(&right) < mean_y(&left));
+
+        let vector = Layer::Vector {
+            values: vec![0.5, -1.0, 2.0],
+        };
+        let g = geometry(&vector, None, at, SIZES);
+        // three rows of 17 and half a radius above and below
+        assert_eq!(g.bounds.height(), 61.0);
+        let ys: Vec<f64> = g.rows.iter().map(|p| p.y).collect();
+        assert_eq!(ys, vec![-17.0, 0.0, 17.0]);
+
+        let triplet = Layer::Triplet {
+            anchor: "a.png",
+            positive: "p.png",
+            negative: "n.png",
+        };
+        let g = geometry(&triplet, None, at, SIZES);
+        assert_eq!(g.images.len(), 3);
+        // 66 pixel squares 6 apart
+        assert_eq!(g.bounds.size(), (66.0, 210.0).into());
+        assert_eq!(g.images[1].y0 - g.images[0].y1, 6.0);
+        assert_eq!(g.images[2].y1, g.bounds.y1);
+        let paired = Layer::PairedQuery {
+            positive: "p.png",
+            negative: "n.png",
+        };
+        assert_eq!(geometry(&paired, None, at, SIZES).images.len(), 2);
     }
 
     #[test]

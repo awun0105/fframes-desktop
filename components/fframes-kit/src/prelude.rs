@@ -86,7 +86,8 @@ pub use crate::kits::math::{
 };
 #[cfg(feature = "ml")]
 pub use crate::kits::ml::{
-    ActivationFunction, ForwardPass, Layer, LayerGeometry, MapShape, NeuralNetwork, Operation,
+    ActivationFunction, ForwardPass, Gaussian2D, Layer, LayerGeometry, MapShape, NeuralNetwork,
+    Operation,
 };
 #[cfg(feature = "physics")]
 pub use crate::kits::physics::{

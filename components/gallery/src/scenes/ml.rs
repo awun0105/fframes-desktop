@@ -1,4 +1,4 @@
-//! The machine learning kit: neural networks and their forward pass.
+//! The machine learning kit: neural networks, their layer kinds and their forward pass.
 
 use fframes_kit::prelude::*;
 
@@ -77,9 +77,69 @@ fn conv_net<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{network}</g>)
 }
 
+/// The other layer kinds: a triplet into an embedding above a paired query through a vector
+/// and two operations.
+fn layer_kinds<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "LayerKinds");
+    let pass = |start| {
+        Some(ForwardPass {
+            start,
+            duration: 2.4,
+        })
+    };
+    let metric = ui.show(NeuralNetwork {
+        layers: vec![
+            Layer::Triplet {
+                anchor: "photo.png",
+                positive: "photo.png",
+                negative: "photo.png",
+            },
+            Layer::feed_forward(4),
+            Layer::Embedding {
+                points: 160,
+                seed: 7,
+            },
+        ],
+        center: (-3.4, -0.4),
+        spacing: 170.0,
+        node_radius: 18.0,
+        node_spacing: 60.0,
+        forward_pass: pass(0.5),
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    let arithmetic = ui.show(NeuralNetwork {
+        layers: vec![
+            Layer::PairedQuery {
+                positive: "photo.png",
+                negative: "photo.png",
+            },
+            Layer::Vector {
+                values: vec![0.82, -0.4, 1.25],
+            },
+            Layer::MathOperation {
+                operation: Operation::Multiply,
+            },
+            Layer::feed_forward(3),
+            Layer::MathOperation {
+                operation: Operation::Divide,
+            },
+        ],
+        center: (3.1, -0.4),
+        spacing: 100.0,
+        node_radius: 18.0,
+        node_spacing: 60.0,
+        forward_pass: pass(1.0),
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{metric}{arithmetic}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("ForwardPass", 4.0, forward_pass),
         GalleryScene::new("ConvNet", 5.0, conv_net),
+        GalleryScene::new("LayerKinds", 4.0, layer_kinds),
     ]
 }

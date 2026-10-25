@@ -131,7 +131,7 @@ dependencies: [10, 17]
 
 - [x] Network layout, feed-forward layers, forward pass
 - [x] Convolution, pooling and image layers
-- [ ] Embedding, vector, math operation, paired query, triplet layers
+- [x] Embedding, vector, math operation, paired query, triplet layers
 - [ ] Dropout and layer changes
 - [ ] Variational autoencoder
 - [ ] Decision trees and surface

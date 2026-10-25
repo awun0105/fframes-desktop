@@ -6,7 +6,9 @@ mod connections;
 mod forward;
 mod layers;
 mod network;
+mod probability;
 
 pub use forward::ForwardPass;
 pub use layers::{ActivationFunction, Layer, LayerGeometry, MapShape, Operation};
 pub use network::NeuralNetwork;
+pub use probability::Gaussian2D;

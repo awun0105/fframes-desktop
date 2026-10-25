@@ -6,7 +6,7 @@ use crate::{
     geometry::Shape,
     kits::draw::{mix, stroke, tip},
     text::{TextAnchor, line},
-    theme::Theme,
+    theme::{TextStyle, Theme},
     ui::{Component, Themed, Ui},
 };
 
@@ -47,6 +47,10 @@ pub struct NeuralNetwork<'a> {
     pub node_fill: Color,
     pub edge_color: Color,
     pub pulse_color: Color,
+    /// The outline of a positive example of a paired query or a triplet.
+    pub positive_color: Color,
+    /// The outline of a negative example.
+    pub negative_color: Color,
     pub stroke_width: f32,
     pub enter: Option<FadeIn>,
     pub exit: Option<FadeOut>,
@@ -70,6 +74,8 @@ impl Themed for NeuralNetwork<'_> {
             node_fill: t.colors.surface,
             edge_color: t.colors.muted,
             pulse_color: t.colors.highlight,
+            positive_color: Color::hex("#69db7c"),
+            negative_color: Color::hex("#ff6b6b"),
             stroke_width: 2.5,
             enter: None,
             exit: None,
@@ -120,6 +126,140 @@ impl NeuralNetwork<'_> {
     pub fn layout(&self, ui: &Ui<'_, '_, '_>) -> Vec<LayerGeometry> {
         self.layout_at(ui.space.to_px(self.center.0, self.center.1))
     }
+}
+
+impl<'a> NeuralNetwork<'a> {
+    /// A layer without neurons or maps, its outline `ring` and its fill `fill`: an embedding's
+    /// point cloud, a vector's numbers in brackets, an operation's symbol in a circle, the
+    /// images of a paired query or a triplet, or a box with the layer's name.
+    fn other_layer(
+        &self,
+        ui: &Ui<'a, '_, '_>,
+        layer: &Layer<'a>,
+        g: &LayerGeometry,
+        ring: Color,
+        fill: Color,
+    ) -> Vec<Svgr<'a>> {
+        let r = f64::from(self.node_radius);
+        let style = ui.theme.typography.caption;
+        let text = |x: f64, y: f64, size: f64, s: String| {
+            let style = TextStyle {
+                size: size.round().max(1.0) as usize,
+                ..style
+            };
+            line(
+                x as f32,
+                (y + size * 0.35) as f32,
+                style,
+                self.node_color,
+                TextAnchor::Middle,
+                0.0,
+                1.0,
+                s.into(),
+            )
+        };
+        let mut parts = Vec::new();
+        match layer {
+            Layer::Embedding { .. } => {
+                let frame = RoundedRect::from_rect(g.bounds, r * 0.4).to_path(0.1);
+                parts.push(filled(frame.clone(), fill, 1.0).draw());
+                parts.push(stroke(frame, ring, self.stroke_width, 1.0).draw());
+                let mut dots = BezPath::new();
+                for &p in &g.points {
+                    dots.extend(Circle::new(p, r * 0.13).to_path(0.1));
+                }
+                parts.push(filled(dots, ring, 0.85).draw());
+            }
+            Layer::Vector { values } => {
+                let b = g.bounds;
+                let arm = r * 0.5;
+                let mut brackets = BezPath::new();
+                for (edge, inward) in [(b.x0, arm), (b.x1, -arm)] {
+                    brackets.move_to((edge + inward, b.y0));
+                    brackets.line_to((edge, b.y0));
+                    brackets.line_to((edge, b.y1));
+                    brackets.line_to((edge + inward, b.y1));
+                }
+                parts.push(stroke(brackets, ring, self.stroke_width, 1.0).draw());
+                let size = r * 1.1;
+                for (&p, &v) in g.rows.iter().zip(values) {
+                    parts.push(text(p.x, p.y, size, number(v)));
+                }
+            }
+            Layer::MathOperation { operation } => {
+                let circle = Circle::new(g.center, r * 1.4).to_path(0.1);
+                parts.push(filled(circle.clone(), fill, 1.0).draw());
+                parts.push(stroke(circle, ring, self.stroke_width, 1.0).draw());
+                parts.push(text(
+                    g.center.x,
+                    g.center.y,
+                    r * 2.4,
+                    operation.symbol().into(),
+                ));
+            }
+            Layer::PairedQuery { positive, negative } => {
+                let images = [
+                    (*positive, self.positive_color),
+                    (*negative, self.negative_color),
+                ];
+                parts.extend(self.images(ui, g, &images, fill));
+            }
+            Layer::Triplet {
+                anchor,
+                positive,
+                negative,
+            } => {
+                let images = [
+                    (*anchor, ring),
+                    (*positive, self.positive_color),
+                    (*negative, self.negative_color),
+                ];
+                parts.extend(self.images(ui, g, &images, fill));
+            }
+            _ => {
+                let frame = RoundedRect::from_rect(g.bounds, r * 0.4).to_path(0.1);
+                parts.push(filled(frame.clone(), fill, 1.0).draw());
+                parts.push(stroke(frame, ring, self.stroke_width, 1.0).draw());
+                parts.push(text(
+                    g.center.x,
+                    g.center.y,
+                    style.size as f64,
+                    layer.name().into(),
+                ));
+            }
+        }
+        parts
+    }
+
+    /// `images` (a media name and its outline colour) in the squares of `g`.
+    fn images(
+        &self,
+        ui: &Ui<'a, '_, '_>,
+        g: &LayerGeometry,
+        images: &[(&str, Color)],
+        fill: Color,
+    ) -> Vec<Svgr<'a>> {
+        let mut parts = Vec::new();
+        for (rect, &(name, outline)) in g.images.iter().zip(images) {
+            let corners = [
+                Point::new(rect.x0, rect.y0),
+                Point::new(rect.x1, rect.y0),
+                Point::new(rect.x1, rect.y1),
+                Point::new(rect.x0, rect.y1),
+            ];
+            parts.push(filled(quad(&corners), fill, 1.0).draw());
+            parts.push(picture(ui, name, &corners));
+            parts.push(stroke(quad(&corners), outline, self.stroke_width, 1.0).draw());
+        }
+        parts
+    }
+}
+
+/// `value` with at most two decimals and no trailing zeros: `0.5`, `-1`, `2.25`.
+fn number(value: f64) -> String {
+    let s = format!("{value:.2}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" { "0".into() } else { s.into() }
 }
 
 /// The corners as a closed path.
@@ -194,7 +334,6 @@ impl<'a> Component<'a> for NeuralNetwork<'a> {
             }
         }
 
-        let style = ui.theme.typography.caption;
         for (j, (layer, g)) in self.layers.iter().zip(&layout).enumerate() {
             let glow = pass.map_or(0.0, |p| p.glow(now, j, gaps));
             let ring = mix(self.node_color, self.pulse_color, glow);
@@ -249,19 +388,7 @@ impl<'a> Component<'a> for NeuralNetwork<'a> {
                     );
                 }
             } else {
-                let frame = RoundedRect::from_rect(g.bounds, r * 0.4).to_path(0.1);
-                parts.push(filled(frame.clone(), fill, 1.0).draw());
-                parts.push(stroke(frame, ring, self.stroke_width, 1.0).draw());
-                parts.push(line(
-                    g.center.x as f32,
-                    g.center.y as f32 + style.size as f32 * 0.35,
-                    style,
-                    self.node_color,
-                    TextAnchor::Middle,
-                    0.0,
-                    1.0,
-                    layer.name().into(),
-                ));
+                parts.extend(self.other_layer(ui, layer, g, ring, fill));
             }
         }
 
@@ -327,4 +454,15 @@ fn picture<'a>(ui: &Ui<'a, '_, '_>, name: &str, corners: &[Point; 4]) -> Svgr<'a
         <image href={image.href()} x="0" y="0" width={width} height={height}
                preserveAspectRatio="none" transform={transform} />
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::number;
+
+    #[test]
+    fn numbers_drop_trailing_zeros() {
+        let written: Vec<String> = [0.5, -1.0, 2.25, 10.0, -0.001, 0.333].map(number).into();
+        assert_eq!(written, ["0.5", "-1", "2.25", "10", "0", "0.33"]);
+    }
 }

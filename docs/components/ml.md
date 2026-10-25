@@ -19,7 +19,15 @@ neighbouring layers.
 - **Layers.** `Layer::FeedForward { nodes, activation }` is a column of neurons
   `node_radius` pixels round and `node_spacing` apart (`Layer::feed_forward(n)` has no
   activation). Its `ActivationFunction` (`Relu`, `Sigmoid` or `Tanh`) is plotted in a small
-  box above it. Layer kinds without a picture of their own are drawn as a named box.
+  box above it.
+- **Other kinds.** `Layer::Embedding { points, seed }` is a box with a cloud of `points`
+  points drawn from a tilted 2D normal distribution (`Gaussian2D`), the same for the same
+  `seed`. `Layer::Vector { values }` writes the numbers in brackets, with at most two
+  decimals. `Layer::MathOperation { operation }` is a circle with the `Operation`'s symbol
+  (`Add`, `Subtract`, `Multiply`, `Divide`). `Layer::PairedQuery { positive, negative }` and
+  `Layer::Triplet { anchor, positive, negative }` stack images of the media folder, the
+  positive outlined in `positive_color` and the negative in `negative_color`; a missing image
+  leaves its square empty. A pooling after a layer without maps is a box named `pool`.
 - **Feature maps.** `Layer::ImageInput { image, size }` draws an image of the media folder as
   a map `size` cells square; a missing image leaves the map empty. `Layer::Conv2D { maps,
   size, filter }` draws `maps` feature maps of `size` cells, `Layer::MaxPool2D { kernel }` the maps
@@ -34,13 +42,14 @@ neighbouring layers.
 - **Forward pass.** `forward_pass: Some(ForwardPass { start, duration })` sends pulses
   through the connections one after the other. Each connection gets an equal part of the
   time, so the pulses reach the last layer at `start + duration`. Between two layers with maps
-  the window slides over the map instead, row by row from the top left: one cell at a time
-  for a convolution, a whole kernel at a time for a pooling. A layer lights up in
+  the window slides over the map instead, row by row from the top left, gliding from each
+  position to the next: one cell along for a convolution, a whole kernel for a pooling. A layer lights up in
   `pulse_color` as they arrive and fades back while they travel on.
 - **Layout.** `layout(ui)` gives every layer's `LayerGeometry` (its middle, its box and its
   neurons in pixels), for a label or an arrow pointing at a layer.
 
-Gallery scenes: `ForwardPass` and `ConvNet` (an image through a convolution and a pooling).
+Gallery scenes: `ForwardPass`, `ConvNet` (an image through a convolution and a pooling) and
+`LayerKinds` (a triplet into an embedding, a paired query through a vector and two operations).
 
 ```rust
 use fframes_kit::prelude::*;

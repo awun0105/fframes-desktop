@@ -145,10 +145,9 @@ mod tests {
             center,
             bounds: Rect::from_center_size(center, (20.0, 100.0)),
             nodes: nodes.iter().map(|&y| Point::new(x, y)).collect(),
-            maps: Vec::new(),
-            cells: 0,
             window: 1,
             stride: 1,
+            ..Default::default()
         }
     }
 
