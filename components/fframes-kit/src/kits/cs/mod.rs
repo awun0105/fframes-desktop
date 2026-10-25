@@ -17,6 +17,7 @@ mod sequence;
 mod sort;
 mod trace;
 mod tree;
+mod variable;
 
 pub use array::{ArrayView, BinarySearch, CellColors};
 pub use code::{CodeBlock, CodeColors, Language, Token, tokenize};
@@ -29,5 +30,6 @@ pub use machine::{Machine, MachineStep, MachineTrace, StateMachine};
 pub use recursion::{Call, CallRecorder, CallStack, CallStep, CallTrace, Recursion, RecursionTree};
 pub use sequence::{Message, SequenceDiagram};
 pub use sort::SortVisualizer;
-pub use trace::{ArrayStep, ArrayTrace, TraceAt};
-pub use tree::{BstRecorder, HeapRecorder, TreeNode, TreeStep, TreeTrace, TreeView};
+pub use trace::{ArrayRecorder, ArrayStep, ArrayTrace, TraceAt};
+pub use tree::{BstRecorder, HeapRecorder, TreeLayout, TreeNode, TreeStep, TreeTrace, TreeView};
+pub use variable::VariableBox;

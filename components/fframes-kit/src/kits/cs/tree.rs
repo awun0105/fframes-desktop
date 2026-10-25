@@ -63,10 +63,20 @@ impl TreeStep {
     }
 }
 
-/// Where each node reached from the root sits: `x` in slots, `y` the depth. A node with one
-/// child gets an empty place on its other side, so a left child leans left and a right child
-/// right, as a binary tree is drawn.
-fn layout(step: &TreeStep) -> Vec<(u32, (f64, f64))> {
+/// How a [`TreeTrace`] places the nodes of its steps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TreeLayout {
+    /// As a binary tree is drawn: a node with one child keeps an empty place on its other
+    /// side, so a left child leans left and a right child right.
+    #[default]
+    Binary,
+    /// The `tree` layout of the graph layouts (`GraphLayout::Tree`): the children are centred
+    /// under their parent, so a single child sits straight below it.
+    Tree,
+}
+
+/// Where each node reached from the root sits: `x` in slots, `y` the depth.
+fn layout(step: &TreeStep, kind: TreeLayout) -> Vec<(u32, (f64, f64))> {
     let index_of = |id: u32| step.nodes.iter().position(|n| n.id == id);
     let Some(root) = step.root.and_then(index_of) else {
         return Vec::new();
@@ -75,6 +85,10 @@ fn layout(step: &TreeStep) -> Vec<(u32, (f64, f64))> {
     for (i, node) in step.nodes.iter().enumerate() {
         let (left, right) = (node.left.and_then(index_of), node.right.and_then(index_of));
         if left.is_none() && right.is_none() {
+            continue;
+        }
+        if kind == TreeLayout::Tree {
+            children[i] = [left, right].into_iter().flatten().collect();
             continue;
         }
         let mut gap = || {
@@ -105,7 +119,8 @@ fn layout(step: &TreeStep) -> Vec<(u32, (f64, f64))> {
 /// The steps of a binary tree, recorded once (in a constructor or a `OnceLock`) and sampled
 /// by time with [`TreeTrace::at`]. [`TreeTrace::bst`], [`TreeTrace::max_heap`] and
 /// [`TreeTrace::min_heap`] start recorders; [`TreeTrace::new`] takes steps of your own. Every
-/// step is laid out once, when the trace is made.
+/// step is laid out once, when the trace is made, as a binary tree;
+/// [`TreeTrace::with_layout`] picks the [`TreeLayout`].
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TreeTrace {
     steps: Vec<TreeStep>,
@@ -115,17 +130,23 @@ pub struct TreeTrace {
 
 impl TreeTrace {
     pub fn new(steps: Vec<TreeStep>) -> Self {
-        let layouts: Vec<_> = steps.iter().map(layout).collect();
-        let depth = layouts
+        Self {
+            steps,
+            ..Self::default()
+        }
+        .with_layout(TreeLayout::Binary)
+    }
+
+    /// The same steps laid out again with `layout` (every step once, here).
+    pub fn with_layout(mut self, kind: TreeLayout) -> Self {
+        self.layouts = self.steps.iter().map(|s| layout(s, kind)).collect();
+        self.depth = self
+            .layouts
             .iter()
             .flatten()
             .map(|(_, (_, y))| *y)
             .fold(0.0, f64::max);
-        Self {
-            steps,
-            layouts,
-            depth,
-        }
+        self
     }
 
     /// Records operations on a binary search tree that starts with `values` inserted in
@@ -855,5 +876,30 @@ mod tests {
         assert!(x(3).0 > x(2).0);
         assert!(x(1).0 < x(0).0 && x(0).0 < x(2).0);
         assert_eq!(trace.depth(), 2.0);
+    }
+
+    #[test]
+    fn the_tree_layout_centres_children_under_their_parent() {
+        let trace = TreeTrace::bst(&[2, 1, 3, 4, 5])
+            .insert(0)
+            .finish()
+            .with_layout(TreeLayout::Tree);
+        for index in 0..trace.len() {
+            let layout = trace.layout(index);
+            let again = TreeTrace::new(trace.steps().to_vec()).with_layout(TreeLayout::Tree);
+            assert_eq!(layout, again.layout(index));
+            for &(_, (x, y)) in layout {
+                // depths stay whole levels
+                assert!(x.is_finite() && y.fract() == 0.0);
+            }
+        }
+        let layout = trace.layout(0);
+        let at = |id: u32| layout.iter().find(|(i, _)| *i == id).unwrap().1;
+        // 3 -> 4 -> 5 is a chain of single right children: straight down
+        assert_eq!((at(2).0, at(3).0), (at(4).0, at(4).0));
+        assert_eq!(at(4).1 - at(3).1, 1.0);
+        // the root sits over its two children
+        assert_eq!(at(0).0, f64::midpoint(at(1).0, at(2).0));
+        assert_eq!(trace.depth(), 3.0);
     }
 }

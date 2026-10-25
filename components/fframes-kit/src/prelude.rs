@@ -76,7 +76,7 @@ pub use crate::kits::cs::{
     ArrayStep, ArrayTrace, ArrayView, BinarySearch, CallStack, CallTrace, CellColors, CodeBlock,
     ComplexityPlot, Graph, GraphTrace, GraphView, Growth, HashTable, HashTrace, Language,
     LinkedList, ListTrace, Machine, MachineTrace, Message, Queue, RecursionTree, SequenceDiagram,
-    SortVisualizer, Stack, StateMachine, TreeTrace, TreeView,
+    SortVisualizer, Stack, StateMachine, TreeLayout, TreeTrace, TreeView, VariableBox,
 };
 #[cfg(feature = "math")]
 pub use crate::kits::math::{

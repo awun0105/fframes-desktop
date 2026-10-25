@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    array::CellColors,
+    array::{CellColors, index_row},
     keyed::{StepAt, Tween, find, markers, mix, notes, sample, stroke, tip, tween, tween_links},
 };
 
@@ -686,7 +686,9 @@ impl<'a> Component<'a> for LinkedList<'a> {
 /// holds `capacity` of them, centred on `center` (units of `ui.space`), with a `top` marker
 /// beside the top box. It plays a [`ListTrace`] (the last item is the top), one step every
 /// `step_time` seconds from `delay`: pushed boxes drop in from above, popped ones rise out.
-/// The whole figure fades with `enter` and `exit`.
+/// With `indices` (manim-dsa's `add_indexes`) each box has its index left of the container,
+/// 0 at the bottom, and `label` (`add_label`, empty for none) is written under it. The whole
+/// figure fades with `enter` and `exit`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct Stack<'a> {
@@ -698,10 +700,14 @@ pub struct Stack<'a> {
     pub height: f32,
     pub gap: f32,
     pub capacity: usize,
+    pub indices: bool,
+    pub label: &'a str,
     pub notes: bool,
     pub colors: CellColors,
     pub frame_color: Color,
     pub marker_color: Color,
+    pub index_color: Color,
+    pub label_color: Color,
     pub value_style: TextStyle,
     pub small_style: TextStyle,
     pub enter: Option<FadeIn>,
@@ -721,10 +727,14 @@ impl Themed for Stack<'_> {
             height: 60.0,
             gap: 10.0,
             capacity: 5,
+            indices: false,
+            label: "",
             notes: true,
             colors: CellColors::themed(t),
             frame_color: t.colors.muted,
             marker_color: t.colors.highlight,
+            index_color: t.colors.muted,
+            label_color: t.colors.text,
             value_style,
             small_style: t.typography.caption,
             enter: None,
@@ -831,13 +841,49 @@ impl<'a> Component<'a> for Stack<'a> {
             fframes::svgr!(<g>{arrow.draw()}{name}</g>)
         });
         let mut parts = vec![frame, boxes.into(), marker];
+        if self.indices {
+            // fixed to the slots, so an index waits for its box instead of falling with it
+            let (now, was) = (at.step.items.len(), at.previous.items.len());
+            let indices: Vec<Svgr<'a>> = index_row(now, was, p)
+                .into_iter()
+                .map(|(k, opacity)| {
+                    let y = bottom - gap - h / 2.0 - k as f64 * pitch;
+                    line(
+                        (left - 12.0) as f32,
+                        (y + self.small_style.size as f64 * 0.35) as f32,
+                        self.small_style,
+                        self.index_color,
+                        TextAnchor::End,
+                        0.0,
+                        opacity,
+                        k.to_string().into(),
+                    )
+                })
+                .collect();
+            parts.push(indices.into());
+        }
+        let mut below = bottom + 24.0;
+        if !self.label.is_empty() {
+            below += self.value_style.size as f64 * 0.8;
+            parts.push(line(
+                middle.x as f32,
+                below as f32,
+                self.value_style,
+                self.label_color,
+                TextAnchor::Middle,
+                0.0,
+                1.0,
+                self.label.into(),
+            ));
+            below += 16.0;
+        }
         if self.notes {
             parts.push(notes(
                 &at.previous.note,
                 &at.step.note,
                 at.into,
                 middle.x as f32,
-                (bottom + 24.0 + self.small_style.size as f64 * 0.8) as f32,
+                (below + self.small_style.size as f64 * 0.8) as f32,
                 self.small_style,
                 self.colors.text,
                 blend,

@@ -32,6 +32,8 @@ pub struct ArrayTrace {
     steps: Vec<ArrayStep>,
     /// Comparisons and moves made up to and including each step.
     counts: Vec<(usize, usize)>,
+    /// The most cells of any step.
+    max_len: usize,
 }
 
 /// Where a trace is at a time: the step, the one before it and how far into the step.
@@ -58,11 +60,34 @@ impl ArrayTrace {
             }
             counts.push((compares, moves));
         }
-        Self { steps, counts }
+        let max_len = steps.iter().map(|s| s.values.len()).max().unwrap_or(0);
+        Self {
+            steps,
+            counts,
+            max_len,
+        }
+    }
+
+    /// Records `append` and `pop` on an array holding `values`, one step each, like
+    /// `ListTrace::record` does for lists. [`ArrayRecorder::finish`] gives the trace.
+    pub fn record(values: &[i64]) -> ArrayRecorder {
+        ArrayRecorder {
+            steps: vec![ArrayStep {
+                values: values.to_vec(),
+                ..ArrayStep::default()
+            }],
+            values: values.to_vec(),
+        }
     }
 
     pub fn steps(&self) -> &[ArrayStep] {
         &self.steps
+    }
+
+    /// The most cells any step has: an array that grows and shrinks is laid out for it, so
+    /// its cells stay in place while cells are added or taken off at the end.
+    pub fn max_len(&self) -> usize {
+        self.max_len
     }
 
     pub fn len(&self) -> usize {
@@ -264,6 +289,54 @@ impl ArrayTrace {
     }
 }
 
+/// Records operations at the end of an array step by step, from [`ArrayTrace::record`]:
+/// `append` adds a cell after the last one and `pop` takes the last one off, as manim-dsa's
+/// `MArray` does. Every operation adds one step with a note.
+#[derive(Debug, Clone)]
+pub struct ArrayRecorder {
+    steps: Vec<ArrayStep>,
+    values: Vec<i64>,
+}
+
+impl ArrayRecorder {
+    fn step(&mut self, note: String) {
+        self.steps.push(ArrayStep {
+            values: self.values.clone(),
+            note,
+            ..ArrayStep::default()
+        });
+    }
+
+    /// Adds `value` after the last cell.
+    pub fn append(mut self, value: i64) -> Self {
+        self.values.push(value);
+        self.step(format!("append {value}"));
+        self
+    }
+
+    /// Takes the last cell off.
+    pub fn pop(mut self) -> Self {
+        let note = match self.values.pop() {
+            Some(value) => format!("pop {value}"),
+            None => "nothing to pop".into(),
+        };
+        self.step(note);
+        self
+    }
+
+    /// Replaces the note of the last step.
+    pub fn note(mut self, note: impl Into<String>) -> Self {
+        if let Some(last) = self.steps.last_mut() {
+            last.note = note.into();
+        }
+        self
+    }
+
+    pub fn finish(self) -> ArrayTrace {
+        ArrayTrace::new(self.steps)
+    }
+}
+
 /// Records steps while an algorithm runs on `a`.
 struct Recorder {
     a: Vec<i64>,
@@ -421,6 +494,38 @@ mod tests {
         assert_eq!(missing.steps().last().unwrap().found, None);
         assert!(missing.steps().last().unwrap().note.contains("not there"));
         assert!(trace.steps().iter().all(|s| s.sorted.is_empty()));
+    }
+
+    #[test]
+    fn append_and_pop_change_the_end() {
+        let trace = ArrayTrace::record(&[4, 7])
+            .append(2)
+            .append(9)
+            .pop()
+            .pop()
+            .pop()
+            .pop()
+            .pop()
+            .finish();
+        let values: Vec<&[i64]> = trace.steps().iter().map(|s| s.values.as_slice()).collect();
+        assert_eq!(
+            values,
+            [
+                &[4, 7][..],
+                &[4, 7, 2],
+                &[4, 7, 2, 9],
+                &[4, 7, 2],
+                &[4, 7],
+                &[4],
+                &[],
+                &[],
+            ]
+        );
+        let notes: Vec<&str> = trace.steps().iter().map(|s| s.note.as_str()).collect();
+        assert_eq!(notes[1..4], ["append 2", "append 9", "pop 9"]);
+        assert_eq!(notes[7], "nothing to pop");
+        // no comparisons and no moves: cells only come and go at the end
+        assert_eq!((trace.totals(), trace.max_len()), ((0, 0), 4));
     }
 
     #[test]

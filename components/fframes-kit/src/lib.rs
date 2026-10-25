@@ -152,6 +152,15 @@
 //! | manim-chemistry `NamedMolecule` (feature `chemistry`) | `kits::chemistry::NamedMolecule { name, .. }` from a table of about a hundred common molecules (`kits::chemistry::named_smiles`), no network lookups |
 //! | manim-chemistry `GraphMolecule`, `GMAnimationBuilder` (feature `chemistry`) | `kits::chemistry::GraphMolecule { structure, rotations, recolors, highlights, .. }` with `BondRotation`, `Recolor` of `MoleculePart`s and `GroupHighlight`; `kits::chemistry::functional_groups` finds the atoms of a group |
 //! | manim-chemistry `MElementObject` (feature `chemistry`) | `kits::chemistry::ElementCard { element, layout, .. }` with the atomic number, symbol, name, mass, electron configuration and Pauling electronegativity (`kits::chemistry::electronegativity`), `CardLayout::Square` or `Wide` |
+//! | manim-dsa `MArray` (feature `cs`) | `kits::cs::ArrayView` playing a `kits::cs::ArrayTrace` |
+//! | manim-dsa `MArray.append`, `MArray.pop` (feature `cs`) | `ArrayTrace::record(&values).append(v).pop()` and `finish()`: a step each, the cell drops in at the end or rises out |
+//! | manim-dsa `add_indexes`, `add_label` on `MArray` and `MStack` (feature `cs`) | `indices: true` and `label: "a"` on `kits::cs::ArrayView` and `kits::cs::Stack` |
+//! | manim-dsa `MStack` (feature `cs`) | `kits::cs::Stack` playing a `kits::cs::ListTrace` (`push`, `pop`) |
+//! | manim-dsa `MVariable` (feature `cs`) | `kits::cs::VariableBox { name, values, .. }`, one value a step |
+//! | manim-dsa `MGraph` (feature `cs`) | `kits::cs::Graph` drawn by `kits::cs::GraphView` |
+//! | manim-dsa `MGraph.add_curved_edge`, `show_backward_edge`, edge weights (feature `cs`) | `curved: true` on `GraphView`; backward edges (those closing a cycle) and pairs both ways curve on their own; `Graph::weighted` writes each weight on the middle of its edge |
+//! | manim-dsa `MGraph.node_layout("kamada_kawai_layout")` (feature `cs`) | `Graph::layout(&GraphLayout::KamadaKawai, scale)`, or any other [`GraphLayout`](layout::GraphLayout) |
+//! | manim-dsa `MTree` (feature `cs`) | `kits::cs::TreeView` playing a `kits::cs::TreeTrace`, `with_layout(TreeLayout::Tree)` for the `tree` layout |
 //! | `ManimML` `NeuralNetwork`, `FeedForwardLayer` (feature `ml`) | `kits::ml::NeuralNetwork { layers, .. }` with `Layer::FeedForward { nodes, activation }` |
 //! | `ManimML` `ReLU`, `Sigmoid` activation functions (feature `ml`) | `kits::ml::ActivationFunction::{Relu, Sigmoid, Tanh}`, plotted above the layer |
 //! | `ManimML` `make_forward_pass_animation` (feature `ml`) | `forward_pass: Some(kits::ml::ForwardPass { start, duration })` on `NeuralNetwork` |

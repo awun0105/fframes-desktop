@@ -3,12 +3,12 @@
 use std::collections::VecDeque;
 
 use fframes::{Color, Svgr};
-use kurbo::{Circle, Point};
+use kurbo::{Circle, CubicBez, ParamCurve, ParamCurveExtrema, Point, RoundedRect};
 
 use crate::{
     anim::{FadeIn, FadeOut, fade},
     geometry::Shape,
-    layout::layered,
+    layout::{GraphLayout, graph_layout, layered},
     motion::progress,
     text::{TextAnchor, line},
     theme::{TextStyle, Theme},
@@ -17,7 +17,7 @@ use crate::{
 
 use super::{
     array::CellColors,
-    keyed::{StepAt, arrow_along, clear_bend, label_point, link, mix, notes, sample},
+    keyed::{StepAt, arrow_along, clear_bend, link, mix, notes, sample},
 };
 
 /// A graph with named nodes and weighted edges, placed in slots (`x` right) and layers (`y`
@@ -67,6 +67,20 @@ impl Graph {
             *place = at;
         }
         self
+    }
+
+    /// Places the nodes with one of the shared graph layouts (circular, Kamada-Kawai, spring,
+    /// tree, ...) instead of the layers. The farthest node is `scale` slots from the middle
+    /// across and `scale` layers down or up (a slot is `spacing` pixels of the view, a layer
+    /// `level` pixels). Edges count both ways, whether the graph is directed or not.
+    pub fn layout(self, layout: &GraphLayout, scale: f64) -> Self {
+        let pairs: Vec<_> = self.edges.iter().map(|&(a, b, _)| (a, b)).collect();
+        // the layouts have `y` up, the view `y` down
+        let positions: Vec<_> = graph_layout(layout, self.nodes.len(), &pairs, scale)
+            .into_iter()
+            .map(|(x, y)| (x, -y))
+            .collect();
+        self.at(&positions)
     }
 
     /// The edges leaving `u` in the order given: `(edge, other end, weight)`.
@@ -330,8 +344,12 @@ impl GraphTrace {
 /// lights up, nodes waiting in the frontier take `colors.moved`, finished ones
 /// `colors.sorted`, the edge followed lights up and the search tree's edges thicken. A long
 /// edge bends round the nodes in its way, and the two edges of a pair that point both ways
-/// bend apart. Distances (Dijkstra) are written above the nodes, the frontier (`queue: A,
-/// B`) and the note under the graph. The whole figure fades with `enter` and `exit`.
+/// bend apart. With `curved` every edge is an arc. A backward edge of a directed graph (one
+/// that points up against the layers, or left within a layer) always curves, wide enough to
+/// pass beside the forward edges instead of over them. Weights sit on the middle of their edge, on a small
+/// `weight_fill` plate. Distances (Dijkstra) are written above the nodes, the frontier
+/// (`queue: A, B`) and the note under the graph. The whole figure fades with `enter` and
+/// `exit`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct GraphView<'a> {
@@ -344,11 +362,15 @@ pub struct GraphView<'a> {
     pub radius: f32,
     pub frontier: bool,
     pub notes: bool,
+    /// Every edge an arc, not only the backward ones and the pairs.
+    pub curved: bool,
     pub colors: CellColors,
     pub edge_color: Color,
     pub tree_color: Color,
     pub active_color: Color,
     pub dist_color: Color,
+    /// The plate behind a weight, so the edge does not run through the digits.
+    pub weight_fill: Color,
     pub value_style: TextStyle,
     pub small_style: TextStyle,
     pub enter: Option<FadeIn>,
@@ -369,11 +391,13 @@ impl Themed for GraphView<'_> {
             radius: 34.0,
             frontier: true,
             notes: true,
+            curved: false,
             colors: CellColors::themed(t),
             edge_color: t.colors.muted,
             tree_color: t.colors.accent,
             active_color: t.colors.highlight,
             dist_color: t.colors.highlight,
+            weight_fill: t.colors.background,
             value_style,
             small_style: t.typography.caption,
             enter: None,
@@ -401,6 +425,30 @@ impl GraphView<'_> {
         }
     }
 
+    /// A plate in `weight_fill` behind `label` written in `small_style` around `center`.
+    fn plate(&self, ui: &Ui<'_, '_, '_>, center: Point, label: &str) -> Shape {
+        let size = self.small_style.size as f64;
+        let width = ui
+            .measure(self.small_style.font(), label)
+            .map_or(label.chars().count() as f64 * size * 0.55, f64::from);
+        let (half_w, half_h) = (width / 2.0 + 6.0, size * 0.62);
+        let rect = RoundedRect::new(
+            center.x - half_w,
+            center.y - half_h,
+            center.x + half_w,
+            center.y + half_h,
+            half_h * 0.6,
+        );
+        Shape {
+            path: kurbo::Shape::to_path(&rect, 0.1),
+            fill: Some(self.weight_fill),
+            stroke: None,
+            stroke_width: 0.0,
+            dash: None,
+            opacity: 1.0,
+        }
+    }
+
     /// The colour and width of edge `e` in `step`.
     fn edge_look(&self, step: &GraphStep, e: usize) -> (Color, f32) {
         if step.edge == Some(e) {
@@ -415,6 +463,90 @@ impl GraphView<'_> {
 
 fn distance(d: Option<f64>) -> String {
     d.map_or_else(|| "∞".to_owned(), |d| d.to_string())
+}
+
+/// Which edges of a directed graph point backward: the edges that close a cycle, found by a
+/// depth first search from the nodes in order (an edge to a node still on the way). The layered
+/// layout turns exactly these edges against the layers. An undirected graph has none.
+fn back_edges(graph: &Graph) -> Vec<bool> {
+    let n = graph.nodes.len();
+    let mut back = vec![false; graph.edges.len()];
+    if !graph.directed {
+        return back;
+    }
+    let out: Vec<Vec<usize>> = (0..n)
+        .map(|u| {
+            (0..graph.edges.len())
+                .filter(|&e| graph.edges[e].0 == u)
+                .collect()
+        })
+        .collect();
+    // 0 not seen, 1 on the way, 2 finished
+    let mut state = vec![0_u8; n];
+    for start in 0..n {
+        if state[start] != 0 {
+            continue;
+        }
+        state[start] = 1;
+        let mut stack = vec![(start, 0)];
+        while let Some(top) = stack.last_mut() {
+            let (u, i) = *top;
+            top.1 += 1;
+            let Some(&e) = out[u].get(i) else {
+                state[u] = 2;
+                stack.pop();
+                continue;
+            };
+            let v = graph.edges[e].1;
+            match state[v] {
+                0 => {
+                    state[v] = 1;
+                    stack.push((v, 0));
+                }
+                1 => back[e] = v != u,
+                _ => {}
+            }
+        }
+    }
+    back
+}
+
+/// The curve of edge `e` between round nodes `radius` pixels centred on `points`. It is
+/// straight unless `curved`, unless it is `backward` (bent by a third of its length, so it
+/// passes beside the forward edges) or its reverse is an edge too (the two bend apart). Any
+/// edge bends further when a node is in its way.
+fn edge_curve(
+    graph: &Graph,
+    points: &[Point],
+    e: usize,
+    radius: f64,
+    curved: bool,
+    backward: bool,
+) -> CubicBez {
+    let (a, b, _) = graph.edges[e];
+    let length = (points[b] - points[a]).hypot();
+    let others: Vec<Point> = (0..points.len())
+        .filter(|&v| v != a && v != b)
+        .map(|v| points[v])
+        .collect();
+    let paired = graph.directed && graph.edges.iter().any(|&(c, d, _)| (c, d) == (b, a));
+    let mut base: f64 = 0.0;
+    if curved {
+        base = base.max(0.15 * length);
+    }
+    if paired {
+        base = base.max(26.0);
+    }
+    if backward {
+        base = base.max((length / 3.0).max(48.0));
+    }
+    let bend = clear_bend(points[a], points[b], radius, &others, radius + 8.0, base);
+    link(points[a], points[b], radius, radius, bend)
+}
+
+/// Where the weight of an edge is written: on the middle of its curve.
+fn weight_place(curve: &CubicBez) -> Point {
+    curve.eval(0.5)
 }
 
 impl<'a> Component<'a> for GraphView<'a> {
@@ -442,27 +574,19 @@ impl<'a> Component<'a> for GraphView<'a> {
             .iter()
             .map(|&(x, y)| Point::new(middle.x + (x - mx) * spacing, middle.y + (y - my) * level))
             .collect();
-        let bottom = middle.y + (hi.1 - my) * level + radius;
+        // under the nodes and under any edge that curves below them
+        let mut bottom = middle.y + (hi.1 - my) * level + radius;
         let q = progress(at.into, 0.0, (self.step_time * 0.3).min(0.2));
 
+        let back = back_edges(graph);
         let mut edges = Vec::new();
         let mut weights = Vec::new();
         for (e, &(a, b, w)) in graph.edges.iter().enumerate() {
             if a == b {
                 continue;
             }
-            let others: Vec<Point> = (0..points.len())
-                .filter(|&v| v != a && v != b)
-                .map(|v| points[v])
-                .collect();
-            // two edges between the same nodes bend apart
-            let paired = graph
-                .edges
-                .iter()
-                .any(|&(c, d, _)| (c, d) == (b, a) && graph.directed);
-            let base = if paired { 26.0 } else { 0.0 };
-            let bend = clear_bend(points[a], points[b], radius, &others, radius + 8.0, base);
-            let curve = link(points[a], points[b], radius, radius, bend);
+            let curve = edge_curve(graph, &points, e, radius, self.curved, back[e]);
+            bottom = bottom.max(curve.bounding_box().y1 + 4.0);
             let (was, was_width) = self.edge_look(at.previous, e);
             let (now, now_width) = self.edge_look(at.step, e);
             let width = was_width + (now_width - was_width) * q;
@@ -474,17 +598,21 @@ impl<'a> Component<'a> for GraphView<'a> {
                 1.0,
             ));
             if graph.weighted {
-                let place = label_point(&curve, 18.0);
-                weights.push(line(
+                let place = weight_place(&curve);
+                let label = w.to_string();
+                let size = self.small_style.size as f64;
+                let plate = self.plate(ui, place, &label);
+                let text = line(
                     place.x as f32,
-                    (place.y + self.small_style.size as f64 * 0.35) as f32,
+                    (place.y + size * 0.35) as f32,
                     self.small_style,
                     self.colors.text,
                     TextAnchor::Middle,
                     0.0,
                     1.0,
-                    w.to_string().into(),
-                ));
+                    label.into(),
+                );
+                weights.push(fframes::svgr!(<g>{plate.draw()}{text}</g>));
             }
         }
 
@@ -519,12 +647,22 @@ impl<'a> Component<'a> for GraphView<'a> {
                 } else {
                     label(at.previous)
                 };
+                let now = label(at.step);
+                // on a plate, so an edge coming in from above does not run through it
+                let wider = if was.chars().count() > now.chars().count() {
+                    &was
+                } else {
+                    &now
+                };
+                let baseline = p.y - radius - 10.0;
+                let center = Point::new(p.x, baseline - self.small_style.size as f64 * 0.35);
+                dists.push(self.plate(ui, center, wider).draw());
                 dists.push(notes(
                     &was,
-                    &label(at.step),
+                    &now,
                     at.into,
                     p.x as f32,
-                    (p.y - radius - 10.0) as f32,
+                    baseline as f32,
                     self.small_style,
                     self.dist_color,
                     (self.step_time * 0.3).min(0.2),
@@ -639,6 +777,101 @@ mod tests {
                 .iter()
                 .any(|s| s.note == "T: 3 + 5 is not below 4" || s.note == "T: 1 + 5 = 6")
         );
+    }
+
+    fn pixels(graph: &Graph) -> Vec<Point> {
+        graph
+            .positions
+            .iter()
+            .map(|&(x, y)| Point::new(x * 170.0, y * 150.0))
+            .collect()
+    }
+
+    #[test]
+    fn weights_sit_on_the_middle_of_the_curve() {
+        // A -> B -> C down a column, C -> A back up and B -> A against A -> B
+        let graph = Graph::weighted(
+            &["A", "B", "C"],
+            &[(0, 1, 2.0), (1, 2, 3.0), (2, 0, 4.0), (1, 0, 5.0)],
+            true,
+        )
+        .at(&[(0.0, 0.0), (0.0, 1.0), (0.0, 2.0)]);
+        let points = pixels(&graph);
+        let back = back_edges(&graph);
+        for curved in [false, true] {
+            for (e, &backward) in back.iter().enumerate() {
+                let curve = edge_curve(&graph, &points, e, 34.0, curved, backward);
+                assert_eq!(weight_place(&curve), curve.eval(0.5));
+            }
+        }
+        // a straight edge: the middle of the segment between the nodes
+        let open = Graph::weighted(&["A", "B"], &[(0, 1, 1.0)], true).at(&[(0.0, 0.0), (2.0, 0.0)]);
+        let straight = edge_curve(&open, &pixels(&open), 0, 34.0, false, false);
+        let middle = weight_place(&straight);
+        assert!(
+            (middle - Point::new(170.0, 0.0)).hypot() < 1e-9,
+            "{middle:?}"
+        );
+        // curved, it leaves the segment
+        let arc = edge_curve(&open, &pixels(&open), 0, 34.0, true, false);
+        assert!(weight_place(&arc).y.abs() > 20.0);
+    }
+
+    #[test]
+    fn backward_edges_curve_round_the_forward_ones() {
+        let graph = Graph::new(&["A", "B", "C"], &[(0, 1), (1, 2), (2, 0), (1, 0)], true).at(&[
+            (0.0, 0.0),
+            (0.0, 1.0),
+            (0.0, 2.0),
+        ]);
+        let points = pixels(&graph);
+        // the edges that close a cycle: C -> A and B -> A
+        let back = back_edges(&graph);
+        assert_eq!(back, [false, false, true, true]);
+        // C -> A passes B (on its way) at least a node and a margin to the side
+        let up = edge_curve(&graph, &points, 2, 34.0, false, true);
+        assert!((up.eval(0.5).x - points[1].x).abs() > 42.0);
+        // B -> A and A -> B bend to opposite sides
+        let (down, up) = (
+            edge_curve(&graph, &points, 0, 34.0, false, back[0]).eval(0.5),
+            edge_curve(&graph, &points, 3, 34.0, false, back[3]).eval(0.5),
+        );
+        assert!(down.x * up.x < 0.0, "{down:?} {up:?}");
+        // a graph without cycles has none, wherever its nodes are, and undirected edges are
+        // never backward
+        let dag = Graph::new(&["A", "B", "C"], &[(2, 0), (0, 1), (2, 1)], true);
+        assert_eq!(back_edges(&dag), [false; 3]);
+        let plain = Graph::new(&["A", "B"], &[(0, 1), (1, 0)], false);
+        assert_eq!(back_edges(&plain), [false; 2]);
+    }
+
+    #[test]
+    fn shared_layouts_place_the_graph() {
+        let edges = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 0), (0, 2)];
+        let base = Graph::new(&["A", "B", "C", "D", "E"], &edges, false);
+        for layout in [
+            GraphLayout::Circular,
+            GraphLayout::KamadaKawai,
+            GraphLayout::Planar,
+            GraphLayout::Random { seed: 7 },
+            GraphLayout::Spring {
+                seed: 1,
+                iterations: 50,
+            },
+            GraphLayout::Tree { root: 0 },
+        ] {
+            let a = base.clone().layout(&layout, 2.0);
+            let b = base.clone().layout(&layout, 2.0);
+            assert_eq!(a.positions, b.positions, "{layout:?}");
+            let min = 0.4 * 2.0 / 5f64.sqrt();
+            for &(x, y) in &a.positions {
+                // inside the box, give or take the push apart of close nodes
+                assert!(x.abs() <= 2.0 + min && y.abs() <= 2.0 + min, "{layout:?}");
+            }
+        }
+        // the tree hangs down from its root: `y` grows downwards in the view
+        let tree = base.layout(&GraphLayout::Tree { root: 0 }, 2.0);
+        assert!((1..5).all(|v| tree.positions[v].1 > tree.positions[0].1));
     }
 
     #[test]

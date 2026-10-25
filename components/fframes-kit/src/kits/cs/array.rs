@@ -99,13 +99,36 @@ pub(super) fn travel(at: &TraceAt<'_>, k: usize, move_time: f32) -> (f64, f64) {
     (slot, lift)
 }
 
+/// How much of cell `k` is there at `p` (0 at the previous step, 1 at the current one) when
+/// the array goes from `was` cells to `now`: a cell appended fades in, a cell popped fades
+/// out, the others stay.
+pub(super) fn presence(now: usize, was: usize, k: usize, p: f64) -> f64 {
+    match (k < was, k < now) {
+        (true, true) => 1.0,
+        (false, true) => p,
+        (true, false) => 1.0 - p,
+        (false, false) => 0.0,
+    }
+}
+
+/// The index row of `was` cells becoming `now` at `p`: each index shown with its opacity.
+pub(super) fn index_row(now: usize, was: usize, p: f64) -> Vec<(usize, f32)> {
+    (0..now.max(was))
+        .map(|k| (k, presence(now, was, k, p) as f32))
+        .filter(|&(_, opacity)| opacity > 0.0)
+        .collect()
+}
+
 /// An array as a row of cells with its values, placed around `center` (units of
-/// `ui.space`), each `cell` pixels wide and `gap` apart, with the index under each cell.
-/// It plays an [`ArrayTrace`], one step every `step_time` seconds from `delay`: compared
-/// cells light up, moved cells travel to their new place on an arc, cells in their final
-/// place turn `colors.sorted`, cells outside the step's range dim and pointers move under
-/// the cells. With `notes` the step's note is written under the pointers. The whole figure
-/// fades with `enter` and `exit`.
+/// `ui.space`), each `cell` pixels wide and `gap` apart, with the index under each cell
+/// (`indices`, manim-dsa's `add_indexes`) and `label` left of the row (`add_label`, empty
+/// for none). It plays an [`ArrayTrace`], one step every `step_time` seconds from `delay`:
+/// compared cells light up, moved cells travel to their new place on an arc, cells in their
+/// final place turn `colors.sorted`, cells outside the step's range dim and pointers move
+/// under the cells. An appended cell drops in at the end and a popped one rises out; the row
+/// is laid out for the trace's longest step, so the other cells stay where they are. With
+/// `notes` the step's note is written under the pointers. The whole figure fades with
+/// `enter` and `exit`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "studio", derive(fframes_kit_macros::Props))]
 pub struct ArrayView<'a> {
@@ -116,10 +139,12 @@ pub struct ArrayView<'a> {
     pub cell: f32,
     pub gap: f32,
     pub indices: bool,
+    pub label: &'a str,
     pub notes: bool,
     pub colors: CellColors,
     pub pointer_color: Color,
     pub index_color: Color,
+    pub label_color: Color,
     pub value_style: TextStyle,
     pub small_style: TextStyle,
     pub enter: Option<FadeIn>,
@@ -138,10 +163,12 @@ impl Themed for ArrayView<'_> {
             cell: 96.0,
             gap: 12.0,
             indices: true,
+            label: "",
             notes: true,
             colors: CellColors::themed(t),
             pointer_color: t.colors.highlight,
             index_color: t.colors.muted,
+            label_color: t.colors.text,
             value_style,
             small_style: t.typography.caption,
             enter: None,
@@ -166,24 +193,22 @@ impl ArrayView<'_> {
 
 impl<'a> Component<'a> for ArrayView<'a> {
     fn render(self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
-        let Some(at) = self
-            .trace
-            .and_then(|t| t.at(ui.seconds() - self.delay, self.step_time))
-        else {
+        let Some((trace, at)) = self.trace.and_then(|t| {
+            t.at(ui.seconds() - self.delay, self.step_time)
+                .map(|at| (t, at))
+        }) else {
             return Svgr::empty();
         };
         let middle = ui.space.to_px(self.center.0, self.center.1);
-        let n = at.step.values.len();
+        // laid out for the longest step, so cells added or taken off at the end leave the
+        // others in place
+        let n = trace.max_len();
         let size = f64::from(self.cell);
         let move_time = self.step_time * 0.7;
         let blend = (self.step_time * 0.3).min(0.2);
-        // each cell with its value, the moving ones drawn last so they pass over the rest
-        let mut cells: Vec<(bool, Svgr<'a>)> = Vec::new();
-        for (k, value) in at.step.values.iter().enumerate() {
-            let (slot, lift) = travel(&at, k, move_time);
-            let x = self.slot_x(middle.x, n, slot);
-            let y = middle.y - lift * size * 0.8;
-            let (fill, opacity) = self.colors.blended(&at, k, blend, 0.3);
+        let p = f64::from(cubic_in_out(progress(at.into, 0.0, move_time)));
+        let (now, was) = (at.step.values.len(), at.previous.values.len());
+        let cell = |x: f64, y: f64, fill: Color, opacity: f32, value: i64| {
             let rect = RoundedRect::new(
                 x - size / 2.0,
                 y - size / 2.0,
@@ -191,7 +216,7 @@ impl<'a> Component<'a> for ArrayView<'a> {
                 y + size / 2.0,
                 size * 0.14,
             );
-            let cell = Shape {
+            let body = Shape {
                 path: kurbo::Shape::to_path(&rect, 0.1),
                 fill: Some(fill),
                 stroke: Some(self.colors.text.with_alpha(64)),
@@ -210,7 +235,33 @@ impl<'a> Component<'a> for ArrayView<'a> {
                 opacity,
                 value.to_string().into(),
             );
-            cells.push((lift != 0.0, fframes::svgr!(<g>{cell.draw()}{text}</g>)));
+            fframes::svgr!(<g>{body.draw()}{text}</g>)
+        };
+        // each cell with its value, the moving ones drawn last so they pass over the rest
+        let mut cells: Vec<(bool, Svgr<'a>)> = Vec::new();
+        for (k, &value) in at.step.values.iter().enumerate() {
+            let (slot, lift) = travel(&at, k, move_time);
+            let x = self.slot_x(middle.x, n, slot);
+            // an appended cell drops in from above
+            let drop = if k >= was {
+                (1.0 - p) * size * 0.8
+            } else {
+                0.0
+            };
+            let y = middle.y - lift * size * 0.8 - drop;
+            let (fill, opacity) = self.colors.blended(&at, k, blend, 0.3);
+            let opacity = opacity * presence(now, was, k, p) as f32;
+            cells.push((lift != 0.0, cell(x, y, fill, opacity, value)));
+        }
+        // a popped cell rises out
+        for k in now..was {
+            let opacity = presence(now, was, k, p) as f32;
+            if opacity > 0.0 {
+                let x = self.slot_x(middle.x, n, k as f64);
+                let y = middle.y - p * size * 0.8;
+                let fill = self.colors.of(at.previous, k).0;
+                cells.push((false, cell(x, y, fill, opacity, at.previous.values[k])));
+            }
         }
         cells.sort_by_key(|(moving, _)| *moving);
         let cells: Vec<Svgr<'a>> = cells.into_iter().map(|(_, cell)| cell).collect();
@@ -219,8 +270,9 @@ impl<'a> Component<'a> for ArrayView<'a> {
         let mut below = bottom + 10.0;
         if self.indices {
             let baseline = below + (self.small_style.size as f64) * 0.8;
-            let indices: Vec<Svgr<'a>> = (0..n)
-                .map(|k| {
+            let indices: Vec<Svgr<'a>> = index_row(now, was, p)
+                .into_iter()
+                .map(|(k, opacity)| {
                     line(
                         self.slot_x(middle.x, n, k as f64) as f32,
                         baseline as f32,
@@ -228,13 +280,26 @@ impl<'a> Component<'a> for ArrayView<'a> {
                         self.index_color,
                         TextAnchor::Middle,
                         0.0,
-                        1.0,
+                        opacity,
                         k.to_string().into(),
                     )
                 })
                 .collect();
             parts.push(indices.into());
             below += (self.small_style.size as f64) * 1.2;
+        }
+        if !self.label.is_empty() {
+            let x = self.slot_x(middle.x, n, 0.0) - size / 2.0 - 24.0;
+            parts.push(line(
+                x as f32,
+                (middle.y + self.value_style.size as f64 * 0.35) as f32,
+                self.value_style,
+                self.label_color,
+                TextAnchor::End,
+                0.0,
+                1.0,
+                self.label.into(),
+            ));
         }
         parts.push(cells.into());
         let marks = |step: &'a ArrayStep| -> Vec<(&'a str, f64)> {
@@ -352,6 +417,34 @@ mod tests {
         assert!((travel(&at, 1, 0.42).1 - 1.0).abs() < 1e-4);
         let done = trace.at(1.2 + 0.5, 0.6).unwrap();
         assert_eq!(travel(&done, 0, 0.42), (0.0, 0.0));
+    }
+
+    #[test]
+    fn appended_cells_fade_in_and_popped_ones_out() {
+        // three cells to four: the fourth comes in, the rest stay
+        assert_eq!(
+            (0..4).map(|k| presence(4, 3, k, 0.25)).collect::<Vec<_>>(),
+            [1.0, 1.0, 1.0, 0.25]
+        );
+        // four to three: the fourth goes
+        assert_eq!(presence(3, 4, 3, 0.25), 0.75);
+        assert_eq!(presence(3, 4, 4, 0.25), 0.0);
+        // the row is laid out for the longest step
+        let trace = ArrayTrace::record(&[1, 2]).append(3).pop().finish();
+        assert_eq!(trace.max_len(), 3);
+    }
+
+    #[test]
+    fn the_index_row_has_an_index_per_cell() {
+        assert_eq!(index_row(5, 5, 1.0).len(), 5);
+        // while a cell comes or goes its index fades with it, then it is gone
+        assert_eq!(
+            index_row(4, 3, 0.5),
+            [(0, 1.0), (1, 1.0), (2, 1.0), (3, 0.5)]
+        );
+        assert_eq!(index_row(3, 4, 0.5).len(), 4);
+        assert_eq!(index_row(3, 4, 1.0).len(), 3);
+        assert_eq!(index_row(0, 0, 0.5).len(), 0);
     }
 
     #[test]
