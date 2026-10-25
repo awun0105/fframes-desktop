@@ -132,9 +132,18 @@ dependencies: [10, 17]
 - [x] Network layout, feed-forward layers, forward pass
 - [x] Convolution, pooling and image layers
 - [x] Embedding, vector, math operation, paired query, triplet layers
-- [ ] Dropout and layer changes
+- [x] Dropout and layer changes
 - [ ] Variational autoencoder
 - [ ] Decision trees and surface
 - [ ] Gaussian ellipses and MCMC chain
 - [ ] CS additions (edges, weights, layouts, steps, variable box)
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
+
+## Notes
+
+- Dropout picks one mask per pass, like ManimML, and leaves the input and output layers and
+  layers that are not feed-forward alone. Every hidden layer keeps at least one neuron.
+- Layer changes run one at a time: the running change is the last one that has started,
+  and the ones before it are done. A forward pass and a change should not overlap, because
+  the pass counts the layers after the running change. The same goes for dropout.
+- `layout` and `layout_at` stay the layout of the layers as given, before any change.

@@ -1,5 +1,9 @@
 //! The forward pass: pulses travel the connections one after the other and each layer lights
-//! up as they arrive (`ManimML`'s `make_forward_pass_animation`).
+//! up as they arrive (`ManimML`'s `make_forward_pass_animation`), and dropout.
+
+use crate::motion::Rng;
+
+use super::layers::Layer;
 
 /// A forward pass from `start` over `duration` seconds. Each connection gets an equal part of
 /// the time; the pulses reach the last layer at `start + duration`.
@@ -60,9 +64,129 @@ impl ForwardPass {
     }
 }
 
+/// Dropout (`ManimML`'s `make_neural_network_dropout_animation`): from `start` for `duration`
+/// seconds a share `rate` (0 to 1) of the neurons of every hidden feed-forward layer is
+/// crossed out and their edges fade. The neurons are picked once, the same for the same
+/// `seed`; every layer keeps at least one, and the input and output layers keep all of theirs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Dropout {
+    pub rate: f32,
+    pub seed: u64,
+    pub start: f32,
+    pub duration: f32,
+}
+
+impl Default for Dropout {
+    fn default() -> Self {
+        Self {
+            rate: 0.3,
+            seed: 1,
+            start: 0.5,
+            duration: 3.0,
+        }
+    }
+}
+
+/// How long the dropped neurons take to fade out and back, in seconds.
+const DROPOUT_FADE: f32 = 0.2;
+
+impl Dropout {
+    /// How far the dropped neurons are gone at `t`, from 0 to 1.
+    pub fn amount(&self, t: f32) -> f32 {
+        let fade = DROPOUT_FADE.min(self.duration / 2.0).max(1e-3);
+        let end = self.start + self.duration;
+        ((t - self.start) / fade)
+            .min((end - t) / fade)
+            .clamp(0.0, 1.0)
+    }
+
+    /// Which neurons of each layer drop out: one list per layer, empty for the first and the
+    /// last layer and for layers that are not feed-forward.
+    pub fn mask(&self, layers: &[&Layer<'_>]) -> Vec<Vec<bool>> {
+        let mut rng = Rng::new(self.seed);
+        let last = layers.len().saturating_sub(1);
+        layers
+            .iter()
+            .enumerate()
+            .map(|(i, layer)| match layer {
+                Layer::FeedForward { nodes, .. } if i > 0 && i < last => {
+                    let mut dropped: Vec<bool> = (0..*nodes)
+                        .map(|_| rng.unit() <= f64::from(self.rate))
+                        .collect();
+                    if dropped.iter().all(|&d| d) {
+                        // keep the first
+                        if let Some(first) = dropped.first_mut() {
+                            *first = false;
+                        }
+                    }
+                    dropped
+                }
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropout_is_the_same_for_a_seed_and_spares_the_ends() {
+        let layers = [
+            Layer::feed_forward(4),
+            Layer::feed_forward(8),
+            Layer::MaxPool2D { kernel: 2 },
+            Layer::feed_forward(8),
+            Layer::feed_forward(3),
+        ];
+        let refs: Vec<&Layer<'_>> = layers.iter().collect();
+        let dropout = Dropout {
+            rate: 0.5,
+            seed: 11,
+            ..Default::default()
+        };
+        let mask = dropout.mask(&refs);
+        assert_eq!(mask, dropout.mask(&refs));
+        let other = Dropout {
+            seed: 12,
+            ..dropout
+        }
+        .mask(&refs);
+        assert_ne!(mask, other);
+        assert_eq!(mask[0], Vec::<bool>::new());
+        assert_eq!(mask[2], Vec::<bool>::new());
+        assert_eq!(mask[4], Vec::<bool>::new());
+        assert_eq!((mask[1].len(), mask[3].len()), (8, 8));
+        assert!(mask[1].iter().any(|&d| d) && mask[1].iter().any(|&d| !d));
+        // everything drops: one neuron stays
+        let all = Dropout {
+            rate: 1.0,
+            ..dropout
+        }
+        .mask(&refs);
+        assert_eq!(all[1].iter().filter(|&&d| !d).count(), 1);
+        let none = Dropout {
+            rate: 0.0,
+            ..dropout
+        }
+        .mask(&refs);
+        assert!(none[3].iter().all(|&d| !d));
+    }
+
+    #[test]
+    fn dropped_neurons_fade_out_and_back() {
+        let dropout = Dropout {
+            start: 1.0,
+            duration: 2.0,
+            ..Default::default()
+        };
+        assert_eq!(dropout.amount(0.5), 0.0);
+        assert!((dropout.amount(1.1) - 0.5).abs() < 1e-5);
+        assert_eq!(dropout.amount(2.0), 1.0);
+        assert!((dropout.amount(2.9) - 0.5).abs() < 1e-5);
+        assert_eq!(dropout.amount(3.5), 0.0);
+    }
 
     #[test]
     fn the_pass_reaches_the_last_layer_at_its_end() {

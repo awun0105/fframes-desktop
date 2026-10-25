@@ -157,6 +157,8 @@
 //! | `ManimML` `make_forward_pass_animation` (feature `ml`) | `forward_pass: Some(kits::ml::ForwardPass { start, duration })` on `NeuralNetwork` |
 //! | `ManimML` `Convolutional2DLayer`, `MaxPooling2DLayer`, `ImageLayer` (feature `ml`) | `Layer::Conv2D { maps, size, filter }`, `Layer::MaxPool2D { kernel }`, `Layer::ImageInput { image, size }` in `kits::ml::NeuralNetwork`; the filter slides during the forward pass |
 //! | `ManimML` `EmbeddingLayer`, `VectorLayer`, `MathOperationLayer`, `PairedQueryLayer`, `TripletLayer` (feature `ml`) | `Layer::Embedding { points, seed }`, `Layer::Vector { values }`, `Layer::MathOperation { operation }`, `Layer::PairedQuery { positive, negative }`, `Layer::Triplet { anchor, positive, negative }`; the cloud is `kits::ml::Gaussian2D::samples` |
+//! | `ManimML` `make_neural_network_dropout_animation` (feature `ml`) | `dropout: Some(kits::ml::Dropout { rate, seed, start, duration })` on `NeuralNetwork` |
+//! | `ManimML` `insert_layer`, `remove_layer`, `replace_layer` (feature `ml`) | `changes: vec![kits::ml::TimedChange { change, start, duration }]` on `NeuralNetwork`, `change` one of `LayerChange::{Insert, Remove, Replace}` |
 
 // The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
 extern crate self as fframes_kit;

@@ -1,4 +1,5 @@
-//! The machine learning kit: neural networks, their layer kinds and their forward pass.
+//! The machine learning kit: neural networks, their layer kinds, their forward pass,
+//! dropout and layer changes.
 
 use fframes_kit::prelude::*;
 
@@ -136,10 +137,90 @@ fn layer_kinds<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{metric}{arithmetic}</g>)
 }
 
+/// A network grows a layer, swaps one for another and loses one again, its connections
+/// following.
+fn layer_changes<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "LayerChanges");
+    let change = |change, start| TimedChange {
+        change,
+        start,
+        duration: 0.9,
+    };
+    let network = ui.show(NeuralNetwork {
+        layers: vec![
+            Layer::feed_forward(3),
+            Layer::feed_forward(5),
+            Layer::feed_forward(3),
+        ],
+        changes: vec![
+            change(
+                LayerChange::Insert {
+                    index: 2,
+                    layer: Layer::FeedForward {
+                        nodes: 4,
+                        activation: Some(ActivationFunction::Relu),
+                    },
+                },
+                0.6,
+            ),
+            change(
+                LayerChange::Replace {
+                    index: 1,
+                    layer: Layer::FeedForward {
+                        nodes: 6,
+                        activation: Some(ActivationFunction::Tanh),
+                    },
+                },
+                2.0,
+            ),
+            change(LayerChange::Remove { index: 2 }, 3.4),
+        ],
+        center: (0.0, -0.3),
+        spacing: 220.0,
+        node_radius: 20.0,
+        node_spacing: 66.0,
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{network}</g>)
+}
+
+/// A forward pass with dropout: some hidden neurons are crossed out and carry nothing.
+fn dropout<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Dropout");
+    let network = ui.show(NeuralNetwork {
+        layers: vec![
+            Layer::feed_forward(4),
+            Layer::feed_forward(7),
+            Layer::feed_forward(7),
+            Layer::feed_forward(3),
+        ],
+        center: (0.0, -0.3),
+        spacing: 260.0,
+        node_radius: 20.0,
+        node_spacing: 62.0,
+        forward_pass: Some(ForwardPass {
+            start: 1.3,
+            duration: 2.2,
+        }),
+        dropout: Some(Dropout {
+            rate: 0.35,
+            seed: 7,
+            start: 0.9,
+            duration: 2.9,
+        }),
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{network}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("ForwardPass", 4.0, forward_pass),
         GalleryScene::new("ConvNet", 5.0, conv_net),
         GalleryScene::new("LayerKinds", 4.0, layer_kinds),
+        GalleryScene::new("Dropout", 4.0, dropout),
+        GalleryScene::new("LayerChanges", 5.0, layer_changes),
     ]
 }

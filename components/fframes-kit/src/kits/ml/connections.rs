@@ -23,6 +23,9 @@ pub(super) struct Connection {
     pub arrow: bool,
     /// Between two layers with maps: the window and the cell its lines join.
     pub filter: Option<Filter>,
+    /// The neurons each line joins, of the first layer and of the second, where it starts or
+    /// ends at a neuron.
+    pub ends: Vec<(Option<usize>, Option<usize>)>,
 }
 
 /// `from` to `to`, without the first `start` and the last `end` pixels.
@@ -108,6 +111,7 @@ pub(super) fn connect(a: &LayerGeometry, b: &LayerGeometry, radius: f64, sweep: 
                 .collect(),
             arrow: false,
             filter: Some(f),
+            ends: vec![(None, None); 4],
         };
     }
     let (sources, start): (Vec<Point>, f64) = if !a.nodes.is_empty() {
@@ -126,8 +130,15 @@ pub(super) fn connect(a: &LayerGeometry, b: &LayerGeometry, radius: f64, sweep: 
         .iter()
         .flat_map(|&p| targets.iter().map(move |&q| trimmed(p, q, start, end)))
         .collect();
+    let (from_nodes, to_nodes) = (!a.nodes.is_empty(), !b.nodes.is_empty());
+    let ends = (0..sources.len())
+        .flat_map(|s| {
+            (0..targets.len()).map(move |t| (from_nodes.then_some(s), to_nodes.then_some(t)))
+        })
+        .collect();
     Connection {
         lines,
+        ends,
         arrow: a.nodes.is_empty() && a.maps.is_empty() && b.nodes.is_empty() && b.maps.is_empty(),
         filter: None,
     }
@@ -178,11 +189,14 @@ mod tests {
         );
         assert_eq!(dense.lines.len(), 6);
         assert!(!dense.arrow);
+        // the line from the second neuron to the first
+        assert_eq!(dense.ends[3], (Some(1), Some(0)));
         // each line starts on the edge of its neuron
         let first = dense.lines[0];
         assert!((first.p0.distance(Point::new(0.0, -10.0)) - 5.0).abs() < 1e-9);
         let fan = connect(&layer(0.0, &[-10.0, 10.0]), &layer(100.0, &[]), 5.0, 0.0);
         assert_eq!(fan.lines.len(), 2);
+        assert_eq!(fan.ends, vec![(Some(0), None), (Some(1), None)]);
         assert!(fan.lines.iter().all(|l| l.p1 == Point::new(90.0, 0.0)));
         let boxes = connect(&layer(0.0, &[]), &layer(100.0, &[]), 5.0, 0.0);
         assert_eq!(

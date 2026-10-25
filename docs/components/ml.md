@@ -45,11 +45,24 @@ neighbouring layers.
   the window slides over the map instead, row by row from the top left, gliding from each
   position to the next: one cell along for a convolution, a whole kernel for a pooling. A layer lights up in
   `pulse_color` as they arrive and fades back while they travel on.
-- **Layout.** `layout(ui)` gives every layer's `LayerGeometry` (its middle, its box and its
-  neurons in pixels), for a label or an arrow pointing at a layer.
+- **Dropout.** `dropout: Some(Dropout { rate, seed, start, duration })` crosses out a share
+  `rate` of the neurons of every hidden feed-forward layer from `start` for `duration`
+  seconds: they dim, do not light up, and their edges and pulses fade. The neurons are
+  picked once, the same for the same `seed`; the input and output layers keep all of theirs
+  and every layer keeps at least one.
+- **Layer changes.** `changes: vec![TimedChange { change, start, duration }]` runs
+  `LayerChange::Insert { index, layer }`, `Remove { index }` and `Replace { index, layer }`
+  one after the other. The other layers slide to their new places, the layer that comes or
+  goes fades, and so do the connections that are new or gone. An index counts the layers as
+  the changes before it left them; one out of range changes nothing. A change starts once
+  the one before it has finished, and should not overlap a forward pass or dropout.
+- **Layout.** `layout(ui)` gives every layer's `LayerGeometry` in pixels (its middle, its box,
+  its neurons, maps, points, rows and images), for a label or an arrow pointing at a layer.
+  It is the layout of `layers` as given, before any change.
 
-Gallery scenes: `ForwardPass`, `ConvNet` (an image through a convolution and a pooling) and
-`LayerKinds` (a triplet into an embedding, a paired query through a vector and two operations).
+Gallery scenes: `ForwardPass`, `ConvNet` (an image through a convolution and a pooling),
+`LayerKinds` (a triplet into an embedding, a paired query through a vector and two
+operations), `Dropout` and `LayerChanges` (an insert, a replace and a remove).
 
 ```rust
 use fframes_kit::prelude::*;

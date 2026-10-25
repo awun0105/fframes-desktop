@@ -165,10 +165,10 @@ pub struct MapShape {
 /// The feature maps of every layer: an image is one map, a convolution has its own, a
 /// max pooling has the maps of the layer before it, `kernel` times smaller. Other layers, and
 /// a pooling after a layer without maps, have none.
-pub(super) fn map_shapes(layers: &[Layer<'_>]) -> Vec<Option<MapShape>> {
+pub(super) fn map_shapes(layers: &[&Layer<'_>]) -> Vec<Option<MapShape>> {
     let mut shapes: Vec<Option<MapShape>> = Vec::with_capacity(layers.len());
     for layer in layers {
-        let shape = match layer {
+        let shape = match *layer {
             Layer::ImageInput { size, .. } => Some(MapShape {
                 maps: 1,
                 size: (*size).max(1),
@@ -473,7 +473,7 @@ mod tests {
             Layer::feed_forward(3),
             Layer::MaxPool2D { kernel: 2 },
         ];
-        let shapes = map_shapes(&layers);
+        let shapes = map_shapes(&layers.iter().collect::<Vec<_>>());
         assert_eq!(shapes[0], Some(MapShape { maps: 1, size: 28 }));
         assert_eq!(shapes[2], Some(MapShape { maps: 4, size: 12 }));
         assert_eq!(shapes[3], None);
