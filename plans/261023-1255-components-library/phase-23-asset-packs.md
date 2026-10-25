@@ -1,7 +1,7 @@
 ---
 phase: 23
 title: "Phase 23: Cursor, animated emoji and sound effects"
-status: todo
+status: completed
 priority: P3
 effort: 3d
 dependencies: [11]
@@ -165,9 +165,9 @@ Add the asset packs the user chose (2026-10-24):
 
 ## Todo
 
-- [ ] Cursor shapes, path, click, drag, type
-- [ ] Emoji wrapper and name table, one real file checked locally
-- [ ] CC0 sound files with recorded origins
-- [ ] SFX helpers
-- [ ] `Gif` component
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] Cursor shapes, path, click, drag, type
+- [x] Emoji wrapper and name table, one real file checked locally
+- [x] CC0 sound files with recorded origins
+- [x] SFX helpers
+- [x] `Gif` component
+- [x] Gallery scenes, e2e frames, docs and mapping rows
