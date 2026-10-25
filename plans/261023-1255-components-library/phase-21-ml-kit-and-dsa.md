@@ -130,7 +130,7 @@ dependencies: [10, 17]
 ## Todo
 
 - [x] Network layout, feed-forward layers, forward pass
-- [ ] Convolution, pooling and image layers
+- [x] Convolution, pooling and image layers
 - [ ] Embedding, vector, math operation, paired query, triplet layers
 - [ ] Dropout and layer changes
 - [ ] Variational autoencoder

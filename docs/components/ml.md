@@ -20,17 +20,27 @@ neighbouring layers.
   `node_radius` pixels round and `node_spacing` apart (`Layer::feed_forward(n)` has no
   activation). Its `ActivationFunction` (`Relu`, `Sigmoid` or `Tanh`) is plotted in a small
   box above it. Layer kinds without a picture of their own are drawn as a named box.
+- **Feature maps.** `Layer::ImageInput { image, size }` draws an image of the media folder as
+  a map `size` cells square; a missing image leaves the map empty. `Layer::Conv2D { maps,
+  size, filter }` draws `maps` feature maps of `size` cells, `Layer::MaxPool2D { kernel }` the maps
+  of the layer before it, `kernel` times smaller. Maps are squares `cell` pixels a cell, seen
+  at an angle and standing one behind the other (at most 8 are drawn), with the lines between
+  their cells up to 16 cells.
 - **Connections.** Each pair of neighbouring layers is joined by the drawing of its kind:
-  every neuron to every neuron between two feed-forward layers, a fan from every neuron to
-  the side of a box, and an arrow between two boxes.
+  every neuron to every neuron between two feed-forward layers, four lines from the window a
+  convolution or a pooling slides over the maps before it to the cell it makes, a fan from
+  every neuron or every corner of a map to the next layer's neurons or side, and an arrow
+  between two boxes.
 - **Forward pass.** `forward_pass: Some(ForwardPass { start, duration })` sends pulses
   through the connections one after the other. Each connection gets an equal part of the
-  time, so the pulses reach the last layer at `start + duration`. A layer lights up in
+  time, so the pulses reach the last layer at `start + duration`. Between two layers with maps
+  the window slides over the map instead, row by row from the top left: one cell at a time
+  for a convolution, a whole kernel at a time for a pooling. A layer lights up in
   `pulse_color` as they arrive and fades back while they travel on.
 - **Layout.** `layout(ui)` gives every layer's `LayerGeometry` (its middle, its box and its
   neurons in pixels), for a label or an arrow pointing at a layer.
 
-Gallery scene: `ForwardPass`.
+Gallery scenes: `ForwardPass` and `ConvNet` (an image through a convolution and a pooling).
 
 ```rust
 use fframes_kit::prelude::*;

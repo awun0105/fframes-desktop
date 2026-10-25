@@ -8,5 +8,5 @@ mod layers;
 mod network;
 
 pub use forward::ForwardPass;
-pub use layers::{ActivationFunction, Layer, LayerGeometry, Operation};
+pub use layers::{ActivationFunction, Layer, LayerGeometry, MapShape, Operation};
 pub use network::NeuralNetwork;
