@@ -1,9 +1,17 @@
 //! Overlay components, one scene each.
 
-use fframes_kit::prelude::*;
+use std::sync::LazyLock;
+
+use fframes_kit::{overlay::tiktok_pages, prelude::*, text::from_whisper_json};
 
 use super::core::title;
 use crate::GalleryScene;
+
+/// The pages of the gallery's Whisper transcript, timed to `tones.wav`, read once.
+static PAGES: LazyLock<Vec<TikTokPage>> = LazyLock::new(|| {
+    let words = from_whisper_json(include_str!("../../captions/words.json")).unwrap_or_default();
+    tiktok_pages(&words, 1200.0)
+});
 
 /// The scene with `title`, as in the other gallery files.
 macro_rules! scenes {
@@ -31,6 +39,15 @@ pub fn scenes() -> Vec<GalleryScene> {
         },
         "Captions", 3.0 => |ui| {
             let captions = Captions { file: "captions.vtt", video_time: false, ..ui.defaults() };
+            ui.show(captions)
+        },
+        "WordCaptions", 3.5 => |ui| {
+            let captions = WordCaptions {
+                pages: PAGES.clone(),
+                y: 600.0,
+                pill: Some(ui.theme.colors.surface),
+                ..ui.defaults()
+            };
             ui.show(captions)
         },
         "CaptionStack", 3.0 => |ui| {

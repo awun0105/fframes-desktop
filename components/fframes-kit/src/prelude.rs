@@ -111,7 +111,7 @@ pub use crate::media::KenBurns;
 pub use crate::motion::{self, Beat};
 pub use crate::overlay::{
     Annotation, Appear, Caption, CaptionStack, Captions, ChapterList, Check, LowerThird,
-    ProgressBar,
+    PageEntrance, ProgressBar, TikTokPage, TikTokToken, WordCaptions,
 };
 pub use crate::paths;
 pub use crate::plot::{Heatmap, Histogram, LinePlot, ScatterPlot};

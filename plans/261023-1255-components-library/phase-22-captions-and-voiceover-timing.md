@@ -118,8 +118,8 @@ None of these generate speech or recognise it.
 
 ## Todo
 
-- [ ] Caption type, SRT/VTT parsers, Whisper reader
-- [ ] TikTok pages and `WordCaptions`
+- [x] Caption type, SRT/VTT parsers, Whisper reader
+- [x] TikTok pages and `WordCaptions`
 - [ ] `fit_text_on_n_lines` and `fill_text_box`
 - [ ] Voiceover script, bookmarks and audio tracks
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
