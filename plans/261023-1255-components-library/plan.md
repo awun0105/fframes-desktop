@@ -1,7 +1,7 @@
 ---
 title: "fframes-kit: component library"
 description: "Build fframes-kit in a fork-owned components/ workspace: a Remotion-style component library with Manim's vocabulary, LaTeX formulas through a user-installed TeX, and science kits, simple pieces first, with no changes to upstream fframes code."
-status: pending
+status: completed
 priority: P1
 effort: 95d
 branch: main
