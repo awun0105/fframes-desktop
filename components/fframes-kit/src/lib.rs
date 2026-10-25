@@ -46,6 +46,12 @@
 //! | `@remotion/animation-utils`: `interpolateStyles` | [`motion::progress`] over the input range, then [`motion::lerp`] for each value |
 //! | `@remotion/noise`: `noise2D`, `noise3D`, `noise4D` | [`motion::noise_2d`], [`motion::noise_3d`], [`motion::noise_4d`] (seed: a number or a string) |
 //! | `linearTiming`, `springTiming` | [`Timing::Linear`](transitions::Timing::Linear), [`Timing::Spring`](transitions::Timing::Spring) |
+//! | `@remotion/captions`: `Caption` | [`CaptionWord`](text::CaptionWord) (the kit's `Caption` is a card of [`CaptionStack`](overlay::CaptionStack)) |
+//! | `parseSrt`, `serializeSrt` | [`parse_srt`](text::parse_srt), [`serialize_srt`](text::serialize_srt); [`parse_vtt`](text::parse_vtt) for VTT files |
+//! | `createTikTokStyleCaptions`, `TikTokPage` | [`tiktok_pages`](overlay::tiktok_pages), [`TikTokPage`](overlay::TikTokPage), drawn by [`WordCaptions`](overlay::WordCaptions) |
+//! | `@remotion/openai-whisper` `openAiWhisperApiToCaptions`, `@remotion/install-whisper-cpp` `toCaptions` | [`from_whisper_json`](text::from_whisper_json) on the JSON the transcriber wrote |
+//! | `@remotion/layout-utils`: `measureText`, `fitText` | `frame.text_width`, [`Ui::measure`](ui::Ui::measure), [`FitText`](text::FitText) |
+//! | `fitTextOnNLines`, `fillTextBox` | [`fit_text_on_n_lines`](text::fit_text_on_n_lines), [`fill_text_box`](text::fill_text_box) |
 //! | JSX: `<LowerThird name="Ada" />`, children between tags | [`ui!`](ui!): the same tags inside `svgr!` markup, expanded to `ui.show(LowerThird { name: "Ada".into(), ..ui.defaults() })` |
 //!
 //! | Manim | fframes-kit |
@@ -172,6 +178,11 @@
 //! | `ManimML` `DecisionTreeDiagram`, `DecisionTreeSurface` (feature `ml`) | `kits::ml::DecisionTreeDiagram { tree, reveal, .. }` and `kits::ml::DecisionSurface { tree, axes, reveal, .. }` with the same `kits::ml::DecisionTree` and `TreeReveal` |
 //! | `ManimML` `GaussianDistribution` (feature `ml`) | `kits::ml::GaussianEllipse { gaussian, axes, sigmas, .. }` with `kits::ml::Gaussian2D { mean, covariance }` |
 //! | `ManimML` `MCMCAnimation` (feature `ml`) | `kits::ml::McmcChain { target, origin, proposal, steps, seed, run, .. }`: a seeded Metropolis-Hastings chain with its accepted path and rejected proposals |
+//! | manim-voiceover `VoiceoverScene`, `with self.voiceover(text=...) as tracker` | [`VoiceoverScript`](voiceover::VoiceoverScript) of [`VoiceoverBlock`](voiceover::VoiceoverBlock)s (recorded audio with its word timings), `script.sequence(i, children)` |
+//! | `tracker.duration`, `tracker.get_remaining_duration()` | `script.block(i)` ([`BlockTime`](voiceover::BlockTime)), `script.remaining(i, t)` |
+//! | `<bookmark mark="A"/>`, `self.wait_until_bookmark("A")`, `tracker.time_until_bookmark("A")` | the same tags in the block's text, `script.bookmark("A")`, `script.time_until_bookmark("A", t)` |
+//! | subcaptions (`add_subcaption`) | `script.subcaptions()` for [`WordCaptions`](overlay::WordCaptions); the voice files with `script.audio_tracks()` in `fn audio` |
+//! | `set_speech_service`, `GTTSService`, `AzureService`, `RecorderService` | not available: the kit reads the timings of recorded audio, it neither speaks nor records |
 
 // The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
 extern crate self as fframes_kit;

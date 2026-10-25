@@ -122,4 +122,4 @@ None of these generate speech or recognise it.
 - [x] TikTok pages and `WordCaptions`
 - [x] `fit_text_on_n_lines` and `fill_text_box`
 - [x] Voiceover script, bookmarks and audio tracks
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] Gallery scenes, e2e frames, docs and mapping rows

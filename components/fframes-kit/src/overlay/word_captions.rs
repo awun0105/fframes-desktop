@@ -230,18 +230,25 @@ impl<'a> Component<'a> for WordCaptions {
             width(ui, self.style, text).unwrap_or(text.chars().count() as f32 * size * 0.55)
         };
         let widths: Vec<f32> = texts.iter().map(|text| measure(text)).collect();
-        // with room for the word that pops
-        let space = width(ui, self.style, " ").unwrap_or(size * 0.28)
-            + size * (self.pop - 1.0).max(0.0) * 1.5;
-        let (scale, lines) = fit(&widths, space, self.width, self.max_lines);
+        let space = width(ui, self.style, " ").unwrap_or(size * 0.28);
+        // wrapped so that a line still fits while a word of it pops
+        let wrap_width = self.width / self.pop.max(1.0);
+        let (scale, lines) = fit(&widths, space, wrap_width, self.max_lines);
         let count = lines.last().map_or(1, |l| l + 1);
         let line_height = size * self.style.line_height;
         let top = -line_height * count as f32 / 2.0;
+        // the word being said grows and pushes its neighbours aside
+        let lit: Vec<f32> = page.tokens.iter().map(|token| self.lit(token, t)).collect();
+        let grown: Vec<f32> = widths
+            .iter()
+            .zip(&lit)
+            .map(|(w, lit)| w * (1.0 + (self.pop - 1.0) * lit))
+            .collect();
         let line_widths: Vec<f32> = (0..count)
             .map(|l| {
                 let (sum, n) = lines
                     .iter()
-                    .zip(&widths)
+                    .zip(&grown)
                     .filter(|(line, _)| **line == l)
                     .fold((0.0, 0), |(sum, n), (_, w)| (sum + w, n + 1));
                 sum + space * (n.max(1) - 1) as f32
@@ -254,11 +261,10 @@ impl<'a> Component<'a> for WordCaptions {
         for (i, text) in texts.into_iter().enumerate() {
             let l = lines[i];
             let left = x[l].map_or(-line_widths[l] / 2.0, |end| end + space);
-            let center = (left + widths[i] / 2.0, top + line_height * (l as f32 + 0.5));
-            x[l] = Some(left + widths[i]);
-            let lit = self.lit(&page.tokens[i], t);
-            let fill = Animatable::apply_progress(&self.fill, &self.highlight, lit);
-            let grow = Transform::scale(1.0 + (self.pop - 1.0) * lit);
+            let center = (left + grown[i] / 2.0, top + line_height * (l as f32 + 0.5));
+            x[l] = Some(left + grown[i]);
+            let fill = Animatable::apply_progress(&self.fill, &self.highlight, lit[i]);
+            let grow = Transform::scale(1.0 + (self.pop - 1.0) * lit[i]);
             let place = Transform::translate(center.0, center.1);
             let word = line(
                 0.0,

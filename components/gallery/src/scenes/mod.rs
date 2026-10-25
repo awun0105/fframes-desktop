@@ -24,6 +24,7 @@ pub mod tags;
 pub mod text;
 pub mod three;
 pub mod transitions;
+pub mod voiceover;
 
 /// Every gallery scene in play order.
 pub fn all() -> Vec<GalleryScene> {
@@ -38,6 +39,7 @@ pub fn all() -> Vec<GalleryScene> {
     scenes.extend(effects_ii::scenes());
     scenes.extend(text::scenes());
     scenes.extend(overlay::scenes());
+    scenes.extend(voiceover::scenes());
     scenes.extend(general::scenes());
     scenes.extend(latex::scenes());
     scenes.extend(explain::scenes());

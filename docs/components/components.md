@@ -155,6 +155,46 @@ fn drop_in<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
 }
 ```
 
+### Fitting text into lines
+
+These are Remotion's `@remotion/layout-utils` text fitters, measured like the components
+above. Both return `None` when the family cannot be measured; draw the text at `style.size`
+then.
+
+- **`text::fit_text_on_n_lines(ui, text, style, max_width, max_lines)`** gives
+  `FitLines { size, lines }`: the largest size up to `style.size` at which `text` breaks at
+  spaces into at most `max_lines` lines of `max_width` pixels. Each line is measured whole,
+  so none is wider than `max_width`. It is also `None` when a single word is wider than the
+  box at size 1.
+- **`text::fill_text_box(max_width, max_lines)`** is an empty `TextBox`.
+  - `add(ui, style, " word")` puts a word on the last line, or starts a new line for it.
+  - It returns `BoxFit { exceeds_box, new_line }`.
+  - A word that does not fit is not added.
+  - `lines()` gives the lines so far.
+
+```rust
+use fframes_kit::{prelude::*, text::fit_text_on_n_lines};
+
+/// A quote as large as it can be on three lines of 1400 pixels.
+fn quote<'a>(ui: &mut Ui<'a, '_, '_>, text: &'a str) -> Svgr<'a> {
+    let style = ui.theme.typography.title;
+    let Some(fit) = fit_text_on_n_lines(ui, text, style, 1400.0, 3) else {
+        return ui.show(Paragraph { text: text.into(), x: 260.0, y: 400.0, width: 1400.0, ..ui.defaults() });
+    };
+    let line_height = fit.size as f32 * style.line_height;
+    let lines: Vec<Svgr<'a>> = fit
+        .lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let y = 400.0 + i as f32 * line_height;
+            svgr!(<text x="260" y={y} font-family={style.family} font-size={fit.size} font-weight={style.weight} fill="#fff">{line}</text>)
+        })
+        .collect();
+    svgr!(<g>{lines}</g>)
+}
+```
+
 ### Numbers and Manim's text mobjects
 
 | Component | Props | What it does | Without a font |
@@ -222,6 +262,7 @@ that leave do so before the container ends.
 | `Appear` | `Appear::new(ui, from, center, children)`, then `until`, `rise` (60), `scale_from` (0.92), `enter`, `exit`, `rate_func` | children rise, grow about `center` and fade in at `from` seconds, and leave upward at `until` (or the end of the container); inside, time starts at `from` |
 | `LowerThird` | `name`, `role`, `x`, `y`, `name_style`, `role_style`, `name_fill`, `role_fill`, `bar`, `bar_width` (6), `background: Option<Color>`, `min_width`, `padding`, `delay`, `stagger`, `run_time`, `exit`, `rate_func` | an accent bar grows, then the name and the role slide out from behind it; all of it leaves in reverse order before the end. With `background`, a plate as wide as the longer line |
 | `Captions` | `file`, `x`, `y`, `width`, `style`, `fill`, `align`, `video_time` (true) | the cue of a WebVTT file that plays now, wrapped into `width`; cue times are video seconds, or container seconds with `video_time: false` |
+| `WordCaptions` | `pages: Vec<TikTokPage>`, `x`, `y`, `width`, `max_lines` (2), `style` (title), `fill`, `highlight` (accent), `pop` (1.12), `fade` (0.08 s), `uppercase`, `pill: Option<Color>`, `pill_opacity`, `padding`, `entrance` (`PageEntrance::Pop`, `Fade`, `Rise`, `None`), `enter`, `exit` | TikTok-style captions: the page that plays now, centred on `(x, y)`, the word being said in `highlight` and grown by `pop`, its neighbours moved aside; a page that needs more than `max_lines` lines shrinks. Times are milliseconds of the container |
 | `CaptionStack` | `items: Vec<Caption>` (`Caption::new(at, tag, line)`), `x`, `y`, `gap`, `tag_style`, `line_style`, `tag_fill`, `line_fill`, `tag_spacing`, `rise`, `enter`, `leave`, `rate_func` | timed captions without a file: each rises in at its `at` and leaves upward while the next comes in; the last stays |
 | `ChapterList` | `chapters: Vec<(f32, Cow<str>)>`, `x`, `y`, `width`, `row_height`, `gap`, `style`, `fill`, `active_fill`, `highlight`, `radius`, `spring` | an agenda whose highlight springs to the chapter playing now |
 | `Annotation` | `target`, `label`, `text`, `color`, `style`, `letter_spacing`, `stroke_width`, `delay`, `run_time`, `rate_func` | a dot on `target`, an elbow line to `label` and the text at its end; the line draws on, the text fades in |
@@ -252,6 +293,81 @@ let list = ChapterList {
     ..ChapterList::default()
 };
 assert_eq!(list.active(6.0), 1);
+```
+
+### Word captions and voiceover timing
+
+Word timings are data you bring. Nothing here speaks, records or recognises speech.
+
+- **Caption files.**
+  - `CaptionWord { text, start_ms, end_ms, timestamp_ms, confidence }` is Remotion's
+    `Caption`.
+  - `text::parse_srt` and `text::parse_vtt` read the cues of a subtitle file: one
+    `CaptionWord` each, trimmed, with confidence 1.
+  - `text::serialize_srt(&lines)` writes one cue per line of words.
+  - `text::from_whisper_json` reads the words of openai-whisper (`segments[].words[]` or
+    `words[]`, in seconds) and of whisper.cpp (`transcription[]` with `offsets` in
+    milliseconds; run it with `-ml 1` for one word per entry). Transcript words keep their
+    leading space: `" world"`.
+- **Pages.** `overlay::tiktok_pages(&words, combine_within_ms)` is
+  `createTikTokStyleCaptions`. A word that starts with a space starts a new page once the
+  page has run for `combine_within_ms`. Subtitle cues have no leading space, so their pages
+  break only between voiceover blocks.
+- **Voiceover.** `VoiceoverScript` is manim-voiceover's timing.
+  - A block is `VoiceoverBlock::new(text, audio, words)`: a recorded file and its words.
+  - `<bookmark mark="A"/>` in the text marks a moment. It is timed at the first word after
+    it, counted in letters, so a transcript that splits words differently still lines up.
+  - `VoiceoverScript::in_sequence(blocks, start, gap)` plays the blocks one after the other;
+    `VoiceoverScript::new` plays them at their own `start`.
+  - It gives:
+    - `block(i)`: start, duration and end;
+    - `bookmark("A")`, `time_until_bookmark("A", t)` and `remaining(i, t)`;
+    - `subcaptions()`: the words in container time, for `tiktok_pages`;
+    - `audio_tracks()`, for `fn audio`;
+    - `sequence(i, children)`: a `Sequence` as long as the block. For a `Series`, give an
+      item `block(i).duration`.
+
+Times are seconds of the container the script is used in (milliseconds for the words). Give
+the video's `fn audio` the tracks of a script that runs on video time. Gallery scenes:
+`WordCaptions` and `Voiceover`.
+
+```rust
+use fframes_kit::{overlay::tiktok_pages, prelude::*, text::from_whisper_json};
+
+/// Narration with a dot that appears at its bookmark and the words under it.
+struct Narrated {
+    script: VoiceoverScript<'static>,
+    pages: Vec<TikTokPage>,
+}
+
+impl Narrated {
+    fn new(transcript: &str) -> Self {
+        let words = from_whisper_json(transcript).unwrap_or_default();
+        let block = VoiceoverBlock::new("Here is <bookmark mark=\"dot\"/>a dot.", "voice.wav", words);
+        let script = VoiceoverScript::in_sequence(vec![block], 0.5, 0.0);
+        let pages = tiktok_pages(&script.subcaptions(), 1200.0);
+        Self { script, pages }
+    }
+
+    fn draw<'a>(&self, ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+        let at = self.script.bookmark("dot").unwrap_or(0.0);
+        let opacity = motion::progress(ui.seconds(), at, at + 0.3);
+        let captions = ui.show(WordCaptions { pages: self.pages.clone(), ..ui.defaults() });
+        svgr!(<g><circle cx="960" cy="480" r="80" fill="#4f8cff" opacity={opacity} />{captions}</g>)
+    }
+
+    fn audio(&self) -> AudioMap<'static> {
+        AudioMap::from(self.script.audio_tracks())
+    }
+}
+
+let narrated = Narrated::new(
+    r#"{"words": [{"word": " Here", "start": 0.0, "end": 0.3}, {"word": " is", "start": 0.3, "end": 0.45},
+                  {"word": " a", "start": 0.6, "end": 0.7}, {"word": " dot.", "start": 0.7, "end": 1.1}]}"#,
+);
+assert_eq!(narrated.script.bookmark("dot"), Some(1.1));
+assert_eq!(narrated.pages.len(), 1);
+let _ = narrated.audio();
 ```
 
 ## Data, audio, decoration and media
