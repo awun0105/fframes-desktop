@@ -1,7 +1,7 @@
 ---
 phase: 22
 title: "Phase 22: Word captions, text layout and voiceover timing"
-status: in-progress
+status: completed
 priority: P1
 effort: 3d
 dependencies: [4]
