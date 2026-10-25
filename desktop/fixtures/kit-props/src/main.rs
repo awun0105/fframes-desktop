@@ -4,10 +4,11 @@ use std::{io, sync::Arc};
 
 use fframes::RenderOptions;
 use fframes_kit::prelude::*;
+use fframes_studio_kit::PropsStore;
 use fframes_studio_protocol::PreviewIdentity;
 use fframes_studio_protocol::export::{EXPORT_CAPABILITIES_FLAG, EXPORT_FLAG};
 use fframes_studio_runtime::{
-    PreviewWorkerConfig, PropsHooks, WorkerTransport, print_export_capabilities_with_props,
+    PreviewWorkerConfig, WorkerTransport, print_export_capabilities_with_props,
     run_export_with_props, serve_preview_worker,
 };
 
@@ -31,7 +32,7 @@ impl Video for KitProps {
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
-        let mut ui = Ui::new(frame, ctx, &self.theme).with_props(&self.store);
+        let mut ui = Ui::new(frame, ctx, &self.theme).with_props(self.store.view());
         let dot = ui!(<Circle editable="dot" cx={320.0} cy={180.0} radius={40.0} />);
         svgr!(
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
@@ -56,11 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = Arc::new(PropsStore::default());
     // Records each editable object's schema and values for the props panel.
     store.listen();
-    let (apply, info) = (store.clone(), store.clone());
-    let hooks = PropsHooks::new(
-        move |doc| apply.set(doc),
-        move |identity| info.info(identity),
-    );
+    let hooks = store.hooks();
     let video = KitProps {
         theme: Theme::default(),
         store,

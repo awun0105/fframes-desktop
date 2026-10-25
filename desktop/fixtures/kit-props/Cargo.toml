@@ -8,6 +8,11 @@ license = "MIT"
 
 [dependencies]
 fframes = { path = "../../../fframes", version = "1.3.0", features = ["compile-time-svgtree"] }
-fframes-kit = { path = "../../../components/fframes-kit", features = ["studio"] }
+fframes-kit = { path = "../../../components/fframes-kit" }
+fframes-studio-kit = { path = "../../../fframes-studio-kit" }
 fframes-studio-protocol = { path = "../../../fframes-studio-protocol", version = "0.2.0" }
 fframes-studio-runtime = { path = "../../../fframes-studio-runtime", version = "0.2.0" }
+
+# The kit builds against crates.io fframes; this makes it use the same fframes as Studio.
+[patch.crates-io]
+fframes = { path = "../../../fframes" }
