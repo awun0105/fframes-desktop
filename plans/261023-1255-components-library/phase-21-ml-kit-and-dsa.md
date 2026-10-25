@@ -135,7 +135,7 @@ dependencies: [10, 17]
 - [x] Dropout and layer changes
 - [x] Variational autoencoder
 - [x] Decision trees and surface
-- [ ] Gaussian ellipses and MCMC chain
+- [x] Gaussian ellipses and MCMC chain
 - [ ] CS additions (edges, weights, layouts, steps, variable box)
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
 
@@ -160,3 +160,6 @@ dependencies: [10, 17]
   enter fade, as the autoencoder's forward pass does (its code point fades in).
 - The autoencoder draws its network with no fade of its own and fades the whole figure once,
   so the rings and the code point fade with the network.
+- The MCMC chain's dot walks the accepted path at an even speed instead of one step per time
+  slot. With one slot per step it stood still during rejections and jumped on each accepted
+  move, which `inspect --pops` reported as pops.

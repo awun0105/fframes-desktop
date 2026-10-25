@@ -19,5 +19,5 @@ pub use decision_tree::{
 pub use forward::{Dropout, ForwardPass};
 pub use layers::{ActivationFunction, Layer, LayerGeometry, MapShape, Operation};
 pub use network::NeuralNetwork;
-pub use probability::Gaussian2D;
+pub use probability::{ChainRun, Gaussian2D, GaussianEllipse, McmcChain, McmcStep};
 pub use vae::VariationalAutoencoder;

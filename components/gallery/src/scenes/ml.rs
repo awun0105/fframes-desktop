@@ -1,5 +1,6 @@
 //! The machine learning kit: neural networks, their layer kinds, their forward pass,
-//! dropout, layer changes, a variational autoencoder and decision trees.
+//! dropout, layer changes, a variational autoencoder, decision trees, normal distributions and an
+//! MCMC chain.
 
 use fframes_kit::prelude::*;
 
@@ -304,6 +305,88 @@ fn decision_tree<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{diagram}{surface}{axes}</g>)
 }
 
+/// Square axes from -4 to 4 for the probability scenes.
+fn plane<'a>(ui: &Ui<'a, '_, '_>) -> Axes<'a> {
+    Axes {
+        x_range: Range::new(-4.0, 4.0, 1.0),
+        y_range: Range::new(-3.0, 3.0, 1.0),
+        x_length: 8.0,
+        y_length: 6.0,
+        center: (0.0, -0.4),
+        tips: false,
+        color: ui.theme.colors.muted,
+        ..ui.defaults()
+    }
+}
+
+/// A tilted normal distribution: its 1, 2 and 3 sigma ellipses appear from the inside out,
+/// with its principal axes.
+fn gaussian_ellipse<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "GaussianEllipse");
+    let axes = plane(ui);
+    let ellipse = ui.show(GaussianEllipse {
+        gaussian: Gaussian2D {
+            mean: (0.4, -0.2),
+            covariance: [[1.2, 0.5], [0.5, 0.45]],
+        },
+        axes: axes.map(ui),
+        show_axes: true,
+        start: 0.9,
+        stagger: 0.6,
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    let axes = ui.show(axes);
+    svgr!(<g>{head}{ellipse}{axes}</g>)
+}
+
+/// A Metropolis-Hastings chain walking over a mixture of two normal distributions: accepted
+/// moves extend the path, rejected proposals stay behind as rings.
+fn mcmc_chain<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "McmcChain");
+    let axes = plane(ui);
+    let map = axes.map(ui);
+    let target = vec![
+        Gaussian2D {
+            mean: (-1.6, 0.8),
+            covariance: [[0.5, 0.2], [0.2, 0.4]],
+        },
+        Gaussian2D {
+            mean: (1.5, -0.9),
+            covariance: [[0.6, -0.25], [-0.25, 0.5]],
+        },
+    ];
+    let modes: Vec<Svgr<'a>> = target
+        .iter()
+        .map(|&gaussian| {
+            ui.show(GaussianEllipse {
+                gaussian,
+                axes: map,
+                sigmas: vec![1.0, 2.0],
+                color: ui.theme.colors.accent,
+                enter: Some(FadeIn::default()),
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let chain = ui.show(McmcChain {
+        target,
+        origin: (3.2, 2.4),
+        proposal: 0.8,
+        steps: 70,
+        seed: 5,
+        axes: map,
+        run: Some(ChainRun {
+            start: 0.9,
+            duration: 3.6,
+        }),
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    let axes = ui.show(axes);
+    svgr!(<g>{head}{modes}{chain}{axes}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("ForwardPass", 4.0, forward_pass),
@@ -313,5 +396,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("LayerChanges", 5.0, layer_changes),
         GalleryScene::new("Vae", 5.0, vae),
         GalleryScene::new("DecisionTree", 5.0, decision_tree),
+        GalleryScene::new("GaussianEllipse", 4.0, gaussian_ellipse),
+        GalleryScene::new("McmcChain", 5.0, mcmc_chain),
     ]
 }

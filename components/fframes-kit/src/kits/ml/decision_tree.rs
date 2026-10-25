@@ -680,6 +680,27 @@ mod tests {
     }
 
     #[test]
+    fn a_split_on_another_feature_leaves_its_region_whole() {
+        let tree = DecisionTree {
+            nodes: vec![
+                DecisionNode::Split {
+                    feature: 2,
+                    threshold: 0.5,
+                    left: 1,
+                    right: 2,
+                },
+                DecisionNode::Leaf { class: 0 },
+                DecisionNode::Leaf { class: 1 },
+            ],
+            ..Default::default()
+        };
+        let bounds = Rect::new(0.0, 0.0, 4.0, 2.0);
+        let Partition { leaves, cuts } = tree.regions(0, 1, bounds);
+        assert_eq!(leaves, vec![(1, bounds), (2, bounds)]);
+        assert_eq!(cuts, Vec::new());
+    }
+
+    #[test]
     fn the_tree_grows_level_by_level_or_node_by_node() {
         let tree = iris();
         let levels = TreeReveal {

@@ -124,6 +124,30 @@ tests. A child index out of range or a node reached twice ends that branch.
 
 Gallery scene: `DecisionTree` (the iris tree beside its feature space).
 
+## Normal distributions and MCMC
+
+`Gaussian2D { mean, covariance }` is a 2D normal distribution. `density(p)` is its
+probability density, `principal_axes()` the standard deviation along each eigenvector of the
+covariance (the longer axis first), `ring(k)` the ellipse `k` standard deviations from the
+mean, and `samples(seed, n)` seeded samples. All of these are empty or `None` when the
+covariance is not positive definite.
+
+- **`GaussianEllipse`.** The ellipses of equal density `sigmas` standard deviations from the
+  mean (1, 2 and 3 by default) on `axes`, each filled at `fill_opacity` so the middle is
+  darkest, the mean as a dot and, with `show_axes`, the principal axes. With `stagger` the
+  rings appear one after the other from `start`, the innermost first.
+- **`McmcChain`.** A random-walk Metropolis-Hastings chain sampling the equal mixture of the
+  distributions in `target`. It starts at `origin`, proposes steps from a normal distribution
+  `proposal` wide, and takes a step with the probability `min(1, p(to) / p(from))`, so a step
+  uphill is always taken. `chain()` gives its `steps` (`McmcStep { from, to, accepted }`), the
+  same for the same `seed`. With `run: Some(ChainRun { start, duration })` a dot walks the
+  accepted moves at an even speed over `duration`, drawing the path in `accepted_color`.
+  Every proposal it rejects appears as a ring in `rejected_color` when the dot is where it was
+  proposed. Rejected proposals outside the axes are not drawn.
+
+Draw both before the `Axes` so the axis lines stay on top. Gallery scenes: `GaussianEllipse`,
+`McmcChain` (a chain finding both modes of a mixture).
+
 ```rust
 use fframes_kit::prelude::*;
 
