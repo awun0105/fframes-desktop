@@ -323,6 +323,148 @@ fn dijkstra<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{figure}</g>)
 }
 
+/// A directed graph with weights, a cycle back to the start and a pair of edges both ways.
+fn weighted_graph() -> Graph {
+    Graph::weighted(
+        &["S", "A", "B", "C", "T"],
+        &[
+            (0, 1, 4.0),
+            (0, 2, 1.0),
+            (2, 1, 2.0),
+            (1, 3, 1.0),
+            (3, 1, 3.0),
+            (3, 4, 2.0),
+            (4, 0, 7.0),
+        ],
+        true,
+    )
+    // left to right from S to T; C -> A and T -> S close cycles, so they point back
+    .at(&[(0.0, 1.0), (1.0, 0.0), (1.0, 2.0), (2.0, 1.0), (3.0, 1.0)])
+}
+
+fn weighted_graph_scene<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    static TRACES: OnceLock<[GraphTrace; 2]> = OnceLock::new();
+    let traces = TRACES.get_or_init(|| {
+        let ring = Graph::weighted(
+            &["A", "B", "C", "D", "E", "F"],
+            &[
+                (0, 1, 2.0),
+                (1, 2, 4.0),
+                (2, 3, 1.0),
+                (3, 4, 3.0),
+                (4, 5, 2.0),
+                (5, 0, 5.0),
+                (0, 3, 6.0),
+            ],
+            false,
+        )
+        .layout(&GraphLayout::Circular, 1.0);
+        [
+            GraphTrace::dijkstra(&weighted_graph(), 0),
+            GraphTrace::dijkstra(&ring, 0),
+        ]
+    });
+    let head = title(ui, "WeightedGraph");
+    let left = ui.show(GraphView {
+        trace: Some(&traces[0]),
+        delay: 0.6,
+        step_time: 0.45,
+        center: (-3.5, 0.6),
+        spacing: 220.0,
+        level: 150.0,
+        radius: 30.0,
+        frontier: false,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    let right = ui.show(GraphView {
+        trace: Some(&traces[1]),
+        delay: 0.6,
+        step_time: 0.45,
+        center: (3.6, 0.5),
+        spacing: 230.0,
+        level: 230.0,
+        radius: 30.0,
+        frontier: false,
+        curved: true,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{left}{right}</g>)
+}
+
+fn variable_box<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    /// The array, its length and last value at each step, and a stack doing the same.
+    type Figures = (ArrayTrace, Vec<String>, Vec<String>, ListTrace);
+    static FIGURES: OnceLock<Figures> = OnceLock::new();
+    let (array, lengths, lasts, stack) = FIGURES.get_or_init(|| {
+        let array = ArrayTrace::record(&[4, 7])
+            .append(2)
+            .append(9)
+            .append(5)
+            .pop()
+            .pop()
+            .finish();
+        let lengths = array
+            .steps()
+            .iter()
+            .map(|s| s.values.len().to_string())
+            .collect();
+        let lasts = array
+            .steps()
+            .iter()
+            .map(|s| s.values.last().map_or("-".into(), i64::to_string))
+            .collect();
+        let stack = ListTrace::record(&[4, 7])
+            .push(2)
+            .push(9)
+            .push(5)
+            .pop()
+            .pop()
+            .finish();
+        (array, lengths, lasts, stack)
+    });
+    let head = title(ui, "VariableBox");
+    let row = ui.show(ArrayView {
+        trace: Some(array),
+        delay: 0.6,
+        step_time: 0.8,
+        center: (-2.4, 1.3),
+        cell: 112.0,
+        label: "a",
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    let variables: Vec<Svgr<'a>> = [("len(a)", lengths, -4.0), ("a[-1]", lasts, -1.0)]
+        .into_iter()
+        .map(|(name, values, x)| {
+            ui.show(VariableBox {
+                name,
+                values: values.clone(),
+                delay: 0.6,
+                step_time: 0.8,
+                center: (x, -1.5),
+                width: 150.0,
+                height: 96.0,
+                enter: Some(fade(0.0)),
+                ..ui.defaults()
+            })
+        })
+        .collect();
+    let pile = ui.show(Stack {
+        trace: Some(stack),
+        delay: 0.6,
+        step_time: 0.6,
+        center: (4.6, 0.1),
+        indices: true,
+        label: "stack",
+        notes: false,
+        enter: Some(fade(0.0)),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{row}{variables}{pile}</g>)
+}
+
 fn hash_table<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     static TRACE: OnceLock<HashTrace> = OnceLock::new();
     let trace = TRACE.get_or_init(|| {
@@ -525,6 +667,9 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Heap", 10.0, heap),
         GalleryScene::new("GraphView", 10.5, graph_view),
         GalleryScene::new("Dijkstra", 13.0, dijkstra),
+        GalleryScene::new("WeightedGraph", 12.0, weighted_graph_scene),
+        // six steps of 0.8 s from 0.6 s, the stack eight of 0.6 s
+        GalleryScene::new("VariableBox", 7.0, variable_box),
         GalleryScene::new("HashTable", 12.5, hash_table),
         GalleryScene::new("StateMachine", 8.5, state_machine),
         // five calls and five returns of 0.6 s from 0.6 s

@@ -53,8 +53,12 @@ short note. Step 0 is the input. The recorders:
   once at every step) and `quick` (Lomuto's partition, the last value of a range as pivot);
 - `binary_search(sorted, target)`, with `lo`, `mid` and `hi` pointers.
 
-`ArrayTrace::new` takes steps of your own. `at(seconds, step_time)` samples a trace, and
-`totals` counts its comparisons and moves.
+`ArrayTrace::new` takes steps of your own. `ArrayTrace::record(&values)` starts an
+`ArrayRecorder` with manim-dsa's `MArray` operations at the end of the array: `append(value)`
+adds a cell after the last one and `pop` takes the last one off, one step each with a note;
+`note` replaces the last note and `finish` gives the trace. `at(seconds, step_time)` samples a
+trace, `totals` counts its comparisons and moves, and `max_len` is the most cells of any
+step.
 
 ```rust
 use fframes_kit::prelude::*;
@@ -66,6 +70,10 @@ assert_eq!(trace.totals(), (3, 2));
 
 let search = ArrayTrace::binary_search(&[2, 5, 8, 12, 16, 23], 12);
 assert_eq!(search.steps().last().unwrap().found, Some(3));
+
+let grown = ArrayTrace::record(&[4, 7]).append(2).pop().pop().finish();
+assert_eq!(grown.result(), [4]);
+assert_eq!((grown.max_len(), grown.steps()[1].note.as_str()), (3, "append 2"));
 ```
 
 ## ArrayView and BinarySearch
@@ -75,8 +83,12 @@ index under each cell. Compared cells take `colors.compare`, moved cells travel 
 place on an arc (the one moving right over the top, the one moving left underneath),
 cells in their final place turn `colors.sorted`, cells out of the step's range dim, and the
 pointers slide under the cells with their names. Pointers on the same cell stack. With
-`notes` the step's note is written under the pointers. Light fills get dark text.
-Gallery scene: `ArrayView` (an array reversed by two pointers, from steps of its own).
+`notes` the step's note is written under the pointers. Light fills get dark text. An
+appended cell drops in at the end and a popped one rises out, each with its index; the row is
+laid out for the trace's longest step, so the other cells stay where they are. `indices`
+(manim-dsa's `add_indexes`, on by default) writes the index row and `label` (`add_label`) a
+name left of the row. Gallery scenes: `ArrayView` (an array reversed by two pointers, from
+steps of its own), `VariableBox` (appends and pops with a label).
 
 `BinarySearch` is an `ArrayView` (its `view`) playing `ArrayTrace::binary_search`, with
 "looking for 23" above the cells. Gallery scene: `BinarySearch`.
@@ -162,8 +174,10 @@ Gallery scene: `LinkedList` (an insert, a find, a remove and a reversal).
 `Stack` piles the items up in a container `capacity` boxes tall, the last item on top with a
 `top` marker; pushed boxes drop in, popped ones rise out. `Queue` lines the items up in a
 channel `capacity` boxes long, the front at the left, with `front` and `back` markers;
-enqueued boxes slide in from the right and dequeued ones leave to the left. Gallery scenes:
-`Stack`, `Queue`.
+enqueued boxes slide in from the right and dequeued ones leave to the left. A `Stack` with
+`indices` writes each box's index left of the container, 0 at the bottom, and `label` names it
+under the container. Gallery scenes: `Stack`, `Queue`, `VariableBox` (a stack with indices
+and a label).
 
 ```rust
 use fframes_kit::prelude::*;
@@ -180,12 +194,47 @@ fn queue<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a ListTrace) -> Svgr<'a> {
 }
 ```
 
+## VariableBox
+
+`VariableBox` is manim-dsa's `MVariable` with a label: `name` above a box with the variable's
+value, `width` by `height` pixels, widening to fit a longer value. `values` holds the value of
+each step, the first at the start, and it changes every `step_time` seconds from `delay`, like
+the steps of the other figures, so it can follow a trace step for step. On a change the old
+value rises out of the box and the new one rises in, the box flashes `colors.compare` and
+resizes. `value_at(seconds)` gives the value shown at a time of the video. Gallery scene:
+`VariableBox` (the length and last value of an array as it grows and shrinks).
+
+```rust
+use fframes_kit::prelude::*;
+
+let sum = VariableBox {
+    name: "sum",
+    values: vec!["0".into(), "3".into(), "8".into()],
+    delay: 1.0,
+    step_time: 0.5,
+    ..VariableBox::default()
+};
+assert_eq!((sum.value_at(0.0), sum.value_at(1.6)), (Some("0"), Some("3")));
+
+fn variable<'a>(ui: &mut Ui<'a, '_, '_>, values: Vec<String>) -> Svgr<'a> {
+    ui.show(VariableBox {
+        name: "len(a)",
+        values,
+        step_time: 0.8,
+        ..ui.defaults()
+    })
+}
+```
+
 ## TreeTrace and TreeView
 
 `TreeTrace` holds the steps of a binary tree. Each `TreeStep` has the nodes (an id, a label
 and the ids of the left and right child), the root, the highlighted nodes, the path walked
 to them, a found node and a note. Every step is laid out once when the trace is made, with
 `layout::tidy_tree`; a node with one child leans it to its side.
+`with_layout(TreeLayout::Tree)` lays the steps out again with the `tree` layout of the graph
+layouts (`GraphLayout::Tree`): the children are centred under their parent, so a single child
+sits straight below it.
 
 - `TreeTrace::bst(&values)` starts a search tree with the values inserted. `insert`, `search`
   and `remove` walk down from the root one node a step, noting which way they go; `remove`
@@ -222,7 +271,11 @@ fn tree<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a TreeTrace) -> Svgr<'a> {
 `Graph` holds named nodes and edges, directed or not. `Graph::new(&names, &edges, directed)`
 gives every edge weight 1; `Graph::weighted` takes `(from, to, weight)` and shows the
 weights. Nodes are placed in layers along the edges with `layout::layered`; `at` places
-them yourself, in the same slots and layers (fractions are fine).
+them yourself, in the same slots and layers (fractions are fine), and
+`layout(&GraphLayout::KamadaKawai, 2.0)` places them with one of the shared graph layouts
+(`Circular`, `KamadaKawai`, `Planar`, `Random`, `Shell`, `Spectral`, `Spiral`, `Spring`,
+`Partite`, `Tree` or a function of your own), the farthest node `scale` slots and layers from
+the middle.
 
 `GraphTrace` records a search over a graph, one `GraphStep` per visit or discovery: the
 current node, the frontier, the finished nodes, the tree edges that reached each node, the
@@ -236,8 +289,14 @@ edge being looked at, the distances and a note.
 `order()` is the order nodes were finished in. `GraphView` draws the trace: the frontier,
 current and finished nodes in the cell colours, tree edges in `tree_color`, the active edge
 in `active_color`, distances above the nodes (`∞` until reached) for Dijkstra, and the
-frontier (`queue: B, C`) and the note under the graph. Gallery scenes: `GraphView` (BFS
-and DFS side by side), `Dijkstra`.
+frontier (`queue: B, C`) and the note under the graph. Weights sit on the middle of their
+edge, on a small `weight_fill` plate (the distances have one too), so the edge never runs
+through the digits. With `curved` every edge is an arc. In a directed graph, a backward edge
+(one that closes a cycle, found by a depth first search from the first node; the layered
+layout points these up) always curves, by a third of its length, so it passes beside the
+forward edges instead of over them; two edges between the same nodes bend apart. Gallery
+scenes: `GraphView` (BFS and DFS side by side), `Dijkstra`, `WeightedGraph` (Dijkstra on a
+graph with backward edges, and on a ring placed by `GraphLayout::Circular` with `curved`).
 
 ```rust
 use fframes_kit::prelude::*;
@@ -245,6 +304,12 @@ use fframes_kit::prelude::*;
 let graph = Graph::new(&["A", "B", "C", "D"], &[(0, 1), (0, 2), (1, 3)], false);
 let bfs = GraphTrace::bfs(&graph, 0);
 assert_eq!(bfs.order(), [0, 1, 2, 3]);
+
+let ring = Graph::new(&["A", "B", "C"], &[(0, 1), (1, 2), (2, 0)], true)
+    .layout(&GraphLayout::Circular, 1.0);
+// on a circle of radius 1, the first node on the right
+assert!(ring.positions.iter().all(|&(x, y)| (x.hypot(y) - 1.0).abs() < 1e-9));
+assert!(ring.positions[0].0 > 0.99);
 
 fn search<'a>(ui: &mut Ui<'a, '_, '_>, trace: &'a GraphTrace) -> Svgr<'a> {
     ui.show(GraphView {
