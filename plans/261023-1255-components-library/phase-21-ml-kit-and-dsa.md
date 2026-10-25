@@ -134,7 +134,7 @@ dependencies: [10, 17]
 - [x] Embedding, vector, math operation, paired query, triplet layers
 - [x] Dropout and layer changes
 - [x] Variational autoencoder
-- [ ] Decision trees and surface
+- [x] Decision trees and surface
 - [ ] Gaussian ellipses and MCMC chain
 - [ ] CS additions (edges, weights, layouts, steps, variable box)
 - [ ] Gallery scenes, e2e frames, docs and mapping rows

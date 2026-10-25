@@ -4,6 +4,7 @@
 
 mod changes;
 mod connections;
+mod decision_tree;
 mod forward;
 mod layers;
 mod network;
@@ -11,6 +12,10 @@ mod probability;
 mod vae;
 
 pub use changes::{LayerChange, TimedChange};
+pub use decision_tree::{
+    DecisionNode, DecisionSurface, DecisionTree, DecisionTreeDiagram, Partition, Reached,
+    RevealOrder, TreeReveal,
+};
 pub use forward::{Dropout, ForwardPass};
 pub use layers::{ActivationFunction, Layer, LayerGeometry, MapShape, Operation};
 pub use network::NeuralNetwork;

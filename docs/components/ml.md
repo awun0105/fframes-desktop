@@ -100,6 +100,30 @@ gives these layers and `latent_index()` the place of the latent space among them
 
 Gallery scene: `Vae`.
 
+## Decision trees
+
+A `DecisionTree` is a trained tree given as data: its `nodes` with the root first, the names
+of its `features` and of its `classes`. `DecisionNode::Split { feature, threshold, left,
+right }` sends a sample whose `feature` is at most `threshold` to the node `left`, the others
+to `right`; `DecisionNode::Leaf { class }` predicts a class. `predict(&sample)` follows the
+tests. A child index out of range or a node reached twice ends that branch.
+
+- **`DecisionTreeDiagram`.** The tree with the root at the top, `level` pixels between
+  levels. A split is a box with its test (`petal length ≤ 2.45`) and a leaf a box with its
+  class, in that class's colour from `class_colors`. The edge to the left child is labelled
+  yes and the other no. The boxes are as wide as the longest text and at least `node_width`.
+- **`DecisionSurface`.** The feature space of `axes` (an `AxesMap`, as in `NormalFit`) cut
+  into the regions of the leaves, each filled in its class's colour at `opacity`, with the
+  cuts drawn in `line_color`. `x_feature` and `y_feature` are the features along the axes;
+  the tree should split on these two only, because a split on another feature gives both its
+  sides its whole region. Show it before the `Axes` so their lines stay on top.
+- **Growing.** `reveal: Some(TreeReveal { order, start, step })` shows a level
+  (`RevealOrder::LevelByLevel`) or a node (`RevealOrder::BreadthFirst`) every `step` seconds
+  from `start`. Give the diagram and the surface the same reveal: a cut appears with its
+  split and a region with its leaf.
+
+Gallery scene: `DecisionTree` (the iris tree beside its feature space).
+
 ```rust
 use fframes_kit::prelude::*;
 

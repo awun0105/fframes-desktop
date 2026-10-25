@@ -1,5 +1,5 @@
 //! The machine learning kit: neural networks, their layer kinds, their forward pass,
-//! dropout, layer changes and a variational autoencoder.
+//! dropout, layer changes, a variational autoencoder and decision trees.
 
 use fframes_kit::prelude::*;
 
@@ -237,6 +237,73 @@ fn vae<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{vae}</g>)
 }
 
+/// The iris tree: petal length, then petal width.
+fn iris() -> DecisionTree<'static> {
+    DecisionTree {
+        nodes: vec![
+            DecisionNode::Split {
+                feature: 0,
+                threshold: 2.45,
+                left: 1,
+                right: 2,
+            },
+            DecisionNode::Leaf { class: 0 },
+            DecisionNode::Split {
+                feature: 1,
+                threshold: 1.75,
+                left: 3,
+                right: 4,
+            },
+            DecisionNode::Leaf { class: 1 },
+            DecisionNode::Leaf { class: 2 },
+        ],
+        features: vec!["petal length", "petal width"],
+        classes: vec!["setosa", "versicolor", "virginica"],
+    }
+}
+
+/// A decision tree grows node by node while the feature space beside it is cut into the
+/// regions of its leaves.
+fn decision_tree<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "DecisionTree");
+    let reveal = Some(TreeReveal {
+        order: RevealOrder::BreadthFirst,
+        start: 0.9,
+        step: 0.6,
+    });
+    let diagram = ui.show(DecisionTreeDiagram {
+        tree: iris(),
+        center: (-3.3, -0.3),
+        level: 140.0,
+        reveal,
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    let axes = Axes {
+        x_range: Range::new(0.0, 7.0, 1.0),
+        y_range: Range::new(0.0, 3.0, 0.5),
+        x_length: 5.0,
+        y_length: 4.2,
+        center: (3.4, -0.4),
+        tips: false,
+        x_numbers: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        y_numbers: vec![1.0, 2.0, 3.0],
+        x_label: Some("length".into()),
+        y_label: Some("width".into()),
+        labels_enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    };
+    let surface = ui.show(DecisionSurface {
+        tree: iris(),
+        axes: axes.map(ui),
+        reveal,
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    let axes = ui.show(axes);
+    svgr!(<g>{head}{diagram}{surface}{axes}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("ForwardPass", 4.0, forward_pass),
@@ -245,5 +312,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Dropout", 4.0, dropout),
         GalleryScene::new("LayerChanges", 5.0, layer_changes),
         GalleryScene::new("Vae", 5.0, vae),
+        GalleryScene::new("DecisionTree", 5.0, decision_tree),
     ]
 }

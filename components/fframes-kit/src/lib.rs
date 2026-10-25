@@ -160,6 +160,7 @@
 //! | `ManimML` `make_neural_network_dropout_animation` (feature `ml`) | `dropout: Some(kits::ml::Dropout { rate, seed, start, duration })` on `NeuralNetwork` |
 //! | `ManimML` `insert_layer`, `remove_layer`, `replace_layer` (feature `ml`) | `changes: vec![kits::ml::TimedChange { change, start, duration }]` on `NeuralNetwork`, `change` one of `LayerChange::{Insert, Remove, Replace}` |
 //! | `ManimML` `VariationalAutoencoder` (feature `ml`) | `kits::ml::VariationalAutoencoder { input, output, encoder, decoder, epsilon, .. }`: the code `μ + L·epsilon` of the latent Gaussian appears as the forward pass reaches it |
+//! | `ManimML` `DecisionTreeDiagram`, `DecisionTreeSurface` (feature `ml`) | `kits::ml::DecisionTreeDiagram { tree, reveal, .. }` and `kits::ml::DecisionSurface { tree, axes, reveal, .. }` with the same `kits::ml::DecisionTree` and `TreeReveal` |
 
 // The derives expand to `::fframes_kit::..` paths, also on the kit's own components.
 extern crate self as fframes_kit;
