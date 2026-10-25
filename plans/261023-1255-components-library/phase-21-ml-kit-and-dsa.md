@@ -1,7 +1,7 @@
 ---
 phase: 21
 title: "Phase 21: ML kit and data-structure additions"
-status: in-progress
+status: completed
 priority: P2
 effort: 5d
 dependencies: [10, 17]
@@ -137,7 +137,7 @@ dependencies: [10, 17]
 - [x] Decision trees and surface
 - [x] Gaussian ellipses and MCMC chain
 - [x] CS additions (edges, weights, layouts, steps, variable box)
-- [ ] Gallery scenes, e2e frames, docs and mapping rows
+- [x] Gallery scenes, e2e frames, docs and mapping rows
 
 ## Notes
 
