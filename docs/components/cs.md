@@ -19,7 +19,8 @@ entry names its scene in the components gallery
 ## Layouts
 
 Two layouts in `fframes_kit::layout` place the nodes of the tree and graph figures. Both
-compute once and give the same result on every run and machine.
+compute once and give the same result on every run and machine. The shared graph layouts of
+`layout::graph_layout` are a third choice, through `Graph::layout` and `TreeTrace::with_layout`.
 
 - `tidy_tree(children, root)` places a tree: `children[i]` lists the children of node `i`.
   `x` is in slots (siblings and neighbouring subtrees are at least one slot apart at every

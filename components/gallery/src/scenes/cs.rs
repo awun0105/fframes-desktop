@@ -667,7 +667,7 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("Heap", 10.0, heap),
         GalleryScene::new("GraphView", 10.5, graph_view),
         GalleryScene::new("Dijkstra", 13.0, dijkstra),
-        GalleryScene::new("WeightedGraph", 12.0, weighted_graph_scene),
+        GalleryScene::new("WeightedGraph", 9.0, weighted_graph_scene),
         // six steps of 0.8 s from 0.6 s, the stack eight of 0.6 s
         GalleryScene::new("VariableBox", 7.0, variable_box),
         GalleryScene::new("HashTable", 12.5, hash_table),
