@@ -88,8 +88,8 @@ pub use crate::kits::math::{
 pub use crate::kits::ml::{
     ActivationFunction, ChainRun, DecisionNode, DecisionSurface, DecisionTree, DecisionTreeDiagram,
     Dropout, ForwardPass, Gaussian2D, GaussianEllipse, Layer, LayerChange, LayerGeometry, MapShape,
-    McmcChain, NeuralNetwork, Operation, RevealOrder, TimedChange, TreeReveal,
-    VariationalAutoencoder,
+    McmcChain, McmcStep, NeuralNetwork, Operation, Partition, Reached, RevealOrder, TimedChange,
+    TreeReveal, VariationalAutoencoder,
 };
 #[cfg(feature = "physics")]
 pub use crate::kits::physics::{

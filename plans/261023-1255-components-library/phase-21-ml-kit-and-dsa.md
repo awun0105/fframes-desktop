@@ -136,7 +136,7 @@ dependencies: [10, 17]
 - [x] Variational autoencoder
 - [x] Decision trees and surface
 - [x] Gaussian ellipses and MCMC chain
-- [ ] CS additions (edges, weights, layouts, steps, variable box)
+- [x] CS additions (edges, weights, layouts, steps, variable box)
 - [ ] Gallery scenes, e2e frames, docs and mapping rows
 
 ## Notes
@@ -163,3 +163,9 @@ dependencies: [10, 17]
 - The MCMC chain's dot walks the accepted path at an even speed instead of one step per time
   slot. With one slot per step it stood still during rejections and jumped on each accepted
   move, which `inspect --pops` reported as pops.
+- A backward edge in `GraphView` is an edge that closes a cycle in a depth-first search from
+  node 0 (what the layered layout points upward), not one that points upward on screen.
+  `TreeLayout::Tree` calls `layout::tidy_tree` directly because `graph_layout` rescales the
+  depths `TreeView` needs as whole numbers.
+- `inspect --pops` warns on `ArrayView` (frame 21325) and `BinarySearch` (frame 21869) with
+  and without the CS additions; the warnings predate this phase.
