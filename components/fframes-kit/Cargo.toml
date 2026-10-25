@@ -20,6 +20,8 @@ rust-sugiyama = { workspace = true, optional = true }
 # RigidWorld (feature `physics`); declared here, not in the workspace, with results that
 # match across machines.
 rapier2d = { version = "0.36", features = ["enhanced-determinism"], optional = true }
+# `Gif` (feature `gif`): decodes the frames of animated GIFs, the version fframes-media uses.
+image = { version = "0.25.6", default-features = false, features = ["gif"], optional = true }
 
 # Compiles the kit's shaders in tests/shaders.rs (feature `skia`), with the gallery's Skia
 # features so both use the same prebuilt Skia.
@@ -43,7 +45,10 @@ ml = []
 # ShaderNoise (SkSL grain); its shader compile tests build the Skia renderer.
 skia = []
 3d = ["fframes/3d"]
-lottie = []
+# `AnimatedEmoji`: Lottie files played with `frame.play_lottie`.
+lottie = ["fframes/lottie"]
+# `Gif`: animated GIFs decoded once and drawn frame by frame.
+gif = ["dep:image"]
 # Props that fframes Studio edits (`props`): uses the fork's editor identity in fframes.
 studio = ["dep:fframes-studio-protocol"]
 

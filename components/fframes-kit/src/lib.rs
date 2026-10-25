@@ -32,6 +32,10 @@
 //! | `useTransitionProgress()` | [`Ui::transition_progress`](ui::Ui::transition_progress) |
 //! | audio fade on transitions | [`audio_fades`](transitions::audio_fades), [`TransitionSeries::audio_fades`](transitions::TransitionSeries::audio_fades), applied in `fn audio` |
 //! | `crosswarp()`, `ripple()`, `bookFlip()`, `cube()`, `custom-html-in-canvas` | not yet available (pixel shaders) |
+//! | `@remotion/mac-cursors` | [`Cursor`](assets::Cursor) (its own drawn shapes, no Apple artwork), [`CursorPath`](assets::CursorPath), [`Click`](assets::Click), [`Drag`](assets::Drag), [`TypeAt`](assets::TypeAt) |
+//! | `@remotion/animated-emoji` `<AnimatedEmoji emoji skinTone>` (feature `lottie`) | `assets::AnimatedEmoji { name, skin_tone, .. }` playing a Noto file you download into the media folder; [`emoji::NAMES`](assets::emoji::NAMES), [`emoji::url`](assets::emoji::url), [`emoji::ATTRIBUTION`](assets::emoji::ATTRIBUTION) |
+//! | `@remotion/sfx` (`whoosh`, `ding`, `mouseClick`, ...) | the CC0 files of the crate's `sfx/` folder and [`Sfx`](assets::Sfx); [`sfx::on_transitions`](assets::sfx::on_transitions), [`sfx::on_beats`](assets::sfx::on_beats), [`sfx::at`](assets::sfx::at), [`sfx::on_clicks`](assets::sfx::on_clicks) return `AudioTrack`s for `fn audio` |
+//! | `@remotion/gif` `<Gif src fit playbackRate loopBehavior>` (feature `gif`) | `assets::Gif { gif, fit, speed, looping, .. }` over a `GifData` from `Gif::decode` in the constructor; a placeholder in the editor |
 //! | `@remotion/effects` colour: brightness, contrast, saturation, hue, grayscale, invert, tint, duotone, levels, curves, exposure, colour correction, white balance, vibrance, shadows/highlights, colour key, thermal vision, LUT | [`effects`]: [`Brightness`](effects::Brightness), [`Contrast`](effects::Contrast), [`Saturation`](effects::Saturation), [`HueRotate`](effects::HueRotate), [`Grayscale`](effects::Grayscale), [`Invert`](effects::Invert), [`Tint`](effects::Tint), [`Duotone`](effects::Duotone), [`Levels`](effects::Levels), [`Curves`](effects::Curves), [`Exposure`](effects::Exposure), [`ColorCorrection`](effects::ColorCorrection), [`WhiteBalance`](effects::WhiteBalance), [`Vibrance`](effects::Vibrance), [`ShadowsHighlights`](effects::ShadowsHighlights), [`ColorKey`](effects::ColorKey), [`ThermalVision`](effects::ThermalVision), [`Lut`](effects::Lut); several matrices in one filter with [`ColorStack`](effects::ColorStack) |
 //! | `@remotion/effects` edges and shape: `outline()`, `emboss()`, `bevelAlpha()`, `longShadows()`, `roughenEdges()`, `shrinkwrap()` | [`Outline`](effects::Outline), [`Emboss`](effects::Emboss), [`BevelAlpha`](effects::BevelAlpha), [`LongShadows`](effects::LongShadows), [`RoughenEdges`](effects::RoughenEdges), [`Shrinkwrap`](effects::Shrinkwrap) (without the displacement) |
 //! | `whiteNoise()`, `fractalNoise()` | [`WhiteNoise`](effects::WhiteNoise), [`FractalNoise`](effects::FractalNoise) (`feTurbulence`: two fractal types) |
@@ -189,6 +193,7 @@ extern crate self as fframes_kit;
 
 pub mod anim;
 pub mod animate;
+pub mod assets;
 pub mod audio;
 pub mod data;
 pub mod decor;

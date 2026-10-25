@@ -22,6 +22,14 @@ pub use crate::animate::{
     TracedPath, Transform as Morph, TransformAnimations, TransformFromCopy,
     TransformMatchingShapes, Uncreate, Unwrite, Wiggle, Write,
 };
+#[cfg(feature = "lottie")]
+pub use crate::assets::AnimatedEmoji;
+pub use crate::assets::{
+    Click, ClickLook, Cursor, CursorMotion, CursorPath, CursorPoint, CursorShape, CursorStyle,
+    Drag, Sfx, SkinTone, TypeAt, emoji, sfx,
+};
+#[cfg(feature = "gif")]
+pub use crate::assets::{Gif, GifData, GifFit};
 pub use crate::audio::{self, BarAlign, SpectrumBars, Waveform};
 pub use crate::data::BarChart;
 pub use crate::decor::{CornerMarks, DrawOn, DropShadow, Glow, PhotoFrame};
