@@ -45,7 +45,12 @@ pub(crate) fn label<'a>(
 }
 
 /// `v` with at most `max_decimals` decimals and no trailing zeros (`0.5`, `2`, `-1.25`).
-#[cfg(any(feature = "math", feature = "physics", feature = "chemistry"))]
+#[cfg(any(
+    feature = "math",
+    feature = "physics",
+    feature = "chemistry",
+    feature = "ml"
+))]
 pub(crate) fn short(v: f64, max_decimals: usize) -> String {
     let s = format!("{v:.max_decimals$}");
     let s = if s.contains('.') {
@@ -62,7 +67,12 @@ pub(crate) fn short(v: f64, max_decimals: usize) -> String {
 
 #[cfg(all(
     test,
-    any(feature = "math", feature = "physics", feature = "chemistry")
+    any(
+        feature = "math",
+        feature = "physics",
+        feature = "chemistry",
+        feature = "ml"
+    )
 ))]
 mod tests {
     #[test]

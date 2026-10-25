@@ -81,3 +81,36 @@ fn network<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     })
 }
 ```
+
+## VariationalAutoencoder
+
+`VariationalAutoencoder` draws ManimML's autoencoder as a `NeuralNetwork`: the image `input`,
+the feed-forward layers of the `encoder` (neurons per layer, `[5, 3]` by default), the latent
+space, the `decoder` (`[3, 5]`) and the image `output`, both `size` cells square. `layers()`
+gives these layers and `latent_index()` the place of the latent space among them.
+
+- **Latent space.** An embedding box with a cloud of `points` points for `seed` and the 1σ
+  and 2σ rings of its Gaussian in `ring_color`.
+- **Code.** The image's point in the latent space, drawn in `pulse_color`, is `μ + L·epsilon`
+  (`L` the Cholesky factor of the covariance, the reparameterisation trick). `epsilon` is in
+  units of the standard normal distribution, `(1.3, -0.7)` by default; the point stays inside
+  the box.
+- **Forward pass.** With `forward_pass` the pulses run from the input to the output, and the
+  point appears as they reach the latent space. Without one it is always shown.
+
+Gallery scene: `Vae`.
+
+```rust
+use fframes_kit::prelude::*;
+
+fn autoencoder<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    ui.show(VariationalAutoencoder {
+        input: "digit.png",
+        output: "digit.png",
+        epsilon: (0.4, 1.1),
+        forward_pass: Some(ForwardPass { start: 0.9, duration: 3.2 }),
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    })
+}
+```

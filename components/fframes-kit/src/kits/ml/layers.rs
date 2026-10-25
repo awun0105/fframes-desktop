@@ -293,25 +293,28 @@ fn image_stack(n: usize, sizes: Sizes) -> (f64, f64) {
 
 /// The covariance of an embedding's cloud, in units of its box's half width: tilted so the
 /// cloud reads as data, not noise.
-const EMBEDDING: Gaussian2D = Gaussian2D {
+pub(super) const EMBEDDING: Gaussian2D = Gaussian2D {
     mean: (0.0, 0.0),
     covariance: [[0.1, 0.05], [0.05, 0.06]],
 };
 
+/// The pixel of the embedding box `bounds` at `(x, y)` in units of its half width, `y` up.
+pub(super) fn embedding_px(bounds: Rect, (x, y): (f64, f64)) -> Point {
+    let half = bounds.width() / 2.0;
+    Point::new(bounds.center().x + x * half, bounds.center().y - y * half)
+}
+
 /// `points` points of the embedding cloud for `seed` in `bounds`, those that would fall
 /// outside it pulled in to its edge.
 fn embedding_points(points: usize, seed: u64, bounds: Rect, margin: f64) -> Vec<Point> {
-    let half = bounds.width() / 2.0;
     let inner = bounds.inset(-margin);
     EMBEDDING
         .samples(seed, points)
         .into_iter()
-        .map(|(x, y)| {
+        .map(|sample| {
             // y grows downwards on screen, so the cloud rises to the right
-            Point::new(
-                (bounds.center().x + x * half).clamp(inner.x0, inner.x1),
-                (bounds.center().y - y * half).clamp(inner.y0, inner.y1),
-            )
+            let p = embedding_px(bounds, sample);
+            Point::new(p.x.clamp(inner.x0, inner.x1), p.y.clamp(inner.y0, inner.y1))
         })
         .collect()
 }

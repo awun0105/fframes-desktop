@@ -1,5 +1,5 @@
 //! The machine learning kit: neural networks, their layer kinds, their forward pass,
-//! dropout and layer changes.
+//! dropout, layer changes and a variational autoencoder.
 
 use fframes_kit::prelude::*;
 
@@ -215,6 +215,28 @@ fn dropout<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
     svgr!(<g>{head}{network}</g>)
 }
 
+/// A variational autoencoder: the image is encoded to a point of the latent Gaussian and
+/// decoded back, the point appearing as the pulses reach the latent space.
+fn vae<'a>(ui: &mut Ui<'a, '_, '_>) -> Svgr<'a> {
+    let head = title(ui, "Vae");
+    let vae = ui.show(VariationalAutoencoder {
+        input: "photo.png",
+        output: "photo.png",
+        center: (0.0, -0.3),
+        spacing: 120.0,
+        cell: 18.0,
+        node_radius: 18.0,
+        node_spacing: 56.0,
+        forward_pass: Some(ForwardPass {
+            start: 0.9,
+            duration: 3.2,
+        }),
+        enter: Some(FadeIn::default()),
+        ..ui.defaults()
+    });
+    svgr!(<g>{head}{vae}</g>)
+}
+
 pub fn scenes() -> Vec<GalleryScene> {
     vec![
         GalleryScene::new("ForwardPass", 4.0, forward_pass),
@@ -222,5 +244,6 @@ pub fn scenes() -> Vec<GalleryScene> {
         GalleryScene::new("LayerKinds", 4.0, layer_kinds),
         GalleryScene::new("Dropout", 4.0, dropout),
         GalleryScene::new("LayerChanges", 5.0, layer_changes),
+        GalleryScene::new("Vae", 5.0, vae),
     ]
 }

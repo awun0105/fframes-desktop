@@ -4,7 +4,10 @@ use kurbo::{BezPath, Circle, Point, Rect, RoundedRect, Shape as _};
 use crate::{
     anim::{FadeIn, FadeOut, fade},
     geometry::Shape,
-    kits::draw::{mix, stroke, tip},
+    kits::{
+        draw::{mix, stroke, tip},
+        short,
+    },
     text::{TextAnchor, line},
     theme::{TextStyle, Theme},
     ui::{Component, Themed, Ui},
@@ -196,7 +199,7 @@ impl<'a> NeuralNetwork<'a> {
                 parts.push(stroke(brackets, ring, self.stroke_width, 1.0).draw());
                 let size = r * 1.1;
                 for (&p, &v) in g.rows.iter().zip(values) {
-                    parts.push(text(p.x, p.y, size, number(v)));
+                    parts.push(text(p.x, p.y, size, short(v, 2)));
                 }
             }
             Layer::MathOperation { operation } => {
@@ -266,13 +269,6 @@ impl<'a> NeuralNetwork<'a> {
         }
         parts
     }
-}
-
-/// `value` with at most two decimals and no trailing zeros: `0.5`, `-1`, `2.25`.
-fn number(value: f64) -> String {
-    let s = format!("{value:.2}");
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s == "-0" { "0".into() } else { s.into() }
 }
 
 /// The corners as a closed path.
@@ -746,15 +742,4 @@ fn picture<'a>(ui: &Ui<'a, '_, '_>, name: &str, corners: &[Point; 4]) -> Svgr<'a
         <image href={image.href()} x="0" y="0" width={width} height={height}
                preserveAspectRatio="none" transform={transform} />
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::number;
-
-    #[test]
-    fn numbers_drop_trailing_zeros() {
-        let written: Vec<String> = [0.5, -1.0, 2.25, 10.0, -0.001, 0.333].map(number).into();
-        assert_eq!(written, ["0.5", "-1", "2.25", "10", "0", "0.33"]);
-    }
 }

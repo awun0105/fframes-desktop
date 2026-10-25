@@ -8,9 +8,11 @@ mod forward;
 mod layers;
 mod network;
 mod probability;
+mod vae;
 
 pub use changes::{LayerChange, TimedChange};
 pub use forward::{Dropout, ForwardPass};
 pub use layers::{ActivationFunction, Layer, LayerGeometry, MapShape, Operation};
 pub use network::NeuralNetwork;
 pub use probability::Gaussian2D;
+pub use vae::VariationalAutoencoder;

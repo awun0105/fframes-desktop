@@ -43,6 +43,29 @@ impl Gaussian2D {
         (rest > 0.0).then(|| [[l00, 0.0], [l10, rest.sqrt()]])
     }
 
+    /// The point `mean + L·epsilon`, `epsilon` in units of the standard normal distribution
+    /// (the reparameterisation of a variational autoencoder); `None` when the covariance is
+    /// not positive definite.
+    pub fn point(&self, epsilon: (f64, f64)) -> Option<(f64, f64)> {
+        let [[l00, _], [l10, l11]] = self.cholesky()?;
+        Some((
+            self.mean.0 + l00 * epsilon.0,
+            self.mean.1 + l10 * epsilon.0 + l11 * epsilon.1,
+        ))
+    }
+
+    /// 64 points around the ellipse `sigmas` standard deviations from the mean (where the
+    /// density is the same), in the units of the distribution; none when the covariance is
+    /// not positive definite.
+    pub fn ring(&self, sigmas: f64) -> Vec<(f64, f64)> {
+        (0..64)
+            .filter_map(|i| {
+                let a = TAU * f64::from(i) / 64.0;
+                self.point((sigmas * a.cos(), sigmas * a.sin()))
+            })
+            .collect()
+    }
+
     /// `n` samples, the same for the same `seed`; none when the covariance is not positive
     /// definite.
     pub fn samples(&self, seed: u64, n: usize) -> Vec<(f64, f64)> {
@@ -91,6 +114,32 @@ mod tests {
             assert_eq!(g.cholesky(), None);
             assert_eq!(g.samples(1, 5), Vec::new());
         }
+    }
+
+    #[test]
+    fn rings_have_the_same_density_all_round() {
+        for (x, y) in Gaussian2D::default().ring(1.0) {
+            assert!((x.hypot(y) - 1.0).abs() < 1e-12);
+        }
+        let [[a, b], [_, d]] = TILTED.covariance;
+        let det = a * d - b * b;
+        for k in [1.0, 2.0, 3.0] {
+            let ring = TILTED.ring(k);
+            assert_eq!(ring.len(), 64);
+            for (x, y) in ring {
+                let (dx, dy) = (x - TILTED.mean.0, y - TILTED.mean.1);
+                // xᵀ Σ⁻¹ x with the inverse of the 2 by 2 covariance written out
+                let q = (d * dx * dx - 2.0 * b * dx * dy + a * dy * dy) / det;
+                assert!((q - k * k).abs() < 1e-9);
+            }
+        }
+        assert_eq!(TILTED.point((0.0, 0.0)), Some(TILTED.mean));
+        let flat = Gaussian2D {
+            covariance: [[1.0, 1.0], [1.0, 1.0]],
+            ..TILTED
+        };
+        assert_eq!(flat.point((1.0, 0.0)), None);
+        assert_eq!(flat.ring(1.0), Vec::new());
     }
 
     #[test]

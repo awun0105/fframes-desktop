@@ -133,7 +133,7 @@ dependencies: [10, 17]
 - [x] Convolution, pooling and image layers
 - [x] Embedding, vector, math operation, paired query, triplet layers
 - [x] Dropout and layer changes
-- [ ] Variational autoencoder
+- [x] Variational autoencoder
 - [ ] Decision trees and surface
 - [ ] Gaussian ellipses and MCMC chain
 - [ ] CS additions (edges, weights, layouts, steps, variable box)
@@ -156,3 +156,7 @@ dependencies: [10, 17]
   `inspect --pops`, an opacity group nested inside the enter fade's group drew as if fully
   opaque. The full-size frame was right. Dropout frames 30714 to 30716 looked the same,
   then jumped at 30717 when the fade ended, so the gallery's dropout starts after the enter fade.
+  The rule for every gallery scene: an animation that ramps its own opacity starts after the
+  enter fade, as the autoencoder's forward pass does (its code point fades in).
+- The autoencoder draws its network with no fade of its own and fades the whole figure once,
+  so the rings and the code point fade with the network.
