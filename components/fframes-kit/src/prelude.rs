@@ -131,9 +131,9 @@ pub use crate::shapes::{
 };
 pub use crate::sim::{Lerp, Sim};
 pub use crate::text::{
-    BulletedList, CaptionFileError, CaptionWord, Counter, DecimalNumber, FitText, HudLabel,
-    Integer, LetterLook, Letters, MarkupText, Paragraph, RevealBy, TextAnchor, TextReveal, Title,
-    Typewriter, Variable,
+    BoxFit, BulletedList, CaptionFileError, CaptionWord, Counter, DecimalNumber, FitLines, FitText,
+    HudLabel, Integer, LetterLook, Letters, MarkupText, Paragraph, RevealBy, TextAnchor, TextBox,
+    TextReveal, Title, Typewriter, Variable,
 };
 pub use crate::theme::{
     Colors, Durations, Easings, Motion, Radius, Shadow, Shadows, Spacing, Stagger, Stroke,
