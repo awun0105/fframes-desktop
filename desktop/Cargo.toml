@@ -49,14 +49,16 @@ futures = "0.3"
 # Cap's GPUI fork: wingleeio/zed with Cap's three patches and a few upstream Zed fixes, mirrored
 # on the `cap-patches` branch of khanhthanhdev/zed-cap. Never pin below cb5d0daa (Cap's last
 # patch); earlier fork commits break the DirectX quad and sprite layout.
+# Pinned to awun0105/zed `fix/vietnamese-glyph-offsets`: c32bfd39 plus a fix that applies shaping
+# offsets to combining marks (Vietnamese diacritics) in the Linux text system.
 [workspace.dependencies.gpui]
-git = "https://github.com/khanhthanhdev/zed-cap"
-rev = "c32bfd3962e172b566c9d5514f4fa5cf325e9b06"
+git = "https://github.com/awun0105/zed"
+rev = "09c457348b4611c8890dcc680ea61627bb6631ae"
 
 # Cap's feature set; each feature only reaches its own platform crate.
 [workspace.dependencies.gpui_platform]
-git = "https://github.com/khanhthanhdev/zed-cap"
-rev = "c32bfd3962e172b566c9d5514f4fa5cf325e9b06"
+git = "https://github.com/awun0105/zed"
+rev = "09c457348b4611c8890dcc680ea61627bb6631ae"
 features = ["wayland", "x11", "font-kit", "runtime_shaders"]
 
 # The preview converts every shown frame; unoptimised it takes ~50 ms at 1080p.
