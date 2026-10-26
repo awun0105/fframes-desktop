@@ -12,7 +12,9 @@ pub const MONO_FAMILY: &str = if cfg!(target_os = "windows") {
 } else if cfg!(target_os = "macos") {
     "Menlo"
 } else {
-    "DejaVu Sans Mono"
+    // DejaVu Sans Mono lacks several Vietnamese precomposed vowels and
+    // mispositions their decomposed marks. Liberation Mono covers them.
+    "Liberation Mono"
 };
 
 /// Size of a heading of `level` (1 to 6); the body is 13.
